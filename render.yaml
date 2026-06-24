@@ -1,12 +1,12 @@
-# Render 部署配置文件
+# Render 部署配置文件（免费套餐版）
 # 使用方法：
 # 1. 把代码 push 到 GitHub
-# 2. 在 Render  dashboard 点击 "New +" -> "Blueprint"
+# 2. 在 Render dashboard 点击 "New +" -> "Blueprint"
 # 3. 选择包含此文件的仓库，Render 会自动读取配置
 
 services:
   - type: web
-    name: vuln-sentinel-v10x
+    name: vuln-sentinel-v11
     runtime: docker
     plan: free
     envVars:
@@ -15,10 +15,6 @@ services:
       - key: JWT_EXPIRE_SECONDS
         value: "86400"
       - key: DB_DIR
-        value: "/data"
+        value: "/tmp"
       - key: PYTHONUNBUFFERED
         value: "1"
-    disk:
-      name: data
-      mountPath: /data
-      sizeGB: 1
