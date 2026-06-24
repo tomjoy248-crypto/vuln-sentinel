@@ -1,0 +1,34 @@
+# 漏洞哨兵 V11.4 - Python 依赖
+# 安装：pip install -r requirements.txt
+
+# Web 框架
+fastapi>=0.100
+uvicorn[standard]>=0.23
+
+# 生产环境 WSGI/ASGI 服务器
+gunicorn>=21.0
+
+# HTTP 客户端（异步扫描用）
+httpx>=0.25
+
+# 数据验证与配置
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# JWT 认证
+PyJWT>=2.8
+
+# 密码哈希
+bcrypt>=4.0
+
+# DNS 验证（域名归属验证）
+dnspython>=2.6
+
+# PDF 报告生成
+reportlab>=4.0
+
+# 定时任务（监控扫描）
+apscheduler>=3.10
+
+# 单元测试（开发用）
+pytest>=7.0

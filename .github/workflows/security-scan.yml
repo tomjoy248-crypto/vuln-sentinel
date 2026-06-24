@@ -1,0 +1,43 @@
+name: VulnSentinel Security Scan
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: pip install -r requirements.txt --break-system-packages
+      - name: Start VulnSentinel
+        run: |
+          python main.py &
+          sleep 10
+      - name: Run scan
+        run: |
+          python -c "
+          import requests, json
+          r = requests.post('http://localhost:8000/api/scan', json={'url': '${{ github.event.pull_request.base.repo.html_url }}', 'authorized': True})
+          print(json.dumps(r.json(), indent=2, ensure_ascii=False))
+          "
+      - name: Comment PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const score = ${{ steps.scan.outputs.score }};
+            const findings = ${{ steps.scan.outputs.findings }};
+            const body = `## 🛡️ VulnSentinel Scan Result\n\n**Score**: ${score}/100\n\n**Findings**: ${findings.length}\n\n${findings.map(f => '- ' + f.name).join('\n')}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
