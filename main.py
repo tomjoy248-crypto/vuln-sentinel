@@ -1538,9 +1538,9 @@ def get_httpx_client() -> httpx.AsyncClient:
 
 def _create_client() -> None:
     global _httpx_client
-    # TLS 校验：默认开启；仅当显式设置 TLS_VERIFY=false 时关闭，
-    # 并且需要目标在 ALLOWED_INTERNAL_HOSTS 白名单内才允许（内网靶场）。
-    _raw = os.environ.get("TLS_VERIFY", "true").strip().lower()
+    # V11.4 修改：默认关闭 TLS 验证（因为很多真实站证书有问题，
+    # 严格校验会让工具"无法扫描"，扫描的目标是安全配置而非证书本身）
+    _raw = os.environ.get("TLS_VERIFY", "false").strip().lower()
     if _raw in ("0", "false", "no", "off"):
         _verify = False
     else:
@@ -1864,6 +1864,9 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
                 last_err = "CONNECT_FAIL"
             except httpx.RemoteProtocolError:
                 last_err = "PROTOCOL_ERROR"
+            except (ssl.SSLError, ssl.CertificateError) as e:
+                # V11.4 修复：SSL 错误（如证书过期、协议不匹配）→ 尝试用宽松 SSL 重试
+                last_err = f"SSL_ERROR:{str(e)[:40]}"
             except Exception as e:
                 last_err = f"REQUEST_FAIL:{str(e)[:60]}"
         # 全部方法失败
@@ -1873,6 +1876,21 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
             error = "无法连接到该网站，请确认网站是否在线"
         elif last_err == "PROTOCOL_ERROR":
             error = "协议错误，目标可能不支持 HTTPS 或使用了非标准端口"
+        elif last_err and last_err.startswith("SSL_ERROR:"):
+            # V11.4：SSL 错误时尝试不验证证书再试一次（不要直接返回失败）
+            try:
+                resp = await asyncio.wait_for(
+                    client.get(url, follow_redirects=False, verify=False),
+                    timeout=12.0,
+                )
+                h = dict(resp.headers)
+                h["_status_code"] = resp.status_code
+                headers, err = classify_status(resp.status_code, h)
+                if err is None:
+                    return headers, is_https, final_url, None
+                return h, is_https, final_url, err
+            except Exception:
+                error = "该网站的 SSL 证书存在问题，建议在浏览器中先确认可访问"
         elif last_err and last_err.startswith("REQUEST_FAIL:"):
             error = f"请求失败: {last_err[13:]}"
         else:
@@ -4958,12 +4976,38 @@ async def simulate_fix(req: SimulateFixRequest):
             "fix": f.get("fix", ""),
             "summary": f.get("summary", ""),
         })
+    # V11.4：生成可执行的修复配置（按平台分类）
+    nginx_fixes = []
+    for f in findings:
+        fix_code = f.get("fix", "")
+        if fix_code:
+            nginx_fixes.append(fix_code)
+    # 如果没有 fix 字段，根据 name 自动生成
+    if not nginx_fixes:
+        FIX_TEMPLATES = {
+            "HSTS": 'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;',
+            "CSP": "add_header Content-Security-Policy 'default-src self' always;",
+            "X-Frame-Options": 'add_header X-Frame-Options "SAMEORIGIN" always;',
+            "X-Content-Type-Options": 'add_header X-Content-Type-Options "nosniff" always;',
+            "Referrer-Policy": 'add_header Referrer-Policy "strict-origin-when-cross-origin" always;',
+            "Permissions-Policy": 'add_header Permissions-Policy "camera=(), microphone=()" always;',
+            "Server": "server_tokens off;",
+            "Cookie": "proxy_cookie_flags ~ secure samesite=Strict;",
+        }
+        for f in findings[:20]:
+            name = f.get("name", "")
+            for k, v in FIX_TEMPLATES.items():
+                if k in name:
+                    nginx_fixes.append(f"# " + name + "\n" + v)
+                    break
+
     return {
         "before_score": before,
         "after_score": after,
         "delta": after - before,
         "fixed_count": len(findings),
         "fixed_items": fixed_items,
+        "nginx_config": "\n\n".join(nginx_fixes) if nginx_fixes else "# 配置代码生成中",
         "summary": f"应用 {len(findings)} 项修复后，评分预计从 {before} 提升到 {after}（+{after - before} 分）",
     }
 
