@@ -165,9 +165,48 @@ img { max-width: 100%; }
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+/* 新增动画 */
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(40px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-40px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes pop {
+  0% { opacity: 0; transform: scale(0.8); }
+  60% { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+  50% { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0.15); }
+}
+@keyframes countUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes checkmark {
+  0% { stroke-dashoffset: 100; }
+  100% { stroke-dashoffset: 0; }
+}
 .fade-in-up { animation: fadeInUp 0.5s ease both; }
 .fade-in { animation: fadeIn 0.4s ease both; }
 .score-pulse { animation: scorePulse 2s ease-in-out infinite; }
+.slide-in-right { animation: slideInRight 0.4s ease both; }
+.slide-in-left { animation: slideInLeft 0.4s ease both; }
+.pop-in { animation: pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.glow { animation: glow 2s ease-in-out infinite; }
+/* 按钮点击微反馈 */
+.btn:active:not(:disabled) { transform: scale(0.96); transition: transform 0.1s; }
+/* 卡片悬浮 */
+.card { transition: box-shadow 0.2s ease, transform 0.2s ease; }
+.card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+/* 链接点击反馈 */
+a { transition: color 0.15s ease; }
+/* 输入框聚焦动画 */
+input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, box-shadow 0.2s ease; }
 
 /* Bottom Nav */
 .bottom-nav {
@@ -3751,7 +3790,17 @@ function navigateTo(page) {
 // Toast
 function showToast(msg, type) {
   var t = document.getElementById('toast');
-  t.textContent = msg;
+  // 防止文本节点累积
+  t.innerHTML = '';
+  var icon = 'ℹ️';
+  if (type === 'error') icon = '❌';
+  else if (type === 'success') icon = '✅';
+  else if (type === 'warn') icon = '⚠️';
+  var iconSpan = document.createElement('span');
+  iconSpan.textContent = icon + ' ';
+  iconSpan.style.marginRight = '6px';
+  t.appendChild(iconSpan);
+  t.appendChild(document.createTextNode(msg));
   t.className = 'toast show';
   if (type === 'error') t.classList.add('error');
   else if (type === 'success') t.classList.add('success');

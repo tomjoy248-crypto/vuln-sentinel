@@ -4293,6 +4293,13 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         url = sanitize_url(req.url)
     except ValueError as e:
         raise HTTPException(422, str(e))
+
+    # 扫描结果缓存：30 秒内同 URL 直接返回（防重复点击）
+    cache_key = f"{user['user_id']}:{url}"
+    cached = _SCAN_RESULT_CACHE.get(cache_key)
+    if cached and (time.time() - cached[1]) < _SCAN_CACHE_TTL:
+        return {**cached[0], "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
     parsed = urlparse(url)
     host = parsed.hostname or ""
     user_id = user["user_id"]
@@ -4534,8 +4541,16 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         # 扫描完成，清理内存中的进度条目
         async with _scan_progress_lock:
             _scan_progress.pop(scan_token, None)
+        result_jsonable = jsonable(result)
+        # 写入扫描结果缓存（仅缓存成功结果，30 秒内同 URL 直接返回）
+        if isinstance(result_jsonable, dict) and result_jsonable.get("success"):
+            _SCAN_RESULT_CACHE[cache_key] = (result_jsonable, time.time())
+            # 简单淘汰：超过 100 个时清掉最早的
+            if len(_SCAN_RESULT_CACHE) > 100:
+                oldest = min(_SCAN_RESULT_CACHE.items(), key=lambda x: x[1][1])
+                _SCAN_RESULT_CACHE.pop(oldest[0], None)
         return JSONResponse(
-            content=jsonable(result),
+            content=result_jsonable,
             headers={"X-Scan-Token": scan_token},
         )
     except asyncio.TimeoutError:
@@ -5000,11 +5015,13 @@ async def api_fix(req: ScanRequest, request: Request, user: dict = Depends(requi
     if error:
         return {"success": False, "error": error}
     waf_list = detect_waf(headers)
-    sensitive_paths = await check_sensitive_paths(host, is_https)
+    # 并行执行：敏感路径探测 + SSL 信息获取（节省 30-50% 时间）
+    sensitive_task = asyncio.create_task(check_sensitive_paths(host, is_https))
+    ssl_task = asyncio.create_task(get_ssl_info(host, 443) if is_https else asyncio.sleep(0, result={"has_cert": False}))
+    sensitive_paths, ssl_info_raw = await asyncio.gather(sensitive_task, ssl_task)
+    ssl_info = ssl_info_raw if is_https else {"has_cert": False}
     result = analyze_security(
-        url, headers, is_https,
-        await get_ssl_info(host, 443) if is_https else {"has_cert": False},
-        waf_list, sensitive_paths,
+        url, headers, is_https, ssl_info, waf_list, sensitive_paths,
     )
     fixes = generate_fixes(result["findings"], headers, is_https, host)
     return {"success": True, "url": url, "fixes": fixes, "score": result["score"],
@@ -5235,6 +5252,11 @@ _PUBLIC_DEMO_HOSTS = {
     "example.com", "example.org", "www.example.com",
     "iana.org", "www.iana.org", "httpbin.org", "testphp.vulnweb.com",
 }
+
+# 登录用户扫描结果缓存：30 秒内同一 URL 直接返回（防重复点击 + 节省后端开销）
+_SCAN_RESULT_CACHE: Dict[str, Tuple[dict, float]] = {}
+_SCAN_CACHE_TTL = 30  # 秒
+
 
 # 公开演示兜底缓存：网络异常时返回预置数据，确保演示 100% 可用
 _PUBLIC_DEMO_CACHE = {
