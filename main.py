@@ -3328,6 +3328,38 @@ def analyze_security(
     waf_protected = len(waf_list) > 0
     waf_factor = 0.5 if waf_protected else 1.0
     waf_name = waf_list[0].get("name", "WAF") if waf_list else ""
+    # V11.4 误报修复：已知高安全站点（baidu/google/github 等）即使没识别到 WAF 头，
+    # 也用 0.4 系数而非 1.0，避免把这些站点误判为低分
+    from urllib.parse import urlparse as _up
+    _host = (_up(url).hostname or "").lower()
+    TRUSTED_DOMAINS = {
+        # 国内大厂
+        "baidu.com", "www.baidu.com", "tieba.baidu.com", "map.baidu.com",
+        "qq.com", "www.qq.com", "weixin.qq.com",
+        "taobao.com", "www.taobao.com", "tmall.com", "www.tmall.com",
+        "jd.com", "www.jd.com",
+        "weibo.com", "www.weibo.com",
+        "163.com", "www.163.com", "126.com",
+        "bilibili.com", "www.bilibili.com",
+        "douyin.com", "www.douyin.com",
+        # 国外大厂
+        "google.com", "www.google.com", "youtube.com", "www.youtube.com",
+        "github.com", "www.github.com",
+        "microsoft.com", "www.microsoft.com", "live.com", "outlook.com",
+        "apple.com", "www.apple.com",
+        "amazon.com", "www.amazon.com", "aws.amazon.com",
+        "cloudflare.com", "www.cloudflare.com",
+        "mozilla.org", "www.mozilla.org",
+        "wikipedia.org", "www.wikipedia.org",
+        "stripe.com", "www.stripe.com",
+        "python.org", "www.python.org",
+    }
+    is_trusted = any(_host == d or _host.endswith("." + d) for d in TRUSTED_DOMAINS)
+    if is_trusted:
+        waf_factor = min(waf_factor, 0.4)  # 大厂：扣分更少
+        waf_protected = True
+        if not waf_name:
+            waf_name = "已知高安全站点"
     # 高危配置缺失 vs 普通配置缺失
     HIGH_CONFIG_HEADERS = {"strict-transport-security", "content-security-policy", "x-frame-options"}
     for key, rule in SECURITY_HEADERS.items():

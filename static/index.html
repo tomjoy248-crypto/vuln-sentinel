@@ -8,6 +8,12 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>漏洞哨兵 V11.4 - 安全扫描</title>
 <style>
+/* 字体：优先使用本地打包的文泉驿微米黑（保证中文显示一致） */
+@font-face {
+  font-family: "WQY MicroHei Local";
+  src: url("/static/fonts/wqy-microhei.ttc") format("truetype-collection");
+  font-weight: normal; font-style: normal; font-display: swap;
+}
 /* CSS Variables */
 :root {
   --primary: #6366f1;
@@ -38,7 +44,7 @@
   --radius-sm: 12px;
   --radius-xs: 8px;
   --nav-height: 70px;
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font: "WQY MicroHei Local", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
   --code-bg: #0f172a;
   --code-color: #e2e8f0;
   --hero-end: #312e81;
@@ -1183,14 +1189,29 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 .ai-chat {
   position: fixed; right: 20px; bottom: 150px; z-index: 998;
-  width: 360px; max-width: 92vw; height: 480px; max-height: 70vh;
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+  width: 380px; max-width: calc(100vw - 24px); height: 520px; max-height: calc(100vh - 180px);
+  background: var(--card) !important; opacity: 1 !important;
+  border: 1px solid var(--border);
+  border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.35);
   display: none; flex-direction: column; overflow: hidden;
   animation: aiChatIn 0.3s ease-out;
 }
 .ai-chat.show { display: flex; }
 @keyframes aiChatIn { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+/* 移动端：全屏、字号加大、消息气泡不透明高对比 */
+@media (max-width: 640px) {
+  .ai-chat {
+    left: 8px; right: 8px; bottom: 8px; top: 8px;
+    width: auto; max-width: none; height: auto; max-height: none;
+    border-radius: 14px;
+  }
+  .ai-msg { font-size: 15px !important; line-height: 1.6 !important; padding: 12px 14px !important; max-width: 90% !important; }
+  .ai-chat-body { padding: 12px !important; gap: 10px; }
+  .ai-chat-header { padding: 16px 18px !important; font-size: 16px !important; }
+  .ai-avatar { width: 40px !important; height: 40px !important; font-size: 20px !important; }
+  .ai-input-area textarea, .ai-input-area input { font-size: 16px !important; min-height: 48px !important; }
+  .ai-input-area button { padding: 0 20px !important; min-height: 48px !important; font-size: 15px !important; }
+}
 .ai-chat-header {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #fff; padding: 14px 16px;
@@ -1211,9 +1232,9 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   display: flex; flex-direction: column; gap: 10px;
   background: var(--bg);
 }
-.ai-msg { max-width: 86%; padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.55; word-break: break-word; }
+.ai-msg { max-width: 86%; padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.55; word-break: break-word; }
 .ai-msg.user { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
-.ai-msg.bot  { align-self: flex-start; background: var(--card); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+.ai-msg.bot  { align-self: flex-start; background: var(--card); color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 .ai-msg pre { background: #0f172a; color: #e2e8f0; padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; font-size: 11px; }
 .ai-msg code { background: rgba(99,102,241,0.12); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 .ai-msg strong { color: var(--primary); }
@@ -2425,17 +2446,17 @@ img[loading="lazy"] { background: var(--border-light); }
           <input id="auth-check" type="checkbox" />
           <span>我已确认拥有该域名或已获得授权进行安全扫描</span>
         </label>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
           <span style="font-size:13px;color:var(--text-secondary)">扫描深度：</span>
-          <div style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">
-            <label style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--primary);color:#fff">
-              <input type="radio" name="scan-depth" value="quick" style="display:none" /> ⚡ 快速
+          <div id="scan-depth-group" style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+            <label class="scan-depth-opt" data-value="quick" style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--bg);color:var(--text);border:none;user-select:none;-webkit-tap-highlight-color:transparent">
+              <input type="radio" name="scan-depth" value="quick" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" /> ⚡ 快速
             </label>
-            <label style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--bg);color:var(--text)">
-              <input type="radio" name="scan-depth" value="standard" style="display:none" checked /> 🔍 标准
+            <label class="scan-depth-opt active" data-value="standard" style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--primary);color:#fff;border:none;user-select:none;-webkit-tap-highlight-color:transparent">
+              <input type="radio" name="scan-depth" value="standard" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" checked /> 🔍 标准
             </label>
-            <label style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--bg);color:var(--text)">
-              <input type="radio" name="scan-depth" value="deep" style="display:none" /> 🔬 深度
+            <label class="scan-depth-opt" data-value="deep" style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--bg);color:var(--text);border:none;user-select:none;-webkit-tap-highlight-color:transparent">
+              <input type="radio" name="scan-depth" value="deep" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" /> 🔬 深度
             </label>
           </div>
           <span id="depth-hint" style="font-size:11px;color:var(--text-secondary);margin-left:4px">约 3-5 秒 · 推荐</span>
@@ -8406,29 +8427,32 @@ document.addEventListener('DOMContentLoaded', function() {
   if (skeleton) skeleton.classList.add('hidden');
   setTimeout(function() { if (skeleton) skeleton.style.display = 'none'; }, 350);
 
-  // 扫描深度档位切换
+  // 扫描深度档位切换 — 通过 .scan-depth-opt 的 click 事件绑定（兼容 iOS + 触屏）
   var depthHints = { quick: '约 1-2 秒 · 仅响应头', standard: '约 3-5 秒 · 推荐', deep: '约 10+ 秒 · 含攻击测试' };
-  document.querySelectorAll('input[name="scan-depth"]').forEach(function(radio) {
-    radio.addEventListener('change', function() {
-      var hint = document.getElementById('depth-hint');
-      if (hint) hint.textContent = depthHints[this.value] || '约 3-5 秒 · 推荐';
+  document.querySelectorAll('.scan-depth-opt').forEach(function(label) {
+    label.addEventListener('click', function(e) {
+      e.preventDefault();
+      var value = this.getAttribute('data-value');
+      // 同步 radio
+      var radio = this.querySelector('input[type="radio"]');
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event('change', { bubbles: true }));
+      }
       // 视觉高亮切换
-      document.querySelectorAll('input[name="scan-depth"]').forEach(function(r) {
-        var label = r.parentElement;
-        if (label) {
-          if (r.checked) {
-            label.style.background = 'var(--primary)';
-            label.style.color = '#fff';
-          } else {
-            label.style.background = 'var(--bg)';
-            label.style.color = 'var(--text)';
-          }
-        }
+      document.querySelectorAll('.scan-depth-opt').forEach(function(l) {
+        l.classList.remove('active');
+        l.style.background = 'var(--bg)';
+        l.style.color = 'var(--text)';
       });
+      this.classList.add('active');
+      this.style.background = 'var(--primary)';
+      this.style.color = '#fff';
+      // 更新 hint
+      var hint = document.getElementById('depth-hint');
+      if (hint) hint.textContent = depthHints[value] || '约 3-5 秒 · 推荐';
     });
   });
-  // 触发一次初始样式
-  document.querySelector('input[name="scan-depth"]:checked') && document.querySelector('input[name="scan-depth"]:checked').dispatchEvent(new Event('change'));
 
   updateProfileStats();
   updateAuthUI();
