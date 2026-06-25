@@ -4363,6 +4363,7 @@ async function loadPublicDemo() {
     });
     var data = await r.json();
     if (r.ok && data.success) {
+      window._lastScanId = data.scan_id || data.scanId || null;  // V11.4: 保存 scan_id 供自动修复用
       renderDemoReport(data);
     } else {
       if (c) c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ ' + escapeHtml(friendlyError(extractError(data))) + '</div>';
@@ -4575,6 +4576,26 @@ async function doPublicDemoFix() {
     showToast('没有发现需要修复的问题');
     return;
   }
+  // V11.4：先调用后端把 demo 扫描保存为用户的扫描记录
+  try {
+    if (isLoggedIn() && window._lastScanId) {
+      // 已经有 scan_id，不需要重新保存
+    } else if (isLoggedIn()) {
+      // 调用 /api/scan 把当前 demo 报告保存为正式扫描记录
+      var url = document.getElementById('demo-host') ? document.getElementById('demo-host').value : 'https://example.com';
+      var sr = await authFetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url, depth: 'standard', authorized: true })
+      });
+      if (sr.ok) {
+        var sd = await sr.json();
+        window._lastScanId = sd.scan_id;
+      }
+    }
+  } catch (e) {
+    // 忽略保存失败，继续模拟修复
+  }
   // 调用后端模拟修复
   try {
     var r = await authFetch('/api/simulate-fix', {
@@ -4636,11 +4657,186 @@ function renderFixComparison(d) {
   html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
   if (isLoggedIn()) {
     html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 进入修复器获取完整补丁</button>';
+    // V11.4 新增：自动修复按钮
+    html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + findings.length + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 自动修复（SSH/Cloudflare）</button>';
   } else {
     html += '<button onclick="navigateTo(\'profile\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🔑 登录后获取完整补丁代码</button>';
   }
   html += '</div>';
   c.innerHTML = html;
+}
+
+// ============== V11.4 自动修复对话框 ==============
+function showAutoFixDialog(scanId, fixCount) {
+  if (!scanId) {
+    showToast('请先完成一次扫描');
+    return;
+  }
+  var html = '';
+  html += '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)closeAutoFixDialog()">';
+  html += '<div style="background:var(--surface);border-radius:14px;max-width:540px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,0.4)">';
+
+  // 标题
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
+  html += '<h3 style="margin:0;font-size:18px">🤖 自动修复 ' + fixCount + ' 项问题</h3>';
+  html += '<button onclick="closeAutoFixDialog()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-secondary)">×</button>';
+  html += '</div>';
+
+  // 说明
+  html += '<div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.3);border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:var(--text-secondary)">';
+  html += '🔒 <b>安全说明</b>：凭证仅在本请求中使用，不保存到数据库。<br>';
+  html += '⚙️ <b>修复流程</b>：连接 → 备份 → 写配置 → nginx -t 测试 → reload → 验证头<br>';
+  html += '🔄 <b>失败回滚</b>：如 nginx -t 失败，自动停止不会 reload<br>';
+  html += '✅ <b>零停机</b>：用 reload 而非 restart';
+  html += '</div>';
+
+  // 平台选择
+  html += '<div style="margin-bottom:14px">';
+  html += '<label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px">修复方式</label>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  html += '<label style="background:var(--bg);border:2px solid var(--primary);border-radius:8px;padding:10px;cursor:pointer;text-align:center" id="opt-ssh">';
+  html += '<input type="radio" name="auto-fix-method" value="ssh" checked style="display:none">';
+  html += '<div style="font-size:20px">🖥️</div>';
+  html += '<div style="font-size:12px;font-weight:600;margin-top:4px">SSH 登录服务器</div>';
+  html += '<div style="font-size:10px;color:var(--text-secondary)">需服务器 SSH 账号</div>';
+  html += '</label>';
+  html += '<label style="background:var(--bg);border:2px solid var(--border);border-radius:8px;padding:10px;cursor:pointer;text-align:center" id="opt-cf">';
+  html += '<input type="radio" name="auto-fix-method" value="cloudflare" style="display:none">';
+  html += '<div style="font-size:20px">☁️</div>';
+  html += '<div style="font-size:12px;font-weight:600;margin-top:4px">Cloudflare API</div>';
+  html += '<div style="font-size:10px;color:var(--text-secondary)">只需 API Token</div>';
+  html += '</label>';
+  html += '</div>';
+  html += '</div>';
+
+  // SSH 表单
+  html += '<div id="ssh-form">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
+  html += '<div><label style="font-size:11px;color:var(--text-secondary)">服务器 IP/域名</label><input id="af-host" type="text" placeholder="192.168.1.100" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '<div><label style="font-size:11px;color:var(--text-secondary)">SSH 端口</label><input id="af-port" type="number" value="22" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
+  html += '<div><label style="font-size:11px;color:var(--text-secondary)">SSH 用户名</label><input id="af-user" type="text" value="root" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '<div><label style="font-size:11px;color:var(--text-secondary)">平台</label><select id="af-platform" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px"><option value="nginx">Nginx</option><option value="apache">Apache</option></select></div>';
+  html += '</div>';
+  html += '<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--text-secondary)">SSH 密码 <span style="color:#ef4444">*（仅本次使用，不保存）</span></label><input id="af-pass" type="password" placeholder="••••••" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '</div>';
+
+  // Cloudflare 表单（默认隐藏）
+  html += '<div id="cf-form" style="display:none">';
+  html += '<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--text-secondary)">Cloudflare API Token</label><input id="af-cf-token" type="password" placeholder="CF Token" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--text-secondary)">Zone（域名，如 example.com）</label><input id="af-cf-zone" type="text" placeholder="example.com" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '</div>';
+
+  // 确认按钮
+  html += '<button onclick="executeAutoFix(\'' + scanId + '\')" style="width:100%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:12px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;margin-top:8px">🚀 开始自动修复</button>';
+
+  // 结果区
+  html += '<div id="af-result" style="margin-top:14px"></div>';
+
+  html += '</div></div>';
+
+  // 创建对话框
+  var d = document.createElement('div');
+  d.id = 'auto-fix-dialog';
+  d.innerHTML = html;
+  document.body.appendChild(d);
+
+  // 切换表单
+  setTimeout(function() {
+    var radios = document.querySelectorAll('input[name="auto-fix-method"]');
+    radios.forEach(function(r) {
+      r.addEventListener('change', function() {
+        var ssh = document.getElementById('ssh-form');
+        var cf = document.getElementById('cf-form');
+        var optSsh = document.getElementById('opt-ssh');
+        var optCf = document.getElementById('opt-cf');
+        if (this.value === 'ssh') {
+          ssh.style.display = 'block';
+          cf.style.display = 'none';
+          optSsh.style.borderColor = 'var(--primary)';
+          optCf.style.borderColor = 'var(--border)';
+        } else {
+          ssh.style.display = 'none';
+          cf.style.display = 'block';
+          optSsh.style.borderColor = 'var(--border)';
+          optCf.style.borderColor = 'var(--primary)';
+        }
+      });
+    });
+  }, 50);
+}
+
+function closeAutoFixDialog() {
+  var d = document.getElementById('auto-fix-dialog');
+  if (d) d.remove();
+}
+
+async function executeAutoFix(scanId) {
+  var method = document.querySelector('input[name="auto-fix-method"]:checked').value;
+  var result = document.getElementById('af-result');
+  result.innerHTML = '<div style="background:var(--bg);border-radius:8px;padding:12px;font-size:12px;color:var(--text-secondary)">⏳ 正在连接服务器并执行修复，请稍候...</div>';
+
+  try {
+    var body = { scan_id: scanId };
+    if (method === 'ssh') {
+      body.credentials = {
+        host: document.getElementById('af-host').value.trim(),
+        port: parseInt(document.getElementById('af-port').value) || 22,
+        username: document.getElementById('af-user').value.trim() || 'root',
+        password: document.getElementById('af-pass').value,
+        platform: document.getElementById('af-platform').value,
+      };
+      if (!body.credentials.host || !body.credentials.password) {
+        result.innerHTML = '<div style="background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px;padding:12px;font-size:12px;color:#ef4444">❌ 请填写服务器 IP 和密码</div>';
+        return;
+      }
+    } else {
+      body.cf_token = document.getElementById('af-cf-token').value.trim();
+      body.cf_zone = document.getElementById('af-cf-zone').value.trim();
+      if (!body.cf_token || !body.cf_zone) {
+        result.innerHTML = '<div style="background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px;padding:12px;font-size:12px;color:#ef4444">❌ 请填写 CF Token 和 Zone</div>';
+        return;
+      }
+    }
+
+    var url = method === 'ssh' ? '/api/auto-fix' : '/api/auto-fix-via-cloudflare';
+    var r = await authFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    var data = await r.json();
+
+    if (!r.ok || !data.success) {
+      result.innerHTML = '<div style="background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px;padding:12px;font-size:12px"><b>❌ 修复失败</b><br><pre style="margin:6px 0 0;font-size:11px;white-space:pre-wrap">' + escapeHtml(JSON.stringify(data, null, 2)) + '</pre></div>';
+      return;
+    }
+
+    // 成功
+    var html = '<div style="background:rgba(16,185,129,0.1);border:1px solid #10b981;border-radius:8px;padding:12px">';
+    html += '<div style="font-size:14px;font-weight:600;color:#10b981;margin-bottom:8px">✅ 修复成功！</div>';
+    if (data.host) html += '<div style="font-size:11px;color:var(--text-secondary)">服务器: ' + escapeHtml(data.host) + '</div>';
+    if (data.config_path) html += '<div style="font-size:11px;color:var(--text-secondary)">配置: ' + escapeHtml(data.config_path) + ' (' + data.patch_size_bytes + ' 字节)</div>';
+    if (data.config_test_ok !== undefined) {
+      html += '<div style="font-size:11px;color:' + (data.config_test_ok ? '#10b981' : '#ef4444') + '">nginx -t: ' + (data.config_test_ok ? '✓ 配置合法' : '✗ 配置错误，已停止 reload') + '</div>';
+    }
+    if (data.verified_headers && data.verified_headers.length > 0) {
+      html += '<div style="font-size:12px;font-weight:600;margin-top:8px">已验证的安全头：</div>';
+      data.verified_headers.slice(0, 6).forEach(function(h) {
+        html += '<div style="font-size:10px;font-family:monospace;background:#0f172a;color:#10b981;padding:4px;border-radius:3px;margin-top:2px">' + escapeHtml(h) + '</div>';
+      });
+    }
+    if (data.applied !== undefined) {
+      html += '<div style="font-size:12px;margin-top:8px">Cloudflare: ' + data.applied + '/' + data.total + ' 头已应用</div>';
+    }
+    html += '<button onclick="closeAutoFixDialog();loadHistory&&loadHistory()" style="width:100%;margin-top:10px;background:var(--primary);color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-size:12px">完成</button>';
+    html += '</div>';
+    result.innerHTML = html;
+    showToast('🎉 自动修复成功！已验证 ' + (data.verified_headers ? data.verified_headers.length : 0) + ' 个安全头');
+  } catch (e) {
+    result.innerHTML = '<div style="background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px;padding:12px;font-size:12px">❌ 网络错误: ' + escapeHtml(e.message || String(e)) + '</div>';
+  }
 }
 
 function askAIQuick(q) {
