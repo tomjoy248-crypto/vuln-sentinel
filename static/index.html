@@ -2271,10 +2271,19 @@ img[loading="lazy"] { background: var(--border-light); }
           <span>我已确认拥有该域名或已获得授权进行安全扫描</span>
         </label>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary);cursor:pointer">
-            <input id="deep-scan-check" type="checkbox" style="width:16px;height:16px;accent-color:var(--primary)" />
-            深度扫描（爬取页面 + XSS/SQLi 注入测试）
-          </label>
+          <span style="font-size:13px;color:var(--text-secondary)">扫描深度：</span>
+          <div style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+            <label style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--primary);color:#fff">
+              <input type="radio" name="scan-depth" value="quick" style="display:none" /> ⚡ 快速
+            </label>
+            <label style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--bg);color:var(--text)">
+              <input type="radio" name="scan-depth" value="standard" style="display:none" checked /> 🔍 标准
+            </label>
+            <label style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--bg);color:var(--text)">
+              <input type="radio" name="scan-depth" value="deep" style="display:none" /> 🔬 深度
+            </label>
+          </div>
+          <span id="depth-hint" style="font-size:11px;color:var(--text-secondary);margin-left:4px">约 3-5 秒 · 推荐</span>
         </div>
         <button class="scan-btn" id="scan-btn" onclick="startScan()" disabled>开始安全扫描</button>
       </div>
@@ -5459,7 +5468,8 @@ function startScan() {
     '<div id="scan-progress-text" style="font-size:12px;color:var(--text-lighter)">正在初始化扫描引擎...</div>' +
     '</div>';
   document.getElementById('result-content').innerHTML = progressHtml;
-  var deepScan = document.getElementById('deep-scan-check') ? document.getElementById('deep-scan-check').checked : false;
+  var scanDepth = (document.querySelector('input[name="scan-depth"]:checked') || {}).value || 'standard';
+  var deepScan = scanDepth === 'deep';
   startRealScan(url, host, deepScan);
 }
 
@@ -5480,7 +5490,7 @@ function startRealScan(url, host, deepScan) {
   // Try /api/scan
   authFetch('/api/scan', {
     method: 'POST',
-    body: JSON.stringify({ url: url, deep: deepScan, authorized: true })
+    body: JSON.stringify({ url: url, depth: scanDepth, authorized: true })
   }).then(function(resp) {
     clearTimeout(timeoutId);
     if (!resp.ok) throw new Error('API 返回 ' + resp.status);
@@ -5752,7 +5762,8 @@ function retryScan() {
     '</div>' +
     '<style>@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}</style>';
   container.innerHTML = progressHtml;
-  var deepScan = document.getElementById('deep-scan-check') ? document.getElementById('deep-scan-check').checked : false;
+  var scanDepth = (document.querySelector('input[name="scan-depth"]:checked') || {}).value || 'standard';
+  var deepScan = scanDepth === 'deep';
   startRealScan(url, host, deepScan);
 }
 
@@ -7664,6 +7675,30 @@ document.addEventListener('DOMContentLoaded', function() {
   var skeleton = safeGetElement('skeleton-screen');
   if (skeleton) skeleton.classList.add('hidden');
   setTimeout(function() { if (skeleton) skeleton.style.display = 'none'; }, 350);
+
+  // 扫描深度档位切换
+  var depthHints = { quick: '约 1-2 秒 · 仅响应头', standard: '约 3-5 秒 · 推荐', deep: '约 10+ 秒 · 含攻击测试' };
+  document.querySelectorAll('input[name="scan-depth"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      var hint = document.getElementById('depth-hint');
+      if (hint) hint.textContent = depthHints[this.value] || '约 3-5 秒 · 推荐';
+      // 视觉高亮切换
+      document.querySelectorAll('input[name="scan-depth"]').forEach(function(r) {
+        var label = r.parentElement;
+        if (label) {
+          if (r.checked) {
+            label.style.background = 'var(--primary)';
+            label.style.color = '#fff';
+          } else {
+            label.style.background = 'var(--bg)';
+            label.style.color = 'var(--text)';
+          }
+        }
+      });
+    });
+  });
+  // 触发一次初始样式
+  document.querySelector('input[name="scan-depth"]:checked') && document.querySelector('input[name="scan-depth"]:checked').dispatchEvent(new Event('change'));
 
   updateProfileStats();
   updateAuthUI();

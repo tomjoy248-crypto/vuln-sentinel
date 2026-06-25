@@ -379,6 +379,9 @@ def sanitize_password(value: str) -> str:
 
 class ScanRequest(BaseModel):
     url: str
+    # 扫描深度: "quick" | "standard" | "deep"（默认 standard）
+    depth: str = "standard"
+    # 兼容旧 API
     deep: bool = False
     authorized: bool = False  # 用户是否确认有权扫描该目标
 
@@ -386,6 +389,13 @@ class ScanRequest(BaseModel):
     @classmethod
     def validate_url(cls, v: str) -> str:
         return sanitize_url(v)
+
+    @field_validator("depth")
+    @classmethod
+    def validate_depth(cls, v: str) -> str:
+        if v not in ("quick", "standard", "deep"):
+            return "standard"
+        return v
 
 
 class VerifyFixRequest(BaseModel):
@@ -4381,7 +4391,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 waf_detected=False, raw_headers={},
                 error="请先确认您有权扫描该目标（authorized: true）",
             )
-        if req.deep:
+        if req.deep or req.depth == "deep":
             conn = get_db()
             verified = conn.execute(
                 "SELECT id FROM domain_verifications WHERE user_id=? AND domain=? AND status='verified'",
@@ -4468,28 +4478,65 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         # 修复：让 SSL 解析和敏感路径扫描同时进行，节省 1-2s
         waf_list = detect_waf(headers)
         await _update(5, "done")
-        await _update(4, "running")
-        # 并发：SSL 检查 + 敏感路径扫描
-        from urllib.parse import urlparse as _urlparse
-        port_443 = 443 if is_https else 0
-        ssl_task = asyncio.create_task(get_ssl_info(_urlparse(url).hostname or host, port_443) if is_https else asyncio.sleep(0, result={"has_cert": False}))
-        sensitive_task = asyncio.create_task(check_sensitive_paths(host, is_https))
-        try:
-            ssl_info, sensitive_paths = await asyncio.wait_for(
-                asyncio.gather(ssl_task, sensitive_task, return_exceptions=True),
-                timeout=8.0,
-            )
-            if isinstance(ssl_info, Exception):
-                ssl_info = {"has_cert": False}
-            if isinstance(sensitive_paths, Exception):
-                sensitive_paths = []
-        except asyncio.TimeoutError:
-            ssl_info = {"has_cert": False}
-            sensitive_paths = []
-        await _update(4, "done")
-        await _update(6, "running")
+        # 计算扫描档位（兼容旧版 deep 字段）
+        depth = req.depth if req.depth in ("quick", "standard", "deep") else "deep" if req.deep else "standard"
+        ssl_info, sensitive_paths = {"has_cert": False}, []
         crawled_pages, vuln_tests, vuln_findings = [], [], []
-        if req.deep:
+        if depth == "quick":
+            # Quick 模式：只做响应头 + WAF 检测，跳过 SSL 和敏感路径（1-2 秒）
+            await _update(2, "done")
+            await _update(3, "skip")
+            await _update(4, "skip")
+            await _update(5, "done")
+            await _update(6, "skip")
+        elif depth == "standard":
+            # Standard 模式：标准扫描（3-5 秒）
+            await _update(2, "done")
+            await _update(4, "running")
+            # 并发：SSL 检查 + 敏感路径扫描
+            from urllib.parse import urlparse as _urlparse
+            port_443 = 443 if is_https else 0
+            ssl_task = asyncio.create_task(get_ssl_info(_urlparse(url).hostname or host, port_443) if is_https else asyncio.sleep(0, result={"has_cert": False}))
+            sensitive_task = asyncio.create_task(check_sensitive_paths(host, is_https))
+            try:
+                ssl_info, sensitive_paths = await asyncio.wait_for(
+                    asyncio.gather(ssl_task, sensitive_task, return_exceptions=True),
+                    timeout=8.0,
+                )
+                if isinstance(ssl_info, Exception):
+                    ssl_info = {"has_cert": False}
+                if isinstance(sensitive_paths, Exception):
+                    sensitive_paths = []
+            except asyncio.TimeoutError:
+                ssl_info = {"has_cert": False}
+                sensitive_paths = []
+            waf_list = detect_waf(headers)
+            await _update(4, "done")
+            await _update(5, "done")
+            await _update(6, "skip")
+        else:
+            # Deep 模式：标准 + 爬虫 + 攻击测试（10+ 秒，需要域名验证）
+            await _update(2, "done")
+            await _update(4, "running")
+            from urllib.parse import urlparse as _urlparse
+            port_443 = 443 if is_https else 0
+            ssl_task = asyncio.create_task(get_ssl_info(_urlparse(url).hostname or host, port_443) if is_https else asyncio.sleep(0, result={"has_cert": False}))
+            sensitive_task = asyncio.create_task(check_sensitive_paths(host, is_https))
+            try:
+                ssl_info, sensitive_paths = await asyncio.wait_for(
+                    asyncio.gather(ssl_task, sensitive_task, return_exceptions=True),
+                    timeout=8.0,
+                )
+                if isinstance(ssl_info, Exception):
+                    ssl_info = {"has_cert": False}
+                if isinstance(sensitive_paths, Exception):
+                    sensitive_paths = []
+            except asyncio.TimeoutError:
+                ssl_info = {"has_cert": False}
+                sensitive_paths = []
+            await _update(4, "done")
+            await _update(5, "done")
+            await _update(6, "running")
             try:
                 crawled_pages = await crawl_site(url, settings.max_crawl_pages)
             except Exception as _ce:
@@ -4516,7 +4563,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             user_id, url, result["score"], result["risk_level"],
             result["findings"], result["summary"],
             len(crawled_pages) if crawled_pages else 0,
-            "deep" if req.deep else "real",
+            depth,
         )
         # 自动为 high/critical finding 创建修复工单
         try:
