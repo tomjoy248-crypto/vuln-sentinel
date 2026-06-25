@@ -78,9 +78,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_title: str = "漏洞哨兵 V11.4"
-    app_version: str = "11.4"
-    build_time: str = "2026-06-22"
+    app_title: str = "漏洞哨兵 V11.5"
+    app_version: str = "11.5"
+    build_time: str = "2026-06-25"
     port: int = 8000
     host: str = "0.0.0.0"
     env: str = "development"  # development / production
@@ -1621,7 +1621,7 @@ def _create_client() -> None:
         verify=_verify,
         timeout=settings.scan_timeout,
         follow_redirects=True,
-        headers={"User-Agent": "VulnSentinel/11.4"},
+        headers={"User-Agent": "VulnSentinel/11.5"},
         limits=httpx.Limits(
             max_connections=50,
             max_keepalive_connections=10,
@@ -5296,7 +5296,7 @@ def _generate_fix_patch(findings: list, platform: str = "nginx") -> str:
         lines = [
             "",
             "# ============================================",
-            "# 漏洞哨兵 V11.4 自动应用的安全头",
+            "# 漏洞哨兵 V11.5 自动应用的安全头",
             f"# 应用时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
             f"# 修复项数: {len(findings)}",
             "# ============================================",

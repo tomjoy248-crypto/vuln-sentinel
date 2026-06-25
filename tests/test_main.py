@@ -249,8 +249,8 @@ def test_version():
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
-    assert body["version"] == "11.4"
-    assert "V11.4" in body["title"]
+    assert body["version"] == "11.5"
+    assert "V11.5" in body["title"]
 
 
 # ============== Frontend asset ==============
