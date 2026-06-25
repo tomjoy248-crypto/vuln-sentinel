@@ -1606,17 +1606,17 @@ def get_httpx_client() -> httpx.AsyncClient:
 
 def _create_client() -> None:
     global _httpx_client
-    # V11.4 修改：默认关闭 TLS 验证（因为很多真实站证书有问题，
-    # 严格校验会让工具"无法扫描"，扫描的目标是安全配置而非证书本身）
-    _raw = os.environ.get("TLS_VERIFY", "false").strip().lower()
+    # V11.5：默认开启 TLS 验证（安全产品必须优先保证通信安全）
+    # 用户可显式设置 TLS_VERIFY=false 启用"不安全兼容模式"
+    _raw = os.environ.get("TLS_VERIFY", "true").strip().lower()
     if _raw in ("0", "false", "no", "off"):
         _verify = False
+        logger.warning(
+            "TLS_VERIFY is disabled; running in insecure compatibility mode. "
+            "Results should be marked as diagnostic-only."
+        )
     else:
         _verify = True
-    if not _verify:
-        logger.warning(
-            "TLS_VERIFY is disabled; only allowed for ALLOWED_INTERNAL_HOSTS targets"
-        )
     _httpx_client = httpx.AsyncClient(
         verify=_verify,
         timeout=settings.scan_timeout,
@@ -1945,20 +1945,24 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
         elif last_err == "PROTOCOL_ERROR":
             error = "协议错误，目标可能不支持 HTTPS 或使用了非标准端口"
         elif last_err and last_err.startswith("SSL_ERROR:"):
-            # V11.4：SSL 错误时尝试不验证证书再试一次（不要直接返回失败）
-            try:
-                resp = await asyncio.wait_for(
-                    client.get(url, follow_redirects=False, verify=False),
-                    timeout=12.0,
-                )
-                h = dict(resp.headers)
-                h["_status_code"] = resp.status_code
-                headers, err = classify_status(resp.status_code, h)
-                if err is None:
-                    return headers, is_https, final_url, None
-                return h, is_https, final_url, err
-            except Exception:
-                error = "该网站的 SSL 证书存在问题，建议在浏览器中先确认可访问"
+            # V11.5：SSL 错误时，仅在用户显式关闭 TLS 验证后才允许跳过证书检查
+            _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
+            if _tls_off:
+                try:
+                    resp = await asyncio.wait_for(
+                        client.get(url, follow_redirects=False, verify=False),
+                        timeout=12.0,
+                    )
+                    h = dict(resp.headers)
+                    h["_status_code"] = resp.status_code
+                    headers, err = classify_status(resp.status_code, h)
+                    if err is None:
+                        return headers, is_https, final_url, None
+                    return h, is_https, final_url, err
+                except Exception:
+                    error = "该网站的 SSL 证书存在问题，建议在浏览器中先确认可访问"
+            else:
+                error = "该网站的 SSL 证书验证失败。如需跳过验证，请在 .env 中设置 TLS_VERIFY=false（诊断模式）"
         elif last_err and last_err.startswith("REQUEST_FAIL:"):
             error = f"请求失败: {last_err[13:]}"
         else:
@@ -3209,6 +3213,14 @@ async def cross_validate_findings(
     return result
 
 
+def _confidence_level_from_int(c: int) -> str:
+    if c >= 80:
+        return "高"
+    elif c >= 50:
+        return "中"
+    return "低"
+
+
 def add_finding(
     findings: List[dict],
     name: str,
@@ -3221,6 +3233,7 @@ def add_finding(
     verify_key: Optional[str] = None,
     verified: Optional[bool] = None,
     confidence: Optional[int] = None,
+    confidence_level: Optional[str] = None,
     cv_reason: Optional[str] = None,
 ) -> None:
     finding: Dict[str, Any] = {
@@ -3235,11 +3248,19 @@ def add_finding(
         "evidence": evidence or {},
         "verify_method": VERIFY_METHODS.get(verify_key, "重新扫描该网站，查看此项是否消失"),
     }
-    # V11.4：交叉验证字段（可选）
+    # V11.5：置信度（高/中/低）
+    if confidence_level is not None:
+        finding["confidence_level"] = confidence_level
+    elif confidence is not None:
+        finding["confidence_level"] = _confidence_level_from_int(confidence)
+        finding["confidence"] = confidence
+    else:
+        finding["confidence_level"] = "高"  # 默认高置信度
+    if confidence is not None and "confidence" not in finding:
+        finding["confidence"] = confidence
+    # V11.5：交叉验证字段（可选）
     if verified is not None:
         finding["verified"] = verified
-    if confidence is not None:
-        finding["confidence"] = confidence
     if cv_reason is not None:
         finding["cv_reason"] = cv_reason
     findings.append(finding)
@@ -3287,7 +3308,7 @@ def analyze_security(
         add_finding(findings, "未启用 HTTPS", "high", "A02 加密机制失效",
                     "网站使用 HTTP 明文传输。", "申请 SSL 证书并启用 HTTPS 强制跳转。",
                     evidence={"detected": False, "reason": "网站使用 HTTP 明文传输所有数据", "impact": "用户数据可被中间人窃取"},
-                    verify_key="https")
+                    verify_key="https", confidence_level="高")
         owasp.append({"category": "A02 加密机制失效", "status": "高风险", "note": "未启用 HTTPS"})
     else:
         owasp.append({"category": "A02 加密机制失效", "status": "通过", "note": "已启用 HTTPS"})
@@ -3300,19 +3321,19 @@ def analyze_security(
                             "SSL 证书已过期" + (f" {abs(dl)} 天" if dl_is_num else "（无法获取剩余天数）") + "。",
                             "立即续期 SSL 证书。",
                             evidence={"days_left": dl, "reason": "证书已过期，浏览器会显示安全警告", "impact": "用户无法正常访问，数据传输不受信任"},
-                            verify_key="ssl")
+                            verify_key="ssl", confidence_level="高")
             elif dl_is_num and dl < 30:
                 deduct("SSL 证书即将过期", 5, "medium", f"证书将在 {dl} 天后过期")
                 add_finding(findings, "SSL 证书即将过期", "medium", "A02 加密机制失效",
                             f"SSL 证书将在 {dl} 天后过期。",
                             "提前续期 SSL 证书。",
-                            verify_key="ssl")
+                            verify_key="ssl", confidence_level="高")
             if ssl_info.get("weak"):
                 deduct("弱 SSL/TLS 配置", 10, "medium", f"使用 {ssl_info.get('version', '')} / {ssl_info.get('cipher', '')}")
                 add_finding(findings, "弱 SSL/TLS 配置", "medium", "A02 加密机制失效",
                             "使用 " + ssl_info.get("version", "") + " / " + ssl_info.get("cipher", "") + "。",
                             "升级到 TLS 1.2+，禁用弱密码套件。",
-                            verify_key="ssl")
+                            verify_key="ssl", confidence_level="高")
 
     # 安全头缺失检测，verify_key 根据具体头名
     HEADER_VERIFY_KEY = {
@@ -3323,43 +3344,10 @@ def analyze_security(
         "referrer-policy": "referrer",
         "permissions-policy": "permissions",
     }
-    # WAF 保护站点：响应头缺失不计入"漏洞"，仅作为"建议"
-    # 原因：大厂用 WAF 做应用层防护，缺响应头不代表有漏洞
+    # V11.5：WAF 只作为"纵深防御能力"单独展示，不消除真实缺失项
+    # Trusted Domains 白名单已移除：不能以"知名"为由自动判定安全
     waf_protected = len(waf_list) > 0
-    waf_factor = 0.5 if waf_protected else 1.0
     waf_name = waf_list[0].get("name", "WAF") if waf_list else ""
-    # V11.4 误报修复：已知高安全站点（baidu/google/github 等）即使没识别到 WAF 头，
-    # 也用 0.4 系数而非 1.0，避免把这些站点误判为低分
-    from urllib.parse import urlparse as _up
-    _host = (_up(url).hostname or "").lower()
-    TRUSTED_DOMAINS = {
-        # 国内大厂
-        "baidu.com", "www.baidu.com", "tieba.baidu.com", "map.baidu.com",
-        "qq.com", "www.qq.com", "weixin.qq.com",
-        "taobao.com", "www.taobao.com", "tmall.com", "www.tmall.com",
-        "jd.com", "www.jd.com",
-        "weibo.com", "www.weibo.com",
-        "163.com", "www.163.com", "126.com",
-        "bilibili.com", "www.bilibili.com",
-        "douyin.com", "www.douyin.com",
-        # 国外大厂
-        "google.com", "www.google.com", "youtube.com", "www.youtube.com",
-        "github.com", "www.github.com",
-        "microsoft.com", "www.microsoft.com", "live.com", "outlook.com",
-        "apple.com", "www.apple.com",
-        "amazon.com", "www.amazon.com", "aws.amazon.com",
-        "cloudflare.com", "www.cloudflare.com",
-        "mozilla.org", "www.mozilla.org",
-        "wikipedia.org", "www.wikipedia.org",
-        "stripe.com", "www.stripe.com",
-        "python.org", "www.python.org",
-    }
-    is_trusted = any(_host == d or _host.endswith("." + d) for d in TRUSTED_DOMAINS)
-    if is_trusted:
-        waf_factor = min(waf_factor, 0.4)  # 大厂：扣分更少
-        waf_protected = True
-        if not waf_name:
-            waf_name = "已知高安全站点"
     # 高危配置缺失 vs 普通配置缺失
     HIGH_CONFIG_HEADERS = {"strict-transport-security", "content-security-policy", "x-frame-options"}
     for key, rule in SECURITY_HEADERS.items():
@@ -3370,39 +3358,33 @@ def analyze_security(
             "category": rule["category"], "severity": rule["severity"],
         })
         if not value:
-            # WAF 站点：响应头缺失不扣分、不计 finding（专业 WAF 已覆盖防护）
-            # 普通站点：按规则扣分 + finding
-            if not waf_protected:
-                if key in HIGH_CONFIG_HEADERS:
-                    points = int(SCORE_DEDUCTION["high_config_missing"] * waf_factor)
-                else:
-                    points = int(SCORE_DEDUCTION["normal_config_missing"] * waf_factor)
-                deduct("缺少 " + rule["name"], points, rule["severity"], rule["description"])
-                add_finding(findings, "缺少 " + rule["name"], rule["severity"],
-                            "A05 安全配置错误", rule["description"] + "。", rule["fix"],
-                            evidence={"detected": False, "header": key, "reason": f"未检测到 {rule['name']} 响应头", "impact": rule.get("description", "")},
-                            verify_key=HEADER_VERIFY_KEY.get(key, "info"))
+            # V11.5：所有站点统一扣分 + finding，WAF 不消除真实缺失项
+            if key in HIGH_CONFIG_HEADERS:
+                points = SCORE_DEDUCTION["high_config_missing"]
             else:
-                # WAF 站点：仅记录到 header_details，提示性建议
-                header_details.append({
-                    "name": rule["name"] + " (WAF已覆盖)", "key": key, "value": value,
-                    "status": "suggested", "category": rule["category"], "severity": "info",
-                })
+                points = SCORE_DEDUCTION["normal_config_missing"]
+            # WAF 站点：置信度降低（WAF 提供部分防御，但不能替代安全头）
+            conf_level = "中" if waf_protected else "高"
+            deduct("缺少 " + rule["name"], points, rule["severity"], rule["description"])
+            add_finding(findings, "缺少 " + rule["name"], rule["severity"],
+                        "A05 安全配置错误", rule["description"] + "。", rule["fix"],
+                        evidence={"detected": False, "header": key, "reason": f"未检测到 {rule['name']} 响应头", "impact": rule.get("description", "")},
+                        verify_key=HEADER_VERIFY_KEY.get(key, "info"),
+                        confidence_level=conf_level)
 
     info_leaks: List[dict] = []
     for key in ["server", "x-powered-by"]:
         value = headers.get(key, headers.get(key.title(), None))
         if value:
             info_leaks.append({"name": key.title(), "value": value})
-            # WAF 站点：Server 头就是 WAF 名称（cloudflare/bfe/aws），不算泄露
-            # 只有暴露具体软件版本（nginx/1.18.0、Apache/2.4）才算泄露
+            # V11.5：WAF 标识头不算泄露，但其它情况仍报告
             is_waf_signature = any(
                 w.get("value", "").lower() in value.lower() or value.lower() in w.get("value", "").lower()
                 for w in waf_list
             )
             has_version = bool(re.search(r'\d+\.\d+', value))  # 包含版本号
-            if is_waf_signature or waf_protected:
-                # WAF 站点：Server 头是 WAF 标识，不扣分不计 finding
+            if is_waf_signature:
+                # WAF 标识头，不算泄露
                 pass
             elif has_version:
                 # 暴露了具体版本（nginx/1.18.0 等），扣分 + finding
@@ -3410,7 +3392,7 @@ def analyze_security(
                 add_finding(findings, key.title() + " 信息泄露", "low", "A05 安全配置错误",
                             "暴露服务器信息: " + value[:50], "隐藏或修改 " + key.title() + " 头。",
                             evidence={"header": key.title(), "value": value[:50], "reason": "暴露了服务器软件和版本信息", "impact": "攻击者可利用已知版本漏洞"},
-                            verify_key="server")
+                            verify_key="server", confidence_level="高")
             else:
                 # 未暴露版本号（如 "Server: nginx"），不扣分但提示
                 info_leaks.append({"name": key.title() + " (无版本)", "value": value})
@@ -3449,7 +3431,7 @@ def analyze_security(
                         "Cookie 问题: " + "; ".join(cookie_issues),
                         fix_text,
                         evidence={"missing_flags": cookie_issues[:], "reason": "Cookie 安全配置不当", "impact": "Cookie 可被窃取、篡改或用于 CSRF 攻击"},
-                        verify_key="cookie")
+                        verify_key="cookie", confidence_level="高")
 
     cors = headers.get("access-control-allow-origin", headers.get("Access-Control-Allow-Origin", None))
     cors_details = None
@@ -3459,7 +3441,7 @@ def analyze_security(
             add_finding(findings, "CORS 通配符", "medium", "A01 访问控制失效",
                         'Access-Control-Allow-Origin 设置为 "*"。', "限制为可信域名。",
                         evidence={"value": "*", "reason": "允许任何域名跨域访问", "impact": "敏感数据可被恶意网站读取"},
-                        verify_key="cors")
+                        verify_key="cors", confidence_level="高")
             cors_details = {"value": "*", "risk": "高风险"}
         else:
             cors_details = {"value": cors, "risk": "低风险"}
@@ -3472,7 +3454,7 @@ def analyze_security(
                     "发现 " + str(len(exposed)) + " 个敏感路径可访问: " + ", ".join([p["path"] for p in exposed[:3]]),
                     "限制敏感路径访问或移除。",
                     evidence={"paths": [p["path"] for p in exposed[:5]], "reason": f"发现 {len(exposed)} 个敏感路径可访问", "impact": "攻击者可获取配置文件、源代码等敏感信息"},
-                    verify_key="info")
+                    verify_key="info", confidence_level="高")
     # info 路径（如 robots.txt）不算漏洞，只作为信息提示，不扣分
     info_paths = [p for p in sensitive_paths if p.get("info")]
     # suspect 路径：前端展示警告，但不扣分
@@ -3483,6 +3465,7 @@ def analyze_security(
 
     if vuln_findings:
         for v in vuln_findings:
+            v["confidence_level"] = v.get("confidence_level", "高")
             findings.append(v)
             sev = v.get("severity", "high")
             if sev == "critical":
@@ -3518,10 +3501,15 @@ def analyze_security(
         if cat not in owasp_map:
             owasp.append({"category": cat, "status": status, "note": note})
     owasp.sort(key=lambda x: int(x["category"][1:3]))
-    # WAF 保护的知名大厂可以得 100 分（专业防护已覆盖）
-    # 普通站点最高 98 分（总有些边角配置问题）
-    max_score = 100 if waf_protected else 98
-    score = max(10, min(max_score, score))
+    # V11.5：WAF 作为纵深防御能力，最多 +3 分奖励，不覆盖真实缺失项
+    waf_bonus = 0
+    if waf_protected:
+        waf_bonus = 2
+        real_waf_names = {"aliyun", "imperva", "akamai"}
+        if any(w.get("name", "").lower() in real_waf_names for w in waf_list):
+            waf_bonus = 3
+    score = score + waf_bonus
+    score = max(10, min(100, score))
     risk_level = "高风险" if score < 50 else "中风险" if score < 75 else "低风险"
     improvements: List[str] = []
     for f in findings:
@@ -3562,6 +3550,12 @@ def analyze_security(
                         restricted_reason = f"响应头检测到反爬/WAF 特征（{sign}），目标站点限制自动化访问。"
                         restricted_code = "ANTI_BOT"
                     break
+
+    # V11.5：受限扫描时所有发现标记为"证据不足"（低置信度）
+    if restricted:
+        for f in findings:
+            f["confidence_level"] = "低"
+            f["confidence"] = 40
 
     return {
         "score": score,
@@ -6017,7 +6011,9 @@ async def _call_llm(messages: list) -> str:
         "temperature": 0.3,
         "max_tokens": 600,
     }
-    async with httpx.AsyncClient(timeout=settings.llm_timeout, verify=False) as client:
+    # V11.5：LLM 请求也尊重 TLS_VERIFY 设置
+    _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
+    async with httpx.AsyncClient(timeout=settings.llm_timeout, verify=not _tls_off) as client:
         resp = await client.post(url, headers=headers, json=payload)
     if resp.status_code >= 400:
         raise RuntimeError(f"LLM {resp.status_code}: {resp.text[:200]}")
@@ -7874,6 +7870,12 @@ async def public_demo_scan(req: PublicDemoRequest, request: Request):
             import logging
             logging.getLogger("vuln_sentinel").warning("demo scan save wrapper: " + str(e)[:100])
 
+        # V11.5：确保 scan_id 始终存在（未登录用户用负 ID 表示 demo 模式）
+        if "scan_id" not in result:
+            result["scan_id"] = -abs(hash(raw_url + str(datetime.now().timestamp()))) % 1000000
+        # V11.5：标记是否使用了 TLS 验证跳过模式
+        _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
+        result["tls_verify_skipped"] = _tls_off
         return {
             "success": True, "scan_type": "real", "url": raw_url,
             "final_url": final_url, "is_https": is_https, "raw_headers": headers,

@@ -6664,6 +6664,13 @@ function renderResult(data) {
     html += '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700">&#x1F50D; 真实扫描</span>';
   }
   html += '</div>';
+  // TLS 验证跳过警告
+  if (data.tls_verify_skipped) {
+    html += '<div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#ef4444;line-height:1.6">';
+    html += '<strong>&#x26A0; 诊断模式</strong><br/>';
+    html += '当前扫描跳过了 TLS 证书验证，结果仅供诊断参考。生产环境建议开启 TLS_VERIFY=true。';
+    html += '</div>';
+  }
   // 受限扫描专业提示
   if (data.restricted) {
     html += '<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:10px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#f59e0b;line-height:1.6">';
@@ -6981,18 +6988,25 @@ function renderResult(data) {
       }
       html += '</div>';
     }
-    // V11.4+ 置信度 + 误报反馈行
+    // V11.5 置信度（高/中/低）+ 误报反馈行
+    var confLevel = f.confidence_level || '';
     var conf = (typeof f.confidence === 'number') ? f.confidence : null;
     var cvReason = f.cv_reason || '';
     var confClassName = 'finding-confidence';
-    if (conf !== null) {
+    // 优先用 confidence_level 映射样式
+    if (confLevel === '高') confClassName += ' high';
+    else if (confLevel === '中') confClassName += ' medium';
+    else if (confLevel === '低') confClassName += ' low';
+    else if (conf !== null) {
       if (conf >= 80) confClassName += ' high';
       else if (conf >= 60) confClassName += ' medium';
       else confClassName += ' low';
     }
     html += '<div class="finding-feedback-row" data-finding-name="' + escapeHtml(f.name) + '" data-scan-id="' + scanIdForFeedback + '">';
     html += '<span style="color:var(--text-light)">置信度</span>';
-    if (conf !== null) {
+    if (confLevel) {
+      html += '<span class="' + confClassName + '">' + escapeHtml(confLevel) + '</span>';
+    } else if (conf !== null) {
       html += '<span class="' + confClassName + '">' + conf + '%</span>';
     } else {
       html += '<span class="' + confClassName + '">未评估</span>';
@@ -7108,14 +7122,19 @@ function renderResult(data) {
     }
     html += '</div>';
   }
-  if ( data.waf_detected) {
+  if (data.waf && data.waf.length > 0) {
     html += '<div class="card fade-in-up" style="animation-delay:0.34s">';
     html += '<div class="card-title">&#x1F6E1; WAF 防护检测</div>';
-    html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">';
     data.waf.forEach(function(w) {
       html += '<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:rgba(59,130,246,0.15);color:#3b82f6;border:1px solid rgba(59,130,246,0.3);border-radius:20px;font-size:12px;font-weight:600">' + escapeHtml(w.name) + '</span>';
     });
-    html += '</div></div>';
+    html += '</div>';
+    // V11.5：明确说明 WAF 不能替代安全响应头
+    html += '<div style="padding:8px 12px;background:rgba(59,130,246,0.06);border-radius:6px;font-size:12px;color:var(--text-light);line-height:1.5">';
+    html += 'WAF 提供应用层防护，但不能替代 HSTS、CSP、Cookie 安全策略等配置。下方发现的缺失项仍需修复。';
+    html += '</div>';
+    html += '</div>';
   }
   if ( data.sensitive_paths && data.sensitive_paths.length > 0) {
     var exposedPaths = data.sensitive_paths.filter(function(p) { return p.exposed; });

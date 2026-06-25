@@ -7,10 +7,13 @@
 - 6) .env.example / requirements.txt / CHANGELOG / LICENSE / SECURITY.md 完整
 """
 import re
+from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
 import main as M
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -23,7 +26,7 @@ def client():
 # ============================================================
 def test_simulate_fix_no_local_sev_deduct():
     """simulate_fix 函数体不应再有 SEV_DEDUCT 局部定义"""
-    src = open("/workspace/v11.4/main.py").read()
+    src = open(str(ROOT / "main.py")).read()
     # 找 simulate_fix 函数体
     m = re.search(r"async def simulate_fix.*?(?=\nasync def |\n@app\.)", src, re.DOTALL)
     assert m, "simulate_fix function not found"
@@ -37,7 +40,7 @@ def test_simulate_fix_no_local_sev_deduct():
 # 2) /api/ai/chat 限流
 # ============================================================
 def test_ai_chat_has_limiter_check():
-    src = open("/workspace/v11.4/main.py").read()
+    src = open(str(ROOT / "main.py")).read()
     m = re.search(r"async def api_ai_chat.*?(?=\nasync def |\n@app\.)", src, re.DOTALL)
     assert m, "api_ai_chat not found"
     body = m.group(0)
@@ -49,7 +52,7 @@ def test_ai_chat_has_limiter_check():
 # 3) 30s 超时包裹
 # ============================================================
 def test_apply_fix_rescan_has_30s_timeout():
-    src = open("/workspace/v11.4/main.py").read()
+    src = open(str(ROOT / "main.py")).read()
     m = re.search(r"async def apply_fix_and_rescan.*?(?=\nasync def |\n@app\.)", src, re.DOTALL)
     assert m
     body = m.group(0)
@@ -58,7 +61,7 @@ def test_apply_fix_rescan_has_30s_timeout():
 
 
 def test_api_retest_has_30s_timeout():
-    src = open("/workspace/v11.4/main.py").read()
+    src = open(str(ROOT / "main.py")).read()
     m = re.search(r"async def api_retest.*?(?=\nasync def |\n@app\.)", src, re.DOTALL)
     assert m
     body = m.group(0)
@@ -70,14 +73,14 @@ def test_api_retest_has_30s_timeout():
 # 4) repr=False 防止敏感字段泄露
 # ============================================================
 def test_jwt_secret_has_repr_false():
-    src = open("/workspace/v11.4/main.py").read()
+    src = open(str(ROOT / "main.py")).read()
     m = re.search(r"jwt_secret:.*", src)
     assert m
     assert "repr=False" in m.group(0)
 
 
 def test_llm_api_key_has_repr_false():
-    src = open("/workspace/v11.4/main.py").read()
+    src = open(str(ROOT / "main.py")).read()
     m = re.search(r"llm_api_key:.*", src)
     assert m
     assert "repr=False" in m.group(0)
@@ -97,7 +100,7 @@ def test_settings_repr_does_not_leak_secrets():
 # 5) 前端快捷键
 # ============================================================
 def test_index_html_esc_closes_ai_chat():
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     assert "ai-chat" in html
     # Esc 处理块应包含 ai-chat
     esc_block = re.search(r"if \(e\.key === 'Escape'\).*?return;\s*\}", html, re.DOTALL)
@@ -106,7 +109,7 @@ def test_index_html_esc_closes_ai_chat():
 
 
 def test_index_html_has_ctrl_slash_shortcut():
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     assert "Ctrl/Cmd + /" in html or 'e.key === "/"' in html
 
 
@@ -114,7 +117,7 @@ def test_index_html_has_ctrl_slash_shortcut():
 # 6) 文档与配置完整
 # ============================================================
 def test_env_example_has_all_keys():
-    txt = open("/workspace/v11.4/.env.example").read()
+    txt = open(str(ROOT / ".env.example")).read()
     for key in [
         "JWT_SECRET", "JWT_EXPIRE_SECONDS", "DB_DIR", "DB_NAME",
         "SCAN_TIMEOUT", "RATE_LIMIT_GLOBAL_PER_MINUTE",
@@ -127,22 +130,22 @@ def test_env_example_has_all_keys():
 
 
 def test_requirements_has_cryptography():
-    txt = open("/workspace/v11.4/requirements.txt").read()
+    txt = open(str(ROOT / "requirements.txt")).read()
     assert "cryptography" in txt
 
 
 def test_changelog_exists_and_has_v115():
-    txt = open("/workspace/v11.4/CHANGELOG.md").read()
+    txt = open(str(ROOT / "CHANGELOG.md")).read()
     assert "V11.5" in txt
 
 
 def test_license_exists():
-    txt = open("/workspace/v11.4/LICENSE").read()
+    txt = open(str(ROOT / "LICENSE")).read()
     assert "MIT" in txt
 
 
 def test_security_md_exists():
-    txt = open("/workspace/v11.4/SECURITY.md").read()
+    txt = open(str(ROOT / "SECURITY.md")).read()
     assert "漏洞" in txt or "安全" in txt
 
 

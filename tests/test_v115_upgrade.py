@@ -4,10 +4,13 @@
 并且 V11.5 新增的能力(LLM/auto-patrol/trusted domains/AI 顾问优化)都还在。
 """
 import re
+from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
 import main as M
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -50,20 +53,20 @@ def test_health_endpoint_works():
 # 2) index.html 用户可见标识必须都是 V11.5
 # ============================================================
 def test_index_html_title_is_v11_5():
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     assert "<title>漏洞哨兵 V11.5" in html
     # 离线 /api/version 返回的 title 也得是 V11.5
     assert '漏洞哨兵 V11.5 (离线演示模式)' in html
 
 
 def test_index_html_meta_description_is_v11_5():
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     assert 'name="description" content="漏洞哨兵 V11.5' in html
 
 
 def test_index_html_user_facing_v11_5_strings():
     """卡片/页脚中的 V11.5 字样"""
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     # 进化页面 h3
     assert ">漏洞哨兵 V11.5<" in html
     # 我的页面段落
@@ -78,7 +81,7 @@ def test_index_html_user_facing_v11_5_strings():
 
 def test_index_html_offline_version_11_5():
     """离线模式 /api/health, /api/version 返回 11.5"""
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     assert 'version: "11.5-offline"' in html
     assert 'version: "11.5"' in html
     assert 'build_time: "2026-06-25"' in html
@@ -87,17 +90,16 @@ def test_index_html_offline_version_11_5():
 # ============================================================
 # 3) V11.5 新增能力仍然存在(没在升级过程中丢)
 # ============================================================
-def test_v115_has_trusted_domains():
-    """TRUSTED_DOMAINS 白名单还在"""
-    src = open("/workspace/v11.4/main.py").read()
-    assert "TRUSTED_DOMAINS" in src
-    # 至少包含 baidu/google/github
-    assert "baidu" in src and "google" in src and "github" in src
+def test_v115_has_confidence_system():
+    """V11.5 置信度系统还在"""
+    src = open(str(ROOT / "main.py")).read()
+    assert "confidence_level" in src, "confidence_level field missing"
+    assert "_confidence_level_from_int" in src, "confidence mapping helper missing"
 
 
 def test_v115_has_llm_integration():
     """真实 LLM 接入还在"""
-    src = open("/workspace/v11.4/main.py").read()
+    src = open(str(ROOT / "main.py")).read()
     assert "_call_llm" in src, "LLM 调用函数缺失"
     assert "_build_llm_prompt" in src, "LLM prompt 构建函数缺失"
     assert "llm_api_key" in src, "LLM 配置字段缺失"
@@ -105,14 +107,14 @@ def test_v115_has_llm_integration():
 
 def test_v115_has_auto_patrol():
     """auto-patrol 还在"""
-    src = open("/workspace/v11.4/main.py").read()
+    src = open(str(ROOT / "main.py")).read()
     assert "_patrol_all_monitors_sync" in src, "auto-patrol 函数缺失"
     assert "patrol_interval_hours" in src, "patrol 配置字段缺失"
 
 
 def test_v115_has_ai_advisor_optimization():
     """AI 顾问手机端优化还在"""
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     # fullscreen CSS 还在
     assert ".ai-chat" in html
     # !important 强制 opacity

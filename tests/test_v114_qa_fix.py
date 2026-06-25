@@ -1,13 +1,16 @@
-"""V11.4 QA 修复验证测试
+"""V11.5 QA 修复验证测试
 - 扫描深度档位可点
 - 字体加载
-- 已知高安全站点误报降低
+- 置信度系统
 """
 import re
+from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
 import main as M
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -20,7 +23,7 @@ def client():
 # ============================================================
 def test_index_html_has_scan_depth_labels():
     """index.html 应有 .scan-depth-opt label 元素(代替 display:none radio)"""
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     assert 'class="scan-depth-opt' in html, "missing .scan-depth-opt"
     # 不能再有 display:none 的 radio
     assert 'name="scan-depth" value="deep" style="display:none"' not in html, "still has display:none"
@@ -30,7 +33,7 @@ def test_index_html_has_scan_depth_labels():
 
 def test_index_html_registers_scan_depth_click():
     """JS 应监听 .scan-depth-opt 的 click,而不是 radio change"""
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     # 新逻辑：在 click handler 里调用 radio.dispatchEvent
     assert "querySelectorAll('.scan-depth-opt')" in html
     assert ".scan-depth-opt'" not in html or "addEventListener('click'" in html
@@ -40,13 +43,13 @@ def test_index_html_registers_scan_depth_click():
 # 2) 字体：@font-face + WQY
 # ============================================================
 def test_wqy_font_face_loaded():
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     assert "@font-face" in html
     assert "wqy-microhei" in html or "WQY MicroHei" in html
 
 
 def test_font_stack_includes_wqy():
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     assert '"WQY MicroHei Local"' in html
     # 同时保留 CJK 兜底
     assert "Noto Sans CJK" in html or "PingFang SC" in html
@@ -56,7 +59,7 @@ def test_font_stack_includes_wqy():
 # 3) AI 顾问手机端：全屏、不透明、字号大
 # ============================================================
 def test_ai_chat_mobile_fullscreen():
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     # 移动端 fullscreen CSS
     assert "max-width: 640px" in html or "max-width:640px" in html
     # 不透明背景强制
@@ -67,7 +70,7 @@ def test_ai_chat_mobile_fullscreen():
 
 def test_ai_msg_has_text_color():
     """AI bot 消息必须显式 color,避免被全局 transparent 继承"""
-    html = open("/workspace/v11.4/static/index.html").read()
+    html = open(str(ROOT / "static/index.html")).read()
     assert ".ai-msg.bot" in html
     # 提取 .ai-msg.bot 行
     m = re.search(r'\.ai-msg\.bot\s*\{([^}]+)\}', html)
@@ -76,109 +79,109 @@ def test_ai_msg_has_text_color():
 
 
 # ============================================================
-# 4) 已知高安全站点：白名单 + 误报降低
+# 4) V11.5：置信度系统 + WAF 不消除漏洞
 # ============================================================
-def test_trusted_domains_set_exists():
-    """main.py 应有 TRUSTED_DOMAINS 白名单"""
-    src = open("/workspace/v11.4/main.py").read()
-    assert "TRUSTED_DOMAINS" in src
-    # 至少包含这些大厂
-    for d in ["baidu.com", "google.com", "github.com", "microsoft.com"]:
-        assert d in src, f"missing trusted domain: {d}"
+def test_trusted_domains_removed():
+    """V11.5 已移除 TRUSTED_DOMAINS 白名单，不能以"知名"为由自动判定安全"""
+    src = open(str(ROOT / "main.py")).read()
+    # TRUSTED_DOMAINS 局部定义应已删除
+    assert "TRUSTED_DOMAINS = {" not in src, "TRUSTED_DOMAINS should be removed"
 
 
-def test_baidu_scoring_reduces_false_positive():
-    """baidu 即使没 WAF 头也应被识别为已知高安全站点"""
-    # 直接调用 analyze_security
+def test_waf_does_not_erase_findings():
+    """WAF 站点仍应报告 missing header finding，只是置信度为中"""
     from main import analyze_security
     result = analyze_security(
-        url="https://www.baidu.com",
-        headers={},  # 空 headers，模拟 WAF 头没识别到
+        url="https://example.com",
+        headers={},  # 空 headers
         is_https=True,
         ssl_info={"has_cert": True, "expired": False, "days_left": 90, "weak": False},
-        waf_list=[],  # 没识别到 WAF
+        waf_list=[{"name": "Cloudflare", "value": "cloudflare"}],
         sensitive_paths=[],
         vuln_findings=[],
     )
-    # 大厂：分数至少 80（不再因缺响应头大幅扣分）
-    assert result["score"] >= 80, f"baidu score too low: {result['score']}"
-    # 风险等级应该是低
-    assert result["risk_level"] in ("低风险", "中风险"), f"baidu risk: {result['risk_level']}"
+    # 必须有 finding（WAF 不消除）
+    assert len(result["findings"]) > 0, "WAF should not erase findings"
+    # 至少有一个 finding 的置信度为"中"（WAF 站点）
+    conf_levels = [f.get("confidence_level", "") for f in result["findings"]]
+    assert "中" in conf_levels, f"WAF site should have medium confidence, got {conf_levels}"
 
 
-def test_github_scoring_trusted():
-    """github.com 也应被识别为高安全"""
-    from main import analyze_security
-    result = analyze_security(
-        url="https://github.com",
-        headers={},
-        is_https=True,
-        ssl_info={"has_cert": True, "expired": False, "days_left": 365, "weak": False},
-        waf_list=[],
-        sensitive_paths=[],
-        vuln_findings=[],
-    )
-    assert result["score"] >= 80, f"github score too low: {result['score']}"
-
-
-def test_taobao_scoring_trusted():
-    from main import analyze_security
-    result = analyze_security(
-        url="https://www.taobao.com",
-        headers={},
-        is_https=True,
-        ssl_info={"has_cert": True, "expired": False, "days_left": 200, "weak": False},
-        waf_list=[],
-        sensitive_paths=[],
-        vuln_findings=[],
-    )
-    assert result["score"] >= 80, f"taobao score too low: {result['score']}"
-
-
-def test_unknown_site_not_trusted():
-    """普通站点不受白名单影响,继续走原来的打分"""
+def test_confidence_levels_present():
+    """所有 finding 必须包含 confidence_level 字段"""
     from main import analyze_security
     result = analyze_security(
         url="https://example.com",
         headers={},
-        is_https=False,
-        ssl_info={"has_cert": False, "expired": False, "days_left": None, "weak": False},
+        is_https=True,
+        ssl_info={"has_cert": True, "expired": False, "days_left": 90, "weak": False},
         waf_list=[],
         sensitive_paths=[],
         vuln_findings=[],
     )
-    # example.com 在白名单里吗？不在
-    # 没 HTTPS 应大幅扣分
-    assert result["score"] < 80, f"example.com should be penalized for no HTTPS, got {result['score']}"
+    for f in result["findings"]:
+        assert "confidence_level" in f, f"finding missing confidence_level: {f['name']}"
+        assert f["confidence_level"] in ("高", "中", "低")
 
 
-# ============================================================
-# 5) TRUSTED 域名匹配：子域名也算
-# ============================================================
-def test_trusted_subdomain_match():
-    """tieba.baidu.com 也应匹配 baidu.com"""
+def test_waf_bonus_capped_at_3():
+    """WAF 最多 +3 分，不能覆盖真实缺失项"""
     from main import analyze_security
-    result = analyze_security(
-        url="https://tieba.baidu.com",
+    # 无 WAF 的站点
+    result_no_waf = analyze_security(
+        url="https://example.com",
         headers={},
         is_https=True,
-        ssl_info={"has_cert": True, "expired": False, "days_left": 60, "weak": False},
+        ssl_info={"has_cert": True, "expired": False, "days_left": 90, "weak": False},
         waf_list=[],
         sensitive_paths=[],
         vuln_findings=[],
     )
-    assert result["score"] >= 80, f"tieba.baidu.com score too low: {result['score']}"
+    # 有 WAF 的站点
+    result_waf = analyze_security(
+        url="https://example.com",
+        headers={},
+        is_https=True,
+        ssl_info={"has_cert": True, "expired": False, "days_left": 90, "weak": False},
+        waf_list=[{"name": "Cloudflare", "value": "cloudflare"}],
+        sensitive_paths=[],
+        vuln_findings=[],
+    )
+    # WAF bonus 最多 3 分
+    assert result_waf["score"] - result_no_waf["score"] <= 3, \
+        f"WAF bonus too large: {result_waf['score']} vs {result_no_waf['score']}"
+    # 两者分数差距应很小（WAF 不能覆盖缺失项）
+    assert result_waf["score"] - result_no_waf["score"] >= 0, \
+        f"WAF should not reduce score: {result_waf['score']} vs {result_no_waf['score']}"
+
+
+def test_restricted_scan_low_confidence():
+    """受限扫描的所有 finding 置信度应为低"""
+    from main import analyze_security
+    result = analyze_security(
+        url="https://example.com",
+        headers={"x-waf-check": "captcha"},  # 触发受限扫描
+        is_https=True,
+        ssl_info={"has_cert": True, "expired": False, "days_left": 90, "weak": False},
+        waf_list=[],
+        sensitive_paths=[{"suspect": True, "reason": "疑似登录页"}],
+        vuln_findings=[],
+    )
+    assert result["restricted"] is True
+    for f in result["findings"]:
+        assert f["confidence_level"] == "低", f"restricted scan finding should be low confidence: {f['name']}"
 
 
 # ============================================================
-# 6) 关键性能与功能回归（不能破已有功能）
+# 5) 关键性能与功能回归（不能破已有功能）
 # ============================================================
 def test_health_still_works(client):
     r = client.get("/api/health")
     assert r.status_code == 200
+    assert r.json().get("status") == "ok"
 
 
 def test_unknown_api_still_json(client):
-    r = client.get("/api/scans")
-    assert r.status_code == 404
-    assert b"<!DOCTYPE" not in r.content
+    r = client.get("/api/unknown-endpoint")
+    assert r.status_code in (404,)
+    assert r.headers.get("content-type", "").startswith("application/json")
