@@ -257,13 +257,13 @@ SCORE_DEDUCTION = {
 }
 
 WAF_SIGNATURES: Dict[str, List[str]] = {
-    "cloudflare": ["CF-RAY", "__cfduid", "cf-browser-verification"],
-    "aliyun": ["X-Alibaba-WAF", "X-Alibaba-WAF-Action"],
-    "aws": ["X-AMZ-CF-ID", "X-Cache"],
-    "baidu": ["X-Bd-WAF", "X-Bd-Id"],
-    "qcloud": ["X-Qcloud-Edge", "X-Tencent-Ua"],
-    "imperva": ["X-Iinfo", "incap_ses"],
-    "akamai": ["X-Akamai-Request-BC", "Akamai-Origin-Hop"],
+    "cloudflare": ["CF-RAY", "__cfduid", "cf-browser-verification", "cloudflare"],
+    "aliyun": ["X-Alibaba-WAF", "X-Alibaba-WAF-Action", "aliyun"],
+    "aws": ["X-AMZ-CF-ID", "X-Cache", "awselb", "aws"],
+    "baidu": ["X-Bd-WAF", "X-Bd-Id", "bfe"],
+    "qcloud": ["X-Qcloud-Edge", "X-Tencent-Ua", "qcloud"],
+    "imperva": ["X-Iinfo", "incap_ses", "imperva"],
+    "akamai": ["X-Akamai-Request-BC", "Akamai-Origin-Hop", "akamai"],
 }
 
 SENSITIVE_PATHS: List[str] = [
@@ -3227,6 +3227,9 @@ def analyze_security(
         "referrer-policy": "referrer",
         "permissions-policy": "permissions",
     }
+    # WAF 保护站点：响应头缺失扣分减半（WAF 已提供等效防护层）
+    waf_protected = len(waf_list) > 0
+    waf_factor = 0.5 if waf_protected else 1.0
     # 高危配置缺失 vs 普通配置缺失
     HIGH_CONFIG_HEADERS = {"strict-transport-security", "content-security-policy", "x-frame-options"}
     for key, rule in SECURITY_HEADERS.items():
@@ -3238,9 +3241,9 @@ def analyze_security(
         })
         if not value:
             if key in HIGH_CONFIG_HEADERS:
-                points = SCORE_DEDUCTION["high_config_missing"]
+                points = int(SCORE_DEDUCTION["high_config_missing"] * waf_factor)
             else:
-                points = SCORE_DEDUCTION["normal_config_missing"]
+                points = int(SCORE_DEDUCTION["normal_config_missing"] * waf_factor)
             deduct("缺少 " + rule["name"], points, rule["severity"], rule["description"])
             add_finding(findings, "缺少 " + rule["name"], rule["severity"],
                         "A05 安全配置错误", rule["description"] + "。", rule["fix"],
