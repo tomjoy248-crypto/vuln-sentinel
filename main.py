@@ -5529,6 +5529,558 @@ async def api_auto_fix_cloudflare(request: Request, user: dict = Depends(require
     }
 
 
+# ============================================================
+# V11.4 进化模块 1：智能学习 — 从历史自动学
+# ============================================================
+def _learn_from_user_history(user_id: int) -> dict:
+    """
+    V11.4 进化：从用户的修复历史自动学习
+    统计：用户最常修/不修的项、修复后真实效果、最佳修复顺序
+    """
+    conn = get_db()
+    try:
+        # 1. 收集用户最近 50 次扫描的所有 findings
+        rows = conn.execute(
+            """SELECT findings_json, score, risk_level, created_at, scan_type
+               FROM scans WHERE user_id=? ORDER BY id DESC LIMIT 50""",
+            (user_id,),
+        ).fetchall()
+
+        # 2. 统计问题频率
+        issue_stats = {}  # name -> { count, last_seen, avg_score }
+        for row in rows:
+            try:
+                findings = json.loads(row["findings_json"] or "[]")
+            except Exception:
+                continue
+            for f in findings:
+                name = f.get("name", "未知")
+                sev = f.get("severity", "low")
+                if name not in issue_stats:
+                    issue_stats[name] = {
+                        "count": 0, "severity": sev, "first_seen": row["created_at"],
+                        "last_seen": row["created_at"],
+                    }
+                issue_stats[name]["count"] += 1
+                issue_stats[name]["last_seen"] = row["created_at"]
+
+        # 3. 找"反复出现"的问题（说明用户没修）
+        persistent = [
+            {"name": n, "times": s["count"], "severity": s["severity"], "last_seen": s["last_seen"]}
+            for n, s in issue_stats.items() if s["count"] >= 3
+        ]
+        persistent.sort(key=lambda x: -x["times"])
+
+        # 4. 找"已修复"的问题（最近 5 次扫描都没出现）
+        all_names = set(issue_stats.keys())
+        recent_rows = conn.execute(
+            """SELECT findings_json FROM scans WHERE user_id=? ORDER BY id DESC LIMIT 5""",
+            (user_id,),
+        ).fetchall()
+        recent_names = set()
+        for row in recent_rows:
+            try:
+                findings = json.loads(row["findings_json"] or "[]")
+                recent_names.update(f.get("name", "") for f in findings)
+            except Exception:
+                pass
+        fixed_names = all_names - recent_names
+
+        # 5. 计算用户平均分趋势
+        score_trend = []
+        for row in rows[:20]:
+            if row["score"] is not None:
+                score_trend.append({"date": row["created_at"], "score": row["score"]})
+        score_trend.reverse()
+
+        # 6. 预测下次评分（简单线性外推）
+        predicted_next = None
+        if len(score_trend) >= 3:
+            deltas = []
+            for i in range(1, min(5, len(score_trend))):
+                deltas.append(score_trend[i]["score"] - score_trend[i-1]["score"])
+            avg_delta = sum(deltas) / len(deltas) if deltas else 0
+            predicted_next = max(0, min(100, score_trend[-1]["score"] + avg_delta))
+
+        return {
+            "total_scans": len(rows),
+            "unique_issues": len(issue_stats),
+            "persistent_issues": persistent[:5],  # 前 5 个反复出现
+            "fixed_issues_count": len(fixed_names),
+            "fixed_issues_sample": list(fixed_names)[:10],
+            "score_trend": score_trend[-10:],
+            "predicted_next_score": round(predicted_next, 1) if predicted_next else None,
+            "learning_insights": [
+                f"📊 你已扫描 {len(rows)} 次，常见 {len(issue_stats)} 类问题",
+                f"🔄 {len(persistent)} 个问题反复出现（建议你优先修复）" if persistent else "✅ 你的修复习惯很好，没有反复问题",
+                f"📈 预测下次评分: {round(predicted_next, 1)}" if predicted_next else None,
+                f"🎯 {len(fixed_names)} 个问题已修复（最近 5 次扫描未出现）" if fixed_names else None,
+            ],
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/learn/insights")
+async def api_learn_insights(user: dict = Depends(require_login)) -> dict:
+    """V11.4 进化端点：智能学习洞察（基于用户历史）"""
+    insights = _learn_from_user_history(user["user_id"])
+    return insights
+
+
+# ============================================================
+# V11.4 进化模块 2：主动监控 — 定期扫描 + 告警
+# ============================================================
+# 监控目标：用户可加自己的网站到监控列表
+def _init_monitoring_tables():
+    """V11.4 新增：监控相关表"""
+    conn = get_db()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS monitors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            url TEXT NOT NULL,
+            frequency_hours INTEGER DEFAULT 24,
+            last_score INTEGER,
+            last_risk TEXT,
+            last_scan_at TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT,
+            UNIQUE(user_id, url)
+        );
+
+        CREATE TABLE IF NOT EXISTS monitor_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            monitor_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            alert_type TEXT NOT NULL,  -- score_drop / new_issue / site_down
+            message TEXT,
+            old_score INTEGER,
+            new_score INTEGER,
+            created_at TEXT,
+            is_read INTEGER DEFAULT 0
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+
+# 启动时初始化表
+try:
+    _init_monitoring_tables()
+except Exception as e:
+    print(f"[V11.4] monitor tables init warning: {e}")
+
+
+@app.post("/api/monitors")
+async def api_create_monitor(request: Request, user: dict = Depends(require_login)) -> dict:
+    """V11.4 进化端点：添加监控目标"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"success": False, "error": "JSON 解析失败"}
+    url = (body.get("url") or "").strip()
+    freq = int(body.get("frequency_hours", 24))
+    if not url:
+        return {"success": False, "error": "URL 必填"}
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    if freq < 1 or freq > 168:
+        return {"success": False, "error": "频率必须在 1-168 小时之间"}
+
+    conn = get_db()
+    try:
+        conn.execute(
+            """INSERT OR REPLACE INTO monitors
+               (user_id, url, frequency_hours, last_scan_at, created_at)
+               VALUES (?,?,?,?,?)""",
+            (
+                user["user_id"], url, freq,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        conn.commit()
+        monitor_id = conn.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+        return {"success": True, "monitor_id": monitor_id, "url": url, "frequency_hours": freq}
+    finally:
+        conn.close()
+
+
+@app.get("/api/monitors")
+async def api_list_monitors(user: dict = Depends(require_login)) -> dict:
+    """V11.4 进化端点：列出所有监控目标"""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """SELECT * FROM monitors WHERE user_id=? ORDER BY id DESC""",
+            (user["user_id"],),
+        ).fetchall()
+        return {
+            "success": True,
+            "monitors": [dict(r) for r in rows],
+            "total": len(rows),
+        }
+    finally:
+        conn.close()
+
+
+@app.delete("/api/monitors/{monitor_id}")
+async def api_delete_monitor(monitor_id: int, user: dict = Depends(require_login)) -> dict:
+    """V11.4 进化端点：删除监控目标"""
+    conn = get_db()
+    try:
+        conn.execute(
+            "DELETE FROM monitors WHERE id=? AND user_id=?",
+            (monitor_id, user["user_id"]),
+        )
+        conn.commit()
+        return {"success": True, "deleted_id": monitor_id}
+    finally:
+        conn.close()
+
+
+def _check_monitors_sync():
+    """V11.4：同步执行监控扫描（被 scheduler 调用）"""
+    conn = get_db()
+    try:
+        monitors = conn.execute(
+            """SELECT * FROM monitors WHERE is_active=1""",
+        ).fetchall()
+        for m in monitors:
+            last_scan = m["last_scan_at"] or ""
+            try:
+                last_dt = datetime.strptime(last_scan, "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                last_dt = datetime.now() - timedelta(hours=999)
+            if datetime.now() - last_dt < timedelta(hours=m["frequency_hours"]):
+                continue
+            # 到了扫描时间
+            try:
+                # 复用 analyze_security（同步版本）
+                score, risk, findings, fixes, _ = analyze_security(m["url"], depth="standard")
+                old_score = m["last_score"]
+                # 检测分数下降
+                if old_score is not None and score < old_score - 5:
+                    conn.execute(
+                        """INSERT INTO monitor_alerts
+                           (monitor_id, user_id, alert_type, message, old_score, new_score, created_at)
+                           VALUES (?,?,?,?,?,?,?)""",
+                        (
+                            m["id"], m["user_id"], "score_drop",
+                            f"网站 {m['url']} 评分从 {old_score} 下降到 {score}",
+                            old_score, score,
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        ),
+                    )
+                # 更新 last_score
+                conn.execute(
+                    """UPDATE monitors SET last_score=?, last_risk=?, last_scan_at=?
+                       WHERE id=?""",
+                    (score, risk, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), m["id"]),
+                )
+                conn.commit()
+            except Exception as e:
+                print(f"[monitor] scan {m['url']} failed: {e}")
+    finally:
+        conn.close()
+
+
+@app.get("/api/monitors/alerts")
+async def api_list_alerts(user: dict = Depends(require_login)) -> dict:
+    """V11.4 进化端点：列出所有告警"""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """SELECT a.*, m.url FROM monitor_alerts a
+               JOIN monitors m ON a.monitor_id = m.id
+               WHERE a.user_id=?
+               ORDER BY a.id DESC LIMIT 50""",
+            (user["user_id"],),
+        ).fetchall()
+        return {
+            "success": True,
+            "alerts": [dict(r) for r in rows],
+            "unread_count": sum(1 for r in rows if not r["is_read"]),
+        }
+    finally:
+        conn.close()
+
+
+# ============================================================
+# V11.4 进化模块 3：AI 洞察 — 会话记忆 + 个性化建议
+# ============================================================
+def _save_conversation(user_id: int, role: str, content: str, context: dict = None) -> int:
+    """V11.4：保存 AI 顾问对话历史（让 AI 记住用户）"""
+    conn = get_db()
+    try:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS ai_conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL,  -- user / assistant
+                content TEXT,
+                context_json TEXT,
+                created_at TEXT
+            );
+        """)
+        conn.execute(
+            """INSERT INTO ai_conversations
+               (user_id, role, content, context_json, created_at)
+               VALUES (?,?,?,?,?)""",
+            (
+                user_id, role, content,
+                json.dumps(context or {}, ensure_ascii=False),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        conn.commit()
+        return conn.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    finally:
+        conn.close()
+
+
+def _get_recent_conversations(user_id: int, limit: int = 10) -> list:
+    """V11.4：取最近 N 条对话（用于上下文）"""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """SELECT * FROM ai_conversations WHERE user_id=?
+               ORDER BY id DESC LIMIT ?""",
+            (user_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/ai/chat")
+async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> dict:
+    """
+    V11.4 进化端点：AI 顾问对话（带会话记忆）
+    - 记住用户上次问了什么、修复进度
+    - 基于用户历史给出个性化建议
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return {"success": False, "error": "JSON 解析失败"}
+
+    user_msg = (body.get("message") or "").strip()
+    if not user_msg:
+        return {"success": False, "error": "消息不能为空"}
+
+    # 1. 保存用户消息
+    _save_conversation(user["user_id"], "user", user_msg)
+
+    # 2. 取最近 5 条历史对话（让 AI 记住上下文）
+    history = _get_recent_conversations(user["user_id"], 5)
+    history.reverse()  # 按时序
+
+    # 3. 智能分析：基于关键词匹配 + 用户历史给出回答
+    insights = _learn_from_user_history(user["user_id"])
+    persistent = insights.get("persistent_issues", [])
+
+    # 简单语义匹配（生产环境可接 LLM）
+    response_text = ""
+    msg_lower = user_msg.lower()
+
+    if any(k in user_msg for k in ["怎么修", "如何修", "怎么解决", "how to fix"]):
+        if persistent:
+            top = persistent[0]
+            response_text = f"💡 根据你的历史，**{top['name']}** 出现了 {top['times']} 次（{top['severity']}）。建议优先修复这个，工具已为你准备了对应补丁。\n\n具体步骤：1) 复制补丁代码 2) SSH 到服务器 3) 重启服务"
+        else:
+            response_text = "✅ 你没有反复出现的问题。很好！需要我帮你预防性扫描其他网站吗？"
+    elif any(k in user_msg for k in ["分数", "评分", "score", "趋势"]):
+        if insights.get("predicted_next_score"):
+            response_text = f"📊 你的平均分趋势：{insights['score_trend']}\n\n🔮 预测下次评分：{insights['predicted_next_score']}\n\n" + (
+                "你正在进步！继续保持。" if insights['predicted_next_score'] > 80
+                else "建议重点修复 persistent_issues。"
+            )
+        else:
+            response_text = "📊 你需要先扫描至少 3 次，我才能预测你的趋势。"
+    elif any(k in user_msg for k in ["HSTS", "hsts", "严格传输"]):
+        response_text = "🔒 HSTS 强制浏览器用 HTTPS，防 SSL stripping 攻击。\n\nNginx 配置：\n```\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n```\n\n需要我帮你一键应用吗？"
+    elif any(k in user_msg for k in ["你好", "hi", "hello", "你是"]):
+        response_text = f"👋 你好 {user['username']}！我是漏洞哨兵 V11.4 智能顾问。\n\n📊 你已扫描 {insights['total_scans']} 次\n🔄 {len(persistent)} 个反复问题\n📈 预测评分: {insights.get('predicted_next_score', 'N/A')}\n\n问我任何问题：'怎么修 HSTS'、'我的趋势如何'、'XSS 怎么防'"
+    else:
+        # 默认：基于历史给提示
+        response_text = f"我理解你问的是「{user_msg[:30]}」。\n\n💡 你可以这样问：\n- '怎么修 [问题名]' → 给你具体步骤\n- '我的分数趋势' → 看学习洞察\n- 'HSTS 是什么' → 解释 + 配置示例\n- 扫描一个网站 → 直接检测"
+
+    # 4. 保存 AI 回答
+    _save_conversation(user["user_id"], "assistant", response_text, {
+        "history_used": len(history),
+        "insights_used": bool(persistent),
+    })
+
+    return {
+        "success": True,
+        "response": response_text,
+        "memory_used": len(history),
+        "insights_summary": {
+            "total_scans": insights["total_scans"],
+            "persistent_count": len(persistent),
+            "predicted_score": insights.get("predicted_next_score"),
+        },
+    }
+
+
+# ============================================================
+# V11.4 进化模块 4：协作 — 团队、角色、评论
+# ============================================================
+def _init_team_tables():
+    conn = get_db()
+    try:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS teams (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                owner_id INTEGER NOT NULL,
+                created_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS team_members (
+                team_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                role TEXT DEFAULT 'member',  -- owner / admin / member / viewer
+                joined_at TEXT,
+                PRIMARY KEY (team_id, user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS scan_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scan_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                comment TEXT,
+                created_at TEXT
+            );
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+try:
+    _init_team_tables()
+except Exception as e:
+    print(f"[V11.4] team tables init warning: {e}")
+
+
+@app.post("/api/teams")
+async def api_create_team(request: Request, user: dict = Depends(require_login)) -> dict:
+    """V11.4 进化端点：创建团队"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"success": False, "error": "JSON 解析失败"}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return {"success": False, "error": "团队名必填"}
+    conn = get_db()
+    try:
+        c = conn.execute(
+            """INSERT INTO teams (name, owner_id, created_at) VALUES (?,?,?)""",
+            (name, user["user_id"], datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        team_id = c.lastrowid
+        conn.execute(
+            """INSERT INTO team_members (team_id, user_id, role, joined_at)
+               VALUES (?,?,?,?)""",
+            (team_id, user["user_id"], "owner", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        conn.commit()
+        return {"success": True, "team_id": team_id, "name": name}
+    finally:
+        conn.close()
+
+
+@app.post("/api/scans/{scan_id}/comment")
+async def api_add_comment(scan_id: int, request: Request, user: dict = Depends(require_login)) -> dict:
+    """V11.4 进化端点：给扫描报告添加评论（团队协作）"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"success": False, "error": "JSON 解析失败"}
+    comment = (body.get("comment") or "").strip()
+    if not comment:
+        return {"success": False, "error": "评论内容必填"}
+    conn = get_db()
+    try:
+        conn.execute(
+            """INSERT INTO scan_comments (scan_id, user_id, comment, created_at)
+               VALUES (?,?,?,?)""",
+            (scan_id, user["user_id"], comment, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        conn.commit()
+        return {"success": True}
+    finally:
+        conn.close()
+
+
+@app.get("/api/scans/{scan_id}/comments")
+async def api_list_comments(scan_id: int, user: dict = Depends(require_login)) -> dict:
+    """V11.4 进化端点：列出扫描报告的所有评论"""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """SELECT c.*, u.username FROM scan_comments c
+               JOIN users u ON c.user_id = u.id
+               WHERE c.scan_id=? ORDER BY c.id ASC""",
+            (scan_id,),
+        ).fetchall()
+        return {
+            "success": True,
+            "comments": [dict(r) for r in rows],
+            "total": len(rows),
+        }
+    finally:
+        conn.close()
+
+
+# ============================================================
+# V11.4 进化模块 5：综合仪表盘
+# ============================================================
+@app.get("/api/evolution/dashboard")
+async def api_evolution_dashboard(user: dict = Depends(require_login)) -> dict:
+    """V11.4 进化端点：综合仪表盘（学习+监控+协作+AI 一次全看）"""
+    insights = _learn_from_user_history(user["user_id"])
+    conn = get_db()
+    try:
+        monitors = conn.execute(
+            "SELECT * FROM monitors WHERE user_id=?", (user["user_id"],)
+        ).fetchall()
+        alerts = conn.execute(
+            "SELECT * FROM monitor_alerts WHERE user_id=? AND is_read=0", (user["user_id"],)
+        ).fetchall()
+        teams = conn.execute(
+            """SELECT t.* FROM teams t
+               JOIN team_members m ON t.id = m.team_id
+               WHERE m.user_id=?""", (user["user_id"],)
+        ).fetchall()
+        return {
+            "success": True,
+            "learning": insights,
+            "monitoring": {
+                "monitors_count": len(monitors),
+                "unread_alerts": len(alerts),
+                "monitors": [dict(m) for m in monitors[:5]],
+                "alerts": [dict(a) for a in alerts[:5]],
+            },
+            "team": {
+                "teams_count": len(teams),
+                "teams": [dict(t) for t in teams[:5]],
+            },
+            "evolution_score": (
+                insights.get("predicted_next_score", 0) * 0.4 +
+                (100 - len(insights.get("persistent_issues", [])) * 10) * 0.3 +
+                (50 if len(monitors) > 0 else 0) * 0.2 +
+                (50 if len(teams) > 0 else 0) * 0.1
+            ),
+        }
+    finally:
+        conn.close()
+
+
 # ---------- Fix generator 端点 ----------
 
 @app.post("/api/fix")

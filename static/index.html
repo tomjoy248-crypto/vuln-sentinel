@@ -1936,6 +1936,65 @@ img[loading="lazy"] { background: var(--border-light); }
   .asset-actions { justify-content: flex-end; }
 }
 
+/* 进化中心 V11.4 */
+.evo-score-card {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 28px 24px;
+  margin-bottom: 24px;
+  text-align: center;
+  color: #f8fafc;
+}
+.evo-score-label { font-size: 14px; color: #94a3b8; letter-spacing: 1px; }
+.evo-score-value { font-size: 64px; font-weight: 800; line-height: 1.1; margin: 8px 0 16px; }
+.evo-score-bar { height: 10px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; margin: 0 auto 12px; max-width: 600px; }
+.evo-score-fill { height: 100%; border-radius: 999px; transition: width .6s ease; }
+.evo-score-hint { font-size: 12px; color: #94a3b8; }
+
+.evo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+@media (max-width: 960px) { .evo-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .evo-grid { grid-template-columns: 1fr; } }
+.evo-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; cursor: pointer; transition: transform .2s, box-shadow .2s; }
+.evo-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+.evo-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.evo-card-icon { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 18px; }
+.evo-card-title { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.evo-card-items { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.evo-card-item { background: var(--bg-secondary); border-radius: 8px; padding: 8px 10px; }
+.evo-card-k { font-size: 11px; color: var(--text-secondary); }
+.evo-card-v { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-top: 2px; }
+
+.evo-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 760px) { .evo-row { grid-template-columns: 1fr; } }
+.evo-panel { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.evo-panel-title { font-weight: 600; font-size: 14px; margin-bottom: 10px; color: var(--text-primary); }
+.evo-empty { color: var(--text-secondary); font-size: 13px; padding: 12px 0; }
+.evo-list, .evo-recs, .evo-alerts { margin: 0; padding-left: 18px; color: var(--text-primary); }
+.evo-list li, .evo-recs li, .evo-alerts li { padding: 4px 0; font-size: 13px; }
+.evo-alert-time { color: var(--text-secondary); font-size: 12px; margin-right: 6px; }
+
+.evo-trend { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.evo-trend-item { flex: 0 0 auto; background: var(--bg-secondary); border-radius: 8px; padding: 10px 14px; min-width: 80px; text-align: center; }
+.evo-trend-score { font-size: 20px; font-weight: 700; color: var(--primary); }
+.evo-trend-date { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+
+.evo-modal-bg { position: fixed; inset: 0; background: rgba(15,23,42,0.55); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.evo-modal { background: var(--card-bg); border-radius: 12px; padding: 24px; max-width: 560px; width: 100%; position: relative; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.25); }
+.evo-modal-close { position: absolute; top: 8px; right: 14px; font-size: 24px; cursor: pointer; color: var(--text-secondary); }
+.evo-detail-title { font-size: 16px; font-weight: 700; margin-bottom: 12px; color: var(--text-primary); }
+.evo-detail-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.evo-input { padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font-size: 14px; }
+.evo-btn { padding: 10px 16px; border: none; border-radius: 8px; background: var(--primary); color: #fff; font-weight: 600; cursor: pointer; }
+.evo-btn:hover { opacity: 0.9; }
+
+.evo-ai-msgs { max-height: 320px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: var(--bg-secondary); }
+.evo-ai-msg { padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; font-size: 13px; line-height: 1.5; }
+.evo-ai-msg.user { background: var(--primary); color: #fff; align-self: flex-end; }
+.evo-ai-msg.bot { background: var(--card-bg); color: var(--text-primary); }
+.evo-ai-input { display: flex; gap: 8px; }
+.evo-ai-input .evo-input { flex: 1; }
+
 </style>
 </head>
 <body>
@@ -2508,6 +2567,13 @@ img[loading="lazy"] { background: var(--border-light); }
   <div id="fixer-result"></div>
 </div>
 
+<!-- 进化页面 V11.4 -->
+<div class="page" id="page-evolution">
+  <div class="section-title">&#x1F4CA; 进化中心</div>
+  <div class="section-subtitle">从历史自动学习，主动监控修复</div>
+  <div id="evolution-content" style="min-height:400px"></div>
+</div>
+
 <!-- 资产管理页面 -->
 <div class="page" id="page-assets">
   <div class="section-title">&#x1F4BC; 资产管理</div>
@@ -2879,6 +2945,10 @@ img[loading="lazy"] { background: var(--border-light); }
   <button class="nav-item" data-page="tickets" onclick="navigateTo('tickets')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
     <span>工单</span>
+  </button>
+  <button class="nav-item" data-page="evolution" onclick="navigateTo('evolution')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+    <span>进化</span>
   </button>
   <button class="nav-item" data-page="profile" onclick="navigateTo('profile')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -3787,6 +3857,7 @@ function navigateTo(page) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (page === 'tickets') loadTickets();
   if (page === 'assets') loadAssets();
+  if (page === 'evolution') loadEvolution();
 }
 
 // Toast
@@ -3995,6 +4066,233 @@ function renderAssets(assets) {
   });
   html += '</tbody></table></div>';
   list.innerHTML = html;
+}
+
+function loadEvolution() {
+  if (!isLoggedIn()) {
+    var c = document.getElementById('evolution-content');
+    if (c) c.innerHTML = '<div class="ticket-empty"><div class="ticket-empty-icon">&#x1F510;</div><p>请先登录</p><p class="ticket-empty-hint">登录后体验智能学习、主动监控、团队协作与 AI 顾问</p></div>';
+    return;
+  }
+  var c = document.getElementById('evolution-content');
+  if (c) c.innerHTML = '<div class="loading">加载中...</div>';
+  authFetch('/api/evolution/dashboard').then(function(r) { return r.json(); }).then(function(data) {
+    if (data && data.success) {
+      renderEvolution(data);
+    } else {
+      if (c) c.innerHTML = '<div class="ticket-empty"><div class="ticket-empty-icon">&#x26A0;&#xFE0F;</div><p>暂未登录或无数据</p></div>';
+    }
+  }).catch(function(e) {
+    if (c) c.innerHTML = '<div class="ticket-empty"><div class="ticket-empty-icon">&#x26A0;&#xFE0F;</div><p>加载失败: ' + escapeHtml(e.message) + '</p></div>';
+  });
+}
+
+function renderEvolution(d) {
+  var c = document.getElementById('evolution-content');
+  if (!c) return;
+  var score = Math.round(d.evolution_score || 0);
+  var learning = d.learning || {};
+  var monitoring = d.monitoring || {};
+  var team = d.team || {};
+  var trend = learning.trend || [];
+  var persistent = learning.persistent_issues || [];
+  var recs = learning.recommendations || [];
+  var predicted = learning.predicted_next_score;
+
+  var scoreColor = score >= 80 ? '#22c55e' : (score >= 50 ? '#f59e0b' : '#ef4444');
+  var html = '';
+
+  // 顶部进化分数
+  html += '<div class="evo-score-card">';
+  html += '  <div class="evo-score-label">&#x1F4CA; 进化指数</div>';
+  html += '  <div class="evo-score-value" style="color:' + scoreColor + '">' + score + '</div>';
+  html += '  <div class="evo-score-bar"><div class="evo-score-fill" style="width:' + score + '%;background:' + scoreColor + '"></div></div>';
+  html += '  <div class="evo-score-hint">基于历史扫描、监控告警与团队协作综合计算</div>';
+  html += '</div>';
+
+  // 4 个模块卡片
+  html += '<div class="evo-grid">';
+  html += evoCard('智能学习', '&#x1F4DA;', '#3b82f6', [
+    { k: '总扫描次数', v: learning.total_scans || 0 },
+    { k: '平均分', v: learning.avg_score || '-' },
+    { k: '最高分', v: learning.best_score || '-' },
+    { k: '预测下次', v: predicted || '-' }
+  ], () => showEvolutionDetail('learning'));
+  html += evoCard('主动监控', '&#x1F4E1;', '#ef4444', [
+    { k: '监控项', v: monitoring.monitors_count || 0 },
+    { k: '未读告警', v: monitoring.unread_alerts || 0 },
+    { k: '状态', v: monitoring.monitors_count ? '运行中' : '未启用' }
+  ], () => showEvolutionDetail('monitoring'));
+  html += evoCard('AI 顾问', '&#x1F916;', '#8b5cf6', [
+    { k: '会话记忆', v: '已启用' },
+    { k: '建议数', v: recs.length },
+    { k: '响应', v: '实时' }
+  ], () => showEvolutionDetail('ai'));
+  html += evoCard('团队协作', '&#x1F465;', '#10b981', [
+    { k: '加入团队', v: team.teams_count || 0 },
+    { k: '评论', v: '可发起' },
+    { k: '状态', v: team.teams_count ? '已加入' : '未加入' }
+  ], () => showEvolutionDetail('team'));
+  html += '</div>';
+
+  // 趋势 + 持续问题 + 建议
+  html += '<div class="evo-row">';
+  html += '  <div class="evo-panel">';
+  html += '    <div class="evo-panel-title">&#x1F4C8; 评分趋势</div>';
+  if (trend.length === 0) {
+    html += '    <div class="evo-empty">暂无历史评分,先做一次扫描</div>';
+  } else {
+    html += '    <div class="evo-trend">';
+    trend.forEach(function(t) {
+      html += '<div class="evo-trend-item"><div class="evo-trend-score">' + t.score + '</div><div class="evo-trend-date">' + escapeHtml(t.date || '') + '</div></div>';
+    });
+    html += '    </div>';
+  }
+  html += '  </div>';
+
+  html += '  <div class="evo-panel">';
+  html += '    <div class="evo-panel-title">&#x26A0;&#xFE0F; 持续问题</div>';
+  if (persistent.length === 0) {
+    html += '    <div class="evo-empty">&#x2705; 暂无持续性问题</div>';
+  } else {
+    html += '    <ul class="evo-list">';
+    persistent.forEach(function(p) {
+      if (typeof p === 'string') {
+        html += '<li>' + escapeHtml(p) + '</li>';
+      } else if (p && typeof p === 'object') {
+        var label = p.name || p.title || p.issue || JSON.stringify(p);
+        var times = p.times ? ' <span class="evo-empty">×' + p.times + '</span>' : '';
+        var sev = p.severity ? ' <span class="evo-alert-time">[' + escapeHtml(p.severity) + ']</span>' : '';
+        html += '<li>' + escapeHtml(label) + times + sev + '</li>';
+      } else {
+        html += '<li>' + escapeHtml(String(p)) + '</li>';
+      }
+    });
+    html += '    </ul>';
+  }
+  html += '  </div>';
+  html += '</div>';
+
+  html += '<div class="evo-panel">';
+  html += '  <div class="evo-panel-title">&#x1F4A1; 个性化建议</div>';
+  if (recs.length === 0) {
+    html += '  <div class="evo-empty">完成更多扫描后,系统会给出更精准的建议</div>';
+  } else {
+    html += '  <ul class="evo-recs">';
+    recs.forEach(function(r) { html += '<li>' + escapeHtml(r) + '</li>'; });
+    html += '  </ul>';
+  }
+  html += '</div>';
+
+  // 监控告警列表
+  if (monitoring.alerts && monitoring.alerts.length > 0) {
+    html += '<div class="evo-panel">';
+    html += '  <div class="evo-panel-title">&#x1F6A8; 最新告警</div>';
+    html += '  <ul class="evo-alerts">';
+    monitoring.alerts.slice(0, 5).forEach(function(a) {
+      html += '<li><span class="evo-alert-time">' + escapeHtml(a.created_at || '') + '</span> - ' + escapeHtml(a.message || '') + '</li>';
+    });
+    html += '  </ul>';
+    html += '</div>';
+  }
+
+  c.innerHTML = html;
+}
+
+function evoCard(title, icon, color, items, onClick) {
+  var html = '<div class="evo-card" style="border-top:3px solid ' + color + '" onclick="(' + onClick.toString() + ')()">';
+  html += '  <div class="evo-card-head"><span class="evo-card-icon" style="background:' + color + '22;color:' + color + '">' + icon + '</span><span class="evo-card-title">' + title + '</span></div>';
+  html += '  <div class="evo-card-items">';
+  items.forEach(function(it) {
+    html += '<div class="evo-card-item"><div class="evo-card-k">' + escapeHtml(it.k) + '</div><div class="evo-card-v">' + escapeHtml(String(it.v)) + '</div></div>';
+  });
+  html += '  </div>';
+  html += '</div>';
+  return html;
+}
+
+function showEvolutionDetail(name) {
+  var html = '';
+  if (name === 'monitoring') {
+    html = '<div class="evo-detail">';
+    html += '  <div class="evo-detail-title">添加监控</div>';
+    html += '  <div class="evo-detail-form">';
+    html += '    <input id="mon-url" class="evo-input" placeholder="https://example.com" />';
+    html += '    <input id="mon-freq" class="evo-input" type="number" min="60" value="3600" placeholder="检查频率(秒)" />';
+    html += '    <button class="evo-btn" onclick="createMonitor()">创建监控</button>';
+    html += '  </div>';
+    html += '  <div id="evo-mon-list"></div>';
+    html += '</div>';
+    showToast('提示:在弹窗中可创建监控', 'info');
+  } else if (name === 'ai') {
+    html = '<div class="evo-detail">';
+    html += '  <div class="evo-detail-title">AI 顾问(带记忆)</div>';
+    html += '  <div id="evo-ai-msgs" class="evo-ai-msgs"></div>';
+    html += '  <div class="evo-ai-input">';
+    html += '    <input id="evo-ai-q" class="evo-input" placeholder="问我:怎么修 HSTS?最近有什么风险?" />';
+    html += '    <button class="evo-btn" onclick="aiAsk()">发送</button>';
+    html += '  </div>';
+    html += '</div>';
+  } else if (name === 'team') {
+    html = '<div class="evo-detail">';
+    html += '  <div class="evo-detail-title">团队协作</div>';
+    html += '  <div class="evo-detail-form">';
+    html += '    <input id="team-name" class="evo-input" placeholder="团队名称" />';
+    html += '    <button class="evo-btn" onclick="createTeam()">创建团队</button>';
+    html += '  </div>';
+    html += '  <div id="evo-team-list"></div>';
+    html += '</div>';
+  } else if (name === 'learning') {
+    html = '<div class="evo-detail">';
+    html += '  <div class="evo-detail-title">智能学习洞察</div>';
+    html += '  <div class="evo-empty">系统会基于您的历史扫描自动归纳模式、预测风险与生成建议</div>';
+    html += '</div>';
+  }
+  var c = document.getElementById('evolution-content');
+  var detail = document.createElement('div');
+  detail.className = 'evo-modal-bg';
+  detail.innerHTML = '<div class="evo-modal"><div class="evo-modal-close" onclick="this.parentNode.parentNode.remove()">&times;</div>' + html + '</div>';
+  c.appendChild(detail);
+}
+
+function createMonitor() {
+  var url = document.getElementById('mon-url').value.trim();
+  var freq = parseInt(document.getElementById('mon-freq').value) || 3600;
+  if (!url) { showToast('请输入 URL', 'error'); return; }
+  authFetch('/api/monitors', { method: 'POST', body: JSON.stringify({ url: url, frequency: freq }) })
+    .then(function(r) { return r.json(); }).then(function(data) {
+      if (data.id || data.monitor_id) { showToast('监控已创建', 'success'); loadEvolution(); }
+      else { showToast('创建失败', 'error'); }
+    }).catch(function(e) { showToast('创建失败: ' + e.message, 'error'); });
+}
+
+function aiAsk() {
+  var input = document.getElementById('evo-ai-q');
+  if (!input) return;
+  var q = input.value.trim();
+  if (!q) return;
+  var msgs = document.getElementById('evo-ai-msgs');
+  if (msgs) {
+    msgs.innerHTML += '<div class="evo-ai-msg user">' + escapeHtml(q) + '</div>';
+  }
+  input.value = '';
+  authFetch('/api/ai/chat', { method: 'POST', body: JSON.stringify({ message: q }) })
+    .then(function(r) { return r.json(); }).then(function(data) {
+      var ans = (data && data.reply) || (data && data.message) || JSON.stringify(data);
+      if (msgs) msgs.innerHTML += '<div class="evo-ai-msg bot">' + escapeHtml(ans) + '</div>';
+    }).catch(function(e) {
+      if (msgs) msgs.innerHTML += '<div class="evo-ai-msg bot">失败: ' + escapeHtml(e.message) + '</div>';
+    });
+}
+
+function createTeam() {
+  var name = document.getElementById('team-name').value.trim();
+  if (!name) { showToast('请输入团队名', 'error'); return; }
+  authFetch('/api/teams', { method: 'POST', body: JSON.stringify({ name: name }) })
+    .then(function(r) { return r.json(); }).then(function(data) {
+      if (data.id || data.team_id) { showToast('团队已创建', 'success'); loadEvolution(); }
+      else { showToast('创建失败: ' + JSON.stringify(data), 'error'); }
+    }).catch(function(e) { showToast('创建失败: ' + e.message, 'error'); });
 }
 
 function addAsset() {
