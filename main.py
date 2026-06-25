@@ -3479,18 +3479,25 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     from reportlab.pdfbase.ttfonts import TTFont
 
     _cn_font = "Helvetica"
+    # V11.4 修复：先尝试 WQY（TTF 格式，reportlab 完美支持）
+    # NotoSansCJK 是 CFF/OTF 格式，reportlab 的 TTFont 不支持
     for _fp in [
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttf",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttf",
+        "static/fonts/NotoSansSC-Regular.ttf",
     ]:
         if os.path.isfile(_fp):
             try:
-                pdfmetrics.registerFont(TTFont("CNFont", _fp, subfontIndex=0))
+                pdfmetrics.registerFont(TTFont("CNFont", _fp))
                 _cn_font = "CNFont"
+                import logging
+                logging.getLogger("vuln_sentinel").info("PDF CJK font registered: " + _fp)
                 break
-            except Exception:
+            except Exception as _e:
+                import logging
+                logging.getLogger("vuln_sentinel").warning("PDF CJK font failed: " + _fp + " - " + str(_e))
                 continue
 
     buf = io.BytesIO()
@@ -3503,6 +3510,13 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     styles.add(ParagraphStyle(name="CNRed", fontName=_cn_font, fontSize=10, leading=14, textColor=colors.HexColor("#dc2626")))
     styles.add(ParagraphStyle(name="CNGreen", fontName=_cn_font, fontSize=10, leading=14, textColor=colors.HexColor("#16a34a")))
     styles.add(ParagraphStyle(name="CNOrange", fontName=_cn_font, fontSize=10, leading=14, textColor=colors.HexColor("#d97706")))
+    # 覆盖默认 Heading 样式使用中文字体
+    for _h in ("Heading1", "Heading2", "Heading3", "Heading4", "Title", "Normal", "BodyText"):
+        if _h in styles:
+            try:
+                styles[_h].fontName = _cn_font
+            except Exception:
+                pass
 
     elements = []
 
@@ -3666,6 +3680,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
             ])
         t = Table(table_data, colWidths=[8*mm, 28*mm, 18*mm, 25*mm, 30*mm, 41*mm])
         t.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V11.4 修复：表格用中文字体
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("FONTSIZE", (0, 0), (-1, -1), 7),
@@ -3683,6 +3698,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
             owasp_data.append([o["category"], o["status"], o.get("note", "")])
         t2 = Table(owasp_data, colWidths=[50 * mm, 30 * mm, 70 * mm])
         t2.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V11.4 修复：表格用中文字体
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("FONTSIZE", (0, 0), (-1, -1), 8),
@@ -4898,6 +4914,25 @@ async def api_mark_alert_read(alert_id: int, user: dict = Depends(require_login)
     conn.commit()
     conn.close()
     return {"success": True}
+
+
+# ---------- 授权日志 ----------
+@app.post("/api/scan-auth-log")
+async def api_scan_auth_log(request: Request, user: dict = Depends(require_login)) -> dict:
+    """记录用户扫描授权时间（审计用），静默失败不阻塞。"""
+    try:
+        body = await request.json()
+        authorized_at = body.get("authorized_at", "")
+        target_url = body.get("url", "")
+        if not authorized_at:
+            return {"success": False, "error": "missing authorized_at"}
+        import logging
+        logging.getLogger("vuln_sentinel").info(
+            f"SCAN_AUTH user={user.get('username')} target={target_url} at={authorized_at}"
+        )
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 # ---------- Simulate Fix（用真实 severity） ----------
