@@ -3242,29 +3242,50 @@ def analyze_security(
             "category": rule["category"], "severity": rule["severity"],
         })
         if not value:
-            if key in HIGH_CONFIG_HEADERS:
-                points = int(SCORE_DEDUCTION["high_config_missing"] * waf_factor)
-            else:
-                points = int(SCORE_DEDUCTION["normal_config_missing"] * waf_factor)
-            deduct("缺少 " + rule["name"], points, rule["severity"], rule["description"])
-            # WAF 站点：不计为 finding，只记录到 header_details
+            # WAF 站点：响应头缺失不扣分、不计 finding（专业 WAF 已覆盖防护）
+            # 普通站点：按规则扣分 + finding
             if not waf_protected:
+                if key in HIGH_CONFIG_HEADERS:
+                    points = int(SCORE_DEDUCTION["high_config_missing"] * waf_factor)
+                else:
+                    points = int(SCORE_DEDUCTION["normal_config_missing"] * waf_factor)
+                deduct("缺少 " + rule["name"], points, rule["severity"], rule["description"])
                 add_finding(findings, "缺少 " + rule["name"], rule["severity"],
                             "A05 安全配置错误", rule["description"] + "。", rule["fix"],
                             evidence={"detected": False, "header": key, "reason": f"未检测到 {rule['name']} 响应头", "impact": rule.get("description", "")},
                             verify_key=HEADER_VERIFY_KEY.get(key, "info"))
+            else:
+                # WAF 站点：仅记录到 header_details，提示性建议
+                header_details.append({
+                    "name": rule["name"] + " (WAF已覆盖)", "key": key, "value": value,
+                    "status": "suggested", "category": rule["category"], "severity": "info",
+                })
 
     info_leaks: List[dict] = []
     for key in ["server", "x-powered-by"]:
         value = headers.get(key, headers.get(key.title(), None))
         if value:
             info_leaks.append({"name": key.title(), "value": value})
-            # 信息项：只扣 1 分
-            deduct(key.title() + " 信息泄露", SCORE_DEDUCTION["info_leak"], "low", "暴露服务器信息: " + value[:50])
-            add_finding(findings, key.title() + " 信息泄露", "low", "A05 安全配置错误",
-                        "暴露服务器信息: " + value[:50], "隐藏或修改 " + key.title() + " 头。",
-                        evidence={"header": key.title(), "value": value[:50], "reason": "暴露了服务器软件和版本信息", "impact": "攻击者可利用已知版本漏洞"},
-                        verify_key="server")
+            # WAF 站点：Server 头就是 WAF 名称（cloudflare/bfe/aws），不算泄露
+            # 只有暴露具体软件版本（nginx/1.18.0、Apache/2.4）才算泄露
+            is_waf_signature = any(
+                w.get("value", "").lower() in value.lower() or value.lower() in w.get("value", "").lower()
+                for w in waf_list
+            )
+            has_version = bool(re.search(r'\d+\.\d+', value))  # 包含版本号
+            if is_waf_signature or waf_protected:
+                # WAF 站点：Server 头是 WAF 标识，不扣分不计 finding
+                pass
+            elif has_version:
+                # 暴露了具体版本（nginx/1.18.0 等），扣分 + finding
+                deduct(key.title() + " 信息泄露", SCORE_DEDUCTION["info_leak"], "low", "暴露服务器信息: " + value[:50])
+                add_finding(findings, key.title() + " 信息泄露", "low", "A05 安全配置错误",
+                            "暴露服务器信息: " + value[:50], "隐藏或修改 " + key.title() + " 头。",
+                            evidence={"header": key.title(), "value": value[:50], "reason": "暴露了服务器软件和版本信息", "impact": "攻击者可利用已知版本漏洞"},
+                            verify_key="server")
+            else:
+                # 未暴露版本号（如 "Server: nginx"），不扣分但提示
+                info_leaks.append({"name": key.title() + " (无版本)", "value": value})
 
     set_cookie = headers.get("set-cookie", headers.get("Set-Cookie", None))
     cookie_issues: List[str] = []
@@ -3369,7 +3390,10 @@ def analyze_security(
         if cat not in owasp_map:
             owasp.append({"category": cat, "status": status, "note": note})
     owasp.sort(key=lambda x: int(x["category"][1:3]))
-    score = max(10, min(98, score))
+    # WAF 保护的知名大厂可以得 100 分（专业防护已覆盖）
+    # 普通站点最高 98 分（总有些边角配置问题）
+    max_score = 100 if waf_protected else 98
+    score = max(10, min(max_score, score))
     risk_level = "高风险" if score < 50 else "中风险" if score < 75 else "低风险"
     improvements: List[str] = []
     for f in findings:
