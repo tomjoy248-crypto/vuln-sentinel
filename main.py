@@ -86,7 +86,7 @@ class Settings(BaseSettings):
     env: str = "development"  # development / production
 
     # JWT
-    jwt_secret: str = Field(default="", min_length=0)
+    jwt_secret: str = Field(default="", min_length=0, repr=False)
     jwt_expire_seconds: int = 24 * 3600
 
     # Scan
@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     # LLM (AI 顾问可调用真实 LLM，未配置时降级到关键字匹配)
     llm_enabled: bool = False
     llm_provider: str = "openai"  # openai / deepseek / qwen / custom
-    llm_api_key: str = ""
+    llm_api_key: str = Field(default="", repr=False)
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
     llm_timeout: float = 15.0
@@ -4283,7 +4283,7 @@ async def api_verify_fix(req: VerifyFixRequest, request: Request, user: dict = D
     parsed = urlparse(url)
     host = parsed.hostname or ""
     try:
-        headers, is_https, final_url, error = await fetch_headers(url)
+        headers, is_https, final_url, error = await asyncio.wait_for(fetch_headers(url), timeout=30.0)
         if error:
             return {"success": False, "error": error}
         waf_list = detect_waf(headers)
@@ -5062,8 +5062,7 @@ async def simulate_fix(req: SimulateFixRequest):
     输出：修复前 vs 修复后的评分对比
     """
     findings = req.findings or []
-    SEV_DEDUCT = {"critical": 25, "high": 15, "medium": 8, "low": 3}
-    deduction = sum(SEV_DEDUCT.get(f.get("severity", "low"), 3) for f in findings)
+    deduction = sum(SEVERITY_SCORE.get(f.get("severity", "low"), 3) for f in findings)
     before = max(0, 100 - deduction)
     after = min(100, before + deduction + 12)
     fixed_items = []
@@ -5124,7 +5123,7 @@ async def apply_fix_and_rescan(req: ApplyFixRequest, user: dict = Depends(requir
     parsed = urlparse(url)
     host = parsed.hostname or ""
     try:
-        headers, is_https, final_url, error = await fetch_headers(url)
+        headers, is_https, final_url, error = await asyncio.wait_for(fetch_headers(url), timeout=30.0)
         if error:
             return {"success": False, "error": error}
         ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
@@ -6038,6 +6037,11 @@ async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> 
     except Exception:
         return {"success": False, "error": "JSON 解析失败"}
 
+    # 限流(防被刷爆 LLM token)
+    client_ip = request.client.host if request.client else "unknown"
+    if not await limiter_ai.is_allowed(client_ip):
+        return {"success": False, "error": "AI 顾问调用太频繁，请稍后再试"}
+
     user_msg = (body.get("message") or "").strip()
     if not user_msg:
         return {"success": False, "error": "消息不能为空"}
@@ -6495,7 +6499,10 @@ async def api_retest(scan_id: int, user: dict = Depends(require_login)) -> dict:
     url = previous["url"]
     parsed = urlparse(url)
     host = parsed.hostname or ""
-    headers, is_https, final_url, error = await fetch_headers(url)
+    try:
+        headers, is_https, final_url, error = await asyncio.wait_for(fetch_headers(url), timeout=30.0)
+    except asyncio.TimeoutError:
+        return {"success": False, "error": "目标站响应超时(30s)，请稍后重试"}
     if error and not headers:
         return {"success": False, "error": error or "无法获取响应头"}
     waf_list = detect_waf(headers)

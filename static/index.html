@@ -8522,8 +8522,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 全局键盘快捷键
   document.addEventListener('keydown', function(e) {
-    // Esc 关闭弹窗
+    // Esc 关闭弹窗 + AI 聊天窗
     if (e.key === 'Escape') {
+      var aiChat = document.getElementById('ai-chat');
+      if (aiChat && aiChat.classList.contains('show')) {
+        aiChat.classList.remove('show');
+        aiChat.style.display = 'none';
+        return;
+      }
       var modals = document.querySelectorAll('.modal.show, [id$="-modal"][style*="display: block"]');
       modals.forEach(function(m) { m.style.display = 'none'; m.classList.remove('show'); });
     }
@@ -8532,6 +8538,16 @@ document.addEventListener('DOMContentLoaded', function() {
       e.preventDefault();
       var url = document.getElementById('scanUrl') || document.getElementById('scan-url');
       if (url) { url.focus(); url.select(); }
+    }
+    // Ctrl/Cmd + / 切换 AI 顾问
+    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+      e.preventDefault();
+      var aiBtn = document.querySelector('[onclick*="aiChat" i], [onclick*="openAiAdvisor" i], [onclick*="showAiChat" i], #ai-advisor-btn, .ai-advisor-fab');
+      // 退化方案：直接找底部浮动按钮
+      if (!aiBtn) aiBtn = document.querySelector('button[aria-label*="安全顾问" i], button[aria-label*="AI" i]');
+      if (aiBtn) aiBtn.click();
+      else if (typeof toggleAiChat === 'function') toggleAiChat();
+      else if (typeof openAiAdvisor === 'function') openAiAdvisor();
     }
   });
 
