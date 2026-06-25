@@ -3227,9 +3227,11 @@ def analyze_security(
         "referrer-policy": "referrer",
         "permissions-policy": "permissions",
     }
-    # WAF 保护站点：响应头缺失扣分减半（WAF 已提供等效防护层）
+    # WAF 保护站点：响应头缺失不计入"漏洞"，仅作为"建议"
+    # 原因：大厂用 WAF 做应用层防护，缺响应头不代表有漏洞
     waf_protected = len(waf_list) > 0
     waf_factor = 0.5 if waf_protected else 1.0
+    waf_name = waf_list[0].get("name", "WAF") if waf_list else ""
     # 高危配置缺失 vs 普通配置缺失
     HIGH_CONFIG_HEADERS = {"strict-transport-security", "content-security-policy", "x-frame-options"}
     for key, rule in SECURITY_HEADERS.items():
@@ -3245,10 +3247,12 @@ def analyze_security(
             else:
                 points = int(SCORE_DEDUCTION["normal_config_missing"] * waf_factor)
             deduct("缺少 " + rule["name"], points, rule["severity"], rule["description"])
-            add_finding(findings, "缺少 " + rule["name"], rule["severity"],
-                        "A05 安全配置错误", rule["description"] + "。", rule["fix"],
-                        evidence={"detected": False, "header": key, "reason": f"未检测到 {rule['name']} 响应头", "impact": rule.get("description", "")},
-                        verify_key=HEADER_VERIFY_KEY.get(key, "info"))
+            # WAF 站点：不计为 finding，只记录到 header_details
+            if not waf_protected:
+                add_finding(findings, "缺少 " + rule["name"], rule["severity"],
+                            "A05 安全配置错误", rule["description"] + "。", rule["fix"],
+                            evidence={"detected": False, "header": key, "reason": f"未检测到 {rule['name']} 响应头", "impact": rule.get("description", "")},
+                            verify_key=HEADER_VERIFY_KEY.get(key, "info"))
 
     info_leaks: List[dict] = []
     for key in ["server", "x-powered-by"]:
