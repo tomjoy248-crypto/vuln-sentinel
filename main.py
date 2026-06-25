@@ -5261,67 +5261,987 @@ _SCAN_CACHE_TTL = 30  # 秒
 # 公开演示兜底缓存：网络异常时返回预置数据，确保演示 100% 可用
 _PUBLIC_DEMO_CACHE = {
     "example.com": {
-        "success": True, "scan_type": "real", "final_url": "https://example.com",
-        "is_https": True, "score": 45, "risk_level": "高风险",
-        "summary": {"high": 2, "medium": 3, "low": 2, "total": 7},
-        "findings": [
-            {"name": "缺少 HSTS", "type": "MissingHeader", "severity": "high", "level_zh": "高风险", "description": "未启用 HTTP Strict Transport Security", "fix": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"},
-            {"name": "缺少 CSP", "type": "MissingHeader", "severity": "high", "level_zh": "高风险", "description": "未启用 Content Security Policy", "fix": "add_header Content-Security-Policy \"default-src 'self'\" always;"},
-            {"name": "缺少 X-Frame-Options", "type": "MissingHeader", "severity": "medium", "level_zh": "中风险", "description": "未设置点击劫持防护", "fix": "add_header X-Frame-Options \"DENY\" always;"},
-            {"name": "缺少 X-Content-Type-Options", "type": "MissingHeader", "severity": "medium", "level_zh": "中风险", "description": "未禁用 MIME 嗅探", "fix": "add_header X-Content-Type-Options \"nosniff\" always;"},
-            {"name": "Server 头泄露", "type": "InfoLeak", "severity": "medium", "level_zh": "中风险", "description": "Server 响应头包含版本信息", "fix": "server_tokens off;"},
-            {"name": "缺少 Referrer-Policy", "type": "MissingHeader", "severity": "low", "level_zh": "低风险", "description": "未控制 Referrer 泄露", "fix": "add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;"},
-            {"name": "Cookie 未标记 Secure", "type": "Cookie", "severity": "low", "level_zh": "低风险", "description": "Cookie 未强制 HTTPS 传输", "fix": "Set-Cookie: ...; Secure; HttpOnly; SameSite=Strict"},
-        ],
-        "owasp_coverage": ["A01:2021", "A05:2021", "A06:2021"],
-        "header_details": [
-            {"name": "Server", "present": True, "value": "ECS (dcb/7EA2)"},
-            {"name": "HSTS", "present": False, "value": ""},
-            {"name": "CSP", "present": False, "value": ""},
-            {"name": "X-Frame-Options", "present": False, "value": ""},
-            {"name": "X-Content-Type-Options", "present": False, "value": ""},
-        ],
-        "info_leaks": [{"type": "Server 头", "detail": "ECS (dcb/7EA2)"}],
-        "cors": None,
-        "cookie_issues": [{"issue": "未标记 Secure", "severity": "low"}],
-        "ssl_info": {"has_cert": True, "subject": "example.com", "issuer": "DigiCert Inc", "days_left": 300, "expired": False, "version": "TLSv1.3", "weak": False},
-        "waf": [],
-        "sensitive_paths": [],
-        "waf_detected": False,
-        "raw_headers": {"server": "ECS (dcb/7EA2)", "content-type": "text/html"},
-        "fixes": {
-            "nginx": [
-                {"code": 'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;', "risk_note": None, "server_type": "unknown"},
-                {"code": 'add_header Content-Security-Policy "default-src \'self\'" always;', "risk_note": None, "server_type": "unknown"},
-                {"code": 'add_header X-Frame-Options "DENY" always;', "risk_note": None, "server_type": "unknown"},
-                {"code": 'add_header X-Content-Type-Options "nosniff" always;', "risk_note": None, "server_type": "unknown"},
-                {"code": 'add_header Referrer-Policy "strict-origin-when-cross-origin" always;', "risk_note": None, "server_type": "unknown"},
-                {"code": "server_tokens off;", "risk_note": None, "server_type": "unknown"},
-            ],
-            "apache": [
-                {"code": 'Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"', "risk_note": None},
-                {"code": 'Header set Content-Security-Policy "default-src \'self\'"', "risk_note": None},
-                {"code": 'Header set X-Frame-Options "DENY"', "risk_note": None},
-                {"code": 'Header set X-Content-Type-Options "nosniff"', "risk_note": None},
-                {"code": 'Header set Referrer-Policy "strict-origin-when-cross-origin"', "risk_note": None},
-                {"code": "ServerTokens Prod", "risk_note": None},
-            ],
-            "express": [
-                {"code": "// Express + helmet\nconst helmet = require('helmet');\napp.use(helmet());", "risk_note": None},
-                {"code": "// Express\napp.use((req, res, next) => { res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin'); next(); });", "risk_note": None},
-            ],
-            "flask": [
-                {"code": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'\n    resp.headers['X-Frame-Options'] = 'DENY'\n    resp.headers['X-Content-Type-Options'] = 'nosniff'\n    resp.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'\n    return resp", "risk_note": None},
-            ],
-            "spring_boot": [
-                {"code": "# Spring Boot: SecurityConfig.java\nhttp.headers().httpStrictTransportSecurity().and().contentSecurityPolicy(\"default-src 'self'\");", "risk_note": None},
-            ],
-            "cloudflare": [
-                {"code": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: Strict-Transport-Security\n# Value: max-age=31536000; includeSubDomains", "risk_note": None},
-            ],
-        },
+    "success": True,
+    "scan_type": "real",
+    "final_url": "https://example.com",
+    "is_https": True,
+    "score": 66,
+    "risk_level": "中风险",
+    "summary": {
+        "high": 2,
+        "medium": 2,
+        "low": 3,
+        "critical": 0,
+        "total": 7
     },
-    "iana.org": {
+    "findings": [
+        {
+            "name": "缺少 HSTS",
+            "severity": "high",
+            "level": "高风险",
+            "level_zh": "高风险",
+            "owasp": "A05 安全配置错误",
+            "summary": "强制浏览器只通过 HTTPS 访问。",
+            "fix": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+            "type": "config",
+            "evidence": {
+                "detected": False,
+                "header": "strict-transport-security",
+                "reason": "未检测到 HSTS 响应头",
+                "impact": "强制浏览器只通过 HTTPS 访问"
+            },
+            "verify_method": "curl -I https://你的域名 | grep -i 'strict-transport-security'"
+        },
+        {
+            "name": "缺少 CSP",
+            "severity": "high",
+            "level": "高风险",
+            "level_zh": "高风险",
+            "owasp": "A05 安全配置错误",
+            "summary": "限制页面可加载的资源来源。",
+            "fix": "add_header Content-Security-Policy \"default-src 'self'\" always;",
+            "type": "config",
+            "evidence": {
+                "detected": False,
+                "header": "content-security-policy",
+                "reason": "未检测到 CSP 响应头",
+                "impact": "限制页面可加载的资源来源"
+            },
+            "verify_method": "curl -I https://你的域名 | grep -i 'content-security-policy'"
+        },
+        {
+            "name": "缺少 X-Frame-Options",
+            "severity": "medium",
+            "level": "中风险",
+            "level_zh": "中风险",
+            "owasp": "A05 安全配置错误",
+            "summary": "防止页面被嵌入 iframe。",
+            "fix": "add_header X-Frame-Options \"DENY\" always;",
+            "type": "config",
+            "evidence": {
+                "detected": False,
+                "header": "x-frame-options",
+                "reason": "未检测到 X-Frame-Options 响应头",
+                "impact": "防止页面被嵌入 iframe"
+            },
+            "verify_method": "curl -I https://你的域名 | grep -i 'x-frame-options'"
+        },
+        {
+            "name": "缺少 X-Content-Type-Options",
+            "severity": "medium",
+            "level": "中风险",
+            "level_zh": "中风险",
+            "owasp": "A05 安全配置错误",
+            "summary": "禁止浏览器猜测 MIME 类型。",
+            "fix": "add_header X-Content-Type-Options \"nosniff\" always;",
+            "type": "config",
+            "evidence": {
+                "detected": False,
+                "header": "x-content-type-options",
+                "reason": "未检测到 X-Content-Type-Options 响应头",
+                "impact": "禁止浏览器猜测 MIME 类型"
+            },
+            "verify_method": "curl -I https://你的域名 | grep -i 'x-content-type-options'"
+        },
+        {
+            "name": "缺少 Referrer-Policy",
+            "severity": "low",
+            "level": "低风险",
+            "level_zh": "低风险",
+            "owasp": "A05 安全配置错误",
+            "summary": "控制 Referer 头发送策略。",
+            "fix": "add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;",
+            "type": "config",
+            "evidence": {
+                "detected": False,
+                "header": "referrer-policy",
+                "reason": "未检测到 Referrer-Policy 响应头",
+                "impact": "控制 Referer 头发送策略"
+            },
+            "verify_method": "curl -I https://你的域名 | grep -i 'referrer-policy'"
+        },
+        {
+            "name": "缺少 Permissions-Policy",
+            "severity": "low",
+            "level": "低风险",
+            "level_zh": "低风险",
+            "owasp": "A05 安全配置错误",
+            "summary": "控制浏览器 API 权限。",
+            "fix": "add_header Permissions-Policy \"camera=(), microphone=()\" always;",
+            "type": "config",
+            "evidence": {
+                "detected": False,
+                "header": "permissions-policy",
+                "reason": "未检测到 Permissions-Policy 响应头",
+                "impact": "控制浏览器 API 权限"
+            },
+            "verify_method": "curl -I https://你的域名 | grep -i 'permissions-policy'"
+        },
+        {
+            "name": "Server 信息泄露",
+            "severity": "low",
+            "level": "低风险",
+            "level_zh": "低风险",
+            "owasp": "A05 安全配置错误",
+            "summary": "暴露服务器信息: cloudflare",
+            "fix": "隐藏或修改 Server 头。",
+            "type": "config",
+            "evidence": {
+                "header": "Server",
+                "value": "cloudflare",
+                "reason": "暴露了服务器软件和版本信息",
+                "impact": "攻击者可利用已知版本漏洞"
+            },
+            "verify_method": "curl -I https://你的域名 | grep -i '^server'（不应返回具体版本）"
+        }
+    ],
+    "owasp_coverage": [
+        {
+            "category": "A01 访问控制失效",
+            "status": "通过",
+            "note": "需关注"
+        },
+        {
+            "category": "A02 加密机制失效",
+            "status": "通过",
+            "note": "已启用 HTTPS"
+        },
+        {
+            "category": "A03 注入攻击",
+            "status": "通过",
+            "note": "未检测到注入漏洞"
+        },
+        {
+            "category": "A04 不安全设计",
+            "status": "通过",
+            "note": "未检测到"
+        },
+        {
+            "category": "A05 安全配置错误",
+            "status": "需关注",
+            "note": "部分配置可优化"
+        },
+        {
+            "category": "A06 过时组件",
+            "status": "需深度检测",
+            "note": "建议扫描依赖"
+        },
+        {
+            "category": "A07 认证失败",
+            "status": "通过",
+            "note": "未检测到"
+        },
+        {
+            "category": "A08 软件完整性",
+            "status": "通过",
+            "note": "未检测到"
+        },
+        {
+            "category": "A09 日志监控不足",
+            "status": "低风险",
+            "note": "建议加强"
+        },
+        {
+            "category": "A10 服务端请求伪造",
+            "status": "通过",
+            "note": "未检测到"
+        }
+    ],
+    "header_details": [
+        {
+            "name": "HSTS",
+            "key": "strict-transport-security",
+            "value": None,
+            "status": "missing",
+            "category": "传输安全",
+            "severity": "high"
+        },
+        {
+            "name": "CSP",
+            "key": "content-security-policy",
+            "value": None,
+            "status": "missing",
+            "category": "XSS 防护",
+            "severity": "high"
+        },
+        {
+            "name": "X-Frame-Options",
+            "key": "x-frame-options",
+            "value": None,
+            "status": "missing",
+            "category": "点击劫持",
+            "severity": "medium"
+        },
+        {
+            "name": "X-Content-Type-Options",
+            "key": "x-content-type-options",
+            "value": None,
+            "status": "missing",
+            "category": "MIME 嗅探",
+            "severity": "medium"
+        },
+        {
+            "name": "Referrer-Policy",
+            "key": "referrer-policy",
+            "value": None,
+            "status": "missing",
+            "category": "隐私",
+            "severity": "low"
+        },
+        {
+            "name": "Permissions-Policy",
+            "key": "permissions-policy",
+            "value": None,
+            "status": "missing",
+            "category": "隐私",
+            "severity": "low"
+        }
+    ],
+    "info_leaks": [
+        {
+            "name": "Server",
+            "value": "cloudflare"
+        }
+    ],
+    "cors": None,
+    "cookie_issues": [],
+    "ssl_info": {
+        "has_cert": False,
+        "error": "SSL 握手超时（目标可能未启用 HTTPS 或响应较慢）"
+    },
+    "waf": [
+        {
+            "name": "cloudflare",
+            "signature": "CF-RAY",
+            "value": "a1127c5aeca5d2a8-FRA"
+        }
+    ],
+    "sensitive_paths": [],
+    "waf_detected": True,
+    "raw_headers": {
+        "date": "Thu, 25 Jun 2026 08:08:41 GMT",
+        "content-type": "text/html",
+        "connection": "keep-alive",
+        "server": "cloudflare",
+        "last-modified": "Fri, 19 Jun 2026 18:46:03 GMT",
+        "allow": "GET, HEAD",
+        "age": "0",
+        "cf-cache-status": "HIT",
+        "content-encoding": "gzip",
+        "cf-ray": "a1127c5aeca5d2a8-FRA",
+        "_status_code": 200
+    },
+    "fixes": {
+        "nginx": [
+            {
+                "code": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "add_header Content-Security-Policy \"default-src 'self'\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header Content-Security-Policy \"default-src 'self'\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "add_header X-Frame-Options \"DENY\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header X-Frame-Options \"DENY\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "add_header X-Content-Type-Options \"nosniff\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header X-Content-Type-Options \"nosniff\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "add_header Permissions-Policy \"camera=(), microphone=()\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header Permissions-Policy \"camera=(), microphone=()\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "server_tokens off;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "server_tokens off;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            }
+        ],
+        "apache": [
+            {
+                "code": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "Header set Content-Security-Policy \"default-src 'self'\" ",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "apache": "Header set Content-Security-Policy \"default-src 'self'\" ",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "Header set X-Frame-Options \"DENY\" ",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "apache": "Header set X-Frame-Options \"DENY\" ",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "Header set X-Content-Type-Options \"nosniff\" ",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "apache": "Header set X-Content-Type-Options \"nosniff\" ",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "Header set Referrer-Policy \"strict-origin-when-cross-origin\" ",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "apache": "Header set Referrer-Policy \"strict-origin-when-cross-origin\" ",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "Header set Permissions-Policy \"camera=(), microphone=()\" ",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "apache": "Header set Permissions-Policy \"camera=(), microphone=()\" ",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "ServerTokens Prod\nServerSignature Off",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "apache": "ServerTokens Prod\nServerSignature Off",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            }
+        ],
+        "express": [
+            {
+                "code": "// Express: app.disable('x-powered-by')",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            }
+        ],
+        "flask": [
+            {
+                "code": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['CSP'] = 'default-src 'self''\n    return resp",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['CSP'] = 'default-src 'self''\n    return resp",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['Content-Security-Policy'] = 'default-src 'self''\n    return resp",
+                "risk_note": "上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败",
+                "server_type": "unknown",
+                "config_examples": {
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['Content-Security-Policy'] = 'default-src 'self''\n    return resp",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['X-Frame-Options'] = 'DENY'\n    return resp",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['X-Frame-Options'] = 'DENY'\n    return resp",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['X-Content-Type-Options'] = 'nosniff'\n    return resp",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['X-Content-Type-Options'] = 'nosniff'\n    return resp",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'\n    return resp",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'\n    return resp",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['Permissions-Policy'] = 'camera=(), microphone=()'\n    return resp",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['Permissions-Policy'] = 'camera=(), microphone=()'\n    return resp",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask: app.config['SECRET_KEY'] = os.urandom(32)",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "flask": "# Flask: app.config['SECRET_KEY'] = os.urandom(32)",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            }
+        ],
+        "spring_boot": [
+            {
+                "code": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Spring Boot: server.error.include-stacktrace=never",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "spring_boot": "# Spring Boot: server.error.include-stacktrace=never",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            }
+        ],
+        "cloudflare": [
+            {
+                "code": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: CSP\n# Value: default-src 'self'",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: CSP\n# Value: default-src 'self'",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: Content-Security-Policy\n# Value: default-src 'self'",
+                "risk_note": "上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败",
+                "server_type": "unknown",
+                "config_examples": {
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: Content-Security-Policy\n# Value: default-src 'self'",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: X-Frame-Options\n# Value: DENY",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: X-Frame-Options\n# Value: DENY",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: X-Content-Type-Options\n# Value: nosniff",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: X-Content-Type-Options\n# Value: nosniff",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: Referrer-Policy\n# Value: strict-origin-when-cross-origin",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: Referrer-Policy\n# Value: strict-origin-when-cross-origin",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: Permissions-Policy\n# Value: camera=(), microphone=()",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: Permissions-Policy\n# Value: camera=(), microphone=()",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Cloudflare: Scrape Shield > Disable Server Name Exposure",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "cloudflare": "# Cloudflare: Scrape Shield > Disable Server Name Exposure",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            }
+        ],
+        "nodejs": [
+            {
+                "code": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "// Express helmet: add_header Content-Security-Policy \"default-src 'self'\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "// Express helmet: add_header X-Frame-Options \"DENY\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "// Express helmet: add_header X-Content-Type-Options \"nosniff\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "// Express helmet: add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "// Express helmet: add_header Permissions-Policy \"camera=(), microphone=()\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "// app.disable('x-powered-by')",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "python": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            }
+        ],
+        "python": [
+            {
+                "code": "# Flask 后置响应头: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask 后置响应头: add_header Content-Security-Policy \"default-src 'self'\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask 后置响应头: add_header X-Frame-Options \"DENY\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask 后置响应头: add_header X-Content-Type-Options \"nosniff\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask 后置响应头: add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# Flask 后置响应头: add_header Permissions-Policy \"camera=(), microphone=()\" always;",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            },
+            {
+                "code": "# app.config['SECRET_KEY'] = os.urandom(32)",
+                "risk_note": None,
+                "server_type": "unknown",
+                "config_examples": {
+                    "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;",
+                    "apache": "Header set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" ",
+                    "express": "// Express: app.disable('x-powered-by')",
+                    "flask": "# Flask/FastAPI: @app.after_request\ndef add_security_headers(resp):\n    resp.headers['HSTS'] = 'max-age=31536000; includeSubDomains'\n    return resp",
+                    "spring_boot": "# Spring Boot: @Bean\n# public SecurityFilterChain filterChain(HttpSecurity http) {\n#     http.headers().httpStrictTransportSecurity();\n# }",
+                    "cloudflare": "# Cloudflare: Rules > Transform Rules > Modify Response Header\n# Header: HSTS\n# Value: max-age=31536000; includeSubDomains",
+                    "nodejs": "// Express helmet: add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                }
+            }
+        ]
+    }
+},
+        "iana.org": {
         "success": True, "scan_type": "real", "final_url": "https://iana.org",
         "is_https": True, "score": 84, "risk_level": "低风险",
         "summary": {"high": 0, "medium": 2, "low": 1, "total": 3},

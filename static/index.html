@@ -2113,7 +2113,7 @@ img[loading="lazy"] { background: var(--border-light); }
       </button>
       <button onclick="quickDemo('https://www.iana.org')" style="padding:12px 8px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:8px;cursor:pointer;text-align:left;transition:all 0.2s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(34,197,94,0.2)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none'">
         <div style="font-size:13px;font-weight:600;color:#16a34a">iana.org</div>
-        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">高安全 · 3 个低风险</div>
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">高安全 · 2 个低风险</div>
       </button>
       <button onclick="quickDemo('https://httpbin.org')" style="padding:12px 8px;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.2);border-radius:8px;cursor:pointer;text-align:left;transition:all 0.2s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(249,115,22,0.2)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none'">
         <div style="font-size:13px;font-weight:600;color:#ea580c">httpbin.org</div>
@@ -2141,11 +2141,11 @@ img[loading="lazy"] { background: var(--border-light); }
         </div>
         <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">
           <div>扫描目标：<code style="background:var(--bg-secondary);padding:2px 6px;border-radius:4px;font-size:11px">https://example.com</code></div>
-          <div style="margin-top:4px">预期结果：评分 <strong style="color:var(--warning)">72</strong>，发现 <strong>3</strong> 个配置缺失（HSTS、CSP、X-Frame-Options）</div>
+          <div style="margin-top:4px">预期结果：评分 <strong style="color:var(--warning)">66</strong>，发现 <strong>7</strong> 个配置问题（HSTS/CSP/X-Frame-Options 等安全响应头缺失）</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:auto">
-          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(245,158,11,0.12);color:#d97706;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">评分 72</span>
-          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(239,68,68,0.12);color:#dc2626;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">3 个缺失</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(245,158,11,0.12);color:#d97706;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">评分 66</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(239,68,68,0.12);color:#dc2626;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">7 个问题</span>
           <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,0.12);color:#16a34a;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">未受限</span>
         </div>
         <button onclick="loadDemoCaseA()" style="margin-top:4px;padding:10px 14px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all 0.2s" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='var(--shadow-md)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none'">查看演示结果</button>
@@ -4845,7 +4845,29 @@ function friendlyError(err) {
 window.friendlyError = friendlyError;
 
 // 案例 A：普通企业站 - 配置优化演示（example.com）
+// 改为调用后端公共演示 API，保证演示数据与真实扫描 100% 一致
 function loadDemoCaseA() {
+  var c = document.getElementById('result-content') || document.body;
+  c.innerHTML = '<div style="padding:20px;text-align:center"><div class="spinner"></div><div style="margin-top:12px;color:var(--text-secondary);font-size:13px">正在加载演示数据（真实扫描）...</div></div>';
+  fetch('/api/public-demo-scan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: 'https://example.com' })
+  })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(res) {
+      if (res.ok && res.data.success) {
+        renderDemoReport(res.data);
+      } else {
+        c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ 演示数据加载失败：' + escapeHtml(friendlyError(res.data)) + '<br><span style="font-size:11px;color:var(--text-secondary)">请使用离线预置数据</span></div>';
+      }
+    })
+    .catch(function(e) {
+      c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ ' + escapeHtml(friendlyError(e)) + '</div>';
+    });
+}
+// 保留旧版本作为 fallback
+function _loadDemoCaseAFallback() {
   var data = {
     url: 'https://example.com',
     time: new Date().toLocaleString('zh-CN'),
