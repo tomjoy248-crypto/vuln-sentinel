@@ -5112,7 +5112,20 @@ function loadTrendChart(days) {
   var container = document.getElementById('trend-chart');
   if (!container) return;
   if (!isLoggedIn()) {
-    container.innerHTML = '<div style="font-size:12px;color:var(--text-secondary)">登录后查看趋势</div>';
+    // V11.4 修复：未登录时也显示演示趋势图
+    renderTrendChart({
+      days: days,
+      data: [
+        { date: '06-19', avg_score: 78, scan_count: 2 },
+        { date: '06-20', avg_score: 82, scan_count: 3 },
+        { date: '06-21', avg_score: 88, scan_count: 1 },
+        { date: '06-22', avg_score: 91, scan_count: 4 },
+        { date: '06-23', avg_score: 95, scan_count: 2 },
+        { date: '06-24', avg_score: 96, scan_count: 3 },
+        { date: '06-25', avg_score: 98, scan_count: 5 }
+      ],
+      demo: true
+    });
     return;
   }
   container.innerHTML = '<div style="font-size:12px;color:var(--text-secondary)">加载中...</div>';
