@@ -940,7 +940,41 @@ def init_db() -> None:
         logger.warning("Password migration failed: %s", e)
     conn.commit()
     conn.close()
+
+    # 性能优化：补加索引（CREATE INDEX IF NOT EXISTS，不影响已存在数据）
+    # 多数查询都按 user_id 过滤
+    _create_indexes()
     logger.info("Database initialized: %s", DB_PATH)
+
+
+def _create_indexes() -> None:
+    """补加缺失的索引。已存在的索引（PRIMARY KEY/UNIQUE）会被 IF NOT EXISTS 自动跳过。"""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        ddl = [
+            # scans：按用户 + 时间排序是热路径
+            "CREATE INDEX IF NOT EXISTS idx_scans_user_created ON scans(user_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_scans_url ON scans(url)",
+            # assets：按 user 列出
+            "CREATE INDEX IF NOT EXISTS idx_assets_user ON assets(user_id)",
+            # monitors：按用户 + 启用状态
+            "CREATE INDEX IF NOT EXISTS idx_monitors_user_active ON monitors(user_id, is_active)",
+            # monitor_alerts：按用户 + 已读状态
+            "CREATE INDEX IF NOT EXISTS idx_monitor_alerts_user_read ON monitor_alerts(user_id, is_read)",
+            "CREATE INDEX IF NOT EXISTS idx_monitor_alerts_monitor ON monitor_alerts(monitor_id)",
+            # ai_conversations：按用户 + id（取最近 N 条）
+            "CREATE INDEX IF NOT EXISTS idx_ai_conv_user_id ON ai_conversations(user_id, id DESC)",
+            # tickets：按用户
+            "CREATE INDEX IF NOT EXISTS idx_tickets_user ON tickets(user_id)",
+        ]
+        for stmt in ddl:
+            try:
+                conn.execute(stmt)
+            except Exception as e:
+                logger.debug("index ddl skipped: %s (%s)", stmt, e)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def save_scan(
@@ -1496,6 +1530,20 @@ if _cors_wildcard:
 
 # 启用 gzip 压缩
 app.add_middleware(GZipMiddleware, minimum_size=500)
+
+
+# 静态资源缓存头中间件：开发期 index.html 短缓存，favicon/字体长缓存
+@app.middleware("http")
+async def _cache_control_middleware(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/") and not path.endswith(".html"):
+        # 字体、JS、CSS、图片：长缓存
+        response.headers["Cache-Control"] = "public, max-age=3600"
+    elif path == "/" or path.endswith(".html"):
+        # 主页面：开发期间不长缓存，方便调试；上线可改 max-age=300
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
 
 
 # ---------- Middleware ----------
@@ -8197,7 +8245,14 @@ async def index() -> HTMLResponse:
 
 @app.get("/{path:path}")
 async def catch_all(path: str) -> Any:
-    # 使用 Path.resolve() 并校验结果仍在 STATIC_DIR 内，防止路径穿越
+    # 性能优化：未注册的 /api/* 端点直接返回 JSON 404，
+    # 避免 fallback 把整张 index.html（411KB）塞给客户端
+    if path.startswith("api/"):
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": f"endpoint /{path} not found"},
+        )
+    # 静态资源：使用 Path.resolve() 并校验结果仍在 STATIC_DIR 内，防止路径穿越
     try:
         base = Path(STATIC_DIR).resolve()
         fp = (base / path).resolve()
