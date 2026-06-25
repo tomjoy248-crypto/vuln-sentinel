@@ -2038,22 +2038,22 @@ img[loading="lazy"] { background: var(--border-light); }
   <div class="card fade-in-up" style="margin-top:14px;padding:14px;background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff">
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
       <div>
-        <div style="font-size:24px;font-weight:800;color:#22c55e;line-height:1">0%</div>
+        <div data-count="0" data-suffix="%" style="font-size:24px;font-weight:800;color:#22c55e;line-height:1" class="counter">0%</div>
         <div style="font-size:10px;color:#94a3b8;margin-top:4px">误报率</div>
         <div style="font-size:9px;color:#64748b;margin-top:2px">56 用例验证</div>
       </div>
       <div>
-        <div style="font-size:24px;font-weight:800;color:#6366f1;line-height:1">11</div>
+        <div data-count="11" style="font-size:24px;font-weight:800;color:#6366f1;line-height:1" class="counter">11</div>
         <div style="font-size:10px;color:#94a3b8;margin-top:4px">检测维度</div>
         <div style="font-size:9px;color:#64748b;margin-top:2px">交叉验证</div>
       </div>
       <div>
-        <div style="font-size:24px;font-weight:800;color:#f59e0b;line-height:1">6</div>
+        <div data-count="6" style="font-size:24px;font-weight:800;color:#f59e0b;line-height:1" class="counter">6</div>
         <div style="font-size:10px;color:#94a3b8;margin-top:4px">平台修复</div>
         <div style="font-size:9px;color:#64748b;margin-top:2px">Nginx/Apache...</div>
       </div>
       <div>
-        <div style="font-size:24px;font-weight:800;color:#ec4899;line-height:1">92</div>
+        <div data-count="92" style="font-size:24px;font-weight:800;color:#ec4899;line-height:1" class="counter">92</div>
         <div style="font-size:10px;color:#94a3b8;margin-top:4px">测试通过</div>
         <div style="font-size:9px;color:#64748b;margin-top:2px">pytest 全绿</div>
       </div>
@@ -4314,10 +4314,10 @@ async function loadPublicDemo() {
     if (r.ok && data.success) {
       renderDemoReport(data);
     } else {
-      if (c) c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ 扫描失败：' + escapeHtml(extractError(data)) + '</div>';
+      if (c) c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ ' + escapeHtml(friendlyError(extractError(data))) + '</div>';
     }
   } catch (e) {
-    if (c) c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ 网络错误：' + (e.message || e) + '</div>';
+    if (c) c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ ' + escapeHtml(friendlyError(e)) + '</div>';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🔄 重新扫描'; }
   }
@@ -4635,7 +4635,7 @@ async function doBatchScan() {
       body: JSON.stringify({ urls: urls, deep: deep, authorized: true })
     });
     var data = await r.json();
-    if (!r.ok) { res.innerHTML = '<div style="color:#ef4444;padding:10px">扫描失败：' + escapeHtml(extractError(data)) + '</div>'; return; }
+    if (!r.ok) { res.innerHTML = '<div style="color:#ef4444;padding:10px">❌ ' + escapeHtml(friendlyError(extractError(data))) + '</div>'; return; }
     var html = '<div style="font-size:13px;font-weight:600;margin-bottom:8px">扫描完成 · ' + data.count + ' 个目标</div>';
     data.results.forEach(function(item, i) {
       var color = item.ok ? (item.score >= 80 ? '#10b981' : item.score >= 50 ? '#f59e0b' : '#ef4444') : '#9ca3af';
@@ -4762,6 +4762,38 @@ function copyFixCode(textareaId) {
 }
 
 // ============== 一键演示目标 ==============
+
+// 友好错误提示工具
+function friendlyError(err) {
+  var msg = (err && (err.message || err.error || err.detail)) || String(err) || '未知错误';
+  if (/timeout|timed out/i.test(msg)) {
+    return '网络连接超时，请检查 URL 是否可访问';
+  }
+  if (/dns|getaddrinfo|Name or service not known/i.test(msg)) {
+    return '域名解析失败，请检查域名是否正确';
+  }
+  if (/403|forbidden/i.test(msg)) {
+    return '目标站点拒绝访问，可能需要授权或绕过 WAF';
+  }
+  if (/404|not found/i.test(msg)) {
+    return '目标页面不存在，请检查 URL 路径';
+  }
+  if (/ssl|certificate|handshake/i.test(msg)) {
+    return 'SSL/TLS 握手失败，证书可能无效或过期';
+  }
+  if (/refused|connect/i.test(msg)) {
+    return '连接被拒绝，目标站点可能不可达';
+  }
+  if (/authorized|授权/i.test(msg)) {
+    return '请先勾选「我已获得授权扫描此目标」';
+  }
+  if (/rate|limit|频率/i.test(msg)) {
+    return '扫描频率超限，请稍后再试';
+  }
+  // 默认截断过长的错误
+  return msg.length > 60 ? msg.substring(0, 60) + '...' : msg;
+}
+window.friendlyError = friendlyError;
 
 // 案例 A：普通企业站 - 配置优化演示（example.com）
 function loadDemoCaseA() {
@@ -5012,7 +5044,7 @@ function loadTrendChart(days) {
   }
   container.innerHTML = '<div style="font-size:12px;color:var(--text-secondary)">加载中...</div>';
   authFetch('/api/stats/history?days=' + days).then(function(r) {
-    if (!r.ok) { container.innerHTML = '<div style="font-size:12px;color:var(--text-secondary)">暂无数据</div>'; return; }
+    if (!r.ok) { container.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);padding:20px;text-align:center">📊 暂无数据<br><span style="font-size:11px;color:var(--text-lighter)">先扫描一个网站吧</span></div>'; return; }
     return r.json();
   }).then(function(data) {
     renderTrendChart(data);
@@ -7426,7 +7458,7 @@ function renderScanHistory(page) {
   authFetch('/api/history?limit=50').then(function(resp) { return resp.json(); }).then(function(data) {
     var history = data.history || [];
     if (history.length === 0) {
-      list.innerHTML = '<p style="text-align:center;color:var(--text-lighter);padding:20px 0">暂无扫描记录</p>';
+      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:36px;margin-bottom:8px">🔍</div><div style="font-size:13px">暂无扫描记录</div><div style="font-size:11px;margin-top:6px">点首页「开始扫描」试试</div></div>';
       safeSetDisplay('history-pagination', 'none');
       var tw = document.getElementById('history-trend-wrap');
       if (tw) tw.style.display = 'none';
@@ -7634,8 +7666,47 @@ document.addEventListener('DOMContentLoaded', function() {
   if (regConfirm) { regConfirm.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
   var scanUrl = safeGetElement('scan-url');
   if (scanUrl) { scanUrl.addEventListener('keydown', function(e) { if (e.key === 'Enter') goVerifyStep2(); }); }
-});
 
+  // 全局键盘快捷键
+  document.addEventListener('keydown', function(e) {
+    // Esc 关闭弹窗
+    if (e.key === 'Escape') {
+      var modals = document.querySelectorAll('.modal.show, [id$="-modal"][style*="display: block"]');
+      modals.forEach(function(m) { m.style.display = 'none'; m.classList.remove('show'); });
+    }
+    // Ctrl/Cmd + K 跳到扫描输入框
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      var url = document.getElementById('scanUrl') || document.getElementById('scan-url');
+      if (url) { url.focus(); url.select(); }
+    }
+  });
+
+  // 数字滚动动画（首屏数据条）
+  function animateCounters() {
+    var counters = document.querySelectorAll('.counter[data-count]');
+    counters.forEach(function(c) {
+      var target = parseInt(c.getAttribute('data-count'), 10);
+      var suffix = c.getAttribute('data-suffix') || '';
+      var duration = 1200;
+      var start = 0;
+      var startTime = null;
+      function step(ts) {
+        if (!startTime) startTime = ts;
+        var progress = Math.min((ts - startTime) / duration, 1);
+        var eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+        var current = Math.floor(start + (target - start) * eased);
+        c.textContent = current + suffix;
+        if (progress < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    });
+  }
+  // 仅在 home 页加载时触发
+  if (document.querySelector('.counter[data-count]')) {
+    setTimeout(animateCounters, 300);
+  }
+});
 </script>
 </body>
 </html>
