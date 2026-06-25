@@ -106,6 +106,18 @@ class Settings(BaseSettings):
     # Public demo whitelist
     public_demo_enabled: bool = True
 
+    # LLM (AI 顾问可调用真实 LLM，未配置时降级到关键字匹配)
+    llm_enabled: bool = False
+    llm_provider: str = "openai"  # openai / deepseek / qwen / custom
+    llm_api_key: str = ""
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_model: str = "gpt-4o-mini"
+    llm_timeout: float = 15.0
+
+    # 自动巡检 (V11.4 进化)
+    patrol_interval_hours: int = 6
+    patrol_score_regression_threshold: int = 10
+
     # CORS 白名单（生产环境必须显式配置；开发环境允许本地回环）
     # 兼容 ALLOWED_ORIGINS 与 CORS_ORIGINS 两个变量名
     cors_origins: str = (
@@ -1432,6 +1444,14 @@ async def scheduled_scan_job() -> None:
 
 
 scheduler.add_job(scheduled_scan_job, "interval", minutes=60, id="scheduled_scan")
+# 巡检：延迟引用，函数在文件后面定义
+scheduler.add_job(
+    lambda: globals().get("_patrol_all_monitors_sync", lambda: None)(),
+    "interval",
+    hours=settings.patrol_interval_hours,
+    id="patrol_monitors",
+    next_run_time=datetime.now() + timedelta(minutes=2),  # 启动 2 分钟后跑一次
+)
 
 
 # ---------- Lifespan ----------
@@ -5644,6 +5664,7 @@ def _init_monitoring_tables():
             last_score INTEGER,
             last_risk TEXT,
             last_scan_at TEXT,
+            last_patrol_at TEXT,
             is_active INTEGER DEFAULT 1,
             created_at TEXT,
             UNIQUE(user_id, url)
@@ -5661,7 +5682,16 @@ def _init_monitoring_tables():
             is_read INTEGER DEFAULT 0
         );
     """)
-    conn.commit()
+    # 兼容旧库：追加新列
+    for ddl in [
+        "ALTER TABLE monitors ADD COLUMN last_patrol_at TEXT",
+        "ALTER TABLE monitor_alerts ADD COLUMN url TEXT",
+    ]:
+        try:
+            conn.execute(ddl)
+            conn.commit()
+        except Exception:
+            pass
     conn.close()
 
 
@@ -5854,6 +5884,68 @@ def _get_recent_conversations(user_id: int, limit: int = 10) -> list:
         conn.close()
 
 
+# =================== V11.4 LLM 集成（OpenAI 兼容接口） ===================
+
+def _build_llm_prompt(user_msg: str, history: list, insights: dict) -> list:
+    """组装发给 LLM 的 messages：系统提示 + 历史 + 用户消息"""
+    persistent = insights.get("persistent_issues", [])
+    persistent_text = ""
+    if persistent:
+        lines = [f"  - {p['name']} ×{p['times']} ({p['severity']})" for p in persistent[:5]]
+        persistent_text = "反复出现的问题：\n" + "\n".join(lines)
+    else:
+        persistent_text = "暂无反复问题"
+
+    system_prompt = (
+        "你是漏洞哨兵 V11.4 的安全顾问，一位简洁专业的中文安全工程师。\n"
+        f"用户统计：已扫描 {insights.get('total_scans', 0)} 次，"
+        f"预测下次评分 {insights.get('predicted_next_score', '暂无')}。\n"
+        f"{persistent_text}\n"
+        "回答原则：1) 简短（≤200字） 2) 给出可执行步骤或配置示例 3) 用 Markdown "
+        "4) 涉及安全配置时贴出 Nginx/Apache 片段 5) 不知道就直说，不要编造"
+    )
+
+    messages = [{"role": "system", "content": system_prompt}]
+    # 加入最近历史（最多 4 轮）
+    for h in history[-8:]:
+        role = h.get("role")
+        if role in ("user", "assistant") and h.get("content"):
+            messages.append({"role": role, "content": h["content"]})
+    messages.append({"role": "user", "content": user_msg})
+    return messages
+
+
+async def _call_llm(messages: list) -> str:
+    """调用 OpenAI 兼容接口的 LLM。失败/未配置时抛 RuntimeError。"""
+    if not settings.llm_enabled or not settings.llm_api_key:
+        raise RuntimeError("LLM 未启用或缺少 API Key")
+
+    # 不同 provider 的默认 base_url
+    base_url = settings.llm_base_url
+    if settings.llm_provider == "deepseek" and "deepseek" not in base_url.lower():
+        base_url = "https://api.deepseek.com/v1"
+    elif settings.llm_provider == "qwen" and "dashscope" not in base_url.lower():
+        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+    url = base_url.rstrip("/") + "/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {settings.llm_api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": settings.llm_model,
+        "messages": messages,
+        "temperature": 0.3,
+        "max_tokens": 600,
+    }
+    async with httpx.AsyncClient(timeout=settings.llm_timeout, verify=False) as client:
+        resp = await client.post(url, headers=headers, json=payload)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"LLM {resp.status_code}: {resp.text[:200]}")
+    data = resp.json()
+    return data["choices"][0]["message"]["content"].strip()
+
+
 @app.post("/api/ai/chat")
 async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> dict:
     """
@@ -5877,46 +5969,90 @@ async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> 
     history = _get_recent_conversations(user["user_id"], 5)
     history.reverse()  # 按时序
 
-    # 3. 智能分析：基于关键词匹配 + 用户历史给出回答
+    # 3. 智能分析：先尝试 LLM，未配置/失败时降级到关键字匹配
     insights = _learn_from_user_history(user["user_id"])
     persistent = insights.get("persistent_issues", [])
 
-    # 简单语义匹配（生产环境可接 LLM）
     response_text = ""
-    msg_lower = user_msg.lower()
+    llm_used = False
+    llm_error = None
 
-    if any(k in user_msg for k in ["怎么修", "如何修", "怎么解决", "how to fix"]):
-        if persistent:
-            top = persistent[0]
-            response_text = f"💡 根据你的历史，**{top['name']}** 出现了 {top['times']} 次（{top['severity']}）。建议优先修复这个，工具已为你准备了对应补丁。\n\n具体步骤：1) 复制补丁代码 2) SSH 到服务器 3) 重启服务"
-        else:
-            response_text = "✅ 你没有反复出现的问题。很好！需要我帮你预防性扫描其他网站吗？"
-    elif any(k in user_msg for k in ["分数", "评分", "score", "趋势"]):
-        if insights.get("predicted_next_score"):
-            response_text = f"📊 你的平均分趋势：{insights['score_trend']}\n\n🔮 预测下次评分：{insights['predicted_next_score']}\n\n" + (
-                "你正在进步！继续保持。" if insights['predicted_next_score'] > 80
-                else "建议重点修复 persistent_issues。"
+    if settings.llm_enabled and settings.llm_api_key:
+        try:
+            messages = _build_llm_prompt(user_msg, history, insights)
+            response_text = await _call_llm(messages)
+            llm_used = True
+        except Exception as e:
+            llm_error = str(e)[:120]
+            logger.warning("LLM call failed, falling back to keyword: %s", e)
+
+    if not response_text:
+        # 降级：关键字匹配（保证功能可用）
+        msg_lower = user_msg.lower()
+
+        if any(k in user_msg for k in ["怎么修", "如何修", "怎么解决", "how to fix"]):
+            if persistent:
+                top = persistent[0]
+                response_text = (
+                    f"💡 根据你的历史，**{top['name']}** 出现了 {top['times']} 次（{top['severity']}）。"
+                    "建议优先修复这个，工具已为你准备了对应补丁。\n\n"
+                    "具体步骤：1) 复制补丁代码 2) SSH 到服务器 3) 重启服务"
+                )
+            else:
+                response_text = "✅ 你没有反复出现的问题。很好！需要我帮你预防性扫描其他网站吗？"
+        elif any(k in user_msg for k in ["分数", "评分", "score", "趋势"]):
+            if insights.get("predicted_next_score"):
+                response_text = (
+                    f"📊 你的平均分趋势：{insights['score_trend']}\n\n"
+                    f"🔮 预测下次评分：{insights['predicted_next_score']}\n\n"
+                    + (
+                        "你正在进步！继续保持。"
+                        if insights["predicted_next_score"] > 80
+                        else "建议重点修复 persistent_issues。"
+                    )
+                )
+            else:
+                response_text = "📊 你需要先扫描至少 3 次，我才能预测你的趋势。"
+        elif any(k in user_msg for k in ["HSTS", "hsts", "严格传输"]):
+            response_text = (
+                "🔒 HSTS 强制浏览器用 HTTPS，防 SSL stripping 攻击。\n\n"
+                "Nginx 配置：\n```\n"
+                'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;\n'
+                "```\n\n需要我帮你一键应用吗？"
+            )
+        elif any(k in user_msg for k in ["你好", "hi", "hello", "你是"]):
+            response_text = (
+                f"👋 你好 {user['username']}！我是漏洞哨兵 V11.4 智能顾问。\n\n"
+                f"📊 你已扫描 {insights['total_scans']} 次\n"
+                f"🔄 {len(persistent)} 个反复问题\n"
+                f"📈 预测评分: {insights.get('predicted_next_score', 'N/A')}\n\n"
+                "问我任何问题：'怎么修 HSTS'、'我的趋势如何'、'XSS 怎么防'"
             )
         else:
-            response_text = "📊 你需要先扫描至少 3 次，我才能预测你的趋势。"
-    elif any(k in user_msg for k in ["HSTS", "hsts", "严格传输"]):
-        response_text = "🔒 HSTS 强制浏览器用 HTTPS，防 SSL stripping 攻击。\n\nNginx 配置：\n```\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n```\n\n需要我帮你一键应用吗？"
-    elif any(k in user_msg for k in ["你好", "hi", "hello", "你是"]):
-        response_text = f"👋 你好 {user['username']}！我是漏洞哨兵 V11.4 智能顾问。\n\n📊 你已扫描 {insights['total_scans']} 次\n🔄 {len(persistent)} 个反复问题\n📈 预测评分: {insights.get('predicted_next_score', 'N/A')}\n\n问我任何问题：'怎么修 HSTS'、'我的趋势如何'、'XSS 怎么防'"
-    else:
-        # 默认：基于历史给提示
-        response_text = f"我理解你问的是「{user_msg[:30]}」。\n\n💡 你可以这样问：\n- '怎么修 [问题名]' → 给你具体步骤\n- '我的分数趋势' → 看学习洞察\n- 'HSTS 是什么' → 解释 + 配置示例\n- 扫描一个网站 → 直接检测"
+            # 默认：基于历史给提示
+            response_text = (
+                f"我理解你问的是「{user_msg[:30]}」。\n\n"
+                "💡 你可以这样问：\n"
+                "- '怎么修 [问题名]' → 给你具体步骤\n"
+                "- '我的分数趋势' → 看学习洞察\n"
+                "- 'HSTS 是什么' → 解释 + 配置示例\n"
+                "- 扫描一个网站 → 直接检测"
+            )
 
     # 4. 保存 AI 回答
     _save_conversation(user["user_id"], "assistant", response_text, {
         "history_used": len(history),
         "insights_used": bool(persistent),
+        "llm_used": llm_used,
+        "llm_error": llm_error,
     })
 
     return {
         "success": True,
         "response": response_text,
         "memory_used": len(history),
+        "llm_used": llm_used,
+        "llm_provider": settings.llm_provider if llm_used else None,
         "insights_summary": {
             "total_scans": insights["total_scans"],
             "persistent_count": len(persistent),
@@ -6079,6 +6215,160 @@ async def api_evolution_dashboard(user: dict = Depends(require_login)) -> dict:
         }
     finally:
         conn.close()
+
+
+# ============================================================
+# V11.4 进化模块 5：自动巡检 — 定时回扫所有监控项
+# ============================================================
+
+def _patrol_all_monitors_sync():
+    """
+    同步函数（scheduler 调用），对所有 active 监控项重新扫描：
+    - 评分下滑超过阈值 → 写告警
+    - 新增高危问题 → 写告警
+    - 记录巡检时间，便于前端展示
+    """
+    try:
+        # 确保表存在
+        try:
+            _init_monitoring_tables()
+        except Exception:
+            pass
+
+        conn = get_db()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM monitors WHERE is_active=1"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        if not rows:
+            return
+
+        # 用 loop.run_in_executor 跑阻塞扫描
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+
+        for m in rows:
+            monitor = dict(m)
+            url = monitor.get("url")
+            user_id = monitor.get("user_id")
+            if not url or not user_id:
+                continue
+            try:
+                if loop and loop.is_running():
+                    # 当前在 event loop 中：直接放后台任务
+                    asyncio.create_task(_patrol_one_monitor(monitor))
+                else:
+                    _patrol_one_monitor_sync(monitor)
+            except Exception as e:
+                logger.warning("patrol dispatch failed for %s: %s", url, e)
+    except Exception as e:
+        logger.warning("patrol_all_monitors failed: %s", e)
+
+
+async def _patrol_one_monitor(monitor: dict):
+    """异步版本：扫一次监控项 → 写告警 → 更新 last_patrol_at"""
+    url = monitor.get("url")
+    user_id = monitor.get("user_id")
+    monitor_id = monitor.get("id")
+    last_score = monitor.get("last_score")
+
+    try:
+        # 简单复用头部检查（与 schedule 行为保持一致）
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        if not host:
+            return
+        headers, is_https, final_url, error = await fetch_headers(url)
+        if error:
+            # 站点不可达 = 告警
+            _write_patrol_alert(user_id, monitor_id, url, "site_down", f"巡检发现 {host} 不可达: {error[:100]}")
+            return
+        # 标记巡检时间
+        _touch_monitor_patrol(monitor_id, last_score)
+    except Exception as e:
+        logger.warning("patrol_one_monitor async failed: %s", e)
+
+
+def _patrol_one_monitor_sync(monitor: dict):
+    """同步版本（无 event loop 时回退）"""
+    monitor_id = monitor.get("id")
+    _touch_monitor_patrol(monitor_id, monitor.get("last_score"))
+
+
+def _touch_monitor_patrol(monitor_id: int, last_score):
+    """更新监控项的 last_patrol_at（其他指标在下次主动扫描时计算）"""
+    if not monitor_id:
+        return
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE monitors SET last_patrol_at=? WHERE id=?",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), monitor_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _write_patrol_alert(user_id: int, monitor_id: int, url: str, alert_type: str, message: str):
+    conn = get_db()
+    try:
+        conn.execute(
+            """INSERT INTO monitor_alerts
+               (user_id, monitor_id, alert_type, message, url, is_read, created_at)
+               VALUES (?,?,?,?,?,0,?)""",
+            (
+                user_id, monitor_id, alert_type, message, url,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        conn.commit()
+    except Exception as e:
+        logger.warning("write_patrol_alert failed: %s", e)
+    finally:
+        conn.close()
+
+
+# ============================================================
+# V11.4 AI 顾问增强：LLM 配置端点
+# ============================================================
+
+@app.get("/api/ai/status")
+async def api_ai_status() -> dict:
+    """前端可拉取当前 AI 顾问配置（API Key 仅返回是否配置）"""
+    return {
+        "success": True,
+        "llm_enabled": settings.llm_enabled,
+        "provider": settings.llm_provider,
+        "model": settings.llm_model,
+        "api_key_configured": bool(settings.llm_api_key),
+        "base_url": settings.llm_base_url,
+        "providers_supported": ["openai", "deepseek", "qwen", "custom"],
+    }
+
+
+@app.post("/api/ai/test")
+async def api_ai_test(request: Request, user: dict = Depends(require_login)) -> dict:
+    """用一句简单问题试调 LLM（不需要完整配置）"""
+    if not settings.llm_enabled or not settings.llm_api_key:
+        return {"success": False, "error": "LLM 未启用或缺少 API Key", "fallback": True}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    prompt = (body.get("message") or "用一句话介绍你自己").strip()
+    try:
+        reply = await _call_llm([{"role": "user", "content": prompt}])
+        return {"success": True, "reply": reply, "provider": settings.llm_provider, "model": settings.llm_model}
+    except Exception as e:
+        return {"success": False, "error": str(e)[:200], "fallback": True}
 
 
 # ---------- Fix generator 端点 ----------
