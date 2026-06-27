@@ -4215,12 +4215,15 @@ function updateAuthUI() {
 
 function doResetPassword() {
   if (!isLoggedIn()) { showToast('请先登录后再修改密码'); toggleAuthForm('login'); return; }
-  var pw1 = document.getElementById('reset-new-password').value;
-  var pw2 = document.getElementById('reset-new-password2').value;
+  var pw1El = document.getElementById('reset-new-password');
+  var pw2El = document.getElementById('reset-new-password2');
   var errEl = document.getElementById('reset-error');
-  errEl.textContent = '';
-  if (!pw1 || pw1.length < 6) { errEl.textContent = '新密码至少 6 个字符'; return; }
-  if (pw1 !== pw2) { errEl.textContent = '两次密码不一致'; return; }
+  if (!pw1El || !pw2El) { showToast('密码重置表单加载失败'); return; }
+  var pw1 = pw1El.value;
+  var pw2 = pw2El.value;
+  if (errEl) errEl.textContent = '';
+  if (!pw1 || pw1.length < 6) { if (errEl) errEl.textContent = '新密码至少 6 个字符'; return; }
+  if (pw1 !== pw2) { if (errEl) errEl.textContent = '两次密码不一致'; return; }
   authFetch('/api/reset-password', {
     method: 'POST',
     body: JSON.stringify({ new_password: pw1 })
@@ -4232,16 +4235,19 @@ function doResetPassword() {
       errEl.textContent = extractError(data) || '修改失败';
     }
   }).catch(function(e) {
-    errEl.textContent = '修改失败: ' + e.message;
+    if (errEl) errEl.textContent = '修改失败: ' + e.message;
   });
 }
 
 function doLogin() {
-  var username = document.getElementById('login-username').value.trim();
-  var password = document.getElementById('login-password').value.trim();
+  var usernameEl = document.getElementById('login-username');
+  var passwordEl = document.getElementById('login-password');
   var errEl = document.getElementById('login-error');
-  errEl.textContent = '';
-  if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return; }
+  if (!usernameEl || !passwordEl) { showToast('登录表单加载失败'); return; }
+  var username = usernameEl.value.trim();
+  var password = passwordEl.value.trim();
+  if (errEl) errEl.textContent = '';
+  if (!username || !password) { if (errEl) errEl.textContent = '请输入用户名和密码'; return; }
 
   authFetch('/api/login', {
     method: 'POST',
@@ -4253,23 +4259,28 @@ function doLogin() {
       updateAuthUI();
       showToast('登录成功，欢迎 ' + (data.username || username));
     } else {
-      errEl.textContent = extractError(data) || '登录失败';
+      if (errEl) errEl.textContent = extractError(data) || '登录失败';
     }
   }).catch(function(e) {
-    errEl.textContent = '登录失败: ' + e.message;
+    if (errEl) errEl.textContent = '登录失败: ' + e.message;
   });
 }
 
 function doRegister() {
-  var username = document.getElementById('reg-username').value.trim();
-  var email = document.getElementById('reg-email').value.trim();
-  var password = document.getElementById('reg-password').value.trim();
-  var password2 = document.getElementById('reg-password2').value.trim();
+  var usernameEl = document.getElementById('reg-username');
+  var emailEl = document.getElementById('reg-email');
+  var passwordEl = document.getElementById('reg-password');
+  var password2El = document.getElementById('reg-password2');
   var errEl = document.getElementById('register-error');
-  errEl.textContent = '';
-  if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return; }
-  if (password !== password2) { errEl.textContent = '两次密码不一致'; return; }
-  if (password.length < 6) { errEl.textContent = '密码至少 6 个字符'; return; }
+  if (!usernameEl || !passwordEl || !password2El) { showToast('注册表单加载失败'); return; }
+  var username = usernameEl.value.trim();
+  var email = emailEl ? emailEl.value.trim() : '';
+  var password = passwordEl.value.trim();
+  var password2 = password2El.value.trim();
+  if (errEl) errEl.textContent = '';
+  if (!username || !password) { if (errEl) errEl.textContent = '请输入用户名和密码'; return; }
+  if (password !== password2) { if (errEl) errEl.textContent = '两次密码不一致'; return; }
+  if (password.length < 6) { if (errEl) errEl.textContent = '密码至少 6 个字符'; return; }
 
   var payload = { username: username, password: password };
   if (email) { payload.email = email; }
@@ -4284,10 +4295,10 @@ function doRegister() {
       updateAuthUI();
       showToast('注册成功，欢迎 ' + (data.username || username));
     } else {
-      errEl.textContent = extractError(data) || '注册失败';
+      if (errEl) errEl.textContent = extractError(data) || '注册失败';
     }
   }).catch(function(e) {
-    errEl.textContent = '注册失败: ' + e.message;
+    if (errEl) errEl.textContent = '注册失败: ' + e.message;
   });
 }
 
@@ -6884,7 +6895,10 @@ function renderTrendChart(data) {
   var innerH = H - padT - padB;
 
   // 计算时间范围
-  var times = points.map(function(p) { return new Date(p.time.replace(' ', 'T')).getTime(); });
+  var times = points.map(function(p) { return new Date((p.time || '').replace(' ', 'T')).getTime(); });
+  // 过滤掉 NaN 值
+  times = times.filter(function(t) { return !isNaN(t); });
+  if (times.length === 0) times = [Date.now()];
   var tMin = Math.min.apply(null, times);
   var tMax = Math.max.apply(null, times);
   if (tMax === tMin) tMax = tMin + 86400000; // 单点时拉伸 1 天
@@ -6921,11 +6935,11 @@ function renderTrendChart(data) {
   series.forEach(function(s, si) {
     var color = palette[si % palette.length];
     var d = s.data.map(function(pt) {
-      return xScale(new Date(pt.time.replace(' ', 'T')).getTime()) + ',' + yScale(pt.score);
+      return xScale(new Date((pt.time || '').replace(' ', 'T')).getTime()) + ',' + yScale(pt.score);
     }).join(' ');
     svg += '<polyline points="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" style="filter:drop-shadow(0 1px 2px ' + color + '44)"/>';
     s.data.forEach(function(pt) {
-      var cx = xScale(new Date(pt.time.replace(' ', 'T')).getTime());
+      var cx = xScale(new Date((pt.time || '').replace(' ', 'T')).getTime());
       var cy = yScale(pt.score);
       svg += '<circle cx="' + cx + '" cy="' + cy + '" r="4" fill="#fff" stroke="' + color + '" stroke-width="2"><title>' + escapeHtml(s.url) + ' · ' + pt.score + '分</title></circle>';
     });
@@ -7520,10 +7534,12 @@ function startScan() {
     }).catch(function(){});
   } catch(e) {}
   // V11.6 兼容：如果 scan-url-confirmed 是空（直接走 startScan），用 scan-url 兜底
-  var url = document.getElementById('scan-url-confirmed').value.trim();
+  var confirmedInput = document.getElementById('scan-url-confirmed');
+  var url = confirmedInput ? confirmedInput.value.trim() : '';
   if (!url) {
-    url = document.getElementById('scan-url').value.trim();
-    if (url) document.getElementById('scan-url-confirmed').value = url;
+    var urlInput = document.getElementById('scan-url');
+    url = urlInput ? urlInput.value.trim() : '';
+    if (url && confirmedInput) confirmedInput.value = url;
   }
   if (!url) { _scanInProgress = false; setButtonLoading("scan-btn", false); showToast('请输入网址'); return; }
 
@@ -8187,6 +8203,7 @@ function renderResult(data) {
   data.crawled_pages = Array.isArray(data.crawled_pages) ? data.crawled_pages : [];
   data.vuln_tests = Array.isArray(data.vuln_tests) ? data.vuln_tests : [];
   data.score_breakdown = Array.isArray(data.score_breakdown) ? data.score_breakdown : [];
+  data.owasp_coverage = Array.isArray(data.owasp_coverage) ? data.owasp_coverage : [];
   // 确保 ai_report 是对象
   data.ai_report = (data.ai_report && typeof data.ai_report === 'object') ? data.ai_report : { summary: '扫描完成', priority: '暂无优先事项' };
   // 确保 score 是有效数字
@@ -8250,9 +8267,9 @@ function renderResult(data) {
   html += '<div class="score-value" style="color:#fff">' + data.score + '</div>';
   html += '<div class="score-label" style="color:rgba(255,255,255,0.7)">安全评分</div>';
   html += '</div></div>';
-  html += '<div class="report-url">' + escapeHtml(data.url) + '</div>';
-  html += '<div class="report-time">' + data.time + '</div>';
-  html += '<span class="risk-badge ' + riskClass + '">' + data.risk_level + '</span>';
+  html += '<div class="report-url">' + escapeHtml(data.url || '') + '</div>';
+  html += '<div class="report-time">' + (data.time || '') + '</div>';
+  html += '<span class="risk-badge ' + riskClass + '">' + (data.risk_level || '未知') + '</span>';
   html += '</div>';
 
   // Risk Stats
@@ -8806,7 +8823,7 @@ function renderResult(data) {
     html += '<div><span style="color:var(--text-lighter)">签发机构:</span> ' + escapeHtml(ssl.issuer || 'N/A') + '</div>';
     html += '<div><span style="color:var(--text-lighter)">TLS 版本:</span> ' + escapeHtml(ssl.version || 'N/A') + '</div>';
     html += '<div><span style="color:var(--text-lighter)">密码套件:</span> ' + escapeHtml(ssl.cipher || 'N/A') + '</div>';
-    html += '<div><span style="color:var(--text-lighter)">剩余天数:</span> ' + (ssl.days_left !== null ? ssl.days_left + ' 天' : 'N/A') + '</div>';
+    html += '<div><span style="color:var(--text-lighter)">剩余天数:</span> ' + (ssl.days_left != null ? ssl.days_left + ' 天' : 'N/A') + '</div>';
     html += '<div><span style="color:var(--text-lighter)">过期时间:</span> ' + escapeHtml(ssl.not_after || 'N/A') + '</div>';
     if (ssl.san && ssl.san.length > 0) {
       html += '<div style="grid-column:1/-1"><span style="color:var(--text-lighter)">SAN:</span> ' + escapeHtml(ssl.san.join(', ')) + '</div>';
@@ -8814,7 +8831,7 @@ function renderResult(data) {
     html += '</div>';
     if (ssl.expired) {
       html += '<div style="margin-top:8px;padding:6px 10px;background:rgba(239,68,68,0.1);border-radius:6px;color:var(--danger);font-size:12px;font-weight:600">&#x26A0; 证书已过期！</div>';
-    } else if (ssl.days_left !== null && ssl.days_left < 30) {
+    } else if (ssl.days_left != null && ssl.days_left < 30) {
       html += '<div style="margin-top:8px;padding:6px 10px;background:rgba(245,158,11,0.1);border-radius:6px;color:var(--warning);font-size:12px;font-weight:600">&#x26A0; 证书将在 ' + ssl.days_left + ' 天后过期</div>';
     }
     if (ssl.weak) {
@@ -9164,7 +9181,8 @@ function scanRedirectTarget() {
   var match = reason.match(/https?:\/\/[^\s\)]+/);
   if (match && match[0]) {
     var url = match[0];
-    document.getElementById('scan-url').value = url;
+    var urlInput = document.getElementById('scan-url');
+    if (urlInput) urlInput.value = url;
     startScanDirect();
   } else {
     showToast('无法识别跳转目标地址');
@@ -9324,8 +9342,8 @@ function generateFixFromFindings(findings, config) {
 }
 
 function goToFixerWithScanResult() {
-  setButtonLoading("goto-fixer-btn", true);
   if (!lastScanResult) { showToast('请先完成扫描'); return; }
+  setButtonLoading("goto-fixer-btn", true);
   navigateTo('fixer');
   showToast('正在生成修复方案...');
   var url = lastScanResult.url;
@@ -9334,6 +9352,7 @@ function goToFixerWithScanResult() {
     method: 'POST',
     body: JSON.stringify({ url: url })
   }).then(function(resp) { return resp.json(); }).then(function(data) {
+    setButtonLoading('goto-fixer-btn', false);
     if (data.success) {
       lastFixResult = data.fixes;
       renderFixResult(data.fixes, data.score);
@@ -9342,12 +9361,12 @@ function goToFixerWithScanResult() {
       if (fr) fr.innerHTML = '<div class="card"><p style="color:var(--danger)">生成失败: ' + escapeHtml(extractError(data)) + '</p></div>';
     }
   }).catch(function(e) {
+    setButtonLoading('goto-fixer-btn', false);
     // Fallback: use local findings
     var fixes = generateLocalFixes(lastScanResult.findings);
     lastFixResult = fixes;
     renderFixResult(fixes, lastScanResult.score);
   });
-  setButtonLoading('goto-fixer-btn', false);
 }
 
 
@@ -9390,7 +9409,7 @@ function renderFixResult(fixes, score) {
 
   html += '<div class="card fade-in-up">';
   html += '<div class="card-title">' + langIcons[lang] + ' ' + langLabels[lang] + ' 修复代码</div>';
-  html += '<div style="font-size:12px;color:var(--text-lighter);margin-bottom:10px">共 ' + lines.length + ' 条修复建议，评分: ' + score + '</div>';
+  html += '<div style="font-size:12px;color:var(--text-lighter);margin-bottom:10px">共 ' + lines.length + ' 条修复建议，评分: ' + (typeof score === 'number' && !isNaN(score) ? score : 0) + '</div>';
 
   if (lines.length === 0) {
     html += '<p style="color:var(--success);font-size:13px">&#x2705; 未检测到需要修复的配置问题</p>';
