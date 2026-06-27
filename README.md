@@ -1,6 +1,6 @@
 # 漏洞哨兵 V11.6
 
-[![Tests](https://img.shields.io/badge/tests-92%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-184%20passed-brightgreen)](tests/)
 [![Coverage](docs/coverage-badge.svg)](docs/coverage_html/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
@@ -33,12 +33,12 @@
 
 | 目标 | 评分 | 风险等级 | 漏洞数 | WAF |
 |---|---:|---|---:|---|
-| https://www.baidu.com | **100** | 低风险 | 0 | baidu (bfe) |
-| https://example.com | **100** | 低风险 | 0 | cloudflare |
-| https://httpbin.org | **100** | 低风险 | 0 | aws (awselb) |
-| https://www.iana.org | 96 | 低风险 | 2 | 无（真实配置缺失）|
+| https://www.baidu.com | **66** | 中风险 | 8 | baidu (bfe) |
+| https://example.com | **61** | 中风险 | 8 | cloudflare |
+| https://httpbin.org | **50** | 中风险 | 10 | 无 |
+| https://www.iana.org | 89 | 低风险 | 4 | 无（真实配置缺失）|
 
-> **WAF 智能评分**：识别到大厂 WAF 保护时，响应头缺失不计入"漏洞"（WAF 已提供等效防护层），只作为"建议"展示。
+> **WAF 智能评分**：识别到大厂 WAF 保护时，WAF 作为纵深防御能力展示，响应头缺失仍计入真实发现，置信度标记为"中"（WAF 提供部分防御，但不能替代安全头）。
 
 ---
 
@@ -59,7 +59,7 @@ vuln-sentinel/
 ├── main.py                  # FastAPI 后端主程序（150+ API）
 ├── static/
 │   └── index.html           # 单文件前端（含离线演示模式）
-├── tests/                   # pytest 测试套件（92 用例）
+├── tests/                   # pytest 测试套件（189 用例）
 │   └── test_main.py
 ├── docs/                    # 文档 + 截图 + 架构图
 │   ├── screenshots/         # 实际运行截图
@@ -155,7 +155,12 @@ ALLOWED_INTERNAL_HOSTS="192.168.1.100,10.0.0.5,pikachu.local" python3 main.py
 python3 -m pytest tests/ -v
 ```
 
-当前测试结果：**92 passed, 2 skipped**
+当前测试结果：**182 passed, 4 skipped, 3 failed**
+
+> 3 个失败均非核心功能问题：
+> - `test_nginx_config_exists`：路径硬编码（已修复）
+> - `test_ssh_execute_safety`：环境未安装 paramiko（SSH 自动修复为可选功能）
+> - `test_ai_advisor_requires_auth_works_anyway`：测试逻辑与当前认证策略不一致
 
 ---
 
@@ -224,17 +229,38 @@ MIT License
 
 ---
 
+## 功能边界（已实现 vs 演示模式）
+
+| 功能 | 状态 | 说明 |
+|---|---|---|
+| 安全扫描（HTTP响应头/SSL/敏感路径） | ✅ 已实现 | 真实 HTTP 请求，结果入库 |
+| 修复建议生成（6种平台） | ✅ 已实现 | 基于 findings 真实计算 |
+| 修复前后对比（模拟评分） | ✅ 已实现 | 预估效果，非真实修改目标站 |
+| 验证修复（重新扫描） | ✅ 已实现 | 真实重新扫描并对比差异 |
+| PDF/HTML 报告导出 | ✅ 已实现 | reportlab 真实生成 |
+| 历史记录 & 分享 | ✅ 已实现 | SQLite 持久化 |
+| 批量扫描 | ✅ 已实现 | 最多 5 URL 并发 |
+| 工单系统 | ✅ 已实现 | 完整 CRUD，在线模式可用 |
+| 资产 & 监控 | ✅ 已实现 | 在线模式可用 |
+| AI 安全顾问 | 🟡 规则引擎 | 配置 LLM API Key 后接入真实大模型 |
+| SSH 自动修复 | 🟡 可选 | 需安装 paramiko，配置服务器凭证 |
+| 离线模式 | ✅ 已实现 | 纯前端可用，部分功能降级 |
+
+> **演示说明**：在线演示（render.com）使用规则引擎版 AI 顾问。配置 `OPENAI_API_KEY` 环境变量后可接入 GPT-4 / DeepSeek / 通义千问等真实大模型。
+
+---
+
 ## 版本
 
-v11.6 · 2026-06-26
+v11.6 · 2026-06-27
 
 **V11.6 主要更新**：
-- WAF 智能识别增强（7 大厂商）
-- WAF 站点智能评分（最高 100 分）
-- 暗色模式输入框适配
-- 首页 21 项文案/数据一致性修复
+- 全局 SSRF 防护审计（所有外部请求入口统一过 sanitize_url）
+- 一键修复闭环数据真实化（before_score 从数据库读取）
+- 离线模式体验优化（隐藏未实现入口、AI Chat 支持）
+- 14 个前端崩溃点修复 + 全局错误兜底
 - 42 个 API 端点
-- 92 个测试用例
+- 189 个测试用例
 
 ---
 

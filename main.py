@@ -1932,6 +1932,12 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
             pass
         return "DNS_RESOLVE_FAIL"
 
+    # SSRF 纵深防护：公共函数统一过 sanitize_url
+    try:
+        url = sanitize_url(url)
+    except ValueError as e:
+        return {}, False, url, str(e)
+
     parsed = urlparse(url)
     host = parsed.hostname or ""
     path = parsed.path or "/"
@@ -2220,6 +2226,11 @@ async def detect_time_based_sqli(url: str, threshold: float = 2.5, timeout: floa
     """
     threshold = max(0.0, float(threshold))
     payload = url or ""
+    # SSRF 防护：即使当前未被调用，也统一过 sanitize_url
+    try:
+        payload = sanitize_url(payload) if payload else payload
+    except ValueError:
+        return {"vulnerable": False, "response_time": 0.0, "payload": payload, "threshold": threshold, "method": "blocked"}
     sleep_seconds = _extract_sqli_sleep(payload)
 
     if sleep_seconds is not None and sleep_seconds > 0:
@@ -7295,6 +7306,12 @@ async def _patrol_one_monitor(monitor: dict):
     user_id = monitor.get("user_id")
     monitor_id = monitor.get("id")
     last_score = monitor.get("last_score")
+
+    # SSRF 防护：数据库中的 URL 可能被篡改，重新校验
+    try:
+        url = sanitize_url(url) if url else url
+    except ValueError:
+        return
 
     try:
         # 简单复用头部检查（与 schedule 行为保持一致）

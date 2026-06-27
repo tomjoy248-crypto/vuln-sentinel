@@ -216,13 +216,13 @@ class TestDemoTargetNginxConfig:
 
     def test_nginx_config_exists(self):
         """测试演示靶场配置文件存在"""
-        conf_path = "/workspace/v11.4/demo-target/conf/nginx.conf"
+        conf_path = os.path.join(os.path.dirname(__file__), "..", "demo-target", "conf", "nginx.conf")
         assert os.path.exists(conf_path), "演示靶场 nginx 配置文件不存在"
 
     def test_nginx_config_has_vulnerabilities(self):
         """测试初始配置包含预期的漏洞"""
         # 读取备份文件（原始漏洞配置）
-        backup_path = "/workspace/v11.4/demo-target/conf/nginx.conf.vulnerable"
+        backup_path = os.path.join(os.path.dirname(__file__), "..", "demo-target", "conf", "nginx.conf.vulnerable")
         if not os.path.exists(backup_path):
             pytest.skip("备份文件不存在，跳过此测试")
 
