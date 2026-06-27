@@ -10785,6 +10785,13 @@ async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_c
         )
     
     original_msg = (req.message or "").strip()
+    # 兼容 question / query 参数名（旧客户端或测试脚本可能用这些字段名）
+    if not original_msg:
+        try:
+            body = await request.json()
+            original_msg = (body.get("question") or body.get("query") or "").strip()
+        except Exception:
+            pass
     if not original_msg:
         return {"reply": "请输入问题，例如：HSTS 是什么？如何修复 CSP？", "source": "rule_engine"}
     
