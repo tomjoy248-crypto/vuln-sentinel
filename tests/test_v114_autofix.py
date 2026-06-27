@@ -4,6 +4,14 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+try:
+    import paramiko
+    HAS_PARAMIKO = True
+except ImportError:
+    HAS_PARAMIKO = False
+
+import pytest
+
 
 def test_auto_fix_endpoint_validates_credentials():
     """/api/auto-fix 端点存在并验证凭证（不允许空 host）"""
@@ -139,6 +147,7 @@ def test_auto_fix_full_workflow_dry_run():
     assert d.get("error")
 
 
+@pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko not installed")
 def test_ssh_execute_safety():
     """SSH 执行函数不能连接到无效主机（必须安全失败）"""
     from main import _ssh_execute

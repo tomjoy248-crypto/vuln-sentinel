@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import secrets
+import smtplib
 import socket
 import sqlite3
 import ssl
@@ -33,6 +34,9 @@ import threading
 import time
 from collections import OrderedDict, deque
 from datetime import datetime, timedelta
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse, urldefrag
 from html.parser import HTMLParser
@@ -187,6 +191,15 @@ if not settings.jwt_secret:
         logger.warning("Failed to persist JWT secret to %s: %s", _SECRET_FILE, e)
     logger.info("Generated JWT secret (len=%d)", len(settings.jwt_secret))
 
+# ---------- SMTP / Notification Config ----------
+
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "vuln-sentinel@example.com")
+SMTP_ENABLED = bool(SMTP_HOST and SMTP_USER and SMTP_PASSWORD)
+
 # ---------- Constants ----------
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -311,6 +324,58 @@ SQLI_PAYLOADS: List[str] = [
     "' OR 1=1--", "1' OR '1'='1", "admin'--",
     "' UNION SELECT NULL--", "1; DROP TABLE users--", "' OR 1=1 /*",
 ]
+
+# Code-level vulnerability detection payloads (V11.6)
+SQLI_PAYLOADS_V2: List[str] = [
+    "' OR '1'='1",
+    "'; DROP TABLE users; --",
+    "' UNION SELECT null,null--",
+    "' OR 1=1--",
+    "1' OR '1'='1",
+    "admin'--",
+]
+
+XSS_PAYLOADS_V2: List[str] = [
+    "<script>alert('XSS')</script>",
+    "<img src=x onerror=alert(1)>",
+    '" onmouseover=alert(1) "',
+    '"><svg onload=alert(1)>',
+    "javascript:alert(1)",
+]
+
+CMDI_PAYLOADS: List[str] = [
+    "; cat /etc/passwd",
+    "| whoami",
+    "`id`",
+    "$(id)",
+    "&& echo vuln_sentinel_cmdi",
+]
+
+TRAVERSAL_PAYLOADS: List[str] = [
+    "../../../etc/passwd",
+    "..\\..\\..\\windows\\system32\\drivers\\etc\\hosts",
+    "....//....//....//etc/passwd",
+    "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+]
+
+# Detection signatures
+SQLI_ERROR_PATTERNS: List[str] = [
+    "sql syntax", "mysql", "postgresql", "sqlite", "oracle", "sql error",
+    "unclosed quotation", "query failed", "warning: mysql", "syntax error",
+    "sqlstate", "odbc", "microsoft sql", "mariadb", "pg_query", "pg_exec",
+    "you have an error in your sql", "quoted string not properly terminated",
+    "unterminated string", "pg_sql", "sqlite3",
+]
+
+PASSWD_SIGNATURES: List[str] = ["root:x:0:0", "bin:x:1:1", "daemon:x:2:2"]
+WINDOWS_HOSTS_SIGNATURES: List[str] = [
+    "# Copyright (c) 1993-2000 Microsoft Corp",
+    "localhost name resolution",
+]
+CMD_EXEC_SIGNATURES: List[str] = [
+    "uid=", "gid=", "groups=", "root:", "www-data", "vuln_sentinel_cmdi",
+]
+DESER_SIGNATURES: List[str] = ["rO0AB", "H4sIAAAAAAAA", "aced", "aced00", "ro0"]
 
 # ---------- Input Sanitization ----------
 
@@ -470,6 +535,10 @@ class PublicDemoRequest(BaseModel):
 class AIAdvisorRequest(BaseModel):
     message: Optional[str] = None
     scan_id: Optional[int] = None
+    api_key: Optional[str] = Field(default=None, repr=False)
+    model: Optional[str] = None
+    provider: Optional[str] = None
+    use_llm: Optional[bool] = None
 
 
 class BatchScanRequest(BaseModel):
@@ -879,20 +948,46 @@ def init_db() -> None:
         conn.execute("ALTER TABLE users ADD COLUMN team_id INTEGER DEFAULT 0")
     except Exception as e:
         logger.warning("DB migration add team_id column skipped: %s", e)
+    # 迁移：为 users 表添加通知设置列
+    for col_def in [
+        "ALTER TABLE users ADD COLUMN notify_email TEXT DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN notify_webhook TEXT DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN alert_threshold TEXT DEFAULT 'high'",
+    ]:
+        try:
+            conn.execute(col_def)
+        except Exception as e:
+            logger.warning("DB migration %s skipped: %s", col_def, e)
     conn.execute(
         """CREATE TABLE IF NOT EXISTS alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             target_id INTEGER,
             alert_type TEXT DEFAULT 'score_change',
+            title TEXT DEFAULT '',
             message TEXT NOT NULL,
             details_json TEXT DEFAULT '{}',
+            scan_id INTEGER,
             created_at TEXT,
             is_read INTEGER DEFAULT 0
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_user_id ON alerts(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_is_read ON alerts(is_read)")
+    # 迁移：为已有 alerts 表添加 title 和 scan_id 列
+    for col_def in [
+        "ALTER TABLE alerts ADD COLUMN title TEXT DEFAULT ''",
+        "ALTER TABLE alerts ADD COLUMN scan_id INTEGER",
+    ]:
+        try:
+            conn.execute(col_def)
+        except Exception as e:
+            logger.warning("DB migration %s skipped: %s", col_def, e)
+    # scan_id 列添加成功后再建索引
+    try:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_scan_id ON alerts(scan_id)")
+    except Exception:
+        pass
     conn.execute(
         """CREATE TABLE IF NOT EXISTS assets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1114,16 +1209,17 @@ def get_latest_scan_for_target(user_id: int, url: str) -> Optional[dict]:
     return d
 
 
-def save_alert(user_id: int, target_id: int, alert_type: str, message: str, details: dict) -> int:
+def save_alert(user_id: int, target_id: int, alert_type: str, message: str, details: dict, title: str = "", scan_id: Optional[int] = None) -> int:
     """保存一条告警记录。"""
     conn = get_db()
     cur = conn.execute(
         """INSERT INTO alerts
-        (user_id, target_id, alert_type, message, details_json, created_at, is_read)
-        VALUES (?,?,?,?,?,?,?)""",
+        (user_id, target_id, alert_type, title, message, details_json, scan_id, created_at, is_read)
+        VALUES (?,?,?,?,?,?,?,?,?)""",
         (
-            user_id, target_id, alert_type, message,
+            user_id, target_id, alert_type, title, message,
             json.dumps(details, ensure_ascii=False),
+            scan_id,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 0,
         ),
     )
@@ -1131,6 +1227,167 @@ def save_alert(user_id: int, target_id: int, alert_type: str, message: str, deta
     alert_id = cur.lastrowid
     conn.close()
     return alert_id
+
+
+def get_user_notification_settings(user_id: int) -> dict:
+    """获取用户通知设置。"""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT notify_email, notify_webhook, alert_threshold FROM users WHERE id=?",
+            (user_id,),
+        ).fetchone()
+        if not row:
+            return {"email": "", "webhook": "", "threshold": "high"}
+        return {
+            "email": row["notify_email"] or "",
+            "webhook": row["notify_webhook"] or "",
+            "threshold": row["alert_threshold"] or "high",
+        }
+    finally:
+        conn.close()
+
+
+def update_user_notification_settings(user_id: int, email: str, webhook: str, threshold: str) -> bool:
+    """更新用户通知设置。"""
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE users SET notify_email=?, notify_webhook=?, alert_threshold=? WHERE id=?",
+            (email.strip(), webhook.strip(), threshold, user_id),
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def should_notify_by_threshold(threshold: str, severity: str) -> bool:
+    """根据用户阈值判断是否应该通知。"""
+    severity_rank = {"critical": 3, "high": 2, "medium": 1, "low": 0}
+    threshold_rank = {"critical": 3, "high": 2, "medium": 1, "low": 0, "all": 0}
+    return severity_rank.get(severity, 0) >= threshold_rank.get(threshold, 2)
+
+
+async def send_email(to_email: str, subject: str, body: str, attachment_path: Optional[str] = None) -> bool:
+    """异步发送邮件，支持附件。如果未配置 SMTP，静默跳过。"""
+    if not SMTP_ENABLED or not to_email:
+        return False
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = SMTP_FROM
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "html", "utf-8"))
+        if attachment_path and os.path.isfile(attachment_path):
+            with open(attachment_path, "rb") as f:
+                part = MIMEApplication(f.read(), Name=os.path.basename(attachment_path))
+            part["Content-Disposition"] = f'attachment; filename="{os.path.basename(attachment_path)}"'
+            msg.attach(part)
+
+        def _send():
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+                if SMTP_PORT == 587:
+                    server.starttls()
+                server.login(SMTP_USER, SMTP_PASSWORD)
+                server.sendmail(SMTP_FROM, [to_email], msg.as_string())
+            return True
+
+        return await asyncio.wait_for(asyncio.to_thread(_send), timeout=30.0)
+    except Exception as e:
+        logger.warning("send_email failed: %s", e)
+        return False
+
+
+async def send_webhook(webhook_url: str, content: dict) -> bool:
+    """发送 Webhook 通知（支持钉钉、企业微信、飞书等 Markdown 格式）。如果未配置，静默跳过。"""
+    if not webhook_url:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # 自动适配不同平台的格式
+            payload = content
+            if "dingtalk.com" in webhook_url or "oapi.dingtalk.com" in webhook_url:
+                # 钉钉 Markdown 格式
+                payload = {
+                    "msgtype": "markdown",
+                    "markdown": {
+                        "title": content.get("title", "告警通知"),
+                        "text": content.get("markdown", content.get("message", "")),
+                    },
+                }
+            elif "qyapi.weixin.qq.com" in webhook_url or "weixin" in webhook_url:
+                # 企业微信 Markdown 格式
+                payload = {
+                    "msgtype": "markdown",
+                    "markdown": {
+                        "content": content.get("markdown", content.get("message", "")),
+                    },
+                }
+            elif "open.feishu.cn" in webhook_url or "larksuite.com" in webhook_url or "feishu" in webhook_url:
+                # 飞书 Markdown 格式
+                payload = {
+                    "msg_type": "interactive",
+                    "card": {
+                        "header": {
+                            "title": {"tag": "plain_text", "content": content.get("title", "告警通知")},
+                        },
+                        "elements": [
+                            {"tag": "div", "text": {"tag": "lark_md", "content": content.get("markdown", content.get("message", ""))}}
+                        ],
+                    },
+                }
+            resp = await client.post(webhook_url, json=payload)
+            return resp.status_code in (200, 204)
+    except Exception as e:
+        logger.warning("send_webhook failed: %s", e)
+        return False
+
+
+async def notify_user(
+    user_id: int,
+    alert_type: str,
+    title: str,
+    message: str,
+    details: dict,
+    scan_id: Optional[int] = None,
+    severity: str = "medium",
+    email_body_html: Optional[str] = None,
+    webhook_markdown: Optional[str] = None,
+    attachment_path: Optional[str] = None,
+) -> dict:
+    """统一通知入口：保存告警记录，并异步发送邮件 + Webhook。"""
+    result = {"alert_id": None, "email_sent": False, "webhook_sent": False}
+    # 1. 保存告警记录
+    try:
+        alert_id = save_alert(user_id, 0, alert_type, message, details, title=title, scan_id=scan_id)
+        result["alert_id"] = alert_id
+    except Exception as e:
+        logger.warning("save_alert failed: %s", e)
+    # 2. 获取用户通知设置
+    settings_dict = get_user_notification_settings(user_id)
+    threshold = settings_dict.get("threshold", "high")
+    # 3. 根据阈值判断是否需要发送
+    if not should_notify_by_threshold(threshold, severity):
+        return result
+    # 4. 发送邮件
+    if settings_dict.get("email") and email_body_html:
+        try:
+            result["email_sent"] = await send_email(
+                settings_dict["email"], title, email_body_html, attachment_path=attachment_path
+            )
+        except Exception as e:
+            logger.warning("notify_user email failed: %s", e)
+    # 5. 发送 Webhook
+    if settings_dict.get("webhook") and webhook_markdown:
+        try:
+            result["webhook_sent"] = await send_webhook(
+                settings_dict["webhook"],
+                {"title": title, "message": message, "markdown": webhook_markdown},
+            )
+        except Exception as e:
+            logger.warning("notify_user webhook failed: %s", e)
+    return result
 
 
 def delete_scan_history(user_id: int) -> int:
@@ -1445,7 +1702,7 @@ async def scheduled_scan_job() -> None:
             waf_list = detect_waf(headers)
             sensitive_paths = await check_sensitive_paths(host, is_https)
             ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
-            result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths)
+            result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths)
             scan_id = save_scan(
                 user_id, url, result["score"], result["risk_level"],
                 result["findings"], result.get("summary", {}), 0, "scheduled",
@@ -1895,6 +2152,464 @@ async def run_payload_tests(base_url, pages):
                         "payload": payload[:40], "vulnerable": result is not None,
                     })
     return vulns, test_results
+
+
+# ---------- Code-Level Vulnerability Detection (V11.6) ----------
+
+def _build_test_url(url: str, param: str, payload: str) -> str:
+    """将 payload 注入到 URL 的指定参数中。"""
+    parsed = urlparse(url)
+    from urllib.parse import parse_qsl, urlencode
+    qs = parse_qsl(parsed.query, keep_blank_values=True)
+    found = False
+    new_qs = []
+    for k, v in qs:
+        if k == param:
+            new_qs.append((k, payload))
+            found = True
+        else:
+            new_qs.append((k, v))
+    if not found:
+        new_qs.append((param, payload))
+    new_query = urlencode(new_qs)
+    return parsed._replace(query=new_query).geturl()
+
+
+def _safe_read_body(resp: httpx.Response, max_bytes: int = 256 * 1024) -> str:
+    """安全读取响应体，限制大小。"""
+    try:
+        body_bytes = resp.content
+        if len(body_bytes) > max_bytes:
+            body_bytes = body_bytes[:max_bytes]
+        return body_bytes.decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def _response_differs_significantly(baseline: str, current: str, threshold: float = 0.3) -> bool:
+    """判断两个响应内容是否有显著差异（用于布尔盲注）。"""
+    if not baseline or not current:
+        return False
+    # 简单长度差异 > 30%
+    if abs(len(baseline) - len(current)) > max(len(baseline), len(current)) * threshold:
+        return True
+    return False
+
+
+async def detect_sqli(url: str, params: List[str]) -> List[dict]:
+    """SQL 注入检测：错误回显 / 时间盲注 / 布尔盲注。"""
+    if not params:
+        return []
+    findings: List[dict] = []
+    client = get_httpx_client()
+
+    # 获取基准响应
+    baseline_body = ""
+    baseline_time = 0.0
+    try:
+        resp = await client.get(url, timeout=10.0, follow_redirects=True)
+        baseline_body = _safe_read_body(resp)
+        baseline_time = resp.elapsed.total_seconds() if resp.elapsed else 0.0
+    except Exception:
+        pass
+
+    for param in params[:4]:
+        for payload in SQLI_PAYLOADS_V2[:3]:
+            test_url = _build_test_url(url, param, payload)
+            try:
+                start = time.time()
+                resp = await client.get(test_url, timeout=10.0, follow_redirects=True)
+                elapsed = time.time() - start
+                body = _safe_read_body(resp).lower()
+
+                # 1. 错误回显
+                for pattern in SQLI_ERROR_PATTERNS:
+                    if pattern in body:
+                        findings.append({
+                            "name": "SQL注入漏洞",
+                            "severity": "critical",
+                            "level": "高风险",
+                            "level_zh": "高风险",
+                            "owasp": "A03:2021 - Injection",
+                            "summary": f"参数 '{param}' 存在 SQL 注入漏洞，响应中包含数据库错误信息。",
+                            "fix": (
+                                "使用参数化查询（Prepared Statements）。\n"
+                                "Python: cursor.execute('SELECT * FROM users WHERE id=%s', (user_id,))\n"
+                                "Node.js: db.query('SELECT * FROM users WHERE id=?', [user_id])\n"
+                                "Java: 使用 JdbcTemplate 或 MyBatis #{} 占位符。"
+                            ),
+                            "type": "sqli",
+                            "evidence": {"param": param, "payload": payload[:60], "pattern": pattern, "url": test_url[:200]},
+                            "confidence_level": "高",
+                        })
+                        break
+                else:
+                    # 2. 时间盲注（响应时间显著增加 > 5s）
+                    if elapsed > baseline_time + 5 and elapsed > 6:
+                        findings.append({
+                            "name": "SQL注入漏洞（时间盲注）",
+                            "severity": "critical",
+                            "level": "高风险",
+                            "level_zh": "高风险",
+                            "owasp": "A03:2021 - Injection",
+                            "summary": f"参数 '{param}' 疑似存在 SQL 时间盲注漏洞，异常响应时间 {elapsed:.1f}s。",
+                            "fix": (
+                                "使用参数化查询；对查询接口增加最大执行时间限制。\n"
+                                "Python: cursor.execute('...', params) + 设置 statement_timeout\n"
+                                "Node.js: 使用参数化查询库（如 mysql2/prepared statements）。"
+                            ),
+                            "type": "sqli",
+                            "evidence": {"param": param, "payload": payload[:60], "elapsed": round(elapsed, 2), "url": test_url[:200]},
+                            "confidence_level": "中",
+                        })
+                    # 3. 布尔盲注
+                    elif _response_differs_significantly(baseline_body.lower(), body):
+                        findings.append({
+                            "name": "SQL注入漏洞（疑似布尔盲注）",
+                            "severity": "high",
+                            "level": "高风险",
+                            "level_zh": "高风险",
+                            "owasp": "A03:2021 - Injection",
+                            "summary": f"参数 '{param}' 注入后响应内容显著变化，疑似存在布尔盲注。",
+                            "fix": (
+                                "统一错误页面输出；使用参数化查询。\n"
+                                "Python: 使用 SQLAlchemy ORM + 参数绑定\n"
+                                "Java: MyBatis #{} 占位符，禁止 ${} 拼接。"
+                            ),
+                            "type": "sqli",
+                            "evidence": {"param": param, "payload": payload[:60], "baseline_len": len(baseline_body), "current_len": len(body), "url": test_url[:200]},
+                            "confidence_level": "中",
+                        })
+            except Exception as e:
+                logger.warning("SQLi detection error on %s: %s", test_url[:120], e)
+    return findings
+
+
+async def detect_reflected_xss(url: str, params: List[str]) -> List[dict]:
+    """反射型 XSS 检测：检查 payload 是否原样反射且未被过滤。"""
+    if not params:
+        return []
+    findings: List[dict] = []
+    client = get_httpx_client()
+
+    for param in params[:4]:
+        for payload in XSS_PAYLOADS_V2[:3]:
+            test_url = _build_test_url(url, param, payload)
+            try:
+                resp = await client.get(test_url, timeout=10.0, follow_redirects=True)
+                body = _safe_read_body(resp)
+
+                # 检查 payload 是否原样反射
+                if payload in body:
+                    # 进一步检查反射上下文（是否在 script / 事件处理器中）
+                    dangerous = False
+                    # 简单正则：检查是否在 <script> 标签内或属性事件中
+                    script_pattern = re.compile(r"<script[^>]*>.*" + re.escape(payload) + r".*</script>", re.IGNORECASE | re.DOTALL)
+                    event_pattern = re.compile(r"(on\w+)=[\"'].*" + re.escape(payload) + r".*[\"']", re.IGNORECASE)
+                    if script_pattern.search(body) or event_pattern.search(body):
+                        dangerous = True
+
+                    findings.append({
+                        "name": "反射型 XSS 漏洞",
+                        "severity": "high" if dangerous else "medium",
+                        "level": "高风险" if dangerous else "中风险",
+                        "level_zh": "高风险" if dangerous else "中风险",
+                        "owasp": "A03:2021 - Injection",
+                        "summary": f"参数 '{param}' 存在反射型 XSS，payload 在响应中{'危险位置' if dangerous else '原样反射'}。",
+                        "fix": (
+                            "对所有输出到 HTML 的数据进行上下文相关的编码。\n"
+                            "Python (Jinja2): {{ user_input | e }}\n"
+                            "Node.js: 使用 escape-html 或 DOMPurify\n"
+                            "Java: JSTL <c:out value='${input}' />\n"
+                            "同时配置 CSP: default-src 'self'; script-src 'self'。"
+                        ),
+                        "type": "xss",
+                        "evidence": {"param": param, "payload": payload[:60], "dangerous_context": dangerous, "url": test_url[:200]},
+                        "confidence_level": "高" if dangerous else "中",
+                    })
+            except Exception as e:
+                logger.warning("XSS detection error on %s: %s", test_url[:120], e)
+    return findings
+
+
+async def detect_command_injection(url: str, params: List[str]) -> List[dict]:
+    """命令注入检测：发送系统命令 payload，检查响应中是否出现命令执行特征。"""
+    if not params:
+        return []
+    findings: List[dict] = []
+    client = get_httpx_client()
+
+    for param in params[:3]:
+        for payload in CMDI_PAYLOADS[:3]:
+            test_url = _build_test_url(url, param, payload)
+            try:
+                start = time.time()
+                resp = await client.get(test_url, timeout=10.0, follow_redirects=True)
+                elapsed = time.time() - start
+                body = _safe_read_body(resp)
+
+                # 检查命令执行特征
+                matched_sig = None
+                for sig in CMD_EXEC_SIGNATURES:
+                    if sig in body:
+                        matched_sig = sig
+                        break
+
+                if matched_sig:
+                    findings.append({
+                        "name": "命令注入漏洞",
+                        "severity": "critical",
+                        "level": "高风险",
+                        "level_zh": "高风险",
+                        "owasp": "A03:2021 - Injection",
+                        "summary": f"参数 '{param}' 存在命令注入漏洞，响应中包含命令执行结果特征。",
+                        "fix": (
+                            "永远不要将用户输入直接拼接到系统命令中；使用参数化 API 或白名单。\n"
+                            "Python: subprocess.run(['ls', user_input], shell=False)\n"
+                            "Node.js: 使用 execFile 代替 exec，传入参数数组\n"
+                            "Java: ProcessBuilder 传入 List<String> 参数，避免字符串拼接。"
+                        ),
+                        "type": "cmdi",
+                        "evidence": {"param": param, "payload": payload[:60], "signature": matched_sig, "url": test_url[:200]},
+                        "confidence_level": "高",
+                    })
+                elif elapsed > 8:
+                    # 响应极慢，可能是耗时命令（如 sleep）
+                    findings.append({
+                        "name": "命令注入漏洞（疑似）",
+                        "severity": "medium",
+                        "level": "中风险",
+                        "level_zh": "中风险",
+                        "owasp": "A03:2021 - Injection",
+                        "summary": f"参数 '{param}' 注入命令后响应时间异常增长，疑似命令注入。",
+                        "fix": (
+                            "禁止用户输入进入命令执行函数；使用白名单校验。\n"
+                            "Python: shlex.quote(user_input) + subprocess.run(cmd, shell=False)\n"
+                            "Node.js: child_process.spawn(command, [arg1, arg2])\n"
+                            "Java: 使用 OWASP Java Encoder + ProcessBuilder。"
+                        ),
+                        "type": "cmdi",
+                        "evidence": {"param": param, "payload": payload[:60], "elapsed": round(elapsed, 2), "url": test_url[:200]},
+                        "confidence_level": "低",
+                    })
+            except Exception as e:
+                logger.warning("Command injection detection error on %s: %s", test_url[:120], e)
+    return findings
+
+
+async def detect_directory_traversal(url: str, params: List[str]) -> List[dict]:
+    """目录遍历检测：发送路径遍历 payload，检查是否读取到系统文件。"""
+    if not params:
+        return []
+    findings: List[dict] = []
+    client = get_httpx_client()
+
+    for param in params[:3]:
+        for payload in TRAVERSAL_PAYLOADS[:2]:
+            test_url = _build_test_url(url, param, payload)
+            try:
+                resp = await client.get(test_url, timeout=10.0, follow_redirects=True)
+                body = _safe_read_body(resp)
+
+                # 检查 Linux /etc/passwd 特征
+                linux_match = any(sig in body for sig in PASSWD_SIGNATURES)
+                # 检查 Windows hosts 特征
+                windows_match = any(sig in body for sig in WINDOWS_HOSTS_SIGNATURES)
+
+                if linux_match or windows_match:
+                    findings.append({
+                        "name": "目录遍历漏洞",
+                        "severity": "high",
+                        "level": "高风险",
+                        "level_zh": "高风险",
+                        "owasp": "A01:2021 - Broken Access Control",
+                        "summary": f"参数 '{param}' 存在目录遍历漏洞，可读取系统敏感文件。",
+                        "fix": (
+                            "对用户输入的路径进行严格校验，使用白名单或 chroot  jail。\n"
+                            "Python: os.path.commonpath([base_dir, target]) == base_dir\n"
+                            "Node.js: path.resolve(base, input).startsWith(baseDir)\n"
+                            "Java: 使用 Path.normalize() + startsWith(allowedBase) 校验。"
+                        ),
+                        "type": "traversal",
+                        "evidence": {
+                            "param": param,
+                            "payload": payload[:60],
+                            "os": "linux" if linux_match else "windows",
+                            "status_code": resp.status_code,
+                            "url": test_url[:200],
+                        },
+                        "confidence_level": "高",
+                    })
+                elif resp.status_code == 200 and len(body) > 100 and ("<html" not in body.lower()):
+                    # 返回了非 HTML 的 200 响应，可能是文件内容
+                    findings.append({
+                        "name": "目录遍历漏洞（疑似）",
+                        "severity": "medium",
+                        "level": "中风险",
+                        "level_zh": "中风险",
+                        "owasp": "A01:2021 - Broken Access Control",
+                        "summary": f"参数 '{param}' 路径遍历后返回非 HTML 的 200 响应，疑似读取到文件。",
+                        "fix": (
+                            "限制文件访问范围；使用文件 ID 映射代替真实路径。\n"
+                            "Python: pathlib.Path(base_dir) / safe_filename，并校验 resolved path\n"
+                            "Node.js: 使用 send 模块的 root 选项限制目录\n"
+                            "Java: Spring ResourceHttpRequestHandler 配置 location。"
+                        ),
+                        "type": "traversal",
+                        "evidence": {"param": param, "payload": payload[:60], "status_code": 200, "url": test_url[:200]},
+                        "confidence_level": "低",
+                    })
+            except Exception as e:
+                logger.warning("Directory traversal detection error on %s: %s", test_url[:120], e)
+    return findings
+
+
+async def detect_insecure_deserialization(headers: dict, url: str) -> List[dict]:
+    """不安全的反序列化简单检测：检查响应头和 Cookie 中的序列化特征。"""
+    findings: List[dict] = []
+    # 检查响应头中的序列化特征（某些框架会把序列化对象放在自定义头里）
+    for key, value in headers.items():
+        if not isinstance(value, str):
+            continue
+        for sig in DESER_SIGNATURES:
+            if sig in value:
+                findings.append({
+                    "name": "不安全的反序列化（响应头）",
+                    "severity": "high",
+                    "level": "高风险",
+                    "level_zh": "高风险",
+                    "owasp": "A08:2021 - Software and Data Integrity Failures",
+                    "summary": f"响应头 '{key}' 中发现可能的序列化对象特征（{sig}）。",
+                    "fix": (
+                        "避免在 HTTP 头中传输序列化对象；使用 JSON + 签名（HMAC/JWS）。\n"
+                        "Python: 使用 json + itsdangerous.signer 代替 pickle\n"
+                        "Node.js: JSON.stringify + crypto.createHmac\n"
+                        "Java: 使用 JWT 或签名 Cookie，禁用 Java 原生序列化。"
+                    ),
+                    "type": "deserialization",
+                    "evidence": {"header": key, "signature": sig, "value": value[:100]},
+                    "confidence_level": "中",
+                })
+                break
+
+    # 检查 Set-Cookie 中的序列化特征
+    set_cookie = headers.get("set-cookie", headers.get("Set-Cookie", ""))
+    if set_cookie:
+        for sig in DESER_SIGNATURES:
+            if sig in set_cookie:
+                findings.append({
+                    "name": "不安全的反序列化（Cookie）",
+                    "severity": "high",
+                    "level": "高风险",
+                    "level_zh": "高风险",
+                    "owasp": "A08:2021 - Software and Data Integrity Failures",
+                    "summary": f"Cookie 中发现可能的序列化对象特征（{sig}）。",
+                    "fix": (
+                        "Cookie 中禁止存放序列化对象；改用 JWT 或加密 token。\n"
+                        "Python: 使用 flask-jwt-extended 或 itsdangerous\n"
+                        "Node.js: jsonwebtoken + jwk\n"
+                        "Java: Spring Session + Redis JSON 存储，禁用原生序列化。"
+                    ),
+                    "type": "deserialization",
+                    "evidence": {"header": "Set-Cookie", "signature": sig, "value": set_cookie[:100]},
+                    "confidence_level": "中",
+                })
+                break
+
+    # 可选：请求页面检查 body（轻量）
+    if not findings:
+        try:
+            client = get_httpx_client()
+            resp = await client.get(url, timeout=10.0, follow_redirects=True)
+            body = _safe_read_body(resp)
+            for sig in DESER_SIGNATURES:
+                if sig in body:
+                    findings.append({
+                        "name": "不安全的反序列化（页面内容）",
+                        "severity": "medium",
+                        "level": "中风险",
+                        "level_zh": "中风险",
+                        "owasp": "A08:2021 - Software and Data Integrity Failures",
+                        "summary": f"页面内容中发现可能的序列化对象特征（{sig}）。",
+                        "fix": (
+                            "不要在页面中暴露序列化数据；使用 JSON 传输。\n"
+                            "Python: 使用 marshmallow / pydantic 做序列化校验\n"
+                            "Node.js: JSON.parse + Joi / zod 校验 schema\n"
+                            "Java: Jackson ObjectMapper + @JsonIgnore 隐藏敏感字段。"
+                        ),
+                        "type": "deserialization",
+                        "evidence": {"signature": sig, "url": url[:200]},
+                        "confidence_level": "低",
+                    })
+                    break
+        except Exception as e:
+            logger.warning("Deserialization body check error: %s", e)
+    return findings
+
+
+async def detect_ssrf_enhanced(url: str, params: List[str]) -> List[dict]:
+    """SSRF 检测增强：检查 URL 参数是否会触发内网请求或重定向到内网。"""
+    if not params:
+        return []
+    findings: List[dict] = []
+    client = get_httpx_client()
+
+    # 内网地址 payload
+    ssrf_payloads = [
+        "http://127.0.0.1:80/",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://localhost/",
+        "http://10.0.0.1/",
+    ]
+
+    for param in params[:3]:
+        for payload in ssrf_payloads[:2]:
+            test_url = _build_test_url(url, param, payload)
+            try:
+                resp = await client.get(test_url, timeout=10.0, follow_redirects=True)
+                # 如果返回了 200 且内容与正常页面不同，可能成功访问了内网
+                if resp.status_code == 200:
+                    body = _safe_read_body(resp)
+                    # 检查云元数据特征
+                    if "instance-id" in body or "ami-id" in body or "local-ipv4" in body:
+                        findings.append({
+                            "name": "SSRF 漏洞（云元数据访问）",
+                            "severity": "critical",
+                            "level": "高风险",
+                            "level_zh": "高风险",
+                            "owasp": "A10:2021 - Server-Side Request Forgery",
+                            "summary": f"参数 '{param}' 存在 SSRF 漏洞，可访问云元数据服务。",
+                            "fix": (
+                                "禁止用户输入直接作为后端请求目标；使用 URL 白名单 + DNS 解析校验。\n"
+                                "Python: 使用 urllib.parse + ipaddress 过滤私有 IP\n"
+                                "Node.js: 使用 url.parse + net.isIP + 白名单\n"
+                                "Java: Apache HttpClient + 自定义 DNSResolver 拦截内网 IP。"
+                            ),
+                            "type": "ssrf",
+                            "evidence": {"param": param, "payload": payload[:60], "body_hint": body[:80], "url": test_url[:200]},
+                            "confidence_level": "高",
+                        })
+                    else:
+                        findings.append({
+                            "name": "SSRF 漏洞（疑似内网访问）",
+                            "severity": "high",
+                            "level": "高风险",
+                            "level_zh": "高风险",
+                            "owasp": "A10:2021 - Server-Side Request Forgery",
+                            "summary": f"参数 '{param}' 传入内网地址后返回 200，疑似存在 SSRF。",
+                            "fix": (
+                                "对出站请求目标进行白名单限制；禁止解析到内网 IP。\n"
+                                "Python: aiohttp 配合自定义 resolver 过滤 RFC1918\n"
+                                "Node.js: 使用 proxy-agent + 白名单域名\n"
+                                "Java: Spring Cloud Gateway 配置 deny-by-default 路由。"
+                            ),
+                            "type": "ssrf",
+                            "evidence": {"param": param, "payload": payload[:60], "status_code": 200, "url": test_url[:200]},
+                            "confidence_level": "中",
+                        })
+            except Exception as e:
+                logger.warning("SSRF detection error on %s: %s", test_url[:120], e)
+    return findings
 
 
 # ---------- Scan Functions ----------
@@ -3558,7 +4273,7 @@ def apply_cross_validation(findings: list, cv_result: dict) -> None:
         f["cv_evidence"] = cv.get("evidence_d1_d5", "")
 
 
-def analyze_security(
+async def analyze_security(
     url: str,
     headers: dict,
     is_https: bool,
@@ -3778,6 +4493,40 @@ def analyze_security(
     if suspect_paths:
         # suspect 疑似项：不扣分，只作为信息提示
         pass
+
+    # V11.6: 代码层漏洞动态检测（温和 fuzzing）
+    parsed_url = urlparse(url)
+    params = [p.split("=")[0] for p in parsed_url.query.split("&") if "=" in p] if parsed_url.query else []
+    if params:
+        try:
+            sqli_results, xss_results, cmdi_results, traversal_results, ssrf_results = await asyncio.gather(
+                detect_sqli(url, params),
+                detect_reflected_xss(url, params),
+                detect_command_injection(url, params),
+                detect_directory_traversal(url, params),
+                detect_ssrf_enhanced(url, params),
+                return_exceptions=True,
+            )
+            for res in (sqli_results, xss_results, cmdi_results, traversal_results, ssrf_results):
+                if isinstance(res, list):
+                    for item in res:
+                        if isinstance(item, dict):
+                            if vuln_findings is None:
+                                vuln_findings = []
+                            vuln_findings.append(item)
+                elif isinstance(res, Exception):
+                    logger.warning("Code-level detection error: %s", res)
+        except Exception as e:
+            logger.warning("Code-level vulnerability detection batch failed: %s", e)
+    # 反序列化检测（不依赖参数）
+    try:
+        deser_results = await detect_insecure_deserialization(headers, url)
+        for item in deser_results:
+            if vuln_findings is None:
+                vuln_findings = []
+            vuln_findings.append(item)
+    except Exception as e:
+        logger.warning("Deserialization detection error: %s", e)
 
     if vuln_findings:
         for v in vuln_findings:
@@ -4635,6 +5384,42 @@ def generate_fixes(findings: List[dict], headers: dict, is_https: bool, host: st
             add("express", "// Express: db.query('SELECT * FROM users WHERE id=$1', [uid])")
             add("spring_boot", "# Spring Boot: @Repository + JPA ParameterizedQuery")
             add("cloudflare", "# Cloudflare: WAF > SQL Injection Rules > Enable")
+        elif ftype == "sqli":
+            add("python", "# Python: cursor.execute('SELECT * FROM users WHERE id=%s', (user_id,))")
+            add("nodejs", "// Node.js: db.query('SELECT * FROM users WHERE id=?', [user_id])")
+            add("flask", "# Flask-SQLAlchemy: db.session.execute(text('...'), {'id': user_id})")
+            add("express", "// Express + mysql2: db.execute('SELECT * FROM users WHERE id=?', [user_id])")
+            add("spring_boot", "# Java: JdbcTemplate.query('SELECT * FROM users WHERE id=?', new Object[]{userId})")
+        elif ftype == "xss":
+            add("python", "# Jinja2: {{ user_input | e }}")
+            add("nodejs", "// DOMPurify.sanitize(userInput)")
+            add("flask", "# Flask: Markup.escape(user_input) 或 {{ var|e }}")
+            add("express", "// Express: res.render('view', { userInput: escapeHtml(userInput) })")
+            add("spring_boot", "# Java: JSTL <c:out value='${param}' /> 或 OWASP Java Encoder")
+        elif ftype == "cmdi":
+            add("python", "# subprocess.run(['ls', user_input], shell=False)")
+            add("nodejs", "// child_process.execFile('ls', [arg], callback)")
+            add("flask", "# Flask: 永远不要使用 os.system('...' + user_input)")
+            add("express", "// Express: 永远不要使用 exec('...' + userInput)")
+            add("spring_boot", "# Java: ProcessBuilder 传入 List<String>，禁止 Runtime.exec(String)")
+        elif ftype == "traversal":
+            add("python", "# os.path.commonpath([base_dir, target]) == base_dir")
+            add("nodejs", "// path.resolve(baseDir, input).startsWith(baseDir)")
+            add("flask", "# Flask: send_from_directory(base_dir, safe_filename)")
+            add("express", "// Express: express.static(baseDir, { dotfiles: 'deny' })")
+            add("spring_boot", "# Java: Path.normalize() + startsWith(allowedBase)")
+        elif ftype == "deserialization":
+            add("python", "# 使用 json + itsdangerous 代替 pickle")
+            add("nodejs", "// JSON.parse() + schema 校验，禁止 eval()")
+            add("flask", "# Flask: session 使用 SECRET_KEY 签名，不要 pickle")
+            add("express", "// Express: 使用 jsonwebtoken，不要 node-serialize")
+            add("spring_boot", "# Java: 禁用 ObjectInputStream，改用 Jackson + 白名单类")
+        elif ftype == "ssrf":
+            add("python", "# urllib.parse + ipaddress.ip_address(addr).is_private")
+            add("nodejs", "// url.parse() + net.isIP() + 白名单域名")
+            add("flask", "# Flask: requests.get(whitelist_url_only)")
+            add("express", "// Express: 使用代理 + 禁止请求 169.254.169.254")
+            add("spring_boot", "# Java: Apache HttpClient + 自定义 DNSResolver 拦截内网")
         else:
             # 兜底：把 fix_text 直接当作 nginx 行
             if fix_text:
@@ -4955,7 +5740,7 @@ async def api_verify_fix(req: VerifyFixRequest, request: Request, user: dict = D
         waf_list = detect_waf(headers)
         sensitive_paths = await check_sensitive_paths(host, is_https)
         ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
-        result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths)
+        result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths)
         # V11.6：11 维交叉验证（降低误报）
         try:
             cv_result = await cross_validate_findings(
@@ -5084,7 +5869,7 @@ async def api_verify_domain(req: dict, user=Depends(require_login)):
     elif method == "file":
         # 检查文件验证：http://{domain}/.well-known/vulnsentinel
         try:
-            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as hc:
+            async with httpx.AsyncClient(timeout=10, follow_redirects=False) as hc:
                 resp = await hc.get(f"http://{domain}/.well-known/vulnsentinel")
                 if resp.status_code == 200:
                     # 安全读取：限制响应体最大 64KB，验证文件应该很小
@@ -5397,7 +6182,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             except Exception:
                 vuln_findings, vuln_tests = [], []
 
-        result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings)
+        result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings)
         # V11.6：11 维交叉验证（降低误报）
         try:
             cv_result = await cross_validate_findings(
@@ -5447,6 +6232,61 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             final_restricted = False
             final_reason = ""
             final_code = ""
+        # 扫描完成通知：检查是否有 critical/high 漏洞
+        try:
+            high_risk_findings = [f for f in result["findings"] if f.get("severity") in ("critical", "high")]
+            if high_risk_findings:
+                risk_names = ", ".join([f.get("name", "未知") for f in high_risk_findings[:5]])
+                alert_title = f"【高危告警】{host} 发现 {len(high_risk_findings)} 个高危漏洞"
+                alert_msg = f"扫描目标 {url} 发现 {len(high_risk_findings)} 个高危/严重级别安全问题：{risk_names}"
+                email_html = (
+                    f"<h2>高危漏洞告警</h2>"
+                    f"<p>扫描目标：<strong>{url}</strong></p>"
+                    f"<p>发现 <strong>{len(high_risk_findings)}</strong> 个高危/严重级别安全问题：</p>"
+                    f"<ul>" + "".join([f"<li><strong>{escapeHtml(f.get('name',''))}</strong> - {escapeHtml(f.get('description',''))}</li>" for f in high_risk_findings[:10]]) + f"</ul>"
+                    f"<p>评分：<strong>{result['score']}</strong> 分 | 风险等级：<strong>{result['risk_level']}</strong></p>"
+                    f"<p><a href='#'>点击查看详细报告</a></p>"
+                )
+                md_lines = [f"### 高危漏洞告警: {host}", f"", f"- **目标**: {url}", f"- **评分**: {result['score']} 分", f"- **风险等级**: {result['risk_level']}", f"- **高危数量**: {len(high_risk_findings)} 个", f"", f"**问题列表**："]
+                for f in high_risk_findings[:10]:
+                    md_lines.append(f"- **{f.get('name','')}**: {f.get('description','')}")
+                md_lines.append(f"")
+                md_lines.append(f"[点击查看详细报告]")
+                webhook_md = "\n".join(md_lines)
+                asyncio.create_task(notify_user(
+                    user_id, "high_risk_found", alert_title, alert_msg,
+                    {"url": url, "score": result["score"], "risk_level": result["risk_level"], "high_count": len(high_risk_findings)},
+                    scan_id=scan_id, severity="high",
+                    email_body_html=email_html, webhook_markdown=webhook_md,
+                ))
+            else:
+                # 扫描完成摘要通知
+                alert_title = f"扫描完成：{host} 评分 {result['score']} 分"
+                alert_msg = f"扫描目标 {url} 已完成，评分 {result['score']} 分，风险等级 {result['risk_level']}。"
+                email_html = (
+                    f"<h2>扫描完成通知</h2>"
+                    f"<p>扫描目标：<strong>{url}</strong></p>"
+                    f"<p>评分：<strong>{result['score']}</strong> 分</p>"
+                    f"<p>风险等级：<strong>{result['risk_level']}</strong></p>"
+                    f"<p>发现问题总数：<strong>{result['summary'].get('total', 0)}</strong> 个</p>"
+                    f"<p><a href='#'>点击查看详细报告</a></p>"
+                )
+                webhook_md = (
+                    f"### 扫描完成: {host}\n\n"
+                    f"- **目标**: {url}\n"
+                    f"- **评分**: {result['score']} 分\n"
+                    f"- **风险等级**: {result['risk_level']}\n"
+                    f"- **发现问题**: {result['summary'].get('total', 0)} 个\n\n"
+                    f"[点击查看详细报告]"
+                )
+                asyncio.create_task(notify_user(
+                    user_id, "scan_complete", alert_title, alert_msg,
+                    {"url": url, "score": result["score"], "risk_level": result["risk_level"]},
+                    scan_id=scan_id, severity="low",
+                    email_body_html=email_html, webhook_markdown=webhook_md,
+                ))
+        except Exception as e:
+            logger.warning("Scan notification trigger failed: %s", e)
         # 避免 result 里的 restricted 和显式参数冲突
         result.pop("restricted", None)
         result.pop("restricted_reason", None)
@@ -5836,7 +6676,7 @@ async def api_stats_history(user: dict = Depends(require_login), days: int = Que
 
 @app.get("/api/alerts")
 async def api_alerts(user: dict = Depends(require_login), limit: int = Query(20, ge=1, le=100), unread_only: bool = Query(False)) -> dict:
-    """返回用户的扫描告警通知。"""
+    """返回用户的扫描告警通知（含 title 和 scan_id）。"""
     conn = get_db()
     try:
         sql = "SELECT * FROM alerts WHERE user_id=?"
@@ -5860,6 +6700,21 @@ async def api_alerts(user: dict = Depends(require_login), limit: int = Query(20,
     return {"alerts": alerts, "count": len(alerts)}
 
 
+@app.get("/api/alerts/unread-count")
+async def api_alerts_unread_count(user: dict = Depends(require_login)) -> dict:
+    """返回用户未读告警数量。"""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM alerts WHERE user_id=? AND is_read=0",
+            (user["user_id"],),
+        ).fetchone()
+        count = row["cnt"] if row else 0
+    finally:
+        conn.close()
+    return {"unread_count": count}
+
+
 @app.post("/api/alerts/{alert_id}/read")
 async def api_mark_alert_read(alert_id: int, user: dict = Depends(require_login)) -> dict:
     """标记告警为已读。"""
@@ -5870,6 +6725,30 @@ async def api_mark_alert_read(alert_id: int, user: dict = Depends(require_login)
     finally:
         conn.close()
     return {"success": True}
+
+
+@app.get("/api/me/notifications")
+async def api_get_notifications(user: dict = Depends(require_login)) -> dict:
+    """获取当前用户的通知设置。"""
+    settings_dict = get_user_notification_settings(user["user_id"])
+    return {"success": True, **settings_dict}
+
+
+@app.post("/api/me/notifications")
+async def api_update_notifications(req: dict, user: dict = Depends(require_login)) -> dict:
+    """更新当前用户的通知设置。"""
+    email = req.get("email", "")
+    webhook = req.get("webhook", "")
+    threshold = req.get("threshold", "high")
+    if threshold not in ("critical", "high", "medium", "low", "all"):
+        threshold = "high"
+    if email:
+        try:
+            email = sanitize_email(email)
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+    ok = update_user_notification_settings(user["user_id"], email, webhook, threshold)
+    return {"success": ok}
 
 
 # ---------- 授权日志 ----------
@@ -5987,7 +6866,7 @@ async def apply_fix_and_rescan(req: ApplyFixRequest, user: dict = Depends(requir
         ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
         waf_list = detect_waf(headers)
         sensitive_paths = await check_sensitive_paths(host, is_https)
-        result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
+        result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
         scan_id = save_scan(
             user["user_id"], url, result["score"], result["risk_level"],
             result["findings"], result["summary"], 0, "rescan",
@@ -6775,6 +7654,30 @@ def _check_monitors_sync():
                         (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), m["id"]),
                     )
                     conn.commit()
+                    # 发送监控宕机通知
+                    try:
+                        alert_title = f"【监控告警】{host} 无法访问"
+                        alert_msg = f"监控目标 {url} 无法访问：{error}"
+                        email_html = (
+                            f"<h2>监控告警：网站宕机</h2>"
+                            f"<p>监控目标：<strong>{url}</strong></p>"
+                            f"<p>错误信息：<strong>{error}</strong></p>"
+                            f"<p>检测时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>"
+                        )
+                        webhook_md = (
+                            f"### 监控告警：网站宕机\n\n"
+                            f"- **目标**: {url}\n"
+                            f"- **错误**: {error}\n"
+                            f"- **时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                        )
+                        loop.run_until_complete(notify_user(
+                            m["user_id"], "monitor_down", alert_title, alert_msg,
+                            {"url": url, "error": error, "monitor_id": m["id"]},
+                            severity="high",
+                            email_body_html=email_html, webhook_markdown=webhook_md,
+                        ))
+                    except Exception as e:
+                        logger.warning("Monitor down notification failed: %s", e)
                     continue
                 # 拿到 headers 后，调用 analyze_security 分析
                 host = urlparse(url).hostname or ""
@@ -6782,7 +7685,7 @@ def _check_monitors_sync():
                 ssl_info = {"has_cert": False}
                 waf_list = detect_waf(headers)
                 sensitive_paths: List[dict] = []
-                result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
+                result = loop.run_until_complete(analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, []))
                 score = result["score"]
                 risk = result["risk_level"]
                 findings = result["findings"]
@@ -6800,6 +7703,30 @@ def _check_monitors_sync():
                             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         ),
                     )
+                    # 发送评分下降通知
+                    try:
+                        alert_title = f"【监控告警】{host} 评分下降"
+                        alert_msg = f"网站 {url} 评分从 {old_score} 下降到 {score}"
+                        email_html = (
+                            f"<h2>监控告警：评分下降</h2>"
+                            f"<p>监控目标：<strong>{url}</strong></p>"
+                            f"<p>评分变化：<strong>{old_score}</strong> → <strong>{score}</strong></p>"
+                            f"<p>当前风险等级：<strong>{risk}</strong></p>"
+                        )
+                        webhook_md = (
+                            f"### 监控告警：评分下降\n\n"
+                            f"- **目标**: {url}\n"
+                            f"- **评分变化**: {old_score} → {score}\n"
+                            f"- **当前风险等级**: {risk}\n"
+                        )
+                        loop.run_until_complete(notify_user(
+                            m["user_id"], "score_drop", alert_title, alert_msg,
+                            {"url": url, "old_score": old_score, "new_score": score, "risk_level": risk, "monitor_id": m["id"]},
+                            severity="high",
+                            email_body_html=email_html, webhook_markdown=webhook_md,
+                        ))
+                    except Exception as e:
+                        logger.warning("Score drop notification failed: %s", e)
                 # 检测新漏洞（简单对比：数量增加）
                 old_count = m["last_findings_count"] or 0
                 new_count = len(findings)
@@ -6814,6 +7741,32 @@ def _check_monitors_sync():
                             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         ),
                     )
+                    # 发送新漏洞通知
+                    try:
+                        new_findings = findings[old_count:] if len(findings) > old_count else findings
+                        risk_names = ", ".join([f.get("name", "未知") for f in new_findings[:5]])
+                        alert_title = f"【监控告警】{host} 发现新漏洞"
+                        alert_msg = f"网站 {url} 发现 {new_count - old_count} 个新的安全问题：{risk_names}"
+                        email_html = (
+                            f"<h2>监控告警：新漏洞发现</h2>"
+                            f"<p>监控目标：<strong>{url}</strong></p>"
+                            f"<p>新增问题数：<strong>{new_count - old_count}</strong> 个</p>"
+                            f"<p>问题列表：{risk_names}</p>"
+                        )
+                        webhook_md = (
+                            f"### 监控告警：新漏洞发现\n\n"
+                            f"- **目标**: {url}\n"
+                            f"- **新增问题**: {new_count - old_count} 个\n"
+                            f"- **问题列表**: {risk_names}\n"
+                        )
+                        loop.run_until_complete(notify_user(
+                            m["user_id"], "high_risk_found", alert_title, alert_msg,
+                            {"url": url, "new_count": new_count - old_count, "monitor_id": m["id"]},
+                            severity="high",
+                            email_body_html=email_html, webhook_markdown=webhook_md,
+                        ))
+                    except Exception as e:
+                        logger.warning("New issue notification failed: %s", e)
                 # 更新 last_score
                 conn.execute(
                     """UPDATE monitors SET last_score=?, last_risk=?, last_findings_count=?, last_scan_at=?
@@ -6968,6 +7921,102 @@ async def _call_llm(messages: list) -> str:
         raise RuntimeError(f"LLM {resp.status_code}: {resp.text[:200]}")
     data = resp.json()
     return data["choices"][0]["message"]["content"].strip()
+
+
+async def _call_real_llm(api_key: str, model: str, provider: Optional[str], messages: list) -> str:
+    """调用用户配置的 OpenAI 兼容 LLM。失败时抛 RuntimeError。"""
+    if not api_key:
+        raise RuntimeError("缺少 API Key")
+
+    provider = (provider or "openai").lower()
+    if provider == "deepseek":
+        base_url = "https://api.deepseek.com/v1"
+    elif provider in ("qwen", "tongyi", "dashscope"):
+        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    elif provider == "openai":
+        base_url = "https://api.openai.com/v1"
+    else:
+        base_url = provider if provider.startswith("http") else "https://api.openai.com/v1"
+
+    url = base_url.rstrip("/") + "/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model or "gpt-4o-mini",
+        "messages": messages,
+        "temperature": 0.3,
+        "max_tokens": 800,
+    }
+    _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
+    async with httpx.AsyncClient(timeout=20.0, verify=not _tls_off) as client:
+        resp = await client.post(url, headers=headers, json=payload)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"LLM {resp.status_code}: {resp.text[:200]}")
+    data = resp.json()
+    return data["choices"][0]["message"]["content"].strip()
+
+
+def _build_ai_advisor_llm_prompt(user_msg: str, history: list, scan_context: Optional[dict], matched_knowledge: tuple) -> list:
+    """为 AI 顾问构建 LLM prompt：系统提示 + 上下文 + 用户问题"""
+    system_parts = [
+        "你是漏洞哨兵安全顾问，帮助用户理解和修复 Web 安全问题。",
+        "回答时请遵循以下结构：",
+        "1. 结论：用一句话给出核心观点",
+        "2. 详细解释：说明原理、风险场景",
+        "3. 操作步骤：给出可执行的具体修复命令或配置（优先 Nginx，也可提供 Apache/Node.js 示例）",
+        "",
+        "注意事项：",
+        "- 使用 Markdown 格式",
+        "- 配置片段要完整、可直接复制使用",
+        "- 如果问题与扫描结果相关，请结合具体数据回答",
+        "- 不要编造信息，不确定时请诚实说明",
+    ]
+
+    context_parts = []
+    if scan_context:
+        findings = scan_context.get("findings", [])
+        score = scan_context.get("score", 0)
+        risk_level = scan_context.get("risk_level", "未知")
+        url = scan_context.get("url", "")
+        summary = scan_context.get("summary", {})
+
+        context_parts.append("用户最近扫描结果：")
+        context_parts.append(f"- 目标 URL：{url}")
+        context_parts.append(f"- 评分：{score} 分（{risk_level}）")
+        if summary:
+            context_parts.append(
+                f"- 严重/高/中/低 风险数："
+                f"{summary.get('critical', 0)}/{summary.get('high', 0)}/{summary.get('medium', 0)}/{summary.get('low', 0)}"
+            )
+        if findings:
+            sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+            top = sorted(findings, key=lambda f: sev_rank.get(f.get("severity", "low"), 4))[:5]
+            context_parts.append("- 主要问题：")
+            for f in top:
+                context_parts.append(
+                    f"  • [{f.get('severity', '')}] {f.get('name', '')}："
+                    f"{f.get('description', '') or f.get('detail', '')}"
+                )
+        context_parts.append("")
+
+    if matched_knowledge and matched_knowledge[1]:
+        entry = matched_knowledge[1]
+        context_parts.append(f"相关知识库条目：{entry.get('name', '')}")
+        context_parts.append(f"原理：{entry.get('principle', '')[:300]}")
+        context_parts.append(f"修复要点：{entry.get('fix', '')[:300]}")
+        context_parts.append("")
+
+    system_prompt = "\n".join(system_parts + context_parts)
+
+    messages = [{"role": "system", "content": system_prompt}]
+    for h in history[-6:]:
+        role = h.get("role")
+        if role in ("user", "assistant") and h.get("content"):
+            messages.append({"role": role, "content": h["content"]})
+    messages.append({"role": "user", "content": user_msg})
+    return messages
 
 
 @app.post("/api/ai/chat")
@@ -7454,10 +8503,38 @@ async def api_fix(req: ScanRequest, request: Request, user: dict = Depends(requi
         sensitive_paths = []
         ssl_info_raw = {"has_cert": False}
     ssl_info = ssl_info_raw if is_https else {"has_cert": False}
-    result = analyze_security(
+    result = await analyze_security(
         url, headers, is_https, ssl_info, waf_list, sensitive_paths,
     )
     fixes = generate_fixes(result["findings"], headers, is_https, host)
+    # 修复建议生成完成通知
+    try:
+        fix_count = len(fixes) if fixes else 0
+        high_fixes = [f for f in fixes if f.get("severity") in ("critical", "high")]
+        alert_title = f"修复建议已生成：{host}"
+        alert_msg = f"已为 {url} 生成 {fix_count} 条修复建议，其中高危 {len(high_fixes)} 条。"
+        email_html = (
+            f"<h2>修复建议生成完成</h2>"
+            f"<p>目标：<strong>{url}</strong></p>"
+            f"<p>当前评分：<strong>{result['score']}</strong> 分</p>"
+            f"<p>生成修复建议数：<strong>{fix_count}</strong> 条</p>"
+            f"<p>高危修复：<strong>{len(high_fixes)}</strong> 条</p>"
+        )
+        webhook_md = (
+            f"### 修复建议生成完成\n\n"
+            f"- **目标**: {url}\n"
+            f"- **当前评分**: {result['score']} 分\n"
+            f"- **修复建议数**: {fix_count} 条\n"
+            f"- **高危修复**: {len(high_fixes)} 条\n"
+        )
+        asyncio.create_task(notify_user(
+            user["user_id"], "scan_complete", alert_title, alert_msg,
+            {"url": url, "score": result["score"], "fix_count": fix_count, "high_fix_count": len(high_fixes)},
+            severity="medium" if len(high_fixes) == 0 else "high",
+            email_body_html=email_html, webhook_markdown=webhook_md,
+        ))
+    except Exception as e:
+        logger.warning("Fix notification trigger failed: %s", e)
     return {"success": True, "url": url, "fixes": fixes, "score": result["score"],
             "summary": result["summary"]}
 
@@ -7500,7 +8577,7 @@ async def api_retest(scan_id: int, user: dict = Depends(require_login)) -> dict:
     except Exception as e:
         logger.warning("api_retest check_sensitive_paths failed: %s", e)
         sensitive_paths = []
-    result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
+    result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
     new_scan_id = save_scan(
         user["user_id"], url, result["score"], result["risk_level"],
         result["findings"], result["summary"], 0, "retest",
@@ -8860,7 +9937,7 @@ async def public_demo_scan(req: PublicDemoRequest, request: Request):
         except Exception as e:
             logger.warning("public_demo check_sensitive_paths failed: %s", e)
             sensitive_paths = []
-        result = analyze_security(raw_url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
+        result = await analyze_security(raw_url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
         # V11.6：生成修复建议（与登录用户一致）
         fixes = generate_fixes(result.get("findings", []), headers, is_https, host)
         # V11.6：如果用户已登录，把这次 demo 扫描也保存为他的扫描记录
@@ -9709,7 +10786,7 @@ async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_c
     
     original_msg = (req.message or "").strip()
     if not original_msg:
-        return {"reply": "请输入问题，例如：HSTS 是什么？如何修复 CSP？", "source": "empty"}
+        return {"reply": "请输入问题，例如：HSTS 是什么？如何修复 CSP？", "source": "rule_engine"}
     
     msg_lower = original_msg.lower()
     
@@ -9726,22 +10803,7 @@ async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_c
     # 3. 意图识别
     intents = _ai_detect_intent(resolved_msg)
     
-    # 4. 快速匹配：问候和感谢
-    if "greeting" in intents:
-        reply = _AI_GENERAL_REPLIES["greeting"]
-        if user_id:
-            _save_conversation(user_id, "user", original_msg)
-            _save_conversation(user_id, "assistant", reply)
-        return {"reply": reply, "source": "greeting"}
-    
-    if "thanks" in intents:
-        reply = _AI_GENERAL_REPLIES["thanks"]
-        if user_id:
-            _save_conversation(user_id, "user", original_msg)
-            _save_conversation(user_id, "assistant", reply)
-        return {"reply": reply, "source": "thanks"}
-    
-    # 5. 获取最近扫描结果（上下文感知）
+    # 4. 获取最近扫描结果（上下文感知）
     scan_context = None
     if user_id:
         if req.scan_id:
@@ -9767,65 +10829,77 @@ async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_c
         else:
             scan_context = _ai_get_last_scan(user_id)
     
-    # 6. 知识库匹配
+    # 5. 知识库匹配
     matched = _ai_find_best_knowledge(resolved_msg)
     match_score = matched[2] if matched[2] else 0
     
-    # 7. 生成回答
+    # 6. 生成回答
     reply = ""
-    source = "fallback"
+    source = "rule_engine"
+    llm_error = None
     
-    # 7a. 有扫描上下文 + 相关意图 → 基于扫描结果回答
-    scan_related_intents = ["priority", "score", "upgrade", "config_location", "deployment_risk"]
-    if scan_context and any(i in intents for i in scan_related_intents):
-        reply = _ai_generate_scan_based_reply(resolved_msg, scan_context, intents, matched)
-        source = "scan_analysis"
+    # 6a. 如果用户提供了 API Key 且启用 LLM，优先调用真实 LLM
+    user_api_key = (req.api_key or "").strip()
+    want_llm = req.use_llm if req.use_llm is not None else bool(user_api_key)
+    if user_api_key and want_llm:
+        try:
+            messages = _build_ai_advisor_llm_prompt(resolved_msg, history, scan_context, matched)
+            response_text = await _call_real_llm(
+                api_key=user_api_key,
+                model=req.model or "gpt-4o-mini",
+                provider=req.provider,
+                messages=messages,
+            )
+            reply = response_text
+            source = "llm"
+        except Exception as e:
+            llm_error = str(e)[:200]
+            logger.warning("Real LLM call failed for user %s, falling back to rule engine: %s", user_id, e)
     
-    # 7b. 匹配到知识库 → 基于知识库回答（可结合扫描上下文）
-    elif match_score >= 8.0 and matched[1]:
-        entry = matched[1]
-        # 如果有扫描上下文，结合上下文回答
-        if scan_context:
-            reply = _ai_generate_scan_based_reply(resolved_msg, scan_context, intents, matched)
-            source = "kb_with_scan"
-        else:
-            reply = _ai_generate_knowledge_reply(entry, intents, resolved_msg)
-            source = "knowledge_base"
-    
-    # 7c. 工具使用类问题
-    elif any(i in intents for i in ["tool_scan", "tool_report", "tool_fixer"]):
-        # 直接从工具知识库找
-        tool_key = None
-        if "tool_scan" in intents:
-            tool_key = "how_to_scan"
-        elif "tool_report" in intents:
-            tool_key = "how_to_read_report"
-        elif "tool_fixer" in intents:
-            tool_key = "how_to_use_fixer"
-        
-        if tool_key and tool_key in _AI_TOOL_KB:
-            reply = _AI_TOOL_KB[tool_key]["answer"]
-            source = "tool_kb"
-    
-    # 7d. 有扫描上下文但没匹配到具体知识 → 给出扫描摘要
-    elif scan_context:
-        reply = _ai_generate_scan_based_reply(resolved_msg, scan_context, intents, matched)
-        source = "scan_summary"
-    
-    # 7e. 兜底
+    # 6b. 规则引擎兜底（未启用 LLM 或 LLM 失败时）
     if not reply:
-        reply = _AI_GENERAL_REPLIES["fallback"]
-        source = "fallback"
+        if "greeting" in intents:
+            reply = _AI_GENERAL_REPLIES["greeting"]
+        elif "thanks" in intents:
+            reply = _AI_GENERAL_REPLIES["thanks"]
+        else:
+            scan_related_intents = ["priority", "score", "upgrade", "config_location", "deployment_risk"]
+            if scan_context and any(i in intents for i in scan_related_intents):
+                reply = _ai_generate_scan_based_reply(resolved_msg, scan_context, intents, matched)
+            elif match_score >= 8.0 and matched[1]:
+                entry = matched[1]
+                if scan_context:
+                    reply = _ai_generate_scan_based_reply(resolved_msg, scan_context, intents, matched)
+                else:
+                    reply = _ai_generate_knowledge_reply(entry, intents, resolved_msg)
+            elif any(i in intents for i in ["tool_scan", "tool_report", "tool_fixer"]):
+                tool_key = None
+                if "tool_scan" in intents:
+                    tool_key = "how_to_scan"
+                elif "tool_report" in intents:
+                    tool_key = "how_to_read_report"
+                elif "tool_fixer" in intents:
+                    tool_key = "how_to_use_fixer"
+                if tool_key and tool_key in _AI_TOOL_KB:
+                    reply = _AI_TOOL_KB[tool_key]["answer"]
+            elif scan_context:
+                reply = _ai_generate_scan_based_reply(resolved_msg, scan_context, intents, matched)
+            else:
+                reply = _AI_GENERAL_REPLIES["fallback"]
+        source = "rule_engine"
     
-    # 8. 保存对话历史
+    # 7. 保存对话历史
     if user_id:
         _save_conversation(user_id, "user", original_msg)
-        _save_conversation(user_id, "assistant", reply, {
+        meta = {
             "source": source,
             "match_score": match_score,
             "intents": intents,
             "resolved_msg": resolved_msg if resolved_msg != original_msg else None,
-        })
+        }
+        if llm_error:
+            meta["llm_error"] = llm_error
+        _save_conversation(user_id, "assistant", reply, meta)
     
     return {"reply": reply, "source": source}
 
@@ -9890,7 +10964,7 @@ async def batch_scan(req: BatchScanRequest, request: Request, user=Depends(requi
                 vuln_findings, _ = await run_payload_tests(url, crawled_pages)
             except Exception:
                 vuln_findings = []
-        result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings)
+        result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings)
         scan_id = save_scan(
             user_id, url, result["score"], result["risk_level"],
             result["findings"], result["summary"],
@@ -9992,7 +11066,7 @@ async def api_scan_asset(asset_id: int, request: Request, user: dict = Depends(r
     except Exception as e:
         logger.warning("api_scan_asset check_sensitive_paths failed: %s", e)
         sensitive_paths = []
-    result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
+    result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
     scan_id = save_scan(
         user["user_id"], url, result["score"], result["risk_level"],
         result["findings"], result["summary"], 0, "real",
@@ -10295,7 +11369,7 @@ async def api_demo_full_cycle(req: DemoFullCycleRequest, request: Request, user:
         ssl_info1 = await get_ssl_info(host, 443) if is_https1 else {"has_cert": False}
         waf_list1 = detect_waf(headers1)
         sensitive_paths1 = await check_sensitive_paths(host, is_https1)
-        result1 = analyze_security(target_url, headers1, is_https1, ssl_info1, waf_list1, sensitive_paths1, [])
+        result1 = await analyze_security(target_url, headers1, is_https1, ssl_info1, waf_list1, sensitive_paths1, [])
         scan_id1 = save_scan(
             user["user_id"], target_url, result1["score"], result1["risk_level"],
             result1["findings"], result1["summary"], 0, "demo_before",
@@ -10314,7 +11388,7 @@ async def api_demo_full_cycle(req: DemoFullCycleRequest, request: Request, user:
         ssl_info2 = await get_ssl_info(host, 443) if is_https2 else {"has_cert": False}
         waf_list2 = detect_waf(headers2)
         sensitive_paths2 = await check_sensitive_paths(host, is_https2)
-        result2 = analyze_security(target_url, headers2, is_https2, ssl_info2, waf_list2, sensitive_paths2, [])
+        result2 = await analyze_security(target_url, headers2, is_https2, ssl_info2, waf_list2, sensitive_paths2, [])
         scan_id2 = save_scan(
             user["user_id"], target_url, result2["score"], result2["risk_level"],
             result2["findings"], result2["summary"], 0, "demo_after",

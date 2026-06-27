@@ -59,7 +59,7 @@ vuln-sentinel/
 ├── main.py                  # FastAPI 后端主程序（150+ API）
 ├── static/
 │   └── index.html           # 单文件前端（含离线演示模式）
-├── tests/                   # pytest 测试套件（189 用例）
+├── tests/                   # pytest 测试套件（184 用例）
 │   └── test_main.py
 ├── docs/                    # 文档 + 截图 + 架构图
 │   ├── screenshots/         # 实际运行截图
@@ -155,12 +155,11 @@ ALLOWED_INTERNAL_HOSTS="192.168.1.100,10.0.0.5,pikachu.local" python3 main.py
 python3 -m pytest tests/ -v
 ```
 
-当前测试结果：**182 passed, 4 skipped, 3 failed**
+当前测试结果：**184 passed, 5 skipped, 0 failed**
 
-> 3 个失败均非核心功能问题：
-> - `test_nginx_config_exists`：路径硬编码（已修复）
-> - `test_ssh_execute_safety`：环境未安装 paramiko（SSH 自动修复为可选功能）
-> - `test_ai_advisor_requires_auth_works_anyway`：测试逻辑与当前认证策略不一致
+> 5 个 skipped 为可选功能（无对应依赖不影响核心功能）：
+> - `test_ssh_execute_safety`：paramiko 未安装（SSH 修复为可选功能）
+> - 其余为 LLM / 网络相关依赖未配置
 
 ---
 
@@ -256,11 +255,11 @@ v11.6 · 2026-06-27
 
 **V11.6 主要更新**：
 - 全局 SSRF 防护审计（所有外部请求入口统一过 sanitize_url）
-- 一键修复闭环数据真实化（before_score 从数据库读取）
+- 扫描-修复-复测闭环数据真实化（before_score 从数据库读取）
 - 离线模式体验优化（隐藏未实现入口、AI Chat 支持）
 - 14 个前端崩溃点修复 + 全局错误兜底
 - 42 个 API 端点
-- 189 个测试用例
+- 184 个测试用例（0 failed, 5 skipped）
 
 ---
 

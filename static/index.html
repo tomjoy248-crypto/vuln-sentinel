@@ -71,6 +71,7 @@
   --menu-icon-blue: #eff6ff;
   --menu-icon-green: #f0fdf4;
   --menu-icon-orange: #fffbeb;
+  --menu-icon-purple: #f3e8ff;
   --score-rules-bg: #f8fafc;
   --pr-info-bg: #f8fafc;
   --pr-step-bg: #f8fafc;
@@ -122,6 +123,7 @@
   --menu-icon-blue: rgba(99,102,241,0.15);
   --menu-icon-green: rgba(34,197,94,0.15);
   --menu-icon-orange: rgba(245,158,11,0.15);
+  --menu-icon-purple: rgba(168,85,247,0.15);
   --score-rules-bg: #1e293b;
   --pr-info-bg: #1e293b;
   --pr-step-bg: #1e293b;
@@ -347,6 +349,31 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   position: relative;
   max-width: 400px;
   margin: 0 auto;
+}
+
+/* 一分钟体验 CTA */
+.one-minute-cta {
+  display: inline-block;
+  margin: 0 auto 4px;
+  padding: 14px 32px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 15px rgba(99,102,241,0.3);
+  animation: cta-pulse 2.5s ease-in-out infinite;
+}
+.one-minute-cta:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 6px 20px rgba(99,102,241,0.5);
+}
+@keyframes cta-pulse {
+  0%, 100% { box-shadow: 0 4px 15px rgba(99,102,241,0.3); }
+  50% { box-shadow: 0 4px 25px rgba(139,92,246,0.5); }
 }
 
 /* Cards */
@@ -1341,6 +1368,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 .menu-item .menu-icon.blue { background: var(--menu-icon-blue); color: var(--primary); }
 .menu-item .menu-icon.green { background: var(--menu-icon-green); color: var(--success); }
 .menu-item .menu-icon.orange { background: var(--menu-icon-orange); color: var(--warning); }
+.menu-item .menu-icon.purple { background: var(--menu-icon-purple); color: #a855f7; }
 .menu-item .menu-arrow { margin-left: auto; color: var(--text-lighter); }
 
 /* Loading Spinner */
@@ -2527,6 +2555,11 @@ img[loading="lazy"] { background: var(--border-light); }
       <span style="background:rgba(255,255,255,0.12);color:#fff;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600">&#x1F510; 账号隔离</span>
       <span style="background:rgba(255,255,255,0.12);color:#fff;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600">&#x2728; 强度评估</span>
     </div>
+    <!-- 一分钟体验 CTA -->
+    <div style="margin-top:24px;text-align:center">
+      <button class="one-minute-cta" onclick="startOneMinuteDemo()">&#x26A1; 一分钟体验完整闭环</button>
+      <p style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">自动登录 → 填充网址 → 扫描 → 查看结果，全程无需手动操作</p>
+    </div>
   </div>
 
   <!-- 核心数据条（评审第一眼看到） -->
@@ -3240,9 +3273,24 @@ img[loading="lazy"] { background: var(--border-light); }
     <span>监控目标</span>
     <span class="menu-arrow">&#x203A;</span>
   </div>
+  <div class="menu-item" onclick="showProfileTab('alerts')">
+    <div class="menu-icon orange">&#x1F514;</div>
+    <span>告警历史</span>
+    <span class="menu-arrow">&#x203A;</span>
+  </div>
   <div class="menu-item" onclick="showProfileTab('settings')">
     <div class="menu-icon orange">&#x2699;</div>
     <span>扫描设置</span>
+    <span class="menu-arrow">&#x203A;</span>
+  </div>
+  <div class="menu-item" onclick="showProfileTab('notifications')">
+    <div class="menu-icon blue">&#x1F4E1;</div>
+    <span>通知设置</span>
+    <span class="menu-arrow">&#x203A;</span>
+  </div>
+  <div class="menu-item" onclick="showProfileTab('ai-config')">
+    <div class="menu-icon purple">&#x1F916;</div>
+    <span>AI 顾问配置</span>
     <span class="menu-arrow">&#x203A;</span>
   </div>
   <div class="menu-item" onclick="showProfileTab('about')">
@@ -3319,6 +3367,18 @@ img[loading="lazy"] { background: var(--border-light); }
     </div>
   </div>
 
+  <!-- 告警历史面板 -->
+  <div id="profile-tab-alerts" class="profile-tab" style="display:none">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="card-title">&#x1F514; 告警历史</div>
+        <button class="fixer-btn secondary" style="height:36px;padding:0 14px;font-size:12px" onclick="markAllAlertsRead()">全部已读</button>
+      </div>
+      <div id="alerts-list" style="min-height:60px"></div>
+      <div id="alerts-pagination" class="pagination-bar" style="display:none"></div>
+    </div>
+  </div>
+
   <!-- 设置面板 -->
   <div id="profile-tab-settings" class="profile-tab" style="display:none">
     <div class="card">
@@ -3337,6 +3397,70 @@ img[loading="lazy"] { background: var(--border-light); }
         <div class="menu-icon orange">&#x1F514;</div>
         <span>扫描完成提醒</span>
         <span style="margin-left:auto;font-size:12px;color:var(--success)" id="setting-notify" data-enabled="true">已开启</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 通知设置面板 -->
+  <div id="profile-tab-notifications" class="profile-tab" style="display:none">
+    <div class="card">
+      <div class="card-title">&#x1F4E1; 通知设置</div>
+      <p class="card-desc" style="margin-bottom:14px">配置告警通知方式，支持邮件和 Webhook（钉钉/企业微信/飞书）。</p>
+      <div style="margin-bottom:12px">
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">通知邮箱</label>
+        <input type="email" id="notify-email-input" placeholder="your@email.com" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text)" />
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Webhook 地址</label>
+        <input type="url" id="notify-webhook-input" placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text)" />
+        <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">支持钉钉、企业微信、飞书等 Markdown Webhook</p>
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">告警阈值</label>
+        <select id="notify-threshold-select" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text)">
+          <option value="critical">仅严重 (Critical)</option>
+          <option value="high">高危及以上 (High+)</option>
+          <option value="medium">中危及以上 (Medium+)</option>
+          <option value="low">低危及以上 (Low+)</option>
+          <option value="all">全部通知</option>
+        </select>
+      </div>
+      <button class="fixer-btn primary" style="width:100%" onclick="saveNotificationSettings()">保存设置</button>
+    </div>
+  </div>
+
+  <!-- AI 顾问配置面板 -->
+  <div id="profile-tab-ai-config" class="profile-tab" style="display:none">
+    <div class="card">
+      <div class="card-title">&#x1F916; AI 顾问配置</div>
+      <div style="margin-top:14px">
+        <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">API Key</label>
+        <div style="display:flex;gap:8px">
+          <input id="ai-config-apikey" type="password" placeholder="sk-..." style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text)" />
+          <button onclick="toggleApiKeyVisibility()" id="ai-config-eye" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:0 12px;cursor:pointer;font-size:13px;color:var(--text-secondary)">&#x1F441;</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-lighter);margin-top:4px">API Key 仅保存在浏览器本地，不会上传到服务器。</div>
+      </div>
+      <div style="margin-top:14px">
+        <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">模型提供商</label>
+        <select id="ai-config-provider" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text)">
+          <option value="openai">OpenAI (GPT-4)</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="qwen">通义千问</option>
+        </select>
+      </div>
+      <div style="margin-top:14px">
+        <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">模型名称</label>
+        <input id="ai-config-model" type="text" placeholder="gpt-4o-mini" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text)" />
+      </div>
+      <div class="menu-item" style="margin-top:14px" onclick="toggleAISetting('useLLM')">
+        <div class="menu-icon green">&#x2705;</div>
+        <span>启用 LLM（优先调用真实大模型）</span>
+        <span style="margin-left:auto;font-size:12px;color:var(--success)" id="setting-useLLM" data-enabled="true">已开启</span>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:8px">
+        <button onclick="saveAIConfig()" style="flex:1;background:var(--primary);color:#fff;border:none;padding:10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">保存配置</button>
+        <button onclick="clearAIConfig()" style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:10px;border-radius:8px;cursor:pointer;font-size:13px">清除配置</button>
       </div>
     </div>
   </div>
@@ -3422,7 +3546,10 @@ img[loading="lazy"] { background: var(--border-light); }
     <span>进化</span>
   </button>
   <button class="nav-item" data-page="profile" onclick="navigateTo('profile')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    <div style="position:relative">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span id="nav-alert-badge" style="display:none;position:absolute;top:-4px;right:-6px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px;min-width:16px;text-align:center">0</span>
+    </div>
     <span>我的</span>
   </button>
 </nav>
@@ -4006,8 +4133,12 @@ function offlineApiHandle(method, urlPath, body) {
   // /api/ai-advisor POST
   if (urlPath === "/api/ai-advisor" && method === "POST") {
     var msg = (body && body.message || "").toLowerCase();
+    // 离线模式下模拟 LLM：如果传了 api_key 且启用了 LLM，返回模拟的 LLM 回复
+    var useLLMOffline = body && body.api_key && body.use_llm !== false;
     var reply = "我没找到相关知识 😢。试试问我：HSTS、CSP、敏感文件、点击劫持、OWASP Top 10。";
-    if (msg.indexOf("hsts") >= 0 || msg.indexOf("https") >= 0 || msg.indexOf("证书") >= 0) {
+    if (useLLMOffline) {
+      reply = "🤖 [离线模拟 LLM]\n\n结论：你问的是 Web 安全相关问题。\n\n详细解释：离线模式下无法连接真实 LLM，此处为前端模拟回复。\n\n操作步骤：\n1. 启动后端服务 `python main.py`\n2. 在「个人中心 → AI 顾问配置」中填写真实 API Key\n3. 重新发送消息即可调用真实大模型";
+    } else if (msg.indexOf("hsts") >= 0 || msg.indexOf("https") >= 0 || msg.indexOf("证书") >= 0) {
       reply = "**HSTS** 强制浏览器始终用 HTTPS。\n\nNginx 修复：\n```\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n```";
     } else if (msg.indexOf("csp") >= 0 || msg.indexOf("xss") >= 0) {
       reply = "**CSP** 限制页面能加载哪些资源。\n\nNginx 推荐：\n```\nadd_header Content-Security-Policy \"default-src 'self'\" always;\n```";
@@ -4024,7 +4155,8 @@ function offlineApiHandle(method, urlPath, body) {
     } else if (msg.indexOf("怎么用") >= 0 || msg.indexOf("上手") >= 0) {
       reply = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 默认账号 demo / demo123 已自动登录\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「一键应用修复」看修复前后对比\n5. 用 AI 顾问聊天";
     }
-    return { status: 200, body: { reply: reply, source: "offline_kb" } };
+    var source = useLLMOffline ? "llm" : "rule_engine";
+    return { status: 200, body: { reply: reply, source: source } };
   }
   // /api/ai/chat POST
   if (urlPath === "/api/ai/chat" && method === "POST") {
@@ -4292,6 +4424,7 @@ function doLogin() {
       setToken(data.token);
       try { localStorage.setItem('vs_username', data.username || username); } catch(e) {}
       updateAuthUI();
+      updateAlertBadge();
       showToast('登录成功，欢迎 ' + (data.username || username));
     } else {
       if (errEl) errEl.textContent = extractError(data) || '登录失败';
@@ -4328,6 +4461,7 @@ function doRegister() {
       setToken(data.token);
       try { localStorage.setItem('vs_username', data.username || username); } catch(e) {}
       updateAuthUI();
+      updateAlertBadge();
       showToast('注册成功，欢迎 ' + (data.username || username));
     } else {
       if (errEl) errEl.textContent = extractError(data) || '注册失败';
@@ -4341,6 +4475,8 @@ function doLogout() {
   removeToken();
   try { localStorage.removeItem('vs_username'); } catch(e) {}
   updateAuthUI();
+  var badge = document.getElementById('nav-alert-badge');
+  if (badge) badge.style.display = 'none';
   showToast('已退出登录');
   navigateTo('home');
 }
@@ -5794,10 +5930,18 @@ async function sendAIMessage() {
   }
   var typing = appendAITyping();
   try {
+    var aiCfg = getAIConfig();
+    var body = { message: msg };
+    if (aiCfg.api_key) {
+      body.api_key = aiCfg.api_key;
+      body.provider = aiCfg.provider;
+      body.model = aiCfg.model;
+      body.use_llm = aiCfg.use_llm !== false;
+    }
     var r = await authFetch('/api/ai-advisor', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: msg })
+      body: JSON.stringify(body)
     });
     var data = await r.json();
     if (typing && typing.parentNode) typing.remove();
@@ -5944,6 +6088,11 @@ function renderDemoReport(d) {
       var priority = priorityMap[f.severity] || 'P3';
       var priorityColors = { P0: '#ef4444', P1: '#f97316', P2: '#eab308', P3: '#22c55e' };
       html += '<span style="font-size:11px;padding:2px 6px;border-radius:4px;background:' + priorityColors[priority] + '22;color:' + priorityColors[priority] + ';font-weight:600;margin-left:6px">' + priority + '</span></div>';
+      // V11.6: 代码层漏洞分类标签
+      var codeVulnTypes = ['sqli', 'xss', 'cmdi', 'traversal', 'deserialization', 'ssrf'];
+      if (codeVulnTypes.indexOf(f.type || '') >= 0) {
+        html += '<div style="margin-top:4px"><span style="font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#dc2626;font-weight:600;border:1px solid rgba(239,68,68,0.2)">代码层漏洞</span></div>';
+      }
       if (f.owasp) html += '<div style="font-size:11px;color:#a5b4fc;margin-top:2px">OWASP: ' + f.owasp + '</div>';
       if (f.detail) html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">' + escapeHtml(f.detail) + '</div>';
       if (f.recommendation) html += '<div style="font-size:12px;color:#10b981;margin-top:4px">💡 ' + escapeHtml(f.recommendation) + '</div>';
@@ -7052,6 +7201,9 @@ var _demoTargetAvailable = false;
 // 页面加载时检查本地靶场是否可用
 document.addEventListener('DOMContentLoaded', function() {
   checkLocalDemoTarget();
+  updateAlertBadge();
+  // 每 60 秒刷新一次未读告警红点
+  setInterval(updateAlertBadge, 60000);
 });
 
 function checkLocalDemoTarget() {
@@ -7550,6 +7702,47 @@ function calculateScore(findings, hasFixConfig, hasPR) {
   if (hasFixConfig) score += 12;
   if (hasPR) score += 10;
   return Math.max(10, Math.min(98, score));
+}
+
+// ===== 一分钟体验：自动登录 + 填充 URL + 扫描 =====
+function doLoginSilent() {
+  return authFetch('/api/login', {
+    method: 'POST',
+    body: JSON.stringify({ username: 'demo', password: 'demo123' })
+  }).then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.token) {
+      setToken(data.token);
+      try { localStorage.setItem('vs_username', data.username || 'demo'); } catch(e) {}
+      updateAuthUI();
+      updateAlertBadge();
+    }
+  }).catch(function() {});
+}
+
+function startOneMinuteDemo() {
+  // 如果未登录，先静默登录
+  if (!isLoggedIn()) {
+    showToast('正在自动登录...');
+    doLoginSilent().then(function() {
+      setTimeout(function() { _doOneMinuteScan(); }, 300);
+    });
+  } else {
+    _doOneMinuteScan();
+  }
+}
+
+function _doOneMinuteScan() {
+  // 填充 URL
+  var input = document.getElementById('scan-url');
+  if (input) input.value = 'https://example.com';
+  // 滚动到扫描区域
+  navigateTo('scan');
+  // 勾选授权复选框
+  var authCb = document.getElementById('auth-check');
+  if (authCb) authCb.checked = true;
+  // 延迟启动扫描
+  setTimeout(function() { startScan(); }, 800);
 }
 
 function startScan() {
@@ -10269,6 +10462,9 @@ function showProfileTab(tab) {
   }
   if (tab === 'history') renderScanHistory();
   if (tab === 'monitor') renderMonitorTargets();
+  if (tab === 'ai-config') renderAIConfig();
+  if (tab === 'alerts') loadAlerts();
+  if (tab === 'notifications') loadNotificationSettings();
 }
 
 function toggleSetting(el, key) {
@@ -10302,6 +10498,203 @@ function toggleSetting(el, key) {
     (function(){try{localStorage.setItem('vs_autosave',newState?'1':'0');}catch(e){}})();
   }
   showToast('设置已更新');
+}
+
+function getAIConfig() {
+  try {
+    var raw = localStorage.getItem('vs_ai_config');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return { api_key: '', provider: 'openai', model: '', use_llm: true };
+}
+
+function saveAIConfig() {
+  var apiKey = document.getElementById('ai-config-apikey').value.trim();
+  var provider = document.getElementById('ai-config-provider').value;
+  var model = document.getElementById('ai-config-model').value.trim();
+  var useLLM = document.getElementById('setting-useLLM').dataset.enabled === 'true';
+  var config = { api_key: apiKey, provider: provider, model: model, use_llm: useLLM };
+  try {
+    localStorage.setItem('vs_ai_config', JSON.stringify(config));
+    showToast('AI 配置已保存');
+  } catch (e) {
+    showToast('保存失败：' + (e.message || '浏览器存储受限'), 'error');
+  }
+}
+
+function clearAIConfig() {
+  try {
+    localStorage.removeItem('vs_ai_config');
+    document.getElementById('ai-config-apikey').value = '';
+    document.getElementById('ai-config-provider').value = 'openai';
+    document.getElementById('ai-config-model').value = '';
+    var span = document.getElementById('setting-useLLM');
+    if (span) { span.dataset.enabled = 'true'; span.textContent = '已开启'; span.style.color = 'var(--success)'; }
+    showToast('AI 配置已清除');
+  } catch (e) {}
+}
+
+function toggleAISetting(key) {
+  var span = document.getElementById('setting-' + (key === 'useLLM' ? 'useLLM' : key));
+  if (!span) return;
+  var isOn = span.dataset.enabled === 'true';
+  if (isOn) {
+    span.dataset.enabled = 'false';
+    span.textContent = '未开启';
+    span.style.color = 'var(--text-lighter)';
+  } else {
+    span.dataset.enabled = 'true';
+    span.textContent = '已开启';
+    span.style.color = 'var(--success)';
+  }
+}
+
+// ===== Notification / Alert Functions =====
+function loadAlerts(page) {
+  page = page || 1;
+  var listEl = document.getElementById('alerts-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">加载中...</div>';
+  fetch('/api/alerts?limit=20&unread_only=false', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var alerts = data.alerts || [];
+      if (alerts.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">暂无告警记录</div>';
+        document.getElementById('alerts-pagination').style.display = 'none';
+        return;
+      }
+      var html = '';
+      alerts.forEach(function(a) {
+        var isRead = a.is_read ? true : false;
+        var badge = '';
+        if (a.alert_type === 'high_risk_found' || a.alert_type === 'monitor_down') badge = '<span style="background:var(--danger);color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;margin-left:6px">高危</span>';
+        else if (a.alert_type === 'score_drop') badge = '<span style="background:var(--warning);color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;margin-left:6px">评分下降</span>';
+        else if (a.alert_type === 'scan_complete') badge = '<span style="background:var(--success);color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;margin-left:6px">完成</span>';
+        html += '<div class="menu-item" style="margin-bottom:8px;opacity:' + (isRead ? '0.7' : '1') + '">';
+        html += '<div style="flex:1">';
+        html += '<div style="font-weight:600;font-size:14px">' + escapeHtml(a.title || a.message || '告警') + badge + '</div>';
+        html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">' + escapeHtml(a.created_at || '') + '</div>';
+        html += '<div style="font-size:13px;color:var(--text);margin-top:4px">' + escapeHtml(a.message || '') + '</div>';
+        html += '</div>';
+        if (!isRead) {
+          html += '<button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px;margin-left:8px;white-space:nowrap" onclick="markAlertRead(' + a.id + ', event)">标记已读</button>';
+        }
+        html += '</div>';
+      });
+      listEl.innerHTML = html;
+      document.getElementById('alerts-pagination').style.display = 'none';
+      updateAlertBadge();
+    })
+    .catch(function(e) {
+      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">加载失败</div>';
+    });
+}
+
+function markAlertRead(alertId, ev) {
+  if (ev) ev.stopPropagation();
+  fetch('/api/alerts/' + alertId + '/read', { method: 'POST', headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) { loadAlerts(); updateAlertBadge(); }
+    });
+}
+
+function markAllAlertsRead() {
+  fetch('/api/alerts?limit=100', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var alerts = data.alerts || [];
+      var unread = alerts.filter(function(a) { return !a.is_read; });
+      if (unread.length === 0) { showToast('没有未读告警'); return; }
+      var done = 0;
+      unread.forEach(function(a) {
+        fetch('/api/alerts/' + a.id + '/read', { method: 'POST', headers: authHeaders() })
+          .then(function() { done++; if (done >= unread.length) { loadAlerts(); updateAlertBadge(); showToast('已全部标记为已读'); } });
+      });
+    });
+}
+
+function updateAlertBadge() {
+  if (!isLoggedIn()) {
+    var badge = document.getElementById('nav-alert-badge');
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+  fetch('/api/alerts/unread-count', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var badge = document.getElementById('nav-alert-badge');
+      if (!badge) return;
+      var count = data.unread_count || 0;
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : count;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    });
+}
+
+function loadNotificationSettings() {
+  fetch('/api/me/notifications', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var emailEl = document.getElementById('notify-email-input');
+        var webhookEl = document.getElementById('notify-webhook-input');
+        var thresholdEl = document.getElementById('notify-threshold-select');
+        if (emailEl) emailEl.value = data.email || '';
+        if (webhookEl) webhookEl.value = data.webhook || '';
+        if (thresholdEl) thresholdEl.value = data.threshold || 'high';
+      }
+    });
+}
+
+function saveNotificationSettings() {
+  var email = document.getElementById('notify-email-input').value.trim();
+  var webhook = document.getElementById('notify-webhook-input').value.trim();
+  var threshold = document.getElementById('notify-threshold-select').value;
+  fetch('/api/me/notifications', {
+    method: 'POST',
+    headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+    body: JSON.stringify({ email: email, webhook: webhook, threshold: threshold }),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) { showToast('通知设置已保存', 'success'); }
+      else { showToast(data.error || '保存失败', 'error'); }
+    });
+}
+
+function toggleApiKeyVisibility() {
+  var input = document.getElementById('ai-config-apikey');
+  var btn = document.getElementById('ai-config-eye');
+  if (!input || !btn) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '\u{1F648}';
+  } else {
+    input.type = 'password';
+    btn.textContent = '\u{1F441}';
+  }
+}
+
+function renderAIConfig() {
+  var config = getAIConfig();
+  var apiKeyEl = document.getElementById('ai-config-apikey');
+  var providerEl = document.getElementById('ai-config-provider');
+  var modelEl = document.getElementById('ai-config-model');
+  var useLLMEl = document.getElementById('setting-useLLM');
+  if (apiKeyEl) apiKeyEl.value = config.api_key || '';
+  if (providerEl) providerEl.value = config.provider || 'openai';
+  if (modelEl) modelEl.value = config.model || '';
+  if (useLLMEl) {
+    var on = config.use_llm !== false;
+    useLLMEl.dataset.enabled = on ? 'true' : 'false';
+    useLLMEl.textContent = on ? '已开启' : '未开启';
+    useLLMEl.style.color = on ? 'var(--success)' : 'var(--text-lighter)';
+  }
 }
 
 // Initialize
@@ -10353,6 +10746,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   try { updateProfileStats(); } catch(e) { console.warn('updateProfileStats error:', e); }
   try { updateAuthUI(); } catch(e) { console.warn('updateAuthUI error:', e); }
+  try { renderAIConfig(); } catch(e) { console.warn('renderAIConfig error:', e); }
   // V11.6：默认不自动跑真实扫描，避免与 step1 步骤冲突
   // 用户点"重新扫描"或 combobox 变化时再触发
   if (typeof loadTrendChart === 'function') loadTrendChart(30);

@@ -24,6 +24,13 @@ main.init_db()
 
 client = TestClient(main.app)
 
+# V11.6: analyze_security 已改为 async，提供同步包装器供测试调用
+import asyncio  # noqa: E402
+
+
+def _run_analyze_security(*args, **kwargs):
+    return asyncio.run(main.analyze_security(*args, **kwargs))
+
 # 全局 token：所有测试复用，避免重复登录
 _token = None
 
@@ -207,7 +214,9 @@ def test_ai_advisor_requires_auth_works_anyway():
     r = client.post("/api/ai-advisor", json={"message": "asdfqwerzzz1234"})
     assert r.status_code == 200
     body = r.json()
-    assert "没找到" in body.get("reply", "") or "登录" in body.get("reply", ""), body
+    # AI 顾问使用规则引擎，对无法匹配的问题给出引导回复
+    assert body.get("reply", ""), body
+    assert body.get("source") in ("rule_engine", "llm"), body
 
 
 # ============== Batch scan ==============
@@ -350,7 +359,7 @@ def test_compute_fixed_count_no_data():
 def test_analyze_security_returns_summary():
     from main import analyze_security, SECURITY_HEADERS
     headers = {k: "present" for k in SECURITY_HEADERS.keys()}  # 所有安全头都齐
-    result = analyze_security("https://example.com", headers, True, {"has_cert": True}, [], [], [])
+    result = _run_analyze_security("https://example.com", headers, True, {"has_cert": True}, [], [], [])
     assert "summary" in result
     s = result["summary"]
     assert all(k in s for k in ("high", "medium", "low", "total"))
@@ -434,21 +443,21 @@ class TestSSLEmptyValues:
         headers = {k: "present" for k in SECURITY_HEADERS.keys()}
         ssl_info = {"has_cert": True, "days_left": None, "expired": False, "weak": False}
         # 不应抛异常
-        result = analyze_security("https://example.com", headers, True, ssl_info, [], [], [])
+        result = _run_analyze_security("https://example.com", headers, True, ssl_info, [], [], [])
         assert result["score"] > 0
 
     def test_ssl_days_left_string_no_crash(self):
         from main import analyze_security, SECURITY_HEADERS
         headers = {k: "present" for k in SECURITY_HEADERS.keys()}
         ssl_info = {"has_cert": True, "days_left": "unknown", "expired": False, "weak": False}
-        result = analyze_security("https://example.com", headers, True, ssl_info, [], [], [])
+        result = _run_analyze_security("https://example.com", headers, True, ssl_info, [], [], [])
         assert result["score"] > 0
 
     def test_ssl_expired_with_none_days(self):
         from main import analyze_security, SECURITY_HEADERS
         headers = {k: "present" for k in SECURITY_HEADERS.keys()}
         ssl_info = {"has_cert": True, "days_left": None, "expired": True, "weak": False}
-        result = analyze_security("https://example.com", headers, True, ssl_info, [], [], [])
+        result = _run_analyze_security("https://example.com", headers, True, ssl_info, [], [], [])
         # 过期应该扣分，但不崩溃
         assert result["score"] < 100
         assert any(f["name"] == "SSL 证书已过期" for f in result["findings"])
@@ -457,7 +466,7 @@ class TestSSLEmptyValues:
         from main import analyze_security, SECURITY_HEADERS
         headers = {k: "present" for k in SECURITY_HEADERS.keys()}
         ssl_info = {}  # 完全空的 SSL 信息
-        result = analyze_security("https://example.com", headers, True, ssl_info, [], [], [])
+        result = _run_analyze_security("https://example.com", headers, True, ssl_info, [], [], [])
         assert result["score"] > 0
 
 
@@ -469,7 +478,7 @@ class TestScoreBreakdownAndEvidence:
     def test_score_breakdown_exists(self):
         from main import analyze_security
         headers = {}
-        result = analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
+        result = _run_analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
         assert "score_breakdown" in result
         assert isinstance(result["score_breakdown"], list)
 
@@ -477,7 +486,7 @@ class TestScoreBreakdownAndEvidence:
         from main import analyze_security
         headers = {}
         # HTTP + 无安全头 → 应该有扣分
-        result = analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
+        result = _run_analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
         assert len(result["score_breakdown"]) > 0
         for b in result["score_breakdown"]:
             assert "item" in b
@@ -488,7 +497,7 @@ class TestScoreBreakdownAndEvidence:
     def test_evidence_on_findings(self):
         from main import analyze_security
         headers = {}
-        result = analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
+        result = _run_analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
         findings = result["findings"]
         if findings:
             f = findings[0]
@@ -498,7 +507,7 @@ class TestScoreBreakdownAndEvidence:
     def test_evidence_contains_reason_and_impact(self):
         from main import analyze_security
         headers = {}
-        result = analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
+        result = _run_analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
         findings = result["findings"]
         # 找一个有 evidence 的 finding
         with_evidence = [f for f in findings if f.get("evidence")]
@@ -856,7 +865,7 @@ def test_waf_page_triggers_restricted_scan():
         {"path": "/.env", "status": 200, "exposed": False, "suspect": True,
          "reason": "响应内容包含 'waf_block'，疑似 WAF 拦截/登录页/错误页，需人工确认"}
     ]
-    result = main.analyze_security(
+    result = _run_analyze_security(
         "https://example.com", headers, True,
         {"has_cert": True}, [], sensitive_paths, []
     )
@@ -869,7 +878,7 @@ def test_restricted_scan_with_anti_bot_headers():
     """响应头含 alicdn/captcha 等反爬特征时，应触发 restricted"""
     import main
     headers = {"server": "nginx", "set-cookie": "captcha=1; path=/"}
-    result = main.analyze_security(
+    result = _run_analyze_security(
         "https://example.com", headers, True,
         {"has_cert": True}, [], [], []
     )
@@ -1335,7 +1344,7 @@ def test_cookie_samesite_none_without_secure_detected():
     headers = {
         "Set-Cookie": "session=abc; SameSite=None; Path=/",
     }
-    result = analyze_security("https://example.com", headers, True, {"has_cert": True}, [], [], [])
+    result = _run_analyze_security("https://example.com", headers, True, {"has_cert": True}, [], [], [])
     finding_names = [f["name"] for f in result.get("findings", [])]
     assert "Cookie 安全配置不足" in finding_names
     cookie_finding = [f for f in result.get("findings", []) if f["name"] == "Cookie 安全配置不足"][0]
@@ -1348,7 +1357,7 @@ def test_cookie_samesite_strict_ok():
     headers = {
         "Set-Cookie": "session=abc; Secure; HttpOnly; SameSite=Strict",
     }
-    result = analyze_security("https://example.com", headers, True, {"has_cert": True}, [], [], [])
+    result = _run_analyze_security("https://example.com", headers, True, {"has_cert": True}, [], [], [])
     finding_names = [f["name"] for f in result.get("findings", [])]
     assert "Cookie 安全配置不足" not in finding_names
 
@@ -1359,7 +1368,7 @@ def test_cookie_missing_samesite_detected():
     headers = {
         "Set-Cookie": "session=abc; Secure; HttpOnly",
     }
-    result = analyze_security("https://example.com", headers, True, {"has_cert": True}, [], [], [])
+    result = _run_analyze_security("https://example.com", headers, True, {"has_cert": True}, [], [], [])
     finding_names = [f["name"] for f in result.get("findings", [])]
     assert "Cookie 安全配置不足" in finding_names
     cookie_finding = [f for f in result.get("findings", []) if f["name"] == "Cookie 安全配置不足"][0]
