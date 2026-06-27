@@ -2473,6 +2473,9 @@ img[loading="lazy"] { background: var(--border-light); }
     <button class="ai-chat-close" onclick="toggleAIChat()" aria-label="关闭">×</button>
   </div>
   <div class="ai-chat-body" id="ai-chat-body">
+    <div id="ai-offline-notice" style="display:none;padding:8px 10px;background:linear-gradient(135deg,rgba(99,102,241,0.1),rgba(168,85,247,0.05));border:1px solid rgba(99,102,241,0.2);border-radius:8px;font-size:12px;color:var(--text-secondary);text-align:center;margin-bottom:8px">
+      💡 当前使用本地规则引擎，配置 LLM API Key 可获得更智能回答
+    </div>
     <div class="ai-msg bot">
       你好！我是<strong>漏洞哨兵</strong>的安全顾问 🛡<br><br>
       我能帮你：<br>
@@ -4022,6 +4025,38 @@ function offlineApiHandle(method, urlPath, body) {
       reply = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 默认账号 demo / demo123 已自动登录\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「一键应用修复」看修复前后对比\n5. 用 AI 顾问聊天";
     }
     return { status: 200, body: { reply: reply, source: "offline_kb" } };
+  }
+  // /api/ai/chat POST
+  if (urlPath === "/api/ai/chat" && method === "POST") {
+    var msg2 = (body && body.message || "").toLowerCase();
+    var reply2 = "我没找到相关知识 😢。试试问我：HSTS、CSP、敏感文件、点击劫持、OWASP Top 10。";
+    var type2 = "explanation";
+    if (msg2.indexOf("hsts") >= 0 || msg2.indexOf("https") >= 0 || msg2.indexOf("证书") >= 0) {
+      reply2 = "**HSTS** 强制浏览器始终用 HTTPS。\n\nNginx 修复：\n```\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n```";
+      type2 = "fix";
+    } else if (msg2.indexOf("csp") >= 0 || msg2.indexOf("xss") >= 0) {
+      reply2 = "**CSP** 限制页面能加载哪些资源。\n\nNginx 推荐：\n```\nadd_header Content-Security-Policy \"default-src 'self'\" always;\n```";
+      type2 = "fix";
+    } else if (msg2.indexOf("敏感") >= 0 || msg2.indexOf(".env") >= 0 || msg2.indexOf("git") >= 0) {
+      reply2 = "**敏感文件暴露** 攻击者能直接拿到你的源码。\n\nNginx 拦截：\n```nginx\nlocation ~ /\\.(env|git|svn|sql|bak)$ { deny all; return 403; }\n```";
+      type2 = "fix";
+    } else if (msg2.indexOf("iframe") >= 0 || msg2.indexOf("frame") >= 0) {
+      reply2 = "**点击劫持** 防御（Nginx）：\n```\nadd_header X-Frame-Options \"DENY\" always;\n```";
+      type2 = "fix";
+    } else if (msg2.indexOf("评分") >= 0 || msg2.indexOf("分数") >= 0 || msg2.indexOf("怎么算") >= 0) {
+      reply2 = "**V11.6 评分公式**：基础 100 分 − critical×25 − high×15 − medium×8 − low×3 + 修复加成 +12。";
+      type2 = "explanation";
+    } else if (msg2.indexOf("你好") >= 0 || msg2.indexOf("hi") >= 0 || msg2.indexOf("hello") >= 0) {
+      reply2 = "你好！我是漏洞哨兵 V11.6 安全顾问 🛡 试试问我：HSTS 是什么？如何修复 CSP？怎么提分？";
+      type2 = "greeting";
+    } else if (msg2.indexOf("v11") >= 0 || msg2.indexOf("更新") >= 0 || msg2.indexOf("新版本") >= 0) {
+      reply2 = "**V11.6 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站误报率 → 0）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
+      type2 = "explanation";
+    } else if (msg2.indexOf("怎么用") >= 0 || msg2.indexOf("上手") >= 0) {
+      reply2 = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 默认账号 demo / demo123 已自动登录\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「一键应用修复」看修复前后对比\n5. 用 AI 顾问聊天";
+      type2 = "explanation";
+    }
+    return { status: 200, body: { response: reply2, reply: reply2, confidence: "high", type: type2, source: "offline_kb" } };
   }
   // /api/reset-password POST
   if (urlPath === "/api/reset-password" && method === "POST") {
@@ -5978,9 +6013,9 @@ function renderDemoReport(d) {
   // 操作按钮
   html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
   html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 用 AI 修复器生成补丁</button>';
-  if (isLoggedIn()) {
+  if (isLoggedIn() && !OFFLINE_MODE) {
     html += '<button onclick="doPublicDemoFix()" style="background:var(--primary-dark,#4f46e5);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">📋 一键应用修复</button>';
-  } else {
+  } else if (!OFFLINE_MODE) {
     html += '<button onclick="navigateTo(\'profile\')" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px">🔑 登录后自动修复</button>';
   }
   html += '</div>';
@@ -6119,7 +6154,9 @@ function renderFixComparison(d) {
   if (isLoggedIn()) {
     html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 进入修复器获取完整补丁</button>';
     // V11.6 新增：自动修复按钮
-    html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 自动修复（SSH/Cloudflare）</button>';
+    if (!OFFLINE_MODE) {
+      html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 自动修复（SSH/Cloudflare）</button>';
+    }
   } else {
     html += '<button onclick="navigateTo(\'profile\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🔑 登录后获取完整补丁代码</button>';
   }
@@ -9211,8 +9248,26 @@ function downloadReport() {
   authFetch('/api/history?limit=1').then(function(r){return r.json();}).then(function(data){
     var item = (data.history || [])[0];
     if (!item) return;
-    var token = localStorage.getItem('vs_token') || '';
-    window.open('/api/report/' + item.id + '?token=' + encodeURIComponent(token), '_blank');
+    var url = '/api/report/' + encodeURIComponent(item.id) + '?format=pdf';
+    authFetch(url, { method: 'GET' })
+      .then(function(res) {
+        if (!res.ok) throw new Error('下载失败');
+        return res.blob();
+      })
+      .then(function(blob) {
+        var downloadUrl = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = 'report-' + item.id + '.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(downloadUrl);
+        showToast('PDF 报告下载已开始');
+      })
+      .catch(function(err) {
+        showToast('下载失败：' + err.message);
+      });
   });
 }
 
@@ -10255,6 +10310,19 @@ document.addEventListener('DOMContentLoaded', function() {
   var skeleton = safeGetElement('skeleton-screen');
   if (skeleton) skeleton.classList.add('hidden');
   setTimeout(function() { if (skeleton) skeleton.style.display = 'none'; }, 350);
+
+  // 离线模式下隐藏未实现功能的 UI 入口
+  if (window.OFFLINE_MODE) {
+    var hidePages = ['assets', 'tickets', 'evolution'];
+    hidePages.forEach(function(page) {
+      var el = document.querySelector('.nav-item[data-page="' + page + '"]');
+      if (el) el.style.display = 'none';
+    });
+    var monItem = document.querySelector('.menu-item[onclick*="showProfileTab(\'monitor\')"]');
+    if (monItem) monItem.style.display = 'none';
+    var aiNotice = document.getElementById('ai-offline-notice');
+    if (aiNotice) aiNotice.style.display = 'block';
+  }
 
   // 扫描深度档位切换 — 通过 .scan-depth-opt 的 click 事件绑定（兼容 iOS + 触屏）
   var depthHints = { quick: '约 1-2 秒 · 仅响应头', standard: '约 3-5 秒 · 推荐', deep: '约 10+ 秒 · 含攻击测试' };
