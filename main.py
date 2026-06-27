@@ -9667,12 +9667,14 @@ async def catch_all(path: str) -> Any:
     try:
         base = Path(STATIC_DIR).resolve()
         fp = (base / path).resolve()
+        # V11.6 fix: is_file() 在路径过长时会抛出 OSError(Errno 36)，
+        # 同时 is_relative_to 也需要捕获异常，避免返回 500
+        if not fp.is_relative_to(base):
+            # 解析后路径已逃出静态目录 → 拒绝
+            return await index()
+        if not fp.is_file():
+            return await index()
     except (OSError, ValueError):
-        return await index()
-    if not fp.is_file():
-        return await index()
-    if not fp.is_relative_to(base):
-        # 解析后路径已逃出静态目录 → 拒绝
         return await index()
     return FileResponse(str(fp))
 

@@ -3416,6 +3416,33 @@ img[loading="lazy"] { background: var(--border-light); }
 </button>
 
 <script>
+// ===== 全局错误兜底：防止 JS 异常导致白屏 =====
+(function installGlobalErrorHandlers() {
+  var _hasShownError = false;
+  function showGlobalError(msg) {
+    if (_hasShownError) return;
+    _hasShownError = true;
+    try {
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);color:#fff;z-index:99999;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif';
+      overlay.innerHTML = '<div style="max-width:500px;padding:30px;background:#1e293b;border-radius:12px;text-align:center;border:1px solid #ef4444"><div style="font-size:48px;margin-bottom:12px">&#x26A0;&#xFE0F;</div><h2 style="margin:0 0 8px;color:#ef4444">页面遇到错误</h2><p style="color:#94a3b8;font-size:14px;margin:0 0 16px;line-height:1.6">页面在运行过程中遇到了一个未预期的错误。您可以尝试刷新页面。</p><p style="color:#64748b;font-size:12px;margin:0 0 16px;font-family:monospace;word-break:break-all">' + (msg || '未知错误').substring(0, 200) + '</p><button onclick="location.reload()" style="background:#3b82f6;color:#fff;border:none;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600">&#x1F504; 刷新页面</button></div>';
+      document.body.appendChild(overlay);
+    } catch (e) {
+      console.error('Global error handler failed:', e);
+    }
+  }
+  window.addEventListener('error', function(e) {
+    console.error('Global error:', e.error || e.message);
+    // 忽略资源加载错误（如图片、CSS）
+    if (e.target && e.target !== window && (e.target.tagName === 'IMG' || e.target.tagName === 'LINK' || e.target.tagName === 'SCRIPT')) return;
+    showGlobalError(e.message || String(e.error));
+  }, true);
+  window.addEventListener('unhandledrejection', function(e) {
+    console.error('Unhandled promise rejection:', e.reason);
+    // Promise 拒绝不展示全局错误页，避免误报
+  });
+})();
+
 // ===== Utility: Safe DOM Access =====
 function safeGetElement(id) { var el = document.getElementById(id); return el || null; }
 function safeSetText(id, text) { var el = safeGetElement(id); if (el) el.textContent = text; }
@@ -3642,6 +3669,10 @@ var _scoreAnimInterval = null;
 function animateScoreProgress(targetScore) {
   var ring = document.querySelector('.score-ring .score-value');
   if (!ring) return;
+  // 防御性：确保是数字
+  targetScore = parseInt(targetScore, 10);
+  if (isNaN(targetScore) || targetScore < 0) targetScore = 0;
+  if (targetScore > 100) targetScore = 100;
   if (_scoreAnimInterval) { clearInterval(_scoreAnimInterval); _scoreAnimInterval = null; }
   var current = 0;
   var step = Math.max(1, Math.floor(targetScore / 50));
@@ -3855,6 +3886,9 @@ if (OFFLINE_MODE) {
 
 // 离线 API 路由表
 function offlineApiHandle(method, urlPath, body) {
+  try {
+  // 防御性兜底：确保 body 是对象
+  body = body || {};
   // /api/login
   if (urlPath === "/api/login" && method === "POST") {
     var users = OfflineDB.getUsers();
@@ -3951,12 +3985,14 @@ function offlineApiHandle(method, urlPath, body) {
     var users2 = OfflineDB.getUsers();
     var current = localStorage.getItem(OfflineDB.KEY_TOKEN);
     if (current) {
-      var uname = atob(current.replace("offline_", "").split(":")[0]);
-      if (users2[uname]) {
-        users2[uname].password = body.new_password;
-        OfflineDB.saveUsers(users2);
-        return { status: 200, body: { success: true, message: "密码已重置" } };
-      }
+      try {
+        var uname = atob(current.replace("offline_", "").split(":")[0]);
+        if (users2[uname]) {
+          users2[uname].password = body.new_password;
+          OfflineDB.saveUsers(users2);
+          return { status: 200, body: { success: true, message: "密码已重置" } };
+        }
+      } catch (e) { /* token 格式无效，忽略 */ }
     }
     return { status: 200, body: { success: true, message: "密码已重置（离线模式）" } };
   }
@@ -4035,6 +4071,10 @@ function offlineApiHandle(method, urlPath, body) {
     return { status: 200, body: { version: "11.6", title: "漏洞哨兵 V11.6 (离线演示模式)", build_time: "2026-06-25" } };
   }
   return { status: 404, body: { success: false, error: "离线模式未实现该端点: " + method + " " + urlPath } };
+  } catch (e) {
+    console.error('offlineApiHandle error:', e);
+    return { status: 500, body: { success: false, error: "离线模式内部错误: " + (e.message || String(e)) } };
+  }
 }
 
 // authFetch: 自动附加 Authorization header 的 fetch 封装
@@ -4385,6 +4425,7 @@ function closeReportDropdownOutside(e) {
 
 // Navigation
 function navigateTo(page) {
+  try {
   // scan 没有独立页面，滚动到首页扫描区域
   if (page === 'scan') {
     var home = document.getElementById('page-home');
@@ -4410,6 +4451,9 @@ function navigateTo(page) {
   if (page === 'tickets') loadTickets();
   if (page === 'assets') loadAssets();
   if (page === 'evolution') loadEvolution();
+  } catch (e) {
+    console.error('navigateTo error:', e);
+  }
 }
 
 // Toast 队列（最多堆叠 3 条，每条显示 2.5 秒，新消息从底部滑入）
@@ -6191,12 +6235,17 @@ function getHost(url) {
 }
 
 function getScoreColor(score) {
+  score = parseInt(score, 10);
+  if (isNaN(score)) score = 0;
   if (score >= 75) return '#22c55e';
   if (score >= 50) return '#f59e0b';
   return '#ef4444';
 }
 
 function getScoreGradient(score) {
+  score = parseInt(score, 10);
+  if (isNaN(score)) score = 0;
+  score = Math.max(0, Math.min(100, score));
   if (score >= 75) return 'conic-gradient(#22c55e 0% ' + score + '%, #334155 ' + score + '% 100%)';
   if (score >= 50) return 'conic-gradient(#f59e0b 0% ' + score + '%, #334155 ' + score + '% 100%)';
   return 'conic-gradient(#ef4444 0% ' + score + '%, #334155 ' + score + '% 100%)';
@@ -6211,6 +6260,7 @@ var verifyToken = '';
 var selectedVerifyMethod = '';
 
 function startScanDirect() {
+  try {
   var urlInput = document.getElementById('scan-url');
   var url = urlInput ? urlInput.value.trim() : '';
   if (!url) { showToast('请输入目标网址'); return; }
@@ -6253,6 +6303,13 @@ function startScanDirect() {
   if (confirmedInput) confirmedInput.value = url;
   // 直接触发扫描
   startScan();
+  } catch (e) {
+    console.error('startScanDirect error:', e);
+    _scanInProgress = false;
+    setButtonLoading("scan-btn", false);
+    setButtonLoading("scan-btn-step1", false);
+    showToast('扫描启动失败：' + (e.message || String(e)));
+  }
 }
 
 // ============== 复制修复代码 ==============
@@ -6747,6 +6804,7 @@ function renderTrendChart(data) {
 }
 
 function quickDemo(url) {
+  try {
   if (!isLoggedIn()) {
     showToast('请先登录后再体验');
     navigateTo('profile');
@@ -6771,6 +6829,10 @@ function quickDemo(url) {
     }).catch(function(){});
   } catch(e) {}
   startScanDirect();
+  } catch (e) {
+    console.error('quickDemo error:', e);
+    showToast('启动演示失败：' + (e.message || String(e)), 'error');
+  }
 }
 
 // ============== V11.6 本地演示靶场 ==============
@@ -6782,7 +6844,10 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function checkLocalDemoTarget() {
-  fetch('/api/demo-status')
+  // 离线模式下直接跳过，不尝试网络请求
+  if (OFFLINE_MODE) return;
+  try {
+  authFetch('/api/demo-status')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data && data.success && data.running) {
@@ -6792,6 +6857,7 @@ function checkLocalDemoTarget() {
       }
     })
     .catch(function() {});
+  } catch(e) {}
 }
 
 function updateDemoStep(stepIndex, label, status) {
@@ -7276,6 +7342,7 @@ function calculateScore(findings, hasFixConfig, hasPR) {
 }
 
 function startScan() {
+  try {
   if (_scanInProgress) { showToast("扫描进行中，请稍候"); return; }
   if (!isLoggedIn()) { showToast('请先登录后再使用扫描功能'); navigateTo('profile'); return; }
   _scanInProgress = true;
@@ -7345,6 +7412,17 @@ function startScan() {
   var scanDepth = (scanDepthInput && scanDepthInput.value) || 'standard';
   var deepScan = scanDepth === 'deep';
   startRealScan(url, host, deepScan);
+  } catch (e) {
+    console.error('startScan error:', e);
+    _scanInProgress = false;
+    setButtonLoading("scan-btn", false);
+    var rc = document.getElementById('result-content');
+    if (rc) {
+      rc.innerHTML = '<div class="card" style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#x274C;</div><h3 style="color:var(--danger);margin-bottom:8px">扫描启动失败</h3><p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">页面在启动扫描时遇到问题。</p><p style="color:var(--text-lighter);font-size:12px;margin-bottom:16px">错误信息：' + escapeHtml(e.message || String(e)) + '</p><button class="btn btn-primary" onclick="navigateTo(\'home\')">&#x1F3E0; 返回首页</button></div>';
+    } else {
+      showToast('扫描启动失败：' + (e.message || String(e)), 'error');
+    }
+  }
 }
 
 var _scanCancelled = false;
@@ -7428,7 +7506,10 @@ function startRealScan(url, host, deepScan) {
 function mergeRealData(url, apiData) {
   // Build a scan result using real API data — 不再硬塞假 finding
   var host = getHost(url);
-  var findings = apiData.findings || [];
+  // 防御性：确保 apiData 是对象
+  apiData = apiData || {};
+  // 防御性：确保 findings 是数组
+  var findings = Array.isArray(apiData.findings) ? apiData.findings : [];
   // 归一化严重度：后端 severity（high/medium/low）→ 前端展示字段
   findings.forEach(function(f) {
     if (f.severity && !f.level_zh) {
@@ -7935,9 +8016,24 @@ function renderResult(data) {
   try {
   // 防御性兜底：确保 data 及核心字段存在
   data = data || {};
-  data.findings = data.findings || [];
-  data.ai_report = data.ai_report || { summary: '扫描完成', priority: '暂无优先事项' };
-  data.owasp_coverage = data.owasp_coverage || [];
+  // 严格类型校验：确保数组字段是真正的数组
+  data.findings = Array.isArray(data.findings) ? data.findings : [];
+  data.owasp_coverage = Array.isArray(data.owasp_coverage) ? data.owasp_coverage : [];
+  data.header_details = Array.isArray(data.header_details) ? data.header_details : [];
+  data.info_leaks = Array.isArray(data.info_leaks) ? data.info_leaks : [];
+  data.cookie_issues = Array.isArray(data.cookie_issues) ? data.cookie_issues : [];
+  data.waf = Array.isArray(data.waf) ? data.waf : [];
+  data.sensitive_paths = Array.isArray(data.sensitive_paths) ? data.sensitive_paths : [];
+  data.crawled_pages = Array.isArray(data.crawled_pages) ? data.crawled_pages : [];
+  data.vuln_tests = Array.isArray(data.vuln_tests) ? data.vuln_tests : [];
+  data.score_breakdown = Array.isArray(data.score_breakdown) ? data.score_breakdown : [];
+  // 确保 ai_report 是对象
+  data.ai_report = (data.ai_report && typeof data.ai_report === 'object') ? data.ai_report : { summary: '扫描完成', priority: '暂无优先事项' };
+  // 确保 score 是有效数字
+  data.score = typeof data.score === 'number' ? data.score : (parseInt(data.score, 10) || 0);
+  data.score = Math.max(0, Math.min(100, data.score));
+  // 确保 raw_headers 是对象
+  data.raw_headers = (data.raw_headers && typeof data.raw_headers === 'object') ? data.raw_headers : {};
   var highCount = 0, medCount = 0, lowCount = 0;
   data.findings.forEach(function(f) {
     if (f.level === '高风险') highCount++;
@@ -8883,7 +8979,12 @@ function renderResult(data) {
   html += '<div>本报告由漏洞哨兵智能规则引擎自动生成，仅反映扫描时刻的目标配置状况，不构成完整安全审计。建议降低风险而非追求"完全安全"。</div>';
   html += '</div>';
 
-  document.getElementById('result-content').innerHTML = html;
+  var resultContent = document.getElementById('result-content');
+  if (!resultContent) {
+    console.warn('renderResult: result-content element not found');
+    return;
+  }
+  resultContent.innerHTML = html;
   // ★ 渲染雷达图
   renderRadarChart(data);
   // ★ 数字滚动动画
@@ -9973,8 +10074,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  updateProfileStats();
-  updateAuthUI();
+  try { updateProfileStats(); } catch(e) { console.warn('updateProfileStats error:', e); }
+  try { updateAuthUI(); } catch(e) { console.warn('updateAuthUI error:', e); }
   // V11.6：默认不自动跑真实扫描，避免与 step1 步骤冲突
   // 用户点"重新扫描"或 combobox 变化时再触发
   if (typeof loadTrendChart === 'function') loadTrendChart(30);
