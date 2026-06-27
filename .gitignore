@@ -12,3 +12,6 @@ docs/coverage_html/
 .jwt_secret
 初赛发帖*
 复赛准备*
+demo-target/logs/
+demo-target/conf/*.bak
+demo-target/conf/*.bak.vuln

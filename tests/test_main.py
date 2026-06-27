@@ -1,6 +1,6 @@
 """
-V11.4 单元测试
-覆盖：认证 / 工具函数 / WAF 检测 / 修复生成 / FastAPI 端点 / V11.4 新增能力
+V11.6 单元测试
+覆盖：认证 / 工具函数 / WAF 检测 / 修复生成 / FastAPI 端点 / V11.6 新增能力
 """
 import json
 import os
@@ -121,7 +121,7 @@ def test_generate_fixes_adds_hsts_when_missing():
 
 
 def test_generate_fixes_adds_csp_when_missing():
-    """V11.4：之前完全不会匹配 CSP，现在应该能正确生成。"""
+    """V11.6：之前完全不会匹配 CSP，现在应该能正确生成。"""
     findings = [{
         "name": "缺少 CSP",
         "severity": "high",
@@ -146,7 +146,7 @@ def test_generate_fixes_blocks_sensitive_paths():
 
 
 def test_generate_fixes_xss_via_type():
-    """V11.4：通过 type='XSS' 匹配，生成 CSP 修复。"""
+    """V11.6：通过 type='XSS' 匹配，生成 CSP 修复。"""
     findings = [{
         "name": "Reflected XSS on param q",
         "type": "XSS",
@@ -249,8 +249,8 @@ def test_version():
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
-    assert body["version"] == "11.5"
-    assert "V11.5" in body["title"]
+    assert body["version"] == "11.6"
+    assert "V11.6" in body["title"]
 
 
 # ============== Frontend asset ==============
@@ -259,11 +259,11 @@ def test_index_html_served():
     r = client.get("/")
     assert r.status_code == 200
     assert "漏洞哨兵" in r.text
-    # V11.4 标题校验
-    assert "V11.4" in r.text
+    # V11.6 标题校验
+    assert "V11.6" in r.text
 
 
-# ============== V11.4 新增能力：Public demo / Simulate fix / Verify fix diff / History delete ==============
+# ============== V11.6 新增能力：Public demo / Simulate fix / Verify fix diff / History delete ==============
 
 def test_public_demo_scan_iana():
     r = client.post("/api/public-demo-scan", json={"url": "https://iana.org"})
@@ -287,7 +287,7 @@ def test_public_demo_scan_whitelist_blocked():
 
 
 def test_simulate_fix_uses_real_severity():
-    """V11.4：simulate-fix 用真实 severity 字段，不再退化。"""
+    """V11.6：simulate-fix 用真实 severity 字段，不再退化。"""
     findings = [
         {"name": "缺少 HSTS", "severity": "high"},
         {"name": "缺少 CSP", "severity": "high"},
@@ -306,7 +306,7 @@ def test_simulate_fix_uses_real_severity():
 
 
 def test_history_delete_real():
-    """V11.4：DELETE 真正清空历史，返回 deleted 数。"""
+    """V11.6：DELETE 真正清空历史，返回 deleted 数。"""
     r = client.post("/api/login", json={"username": "demo", "password": "demo123"})
     if r.status_code != 200:
         pytest.skip("demo account unavailable")
@@ -325,7 +325,7 @@ def test_history_delete_real():
 
 
 def test_history_stats_shape():
-    """V11.4：history 返回里带 stats 字段。"""
+    """V11.6：history 返回里带 stats 字段。"""
     r = client.post("/api/login", json={"username": "demo", "password": "demo123"})
     if r.status_code != 200:
         pytest.skip("demo account unavailable")
@@ -345,7 +345,7 @@ def test_compute_fixed_count_no_data():
     assert compute_fixed_count([]) == 0
 
 
-# ============== V11.4：analyze_security 输出 summary ==============
+# ============== V11.6：analyze_security 输出 summary ==============
 
 def test_analyze_security_returns_summary():
     from main import analyze_security, SECURITY_HEADERS

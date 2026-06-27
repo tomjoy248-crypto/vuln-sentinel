@@ -4,6 +4,57 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [V11.6] - 2026-06-27
+
+### 新增
+- 扫描取消功能：扫描过程中可随时取消
+- Toast 消息队列：支持多条消息堆叠显示，不再被覆盖
+- AI 聊天未读消息徽章：有新消息时浮动按钮显示红点
+- 跳过导航链接：键盘用户可快速跳转到主内容
+- 右上角主题切换按钮：从底部导航移到右上角，减少导航拥挤
+
+### 修复
+- CSS 变量缺失：AI 聊天和进化中心 UI 样式崩坏（6 个变量未定义）
+- AI 聊天 Esc 关闭后无法再打开（inline style 优先级高于 class）
+- 扫描结果页底部导航无高亮（result 页无对应导航项）
+- 授权复选框点击区域太小，移动端不容易点中
+- 0 漏洞时"漏洞详情"下方空白，用户误以为扫描失败
+- 趋势图 finding_count 字段名错误（应为 findings_count）
+- 监控功能完全不可用（analyze_security 参数签名不匹配）
+- 资产扫描 SSRF 漏洞（缺少 sanitize_url 校验）
+- 监控创建/执行 SSRF 漏洞（缺少 sanitize_url 校验）
+- api_fix / api_retest SSRF 漏洞（缺少 sanitize_url 校验）
+- SSH 连接泄漏（异常时 client.close 不执行）
+- 注册接口数据库连接泄漏（多处分散 close 容易遗漏）
+- verify_file 重定向 SSRF 风险（跟随重定向可能到内网）
+- 漏洞详情折叠无键盘可访问性（div+onclick 无 role/tabindex）
+- 禁止用户缩放（违反可访问性，user-scalable=no）
+- startScanDirect 变量重复声明
+- offlineApiHandle 冗余三元表达式
+- 授权 checkbox 三向联动循环风险
+
+### 优化
+- 字体整体加大：10px→11px，11px→12px，提升移动端可读性
+- 小按钮点击区域增大：复制按钮、反馈按钮等加大 padding
+- 页面切换顺序优化：先显示目标页再隐藏其他页，避免短暂空白
+- 表单 aria-label：所有输入框添加屏幕阅读器标签
+- 图标按钮 aria-label：重要操作按钮添加可访问性标签
+- toggleSetting 改用 data 属性，不依赖 DOM 文本判断状态
+- 底部导航 8 个减到 7 个，主题按钮移到右上角
+- 漏洞名称超长时截断显示省略号
+- 响应头值超长时截断显示省略号
+- 交叉验证并发限制：最多 5 个并发请求，避免对目标压力过大
+- 扫描结果缓存上限从 100 提到 200，淘汰策略优化（批量淘汰 20%）
+- sanitize_url 默认补 https://（安全扫描产品默认更合理）
+- 数据库连接 try/finally 统一：登录、团队、反馈等接口
+- JWT payload 增加 role 和 team_id（减少数据库查询）
+- 30 处异常静默失败加日志：不再完全吞掉错误
+- 演示靶场路径相对化：不再硬编码 /workspace/v11.4/
+- 演示靶场文件操作加锁：防止并发写入损坏配置
+- subprocess.run 超时统一：pgrep 等命令加 timeout
+- 多 worker 调度器开关：ENABLE_SCHEDULER 环境变量控制
+- public_demo_scan 复用 verify_token：不再手动 JWT 解码
+
 ## [V11.5] - 2026-06-25
 
 ### 新增

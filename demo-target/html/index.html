@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>VulnSentinel 演示靶场</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #e74c3c;
+            border-bottom: 3px solid #e74c3c;
+            padding-bottom: 10px;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        ul {
+            line-height: 1.8;
+        }
+        .vuln-item {
+            color: #e74c3c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚠️ VulnSentinel 演示靶场</h1>
+        <div class="warning">
+            <strong>警告：</strong>这是一个故意配置错误的演示站点，用于测试 VulnSentinel 漏洞扫描器。
+            请勿在生产环境中使用此配置！
+        </div>
+
+        <h2>已知漏洞列表</h2>
+        <ul>
+            <li class="vuln-item">❌ 缺少 X-Frame-Options 响应头</li>
+            <li class="vuln-item">❌ 缺少 X-Content-Type-Options 响应头</li>
+            <li class="vuln-item">❌ 缺少 Content-Security-Policy 响应头</li>
+            <li class="vuln-item">❌ 缺少 Referrer-Policy 响应头</li>
+            <li class="vuln-item">❌ 缺少 Permissions-Policy 响应头</li>
+            <li class="vuln-item">❌ 缺少 Strict-Transport-Security (HSTS)</li>
+            <li class="vuln-item">❌ 服务器版本信息泄露 (server_tokens on)</li>
+            <li class="vuln-item">❌ CORS 配置过于宽松 (Allow-Origin: *)</li>
+            <li class="vuln-item">❌ 目录列表已启用 (autoindex on)</li>
+            <li class="vuln-item">❌ 弱 SSL/TLS 配置 (SSLv3, 弱加密套件)</li>
+            <li class="vuln-item">❌ TRACE 方法未禁用</li>
+        </ul>
+
+        <h2>测试链接</h2>
+        <ul>
+            <li><a href="/admin/">/admin/ - 管理目录（无认证）</a></li>
+            <li><a href="/test.txt">/test.txt - 测试文件</a></li>
+        </ul>
+
+        <h2>关于此靶场</h2>
+        <p>此 Nginx 服务器特意配置了多种安全漏洞，用于演示 VulnSentinel 漏洞扫描系统的检测和修复能力。</p>
+        <p>使用 VulnSentinel 扫描 <code>http://localhost:8080</code> 即可看到完整的检测结果。</p>
+    </div>
+</body>
+</html>

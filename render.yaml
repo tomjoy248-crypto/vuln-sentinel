@@ -6,7 +6,7 @@
 
 services:
   - type: web
-    name: vuln-sentinel-v11
+    name: vuln-sentinel-v116
     runtime: docker
     plan: free
     envVars:

@@ -1,26 +1,16 @@
-"""漏洞哨兵 V11.4 - FastAPI 安全扫描后端
+"""漏洞哨兵 V11.6 - FastAPI 安全扫描后端
 
-V11.4 实际改进：
-1. 统一 finding 严重度字段为英文 severity（high/medium/low），保留 level_zh 给前端展示
-2. analyze_security 末尾补 summary 字段 {high, medium, low, total}
-3. /api/verify-fix 真正对比"修复前"扫描记录，输出 fixed/new/diff
-4. /api/apply-fix-and-rescan 接收可选 previous_scan_id，做真实 diff
-5. /api/simulate-fix 使用真实 severity 字段
-6. /api/batch-scan 并发跑，asyncio.gather，超时控制
-7. /api/history 新增 DELETE 方法真清空
-8. /api/auth/profile 统计接口：fixed_count 改为统计"已被后续扫描覆盖"的 finding 数
-9. rate_limit 改用类实例（per-ip bucket），去掉双重 await
-10. JWT secret 强制从 env 来，默认值不允许在生产启动
-11. 新增 /api/version 返回 {version, build_time}
-12. 修复生成器匹配更宽松（按 finding type / name 前缀）
-13. check_sensitive_paths 增加内容特征校验，避免登录页/错误页误判为泄露
-14. fetch_headers 区分 DNS 失败/超时/403/302/405/500，生成受限扫描报告
-15. 修复工单系统：pending/in_progress/fixed/ignored 四状态 + 批量操作
-16. 资产管理页：域名/负责人/验证状态/最近扫描时间
-17. AI 顾问接入当前扫描报告，回答"最该先修什么"并给出优先级排序
-18. /data/progress/ 目录自动清理 30 分钟前文件
-19. httpx client 兜底检测 Event loop closed，自动重建
-20. 离线模式文案准确："当前是离线演示模式，只支持预置演示站点"
+V11.6 核心改进：
+1. 本地演示靶场：一键扫描→修复→复测完整闭环（nginx 真实配置修改）
+2. 置信度系统：每个 finding 标注高/中/低置信度，区分确定项与推测项
+3. 评分逻辑纠正：WAF 只加分不抵消真实缺失，Trusted Domains 白名单移除
+4. TLS 验证默认开启：生产环境默认验证证书，诊断模式可临时关闭
+5. scan_id 统一：Demo 模式使用负 ID，确保所有 API 返回都有 scan_id
+6. 测试便携性：所有测试使用相对路径，可在任意目录运行
+7. 安全加固：生产环境 JWT Secret 强制校验，凭证加密密钥可配置
+8. AI 顾问优化：基于真实 severity 排序，接入当前扫描报告上下文
+9. 版本统一：所有界面/文档/API 返回值统一为 V11.6
+10. CI/CD 修复：GitHub Actions 工作流完整跑通测试+扫描+构建
 """
 
 from __future__ import annotations
@@ -39,6 +29,7 @@ import socket
 import sqlite3
 import ssl
 import subprocess
+import threading
 import time
 from collections import OrderedDict, deque
 from datetime import datetime, timedelta
@@ -78,8 +69,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_title: str = "漏洞哨兵 V11.5"
-    app_version: str = "11.5"
+    app_title: str = "漏洞哨兵 V11.6"
+    app_version: str = "11.6"
     build_time: str = "2026-06-25"
     port: int = 8000
     host: str = "0.0.0.0"
@@ -114,7 +105,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_timeout: float = 15.0
 
-    # 自动巡检 (V11.4 进化)
+    # 自动巡检 (V11.6 进化)
     patrol_interval_hours: int = 6
     patrol_score_regression_threshold: int = 10
 
@@ -160,7 +151,8 @@ if _IS_PRODUCTION:
         )
 
 # JWT Secret 强制：生产环境必须显式设置，否则拒绝启动
-if settings.env == "production":
+# V11.6: 使用 _IS_PRODUCTION 统一判定，避免 PRODUCTION=1 绕过校验
+if _IS_PRODUCTION:
     if not settings.jwt_secret or len(settings.jwt_secret) < 32:
         raise RuntimeError(
             "生产环境必须设置 JWT_SECRET 环境变量，且长度不少于 32 字符。"
@@ -215,10 +207,16 @@ BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"}
 
 # 内部白名单：环境变量配置后允许扫描的内网靶场
 # 格式：逗号分隔，如 "192.168.1.100,10.0.0.5,pikachu.local"
+# V11.6: 可通过 ALLOW_LOCALHOST=1 快速启用本地演示靶场
 ALLOWED_INTERNAL_HOSTS = {
     h.strip().lower() for h in os.environ.get("ALLOWED_INTERNAL_HOSTS", "").split(",")
     if h.strip()
 }
+# 本地演示靶场快捷开关
+if os.environ.get("ALLOW_LOCALHOST", "").lower() in ("1", "true", "yes"):
+    ALLOWED_INTERNAL_HOSTS.add("localhost")
+    ALLOWED_INTERNAL_HOSTS.add("127.0.0.1")
+    ALLOWED_INTERNAL_HOSTS.add("demo-target.local")
 db_base = settings.db_dir if os.path.isdir(settings.db_dir) else os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(db_base, settings.db_name)
 
@@ -252,6 +250,18 @@ SECURITY_HEADERS: Dict[str, Dict[str, str]] = {
         "name": "Permissions-Policy", "category": "隐私", "severity": "low",
         "description": "控制浏览器 API 权限",
         "fix": 'add_header Permissions-Policy "camera=(), microphone=()" always;',
+    },
+    # V11.6: 新增缓存控制头检测
+    "cache-control": {
+        "name": "Cache-Control", "category": "缓存安全", "severity": "low",
+        "description": "敏感页面应禁止缓存以防止信息泄露",
+        "fix": 'add_header Cache-Control "no-store, no-cache, must-revalidate" always;',
+    },
+    # V11.6: 新增 DNS 预取控制头检测
+    "x-dns-prefetch-control": {
+        "name": "X-DNS-Prefetch-Control", "category": "隐私", "severity": "low",
+        "description": "控制浏览器是否自动 DNS 预取，防止隐私泄露",
+        "fix": 'add_header X-DNS-Prefetch-Control "off" always;',
     },
 }
 
@@ -347,20 +357,25 @@ def sanitize_url(value: str) -> str:
     if len(value) > _MAX_URL_LEN:
         raise ValueError(f"URL 长度不能超过 {_MAX_URL_LEN}")
     if not re.match(r"^https?://", value, re.I):
-        value = "http://" + value
+        value = "https://" + value
     parsed = urlparse(value)
     if not parsed.hostname:
         raise ValueError("URL 格式无效")
     hostname = parsed.hostname.lower()
     # 基本域名校验：必须包含点号
     if "." not in hostname:
-        raise ValueError("URL 格式无效：域名必须包含点号（如 example.com）")
-    # TLD 校验：字母 TLD 至少 2 字符；纯数字 IP 跳过
-    parts = hostname.rsplit(".", 1)
-    tld = parts[1] if len(parts) == 2 else ""
-    is_ip_like = all(c.isdigit() or c == "." for c in hostname)
-    if not is_ip_like and len(tld) < 2:
-        raise ValueError("URL 格式无效：域名后缀太短")
+        # V11.6: 仅当 ALLOW_LOCALHOST 启用时，localhost 才跳过域名格式校验
+        if hostname == "localhost" and "localhost" in ALLOWED_INTERNAL_HOSTS:
+            pass  # 放行，继续走 SSRF 白名单检查
+        else:
+            raise ValueError("URL 格式无效：域名必须包含点号（如 example.com）")
+    else:
+        # TLD 校验：字母 TLD 至少 2 字符；纯数字 IP 跳过
+        parts = hostname.rsplit(".", 1)
+        tld = parts[1] if len(parts) == 2 else ""
+        is_ip_like = all(c.isdigit() or c == "." for c in hostname)
+        if not is_ip_like and len(tld) < 2:
+            raise ValueError("URL 格式无效：域名后缀太短")
     # SSRF 防护：拦截内网、本地、云元数据地址（白名单除外）
     if _is_private_ip(hostname) and hostname not in ALLOWED_INTERNAL_HOSTS:
         raise ValueError(
@@ -397,10 +412,8 @@ class ScanRequest(BaseModel):
     deep: bool = False
     authorized: bool = False  # 用户是否确认有权扫描该目标
 
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, v: str) -> str:
-        return sanitize_url(v)
+    # V11.6 fix: URL 验证移到 api_scan 中，避免 Pydantic 直接返回 422
+    # 让前端能收到 success: false 的友好错误提示
 
     @field_validator("depth")
     @classmethod
@@ -422,6 +435,14 @@ class VerifyFixRequest(BaseModel):
 
 class SimulateFixRequest(BaseModel):
     findings: List[dict] = Field(default_factory=list)
+
+    @field_validator("findings")
+    @classmethod
+    def validate_findings(cls, v: list) -> list:
+        # V11.6: 限制最大长度，防止滥用
+        if len(v) > 100:
+            raise ValueError("findings 数组最多 100 项")
+        return v
 
 
 class ApplyFixRequest(BaseModel):
@@ -618,10 +639,12 @@ def verify_password(pwd: str, hashed: str) -> bool:
     return bcrypt.checkpw(pwd[:72].encode("utf-8"), hashed.encode("utf-8"))
 
 
-def create_token(user_id: int, username: str) -> str:
+def create_token(user_id: int, username: str, role: str = "member", team_id: int = 0) -> str:
     payload = {
         "user_id": user_id,
         "username": username,
+        "role": role,
+        "team_id": team_id,
         "exp": time.time() + settings.jwt_expire_seconds,
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
@@ -849,12 +872,12 @@ def init_db() -> None:
     # 迁移：为已有 users 表添加 role 和 team_id 列
     try:
         conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'member'")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("DB migration add role column skipped: %s", e)
     try:
         conn.execute("ALTER TABLE users ADD COLUMN team_id INTEGER DEFAULT 0")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("DB migration add team_id column skipped: %s", e)
     conn.execute(
         """CREATE TABLE IF NOT EXISTS alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -885,7 +908,7 @@ def init_db() -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_user_id ON assets(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_domain ON assets(domain)")
-    # V11.4+：用户对 finding 的误报/确认反馈
+    # V11.6+：用户对 finding 的误报/确认反馈
     conn.execute(
         """CREATE TABLE IF NOT EXISTS finding_feedback (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1410,7 +1433,12 @@ async def scheduled_scan_job() -> None:
             target_id = target["id"]
             parsed = urlparse(url)
             host = parsed.hostname or ""
-            headers, is_https, final_url, error = await fetch_headers(url)
+            try:
+                headers, is_https, final_url, error = await asyncio.wait_for(
+                    fetch_headers(url), timeout=20.0
+                )
+            except asyncio.TimeoutError:
+                error = "TIMEOUT"
             if error:
                 continue
             waf_list = detect_waf(headers)
@@ -1492,12 +1520,54 @@ scheduler.add_job(
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    scheduler.start()
+    global _scan_progress_cleanup_task
+    # 初始化数据库（失败时记录错误但不阻止启动，服务以降级模式运行）
+    try:
+        init_db()
+    except Exception as e:
+        logger.error("Database initialization failed: %s", e, exc_info=True)
+    # V11.6+: 多 worker 部署时可通过 ENABLE_SCHEDULER=false 关闭定时任务，避免重复执行
+    _enable_scheduler = os.environ.get("ENABLE_SCHEDULER", "true").strip().lower() not in ("0", "false", "no", "off")
+    _scheduler_started = False
+    if _enable_scheduler:
+        try:
+            scheduler.start()
+            _scheduler_started = True
+            logger.info("Scheduler started (ENABLE_SCHEDULER=true)")
+        except Exception as e:
+            logger.error("Scheduler start failed: %s", e, exc_info=True)
+    else:
+        logger.info("Scheduler disabled (ENABLE_SCHEDULER=false)")
+    # 启动扫描进度清理后台任务
+    try:
+        _scan_progress_cleanup_task = asyncio.create_task(_scan_progress_cleanup_loop())
+        logger.info("Scan progress cleanup task started")
+    except Exception as e:
+        logger.error("Scan progress cleanup task start failed: %s", e)
     logger.info("Application startup complete")
     yield
-    scheduler.shutdown()
-    await close_httpx_client()
+    # 关闭阶段：按顺序释放资源，每个步骤独立 try/except 确保全部执行
+    # 1. 取消扫描进度清理任务
+    if _scan_progress_cleanup_task is not None:
+        try:
+            _scan_progress_cleanup_task.cancel()
+            await _scan_progress_cleanup_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error("Scan progress cleanup task cancel error: %s", e)
+        _scan_progress_cleanup_task = None
+    # 2. 关闭 scheduler
+    if _scheduler_started:
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception as e:
+            logger.error("Scheduler shutdown error: %s", e)
+    # 3. 关闭 httpx client
+    try:
+        await close_httpx_client()
+    except Exception as e:
+        logger.error("httpx client close error: %s", e)
     logger.info("Application shutdown complete")
 
 
@@ -1604,9 +1674,13 @@ def get_httpx_client() -> httpx.AsyncClient:
     return _httpx_client
 
 
+# 全局响应体大小上限（防止大响应导致内存爆炸）
+_MAX_RESPONSE_BODY_BYTES = 2 * 1024 * 1024  # 2 MB
+
+
 def _create_client() -> None:
     global _httpx_client
-    # V11.5：默认开启 TLS 验证（安全产品必须优先保证通信安全）
+    # V11.6：默认开启 TLS 验证（安全产品必须优先保证通信安全）
     # 用户可显式设置 TLS_VERIFY=false 启用"不安全兼容模式"
     _raw = os.environ.get("TLS_VERIFY", "true").strip().lower()
     if _raw in ("0", "false", "no", "off"):
@@ -1617,11 +1691,26 @@ def _create_client() -> None:
         )
     else:
         _verify = True
+
+    # 响应体大小保护：超过 2MB 直接截断，避免内存爆炸
+    async def _response_body_limit(response: httpx.Response) -> None:
+        cl = response.headers.get("content-length")
+        if cl:
+            try:
+                if int(cl) > _MAX_RESPONSE_BODY_BYTES:
+                    response.close()
+                    raise httpx.RequestError(
+                        f"Response too large: {cl} bytes (limit {_MAX_RESPONSE_BODY_BYTES})"
+                    )
+            except (ValueError, TypeError):
+                pass
+
     _httpx_client = httpx.AsyncClient(
         verify=_verify,
         timeout=settings.scan_timeout,
         follow_redirects=True,
-        headers={"User-Agent": "VulnSentinel/11.5"},
+        headers={"User-Agent": "VulnSentinel/11.6"},
+        event_hooks={"response": [_response_body_limit]},
         limits=httpx.Limits(
             max_connections=50,
             max_keepalive_connections=10,
@@ -1678,16 +1767,25 @@ async def crawl_site(url: str, max_pages: int = settings.max_crawl_pages) -> Lis
                 "url": current, "status": resp.status_code, "title": "",
                 "forms": 0, "inputs": 0, "links": 0,
             }
+            # 安全读取响应体：限制最大 512KB，超大页面直接截断避免内存爆炸
+            try:
+                body_bytes = await resp.aread()
+                if len(body_bytes) > 512 * 1024:
+                    body_text = body_bytes[:512 * 1024].decode("utf-8", errors="ignore")
+                else:
+                    body_text = body_bytes.decode("utf-8", errors="ignore")
+            except Exception:
+                body_text = ""
             parser = LinkParser(current)
             try:
-                parser.feed(resp.text)
-            except Exception:
-                pass
-            title_match = re.search(r"<title[^>]*>(.*?)</title>", resp.text, re.I | re.S)
+                parser.feed(body_text)
+            except Exception as e:
+                logger.warning("HTML parse error during crawl: %s", e)
+            title_match = re.search(r"<title[^>]*>(.*?)</title>", body_text, re.I | re.S)
             if title_match:
                 page_info["title"] = title_match.group(1).strip()[:100]
-            page_info["forms"] = len(re.findall(r"<form", resp.text, re.I))
-            page_info["inputs"] = len(re.findall(r"<input", resp.text, re.I))
+            page_info["forms"] = len(re.findall(r"<form", body_text, re.I))
+            page_info["inputs"] = len(re.findall(r"<input", body_text, re.I))
             for link in parser.links:
                 lp = urlparse(link)
                 if lp.hostname == base_domain and link not in visited:
@@ -1696,8 +1794,8 @@ async def crawl_site(url: str, max_pages: int = settings.max_crawl_pages) -> Lis
             pages.append(page_info)
         except asyncio.TimeoutError:
             pages.append({"url": current, "status": 0, "title": "timeout", "forms": 0, "inputs": 0, "links": 0})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Crawl page error for %s: %s", current, e)
     return pages
 
 
@@ -1710,7 +1808,12 @@ async def test_xss_on_url(client, url, param, payload):
         test_url = url + "?" + param + "=" + payload
     try:
         resp = await client.get(test_url, timeout=5.0, follow_redirects=True)
-        body = resp.text
+        # 安全读取：限制响应体最大 256KB，防止内存爆炸
+        body_bytes = await resp.aread()
+        if len(body_bytes) > 256 * 1024:
+            body = body_bytes[:256 * 1024].decode("utf-8", errors="ignore")
+        else:
+            body = body_bytes.decode("utf-8", errors="ignore")
         for variant in [payload, payload.replace("<", "&lt;").replace(">", "&gt;")]:
             if variant in body:
                 return {
@@ -1720,8 +1823,8 @@ async def test_xss_on_url(client, url, param, payload):
                     "summary": f"参数 '{param}' 存在 XSS 漏洞。",
                     "fix": "对所有用户输入进行 HTML 实体编码，使用 CSP 限制脚本执行。",
                 }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("XSS test error on %s: %s", url, e)
     return None
 
 
@@ -1732,7 +1835,12 @@ async def test_sqli_on_url(client, url, param, payload):
         test_url = url + "?" + param + "=" + payload
     try:
         resp = await client.get(test_url, timeout=5.0, follow_redirects=True)
-        body = resp.text.lower()
+        # 安全读取：限制响应体最大 256KB，防止内存爆炸
+        body_bytes = await resp.aread()
+        if len(body_bytes) > 256 * 1024:
+            body = body_bytes[:256 * 1024].decode("utf-8", errors="ignore").lower()
+        else:
+            body = body_bytes.decode("utf-8", errors="ignore").lower()
         for pattern in [
             "sql syntax", "mysql", "postgresql", "sqlite", "oracle", "sql error",
             "unclosed quotation", "query failed", "warning: mysql", "syntax error",
@@ -1746,8 +1854,8 @@ async def test_sqli_on_url(client, url, param, payload):
                     "summary": f"参数 '{param}' 存在 SQL 注入漏洞。",
                     "fix": "使用参数化查询（Prepared Statements），禁止拼接 SQL 语句。",
                 }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("SQLi test error on %s: %s", url, e)
     return None
 
 
@@ -1886,7 +1994,7 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
         try:
             resp = await asyncio.wait_for(
                 client.head("https://" + host + path, follow_redirects=False),
-                timeout=12.0,
+                timeout=5.0,
             )
             h = dict(resp.headers)
             h["_status_code"] = resp.status_code
@@ -1905,27 +2013,46 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
             pass
         except httpx.ConnectError:
             pass
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("fetch_headers probe error: %s", e)
 
-    # 主请求：先 HEAD，失败 fallback GET
+    # 主请求：先 HEAD，失败 fallback GET（GET 使用 stream 模式避免下载大响应体）
     if not headers:
         last_err = None
-        for method, fn in [("HEAD", client.head), ("GET", client.get)]:
+        for method_name in ("HEAD", "GET"):
             try:
-                resp = await asyncio.wait_for(
-                    fn(url, follow_redirects=False),
-                    timeout=12.0,
-                )
-                h = dict(resp.headers)
-                h["_status_code"] = resp.status_code
-                headers, err = classify_status(resp.status_code, h)
-                if err is None:
-                    return headers, is_https, final_url, None
-                # 受限访问但能拿到头 → 返回头 + 分类错误
-                error = err
-                headers = h
-                return headers, is_https, final_url, error
+                if method_name == "GET":
+                    # GET 用 stream 模式，只取 headers 就关闭，避免下载大响应体
+                    resp = await asyncio.wait_for(
+                        client.stream("GET", url, follow_redirects=False).__aenter__(),
+                        timeout=6.0,
+                    )
+                    try:
+                        h = dict(resp.headers)
+                        h["_status_code"] = resp.status_code
+                        headers, err = classify_status(resp.status_code, h)
+                        if err is None:
+                            return headers, is_https, final_url, None
+                        # 受限访问但能拿到头 → 返回头 + 分类错误
+                        error = err
+                        headers = h
+                        return headers, is_https, final_url, error
+                    finally:
+                        await resp.aclose()
+                else:
+                    resp = await asyncio.wait_for(
+                        client.head(url, follow_redirects=False),
+                        timeout=6.0,
+                    )
+                    h = dict(resp.headers)
+                    h["_status_code"] = resp.status_code
+                    headers, err = classify_status(resp.status_code, h)
+                    if err is None:
+                        return headers, is_https, final_url, None
+                    # 受限访问但能拿到头 → 返回头 + 分类错误
+                    error = err
+                    headers = h
+                    return headers, is_https, final_url, error
             except asyncio.TimeoutError:
                 last_err = "TIMEOUT"
             except httpx.ConnectError:
@@ -1933,7 +2060,7 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
             except httpx.RemoteProtocolError:
                 last_err = "PROTOCOL_ERROR"
             except (ssl.SSLError, ssl.CertificateError) as e:
-                # V11.4 修复：SSL 错误（如证书过期、协议不匹配）→ 尝试用宽松 SSL 重试
+                # V11.6 修复：SSL 错误（如证书过期、协议不匹配）→ 尝试用宽松 SSL 重试
                 last_err = f"SSL_ERROR:{str(e)[:40]}"
             except Exception as e:
                 last_err = f"REQUEST_FAIL:{str(e)[:60]}"
@@ -1945,20 +2072,24 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
         elif last_err == "PROTOCOL_ERROR":
             error = "协议错误，目标可能不支持 HTTPS 或使用了非标准端口"
         elif last_err and last_err.startswith("SSL_ERROR:"):
-            # V11.5：SSL 错误时，仅在用户显式关闭 TLS 验证后才允许跳过证书检查
+            # V11.6：SSL 错误时，仅在用户显式关闭 TLS 验证后才允许跳过证书检查
             _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
             if _tls_off:
                 try:
+                    # 用 stream 模式避免下载大响应体
                     resp = await asyncio.wait_for(
-                        client.get(url, follow_redirects=False, verify=False),
-                        timeout=12.0,
+                        client.stream("GET", url, follow_redirects=False, verify=False).__aenter__(),
+                        timeout=6.0,
                     )
-                    h = dict(resp.headers)
-                    h["_status_code"] = resp.status_code
-                    headers, err = classify_status(resp.status_code, h)
-                    if err is None:
-                        return headers, is_https, final_url, None
-                    return h, is_https, final_url, err
+                    try:
+                        h = dict(resp.headers)
+                        h["_status_code"] = resp.status_code
+                        headers, err = classify_status(resp.status_code, h)
+                        if err is None:
+                            return headers, is_https, final_url, None
+                        return h, is_https, final_url, err
+                    finally:
+                        await resp.aclose()
                 except Exception:
                     error = "该网站的 SSL 证书存在问题，建议在浏览器中先确认可访问"
             else:
@@ -2256,7 +2387,13 @@ async def check_sensitive_paths(host: str, is_https: bool) -> List[dict]:
                 timeout=4.0,
             )
             if resp.status_code == 200:
-                text = resp.text or ""
+                # 安全读取：限制响应体最大 256KB，防止大文件导致内存爆炸
+                body_bytes = await resp.aread()
+                if len(body_bytes) > 256 * 1024:
+                    text = body_bytes[:256 * 1024].decode("utf-8", errors="ignore")
+                else:
+                    text = body_bytes.decode("utf-8", errors="ignore")
+                text = text or ""
                 if is_info:
                     # robots.txt 等公开文件：只返回 info，不算暴露
                     return {
@@ -2291,29 +2428,142 @@ async def check_sensitive_paths(host: str, is_https: bool) -> List[dict]:
         for p in INFO_PATHS[:2]:
             tasks.append(check(p, is_info=True))
         responses = await asyncio.wait_for(
-            asyncio.gather(*tasks, return_exceptions=False),
+            asyncio.gather(*tasks, return_exceptions=True),
             timeout=10.0,
         )
-        results = [r for r in responses if r]
+        results = [r for r in responses if r and not isinstance(r, Exception)]
     except asyncio.TimeoutError:
+        results = []
+    except Exception as e:
+        logger.warning("check_sensitive_paths gather failed: %s", e)
         results = []
     return results
 
 
+# V11.6: 详细验证步骤（三步验证法：命令行 + 浏览器 + 工具重扫）
 VERIFY_METHODS = {
-    "hsts": "curl -I https://你的域名 | grep -i 'strict-transport-security'",
-    "csp": "curl -I https://你的域名 | grep -i 'content-security-policy'",
-    "x-frame": "curl -I https://你的域名 | grep -i 'x-frame-options'",
-    "x-content-type": "curl -I https://你的域名 | grep -i 'x-content-type-options'",
-    "referrer": "curl -I https://你的域名 | grep -i 'referrer-policy'",
-    "permissions": "curl -I https://你的域名 | grep -i 'permissions-policy'",
-    "server": "curl -I https://你的域名 | grep -i '^server'（不应返回具体版本）",
-    "https": "浏览器访问 http://你的域名 应自动跳转到 https://",
-    "ssl": "openssl s_client -connect 你的域名:443 -servername 你的域名 < /dev/null | openssl x509 -noout -dates",
-    "cors": "curl -H 'Origin: https://evil.com' -I https://你的域名 | grep -i 'access-control-allow-origin'",
-    "cookie": "浏览器开发者工具 > Application > Cookies，检查 Secure/HttpOnly 标志",
-    "info": "浏览器 F12 > Network > 查看响应头",
+    "hsts": {
+        "summary": "验证 HSTS 头是否生效",
+        "steps": [
+            {"method": "命令行验证", "command": "curl -sI https://你的域名 | grep -i 'strict-transport-security'", "expect": "输出包含 Strict-Transport-Security 及 max-age>=31536000"},
+            {"method": "浏览器验证", "command": "F12 → Network → 访问页面 → 查看响应头", "expect": "Response Headers 中存在 Strict-Transport-Security"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "扫描结果中「缺少 HSTS」项消失，安全评分提升"},
+        ],
+    },
+    "csp": {
+        "summary": "验证 CSP 内容安全策略是否生效",
+        "steps": [
+            {"method": "命令行验证", "command": "curl -sI https://你的域名 | grep -i 'content-security-policy'", "expect": "输出包含 Content-Security-Policy 及策略规则"},
+            {"method": "浏览器验证", "command": "F12 → Network → 访问页面 → 查看响应头", "expect": "Response Headers 中存在 Content-Security-Policy"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "扫描结果中「缺少 CSP」项消失，安全评分提升"},
+        ],
+    },
+    "x-frame": {
+        "summary": "验证 X-Frame-Options 是否生效",
+        "steps": [
+            {"method": "命令行验证", "command": "curl -sI https://你的域名 | grep -i 'x-frame-options'", "expect": "输出包含 X-Frame-Options: DENY 或 SAMEORIGIN"},
+            {"method": "浏览器验证", "command": "F12 → Network → 访问页面 → 查看响应头", "expect": "Response Headers 中存在 X-Frame-Options"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "扫描结果中「缺少 X-Frame-Options」项消失，安全评分提升"},
+        ],
+    },
+    "x-content-type": {
+        "summary": "验证 X-Content-Type-Options 是否生效",
+        "steps": [
+            {"method": "命令行验证", "command": "curl -sI https://你的域名 | grep -i 'x-content-type-options'", "expect": "输出包含 X-Content-Type-Options: nosniff"},
+            {"method": "浏览器验证", "command": "F12 → Network → 访问页面 → 查看响应头", "expect": "Response Headers 中存在 X-Content-Type-Options"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "扫描结果中「缺少 X-Content-Type-Options」项消失，安全评分提升"},
+        ],
+    },
+    "referrer": {
+        "summary": "验证 Referrer-Policy 是否生效",
+        "steps": [
+            {"method": "命令行验证", "command": "curl -sI https://你的域名 | grep -i 'referrer-policy'", "expect": "输出包含 Referrer-Policy 及策略值"},
+            {"method": "浏览器验证", "command": "F12 → Network → 访问页面 → 查看响应头", "expect": "Response Headers 中存在 Referrer-Policy"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "扫描结果中「缺少 Referrer-Policy」项消失，安全评分提升"},
+        ],
+    },
+    "permissions": {
+        "summary": "验证 Permissions-Policy 是否生效",
+        "steps": [
+            {"method": "命令行验证", "command": "curl -sI https://你的域名 | grep -i 'permissions-policy'", "expect": "输出包含 Permissions-Policy 及策略规则"},
+            {"method": "浏览器验证", "command": "F12 → Network → 访问页面 → 查看响应头", "expect": "Response Headers 中存在 Permissions-Policy"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "扫描结果中「缺少 Permissions-Policy」项消失，安全评分提升"},
+        ],
+    },
+    "server": {
+        "summary": "验证服务器版本信息是否已隐藏",
+        "steps": [
+            {"method": "命令行验证", "command": "curl -sI https://你的域名 | grep -i '^server:'", "expect": "Server 头不包含具体版本号（如 nginx/1.18.0）"},
+            {"method": "浏览器验证", "command": "F12 → Network → 访问页面 → 查看响应头", "expect": "Response Headers 中 Server 字段无版本信息"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "扫描结果中「服务器信息泄露」项消失，安全评分提升"},
+        ],
+    },
+    "https": {
+        "summary": "验证 HTTPS 及强制跳转是否生效",
+        "steps": [
+            {"method": "命令行验证", "command": "curl -sI http://你的域名 | head -5", "expect": "返回 301/302 跳转至 https:// 开头的地址"},
+            {"method": "浏览器验证", "command": "访问 http://你的域名，观察地址栏", "expect": "自动跳转到 https://，地址栏显示锁图标"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "扫描结果中「未启用 HTTPS」项消失，安全评分提升"},
+        ],
+    },
+    "ssl": {
+        "summary": "验证 SSL 证书状态",
+        "steps": [
+            {"method": "命令行验证", "command": "openssl s_client -connect 你的域名:443 -servername 你的域名 < /dev/null 2>/dev/null | openssl x509 -noout -dates", "expect": "notAfter 日期在未来，剩余天数 > 30 天"},
+            {"method": "浏览器验证", "command": "点击地址栏锁图标 → 查看证书", "expect": "证书有效，过期日期在 30 天以上"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "扫描结果中 SSL 证书相关问题消失，安全评分提升"},
+        ],
+    },
+    "cors": {
+        "summary": "验证 CORS 配置是否安全",
+        "steps": [
+            {"method": "命令行验证", "command": "curl -sI -H 'Origin: https://evil.com' https://你的域名 | grep -i 'access-control-allow-origin'", "expect": "不应返回 Access-Control-Allow-Origin: * 或 evil.com"},
+            {"method": "浏览器验证", "command": "F12 → Console → 执行跨域请求测试", "expect": "未授权域名无法获取响应数据"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "扫描结果中 CORS 配置问题项消失，安全评分提升"},
+        ],
+    },
+    "cookie": {
+        "summary": "验证 Cookie 安全标志是否设置",
+        "steps": [
+            {"method": "浏览器验证", "command": "F12 → Application → Cookies → 选择域名", "expect": "Cookie 勾选了 Secure 和 HttpOnly 标志"},
+            {"method": "命令行验证", "command": "curl -sI https://你的域名/login | grep -i 'set-cookie'", "expect": "Set-Cookie 中包含 Secure 和 HttpOnly"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "扫描结果中 Cookie 安全问题项消失，安全评分提升"},
+        ],
+    },
+    "info": {
+        "summary": "通用验证方法",
+        "steps": [
+            {"method": "命令行验证", "command": "curl -sI https://你的域名", "expect": "检查响应头中相关安全配置"},
+            {"method": "浏览器验证", "command": "F12 → Network → 访问页面 → 查看响应头", "expect": "检查 Response Headers 中的安全配置"},
+            {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "相关漏洞项消失，安全评分提升"},
+        ],
+    },
 }
+
+
+def get_verify_method_text(verify_key: Optional[str]) -> str:
+    """获取验证方法的文本描述（兼容旧接口）"""
+    if not verify_key:
+        return "重新扫描该网站，查看此项是否消失或评分是否提升。"
+    info = VERIFY_METHODS.get(verify_key, VERIFY_METHODS["info"])
+    if isinstance(info, dict):
+        return info.get("summary", "重新扫描该网站，查看此项是否消失。")
+    return info
+
+
+def get_verify_steps(verify_key: Optional[str]) -> List[dict]:
+    """获取详细验证步骤列表"""
+    if not verify_key:
+        return VERIFY_METHODS["info"]["steps"]
+    info = VERIFY_METHODS.get(verify_key)
+    if isinstance(info, dict) and "steps" in info:
+        return info["steps"]
+    # 兼容旧格式：只有字符串的情况
+    return [
+        {"method": "命令行验证", "command": info if isinstance(info, str) else "", "expect": "验证修复是否生效"},
+        {"method": "浏览器验证", "command": "F12 → Network → 查看响应头", "expect": "检查相关安全配置是否存在"},
+        {"method": "工具重扫验证", "command": "使用本工具重新扫描该网站", "expect": "相关漏洞项消失，安全评分提升"},
+    ]
 
 
 # 5 维交叉验证机制：降低安全扫描误报率
@@ -2379,6 +2629,13 @@ async def cross_validate_findings(
     }
     """
     result: Dict[str, dict] = {}
+
+    # 并发限制：避免同时发出过多请求
+    _cv_sem = asyncio.Semaphore(5)
+
+    async def _with_sem(coro: Coroutine) -> Any:
+        async with _cv_sem:
+            return await coro
 
     # 工具：安全获取 url scheme
     try:
@@ -2447,13 +2704,13 @@ async def cross_validate_findings(
     d3_evidence: Dict[str, str] = {}
 
     async def _d1_probe() -> Dict[str, str]:
-        """D1: 同一 URL 2 次并发请求，header 取并集。"""
+        """D1: 同一 URL 2 次并发请求，header 取并集。用 HEAD 避免下载 body。"""
         merged: Dict[str, str] = {}
         try:
             client = get_httpx_client()
             tasks = [
                 asyncio.wait_for(
-                    client.get(url, follow_redirects=False),
+                    client.head(url, follow_redirects=False),
                     timeout=_CV_TIMEOUT,
                 )
                 for _ in range(2)
@@ -2465,12 +2722,12 @@ async def cross_validate_findings(
                 for k, v in r.headers.items():
                     if k.lower() not in {m.lower() for m in merged}:
                         merged[k] = v
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("CV D1 probe error: %s", e)
         return merged
 
     async def _d2_probe() -> Dict[str, str]:
-        """D2: 子路径验证（/, /index.html），跳过 /login 避免 401/403 干扰。"""
+        """D2: 子路径验证（/, /index.html），跳过 /login 避免 401/403 干扰。用 HEAD 避免下载 body。"""
         merged: Dict[str, str] = {}
         try:
             parsed_d2 = urlparse(url)
@@ -2482,7 +2739,7 @@ async def cross_validate_findings(
             client = get_httpx_client()
             tasks = [
                 asyncio.wait_for(
-                    client.get(base + p, follow_redirects=False),
+                    client.head(base + p, follow_redirects=False),
                     timeout=_CV_TIMEOUT,
                 )
                 for p in sub_paths
@@ -2494,19 +2751,23 @@ async def cross_validate_findings(
                 for k, v in r.headers.items():
                     if k.lower() not in {m.lower() for m in merged}:
                         merged[k] = v
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("CV D2 probe error: %s", e)
         return merged
 
     async def _d3_probe() -> str:
-        """D3: 抓主页面 HTML，复用 D1 中第一份响应（如有），否则重新请求。"""
+        """D3: 抓主页面 HTML，复用 D1 中第一份响应（如有），否则重新请求。限制响应体大小防止内存爆炸。"""
         try:
             client = get_httpx_client()
             resp = await asyncio.wait_for(
                 client.get(url, follow_redirects=False),
                 timeout=_CV_TIMEOUT,
             )
-            return resp.text or ""
+            # 安全读取：限制响应体最大 512KB
+            body_bytes = await resp.aread()
+            if len(body_bytes) > 512 * 1024:
+                return body_bytes[:512 * 1024].decode("utf-8", errors="ignore")
+            return body_bytes.decode("utf-8", errors="ignore") or ""
         except Exception:
             return ""
 
@@ -2665,8 +2926,8 @@ async def cross_validate_findings(
                     if acac == "true":
                         result["allow_credentials"] = True
                         break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("CV D7/D8 subresource probe error: %s", e)
 
             # ===== D7b/D8b: OPTIONS 预检请求实测 =====
             try:
@@ -2793,8 +3054,8 @@ async def cross_validate_findings(
                 hit_main = bool(pat.search(pages_text[0]))
                 hit_sub = bool(pat.search(pages_text[1]))
                 result[name] = hit_main and hit_sub
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("CV D11 info leak probe error: %s", e)
         return result
 
     # ========== D10: SSL/TLS 协议版本重新验证（同步 ssl 模块） ==========
@@ -2826,8 +3087,8 @@ async def cross_validate_findings(
             # 强制所有协议都允许，再用 negotiated version 判断
             try:
                 ctx.minimum_version = ssl.TLSVersion.TLSv1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("SSL context minimum_version not supported: %s", e)
             with socket.create_connection((host, port), timeout=3) as raw_sock:
                 with ctx.wrap_socket(raw_sock, server_hostname=host) as ssock:
                     out["reachable"] = True
@@ -2844,8 +3105,9 @@ async def cross_validate_findings(
     # 6+1 组并发：D1, D2, D3, D6, D7+D8, D9, D11（D10 同步，避免阻塞）
     try:
         d1_merged, d2_merged, html, d6_map, d78_cors, d9_cookie, d11_leak = await asyncio.gather(
-            _d1_probe(), _d2_probe(), _d3_probe(),
-            _d6_sensitive_probe(), _d7_d8_cors_probe(), _d9_cookie_probe(), _d11_info_leak_probe(),
+            _with_sem(_d1_probe()), _with_sem(_d2_probe()), _with_sem(_d3_probe()),
+            _with_sem(_d6_sensitive_probe()), _with_sem(_d7_d8_cors_probe()),
+            _with_sem(_d9_cookie_probe()), _with_sem(_d11_info_leak_probe()),
             return_exceptions=False,
         )
     except Exception:
@@ -3246,9 +3508,10 @@ def add_finding(
         "fix": fix,
         "type": vuln_type or "config",
         "evidence": evidence or {},
-        "verify_method": VERIFY_METHODS.get(verify_key, "重新扫描该网站，查看此项是否消失"),
+        "verify_method": get_verify_method_text(verify_key),
+        "verify_steps": get_verify_steps(verify_key),
     }
-    # V11.5：置信度（高/中/低）
+    # V11.6：置信度（高/中/低）
     if confidence_level is not None:
         finding["confidence_level"] = confidence_level
     elif confidence is not None:
@@ -3258,7 +3521,7 @@ def add_finding(
         finding["confidence_level"] = "高"  # 默认高置信度
     if confidence is not None and "confidence" not in finding:
         finding["confidence"] = confidence
-    # V11.5：交叉验证字段（可选）
+    # V11.6：交叉验证字段（可选）
     if verified is not None:
         finding["verified"] = verified
     if cv_reason is not None:
@@ -3344,21 +3607,21 @@ def analyze_security(
         "referrer-policy": "referrer",
         "permissions-policy": "permissions",
     }
-    # V11.5：WAF 只作为"纵深防御能力"单独展示，不消除真实缺失项
+    # V11.6：WAF 只作为"纵深防御能力"单独展示，不消除真实缺失项
     # Trusted Domains 白名单已移除：不能以"知名"为由自动判定安全
     waf_protected = len(waf_list) > 0
     waf_name = waf_list[0].get("name", "WAF") if waf_list else ""
     # 高危配置缺失 vs 普通配置缺失
     HIGH_CONFIG_HEADERS = {"strict-transport-security", "content-security-policy", "x-frame-options"}
     for key, rule in SECURITY_HEADERS.items():
-        value = headers.get(key, headers.get(key.title(), None))
+        value = headers.get(key, headers.get(key.title(), headers.get(rule["name"], None)))
         header_details.append({
             "name": rule["name"], "key": key, "value": value,
             "status": "present" if value else "missing",
             "category": rule["category"], "severity": rule["severity"],
         })
         if not value:
-            # V11.5：所有站点统一扣分 + finding，WAF 不消除真实缺失项
+            # V11.6：所有站点统一扣分 + finding，WAF 不消除真实缺失项
             if key in HIGH_CONFIG_HEADERS:
                 points = SCORE_DEDUCTION["high_config_missing"]
             else:
@@ -3372,12 +3635,53 @@ def analyze_security(
                         verify_key=HEADER_VERIFY_KEY.get(key, "info"),
                         confidence_level=conf_level)
 
+    # V11.6: HSTS 强度评估
+    hsts_value = headers.get("strict-transport-security", headers.get("Strict-Transport-Security", None))
+    if hsts_value:
+        hsts_lower = hsts_value.lower()
+        # 检查 max-age 是否足够（>= 1年 = 31536000秒）
+        max_age_match = re.search(r'max-age\s*=\s*(\d+)', hsts_lower)
+        if max_age_match:
+            max_age = int(max_age_match.group(1))
+            if max_age < 31536000:  # 小于 1 年
+                deduct("HSTS 配置偏弱", 3, "low", f"max-age={max_age}s，建议至少 1 年")
+                add_finding(findings, "HSTS 配置偏弱", "low", "A05 安全配置错误",
+                            f"HSTS max-age 设置为 {max_age} 秒（{round(max_age/86400)} 天），建议至少设置为 31536000 秒（1 年）以获得更好的保护效果。",
+                            "修改为: max-age=31536000; includeSubDomains",
+                            evidence={"value": hsts_value, "max_age": max_age, "reason": "HSTS 有效期短于 1 年", "impact": "保护效果有限，建议延长有效期"},
+                            verify_key="hsts", confidence_level="高", vuln_type="HSTS-Weak")
+        # 检查是否包含 includeSubDomains
+        if "includesubdomains" not in hsts_lower:
+            # 低风险提示，不额外扣分（已经扣过了）
+            pass
+
+    # V11.6: CSP 强度评估
+    csp_value = headers.get("content-security-policy", headers.get("Content-Security-Policy", None))
+    if csp_value:
+        csp_lower = csp_value.lower()
+        # 检查是否使用了 unsafe-inline 或 unsafe-eval（弱配置）
+        if "unsafe-inline" in csp_lower or "unsafe-eval" in csp_lower:
+            deduct("CSP 配置偏弱", 4, "medium", "CSP 包含 unsafe-inline 或 unsafe-eval")
+            add_finding(findings, "CSP 配置偏弱", "medium", "A05 安全配置错误",
+                        "Content-Security-Policy 包含 'unsafe-inline' 或 'unsafe-eval'，降低了 XSS 防护效果。",
+                        "移除 unsafe-inline/unsafe-eval，使用 nonce 或 hash 方式允许内联脚本",
+                        evidence={"value": csp_value[:100], "reason": "CSP 包含不安全的指令", "impact": "XSS 防护效果被削弱"},
+                        verify_key="csp", confidence_level="高", vuln_type="CSP-Weak")
+        # 检查是否使用了通配符
+        elif "*" in csp_lower and "default-src 'none'" not in csp_lower:
+            deduct("CSP 配置偏弱", 2, "low", "CSP 包含通配符源")
+            add_finding(findings, "CSP 配置偏弱", "low", "A05 安全配置错误",
+                        "Content-Security-Policy 包含通配符 (*) 源，可能允许过多资源加载。",
+                        "缩小白名单范围，仅允许可信域名",
+                        evidence={"value": csp_value[:100], "reason": "CSP 使用通配符", "impact": "防护范围过大，存在绕过风险"},
+                        verify_key="csp", confidence_level="中", vuln_type="CSP-Weak")
+
     info_leaks: List[dict] = []
     for key in ["server", "x-powered-by"]:
         value = headers.get(key, headers.get(key.title(), None))
         if value:
             info_leaks.append({"name": key.title(), "value": value})
-            # V11.5：WAF 标识头不算泄露，但其它情况仍报告
+            # V11.6：WAF 标识头不算泄露，但其它情况仍报告
             is_waf_signature = any(
                 w.get("value", "").lower() in value.lower() or value.lower() in w.get("value", "").lower()
                 for w in waf_list
@@ -3472,6 +3776,11 @@ def analyze_security(
                 deduct(v.get("name", "漏洞"), 25, "critical", "检测到严重漏洞")
             elif sev == "high":
                 deduct(v.get("name", "漏洞"), 15, "high", "检测到高风险漏洞")
+            # V11.6: 补充 medium 和 low 的扣分逻辑，确保评分与 summary 统计一致
+            elif sev == "medium":
+                deduct(v.get("name", "漏洞"), 8, "medium", "检测到中风险漏洞")
+            elif sev == "low":
+                deduct(v.get("name", "漏洞"), 3, "low", "检测到低风险漏洞")
 
     # 真实严重度统计
     summary = {"high": 0, "medium": 0, "low": 0, "critical": 0, "total": 0}
@@ -3501,7 +3810,7 @@ def analyze_security(
         if cat not in owasp_map:
             owasp.append({"category": cat, "status": status, "note": note})
     owasp.sort(key=lambda x: int(x["category"][1:3]))
-    # V11.5：WAF 作为纵深防御能力，最多 +3 分奖励，不覆盖真实缺失项
+    # V11.6：WAF 作为纵深防御能力，最多 +3 分奖励，不覆盖真实缺失项
     waf_bonus = 0
     if waf_protected:
         waf_bonus = 2
@@ -3551,7 +3860,7 @@ def analyze_security(
                         restricted_code = "ANTI_BOT"
                     break
 
-    # V11.5：受限扫描时所有发现标记为"证据不足"（低置信度）
+    # V11.6：受限扫描时所有发现标记为"证据不足"（低置信度）
     if restricted:
         for f in findings:
             f["confidence_level"] = "低"
@@ -3591,7 +3900,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     from reportlab.pdfbase.ttfonts import TTFont
 
     _cn_font = "Helvetica"
-    # V11.4 修复：先尝试 WQY（TTF 格式，reportlab 完美支持）
+    # V11.6 修复：先尝试 WQY（TTF 格式，reportlab 完美支持）
     # NotoSansCJK 是 CFF/OTF 格式，reportlab 的 TTFont 不支持
     for _fp in [
         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
@@ -3627,8 +3936,8 @@ def generate_pdf_report(scan_data: dict) -> bytes:
         if _h in styles:
             try:
                 styles[_h].fontName = _cn_font
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("PDF style %s font set failed: %s", _h, e)
 
     elements = []
 
@@ -3792,7 +4101,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
             ])
         t = Table(table_data, colWidths=[8*mm, 28*mm, 18*mm, 25*mm, 30*mm, 41*mm])
         t.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V11.4 修复：表格用中文字体
+            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V11.6 修复：表格用中文字体
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("FONTSIZE", (0, 0), (-1, -1), 7),
@@ -3810,7 +4119,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
             owasp_data.append([o["category"], o["status"], o.get("note", "")])
         t2 = Table(owasp_data, colWidths=[50 * mm, 30 * mm, 70 * mm])
         t2.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V11.4 修复：表格用中文字体
+            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V11.6 修复：表格用中文字体
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("FONTSIZE", (0, 0), (-1, -1), 8),
@@ -3825,6 +4134,338 @@ def generate_pdf_report(scan_data: dict) -> bytes:
 
     doc.build(elements)
     return buf.getvalue()
+
+
+def generate_html_report(scan_data: dict) -> str:
+    """生成精美的 HTML 格式安全报告（可直接在浏览器打开/打印）"""
+    url = scan_data.get("url", "")
+    score = scan_data.get("score", 0)
+    risk_level = scan_data.get("risk_level", "未知")
+    time_str = scan_data.get("time", "")
+    findings = scan_data.get("findings", [])
+    score_breakdown = scan_data.get("score_breakdown", [])
+    fixes = scan_data.get("fixes", {})
+    owasp = scan_data.get("owasp_coverage", [])
+
+    # 统计
+    critical = len([f for f in findings if f.get("severity") == "critical"])
+    high = len([f for f in findings if f.get("severity") == "high"])
+    medium = len([f for f in findings if f.get("severity") == "medium"])
+    low = len([f for f in findings if f.get("severity") == "low"])
+    total = len(findings)
+
+    # 评分颜色
+    if score >= 90:
+        score_color = "#22c55e"
+        score_gradient = "linear-gradient(135deg, #22c55e, #16a34a)"
+    elif score >= 70:
+        score_color = "#f59e0b"
+        score_gradient = "linear-gradient(135deg, #f59e0b, #d97706)"
+    elif score >= 50:
+        score_color = "#f97316"
+        score_gradient = "linear-gradient(135deg, #f97316, #ea580c)"
+    else:
+        score_color = "#ef4444"
+        score_gradient = "linear-gradient(135deg, #ef4444, #dc2626)"
+
+    # 生成漏洞列表 HTML
+    findings_html = ""
+    sev_labels = {"critical": "严重", "high": "高危", "medium": "中危", "low": "低危"}
+    sev_colors = {
+        "critical": {"bg": "#fef2f2", "text": "#dc2626", "border": "#fecaca"},
+        "high": {"bg": "#fff7ed", "text": "#c2410c", "border": "#fed7aa"},
+        "medium": {"bg": "#fefce8", "text": "#a16207", "border": "#fef08a"},
+        "low": {"bg": "#f0fdf4", "text": "#15803d", "border": "#bbf7d0"},
+    }
+
+    for i, f in enumerate(findings):
+        sev = f.get("severity", "low")
+        sc = sev_colors.get(sev, sev_colors["low"])
+        sl = sev_labels.get(sev, "低危")
+        name = f.get("name", "")
+        summary = f.get("summary", "")
+        fix = f.get("fix", "")
+        owasp_cat = f.get("owasp", "")
+        evidence = f.get("evidence", {})
+        verify_steps = f.get("verify_steps", [])
+
+        findings_html += f'''
+        <div class="finding-card" style="margin-bottom:16px;padding:16px;background:#fff;border:1px solid {sc["border"]};border-radius:10px;border-left:4px solid {sc["text"]}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+                <div style="flex:1">
+                    <div style="font-size:15px;font-weight:700;color:#1e293b;margin-bottom:4px">{i+1}. {_html_escape(name)}</div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:{sc["bg"]};color:{sc["text"]};font-weight:600">{sl}</span>
+                        {f'<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#eef2ff;color:#4f46e5;font-weight:600">{_html_escape(owasp_cat)}</span>' if owasp_cat else ''}
+                    </div>
+                </div>
+            </div>
+            {f'<div style="margin-top:10px;font-size:13px;color:#475569;line-height:1.6">{_html_escape(summary)}</div>' if summary else ''}
+        '''
+
+        # 证据
+        if evidence and evidence.get("reason"):
+            findings_html += f'''
+            <div style="margin-top:10px;padding:8px 12px;background:#f8fafc;border-radius:6px;font-size:12px">
+                <div style="font-weight:600;color:#475569;margin-bottom:4px">📋 判定依据</div>
+                <div style="color:#64748b">{_html_escape(evidence["reason"])}</div>
+            </div>
+            '''
+
+        # 修复建议
+        if fix:
+            findings_html += f'''
+            <div style="margin-top:10px;padding:8px 12px;background:#f0fdf4;border-radius:6px;font-size:12px">
+                <div style="font-weight:600;color:#15803d;margin-bottom:4px">🛠 修复建议</div>
+                <pre style="margin:0;padding:8px;background:#0f172a;color:#a7f3d0;border-radius:6px;font-size:11px;line-height:1.5;overflow-x:auto;white-space:pre-wrap;word-break:break-all">{_html_escape(fix)}</pre>
+            </div>
+            '''
+
+        # 验证步骤
+        if verify_steps and len(verify_steps) > 0:
+            findings_html += f'''
+            <div style="margin-top:10px;padding:8px 12px;background:#eff6ff;border-radius:6px;font-size:12px">
+                <div style="font-weight:600;color:#1d4ed8;margin-bottom:6px">✅ 验证步骤</div>
+            '''
+            for j, step in enumerate(verify_steps):
+                findings_html += f'''
+                <div style="margin-bottom:6px;padding-left:8px;border-left:2px solid #93c5fd">
+                    <div style="font-weight:600;color:#1e40af;font-size:11px">第{j+1}步：{_html_escape(step.get("method", ""))}</div>
+                    {f'<div style="color:#64748b;font-size:11px;margin-top:2px">操作：<code style="background:#e0e7ff;padding:1px 4px;border-radius:3px">{_html_escape(step.get("command", ""))}</code></div>' if step.get("command") else ''}
+                    {f'<div style="color:#15803d;font-size:11px;margin-top:2px">预期：{_html_escape(step.get("expect", ""))}</div>' if step.get("expect") else ''}
+                </div>
+                '''
+            findings_html += '</div>'
+
+        findings_html += '</div>'
+
+    # 评分解读 HTML
+    breakdown_html = ""
+    if score_breakdown and len(score_breakdown) > 0:
+        # 按严重程度分组
+        critical_deduct = sum(b.get("deduction", 0) for b in score_breakdown if b.get("severity") == "critical")
+        high_deduct = sum(b.get("deduction", 0) for b in score_breakdown if b.get("severity") == "high")
+        medium_deduct = sum(b.get("deduction", 0) for b in score_breakdown if b.get("severity") == "medium")
+        low_deduct = sum(b.get("deduction", 0) for b in score_breakdown if b.get("severity") == "low")
+        total_deduct = critical_deduct + high_deduct + medium_deduct + low_deduct
+
+        max_deduct = max(critical_deduct, high_deduct, medium_deduct, low_deduct, 1)
+
+        bar_groups = [
+            {"label": "严重", "deduct": critical_deduct, "count": len([b for b in score_breakdown if b.get("severity") == "critical"]), "color": "#dc2626"},
+            {"label": "高风险", "deduct": high_deduct, "count": len([b for b in score_breakdown if b.get("severity") == "high"]), "color": "#f97316"},
+            {"label": "中风险", "deduct": medium_deduct, "count": len([b for b in score_breakdown if b.get("severity") == "medium"]), "color": "#eab308"},
+            {"label": "低风险", "deduct": low_deduct, "count": len([b for b in score_breakdown if b.get("severity") == "low"]), "color": "#22c55e"},
+        ]
+
+        bars_html = ""
+        for g in bar_groups:
+            if g["count"] > 0 and g["deduct"] > 0:
+                width = max((g["deduct"] / max_deduct) * 100, 8)
+            else:
+                width = 0
+            text_color = "#fff" if width > 30 else g["color"]
+            bars_html += f'''
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                <span style="font-size:12px;color:#64748b;min-width:50px;font-weight:600">{g["label"]}</span>
+                <div style="flex:1;height:28px;background:#f1f5f9;border-radius:6px;overflow:hidden;position:relative">
+                    <div style="height:100%;width:{width}%;background:{g["color"]};border-radius:6px"></div>
+                    <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:700;color:{text_color}">{g["count"]} 项 / -{g["deduct"]}分</span>
+                </div>
+            </div>
+            '''
+
+        breakdown_html = f'''
+        <div class="section" style="margin-top:30px">
+            <h2 style="font-size:18px;font-weight:700;color:#1e293b;margin:0 0 16px 0;padding-bottom:8px;border-bottom:2px solid #e2e8f0">📊 评分解读</h2>
+            <div style="background:linear-gradient(135deg,rgba(249,115,22,0.06),rgba(239,68,68,0.06));border:1px solid rgba(249,115,22,0.2);border-radius:12px;padding:20px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+                    <span style="font-weight:700;color:#1e293b">扣分分布</span>
+                    <span style="font-size:12px;background:rgba(249,115,22,0.15);color:#ea580c;padding:4px 12px;border-radius:12px;font-weight:600">共扣 {total_deduct} 分</span>
+                </div>
+                {bars_html}
+            </div>
+        </div>
+        '''
+
+    # OWASP Top 10 HTML
+    owasp_html = ""
+    if owasp and len(owasp) > 0:
+        owasp_rows = ""
+        for o in owasp:
+            status = o.get("status", "未知")
+            if status == "通过":
+                status_color = "#22c55e"
+                status_bg = "#f0fdf4"
+            elif status == "需关注":
+                status_color = "#f97316"
+                status_bg = "#fff7ed"
+            else:
+                status_color = "#64748b"
+                status_bg = "#f8fafc"
+            owasp_rows += f'''
+            <tr>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px">{_html_escape(o.get("category", ""))}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px">
+                    <span style="padding:3px 10px;border-radius:10px;background:{status_bg};color:{status_color};font-weight:600;font-size:11px">{status}</span>
+                </td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b">{_html_escape(o.get("note", ""))}</td>
+            </tr>
+            '''
+        owasp_html = f'''
+        <div class="section" style="margin-top:30px">
+            <h2 style="font-size:18px;font-weight:700;color:#1e293b;margin:0 0 16px 0;padding-bottom:8px;border-bottom:2px solid #e2e8f0">🛡 OWASP Top 10 覆盖情况</h2>
+            <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+                <thead>
+                    <tr style="background:#4f46e5;color:#fff">
+                        <th style="padding:12px;text-align:left;font-size:13px;font-weight:600">分类</th>
+                        <th style="padding:12px;text-align:left;font-size:13px;font-weight:600">状态</th>
+                        <th style="padding:12px;text-align:left;font-size:13px;font-weight:600">说明</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {owasp_rows}
+                </tbody>
+            </table>
+        </div>
+        '''
+
+    html = f'''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>漏洞哨兵 - Web安全扫描报告</title>
+<style>
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.6; }}
+    .report-container {{ max-width: 900px; margin: 0 auto; padding: 30px 20px; }}
+    .report-cover {{ background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff; padding: 50px 40px; border-radius: 16px; margin-bottom: 30px; }}
+    .report-cover h1 {{ font-size: 32px; font-weight: 800; margin-bottom: 8px; }}
+    .report-cover .subtitle {{ font-size: 16px; opacity: 0.9; margin-bottom: 30px; }}
+    .cover-info {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; }}
+    .cover-info-item .label {{ font-size: 12px; opacity: 0.8; margin-bottom: 4px; }}
+    .cover-info-item .value {{ font-size: 15px; font-weight: 600; }}
+    .score-section {{ background: #fff; border-radius: 16px; padding: 30px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+    .score-display {{ display: flex; align-items: center; gap: 30px; }}
+    .score-circle {{ width: 140px; height: 140px; border-radius: 50%; background: {score_gradient}; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; flex-shrink: 0; box-shadow: 0 8px 24px rgba(79, 70, 229, 0.3); }}
+    .score-circle .num {{ font-size: 42px; font-weight: 800; line-height: 1; }}
+    .score-circle .label {{ font-size: 12px; opacity: 0.9; margin-top: 4px; }}
+    .score-info {{ flex: 1; }}
+    .score-info h2 {{ font-size: 20px; margin-bottom: 8px; }}
+    .score-info .risk-level {{ display: inline-block; padding: 4px 12px; border-radius: 10px; background: {score_color}22; color: {score_color}; font-weight: 600; font-size: 13px; margin-bottom: 12px; }}
+    .stats-row {{ display: flex; gap: 16px; flex-wrap: wrap; }}
+    .stat-item {{ flex: 1; min-width: 80px; text-align: center; padding: 12px; background: #f8fafc; border-radius: 8px; }}
+    .stat-item .num {{ font-size: 24px; font-weight: 800; }}
+    .stat-item .label {{ font-size: 11px; color: #64748b; margin-top: 2px; }}
+    .stat-item.critical .num {{ color: #dc2626; }}
+    .stat-item.high .num {{ color: #f97316; }}
+    .stat-item.medium .num {{ color: #eab308; }}
+    .stat-item.low .num {{ color: #22c55e; }}
+    .section {{ background: #fff; border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+    .section h2 {{ font-size: 18px; font-weight: 700; color: #1e293b; margin: 0 0 16px 0; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }}
+    .disclaimer {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; font-size: 12px; color: #64748b; line-height: 1.7; }}
+    .report-footer {{ text-align: center; padding: 20px; font-size: 12px; color: #94a3b8; margin-top: 20px; }}
+    @media print {{
+        body {{ background: #fff; }}
+        .report-container {{ max-width: 100%; padding: 0; }}
+        .section, .score-section, .report-cover {{ box-shadow: none; break-inside: avoid; }}
+    }}
+</style>
+</head>
+<body>
+<div class="report-container">
+    <!-- 封面 -->
+    <div class="report-cover">
+        <h1>🔒 漏洞哨兵</h1>
+        <div class="subtitle">Web 安全扫描报告</div>
+        <div class="cover-info">
+            <div class="cover-info-item">
+                <div class="label">扫描目标</div>
+                <div class="value">{_html_escape(url)}</div>
+            </div>
+            <div class="cover-info-item">
+                <div class="label">扫描时间</div>
+                <div class="value">{_html_escape(time_str)}</div>
+            </div>
+            <div class="cover-info-item">
+                <div class="label">安全评分</div>
+                <div class="value">{score} / 100</div>
+            </div>
+            <div class="cover-info-item">
+                <div class="label">风险等级</div>
+                <div class="value">{_html_escape(risk_level)}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 评分概览 -->
+    <div class="score-section">
+        <div class="score-display">
+            <div class="score-circle">
+                <div class="num">{score}</div>
+                <div class="label">安全评分</div>
+            </div>
+            <div class="score-info">
+                <h2>扫描结果概览</h2>
+                <span class="risk-level">{_html_escape(risk_level)}</span>
+                <div class="stats-row">
+                    <div class="stat-item critical">
+                        <div class="num">{critical}</div>
+                        <div class="label">严重</div>
+                    </div>
+                    <div class="stat-item high">
+                        <div class="num">{high}</div>
+                        <div class="label">高危</div>
+                    </div>
+                    <div class="stat-item medium">
+                        <div class="num">{medium}</div>
+                        <div class="label">中危</div>
+                    </div>
+                    <div class="stat-item low">
+                        <div class="num">{low}</div>
+                        <div class="label">低危</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 评分解读 -->
+    {breakdown_html}
+
+    <!-- 漏洞详情 -->
+    <div class="section">
+        <h2>📋 漏洞详情（共 {total} 项）</h2>
+        {findings_html if findings_html else '<div style="padding:30px;text-align:center;color:#22c55e;font-weight:600">🎉 未发现安全问题，配置良好！</div>'}
+    </div>
+
+    <!-- OWASP Top 10 -->
+    {owasp_html}
+
+    <!-- 免责声明 -->
+    <div class="section">
+        <h2>📝 免责声明</h2>
+        <div class="disclaimer">
+            本报告由漏洞哨兵智能规则引擎自动生成，仅反映扫描时刻的目标网站安全配置状况。扫描结果可能存在误报或漏报，不构成完整的安全审计。建议结合专业安全评估和渗透测试综合判断。本工具不进行任何破坏性操作，仅用于授权范围内的安全检测。
+        </div>
+    </div>
+
+    <div class="report-footer">
+        漏洞哨兵 V11.6 · 自动生成于 {_html_escape(time_str)}
+    </div>
+</div>
+</body>
+</html>'''
+    return html
+
+
+def _html_escape(text: str) -> str:
+    """HTML 转义"""
+    if not text:
+        return ""
+    import html
+    return html.escape(str(text))
 
 
 # ---------- Fix Generator (按真实 severity/类型匹配) ----------
@@ -4024,25 +4665,25 @@ async def api_register(req: RegisterRequest, request: Request) -> dict:
             headers={"Retry-After": "60"},
         )
     conn = get_db()
-    existing = conn.execute("SELECT id FROM users WHERE username COLLATE NOCASE=?", (req.username,)).fetchone()
-    if existing:
-        conn.close()
-        raise HTTPException(400, "用户名已存在")
     try:
+        existing = conn.execute("SELECT id FROM users WHERE username COLLATE NOCASE=?", (req.username,)).fetchone()
+        if existing:
+            raise HTTPException(400, "用户名已存在")
         conn.execute(
             "INSERT INTO users (username, password, email, role, team_id, created_at) VALUES (?,?,?,?,?,?)",
             (req.username, hash_password(req.password), req.email, "member", 0,
              datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
         )
         conn.commit()
-        user = conn.execute("SELECT * FROM users WHERE username=?", (req.username,)).fetchone()
-        token = create_token(user["id"], user["username"])
+        user_row = conn.execute("SELECT * FROM users WHERE username=?", (req.username,)).fetchone()
+        user = dict(user_row)
+        token = create_token(user["id"], user["username"], user.get("role", "member"), user.get("team_id", 0))
         user_dict = dict(user)
-        conn.close()
         return {"success": True, "token": token, "username": user_dict["username"], "user_id": user_dict["id"], "role": user_dict.get("role", "member")}
     except sqlite3.IntegrityError:
-        conn.close()
         raise HTTPException(400, "用户名已存在")
+    finally:
+        conn.close()
 
 
 @app.post("/api/login")
@@ -4055,23 +4696,39 @@ async def api_login(req: LoginRequest, request: Request) -> dict:
             headers={"Retry-After": "60"},
         )
     conn = get_db()
-    user = conn.execute("SELECT * FROM users WHERE username=?", (req.username,)).fetchone()
-    conn.close()
-    if not user or not verify_password(req.password, user["password"]):
-        raise HTTPException(401, "用户名或密码错误")
-    token = create_token(user["id"], user["username"])
-    user_dict = dict(user)
-    return {"success": True, "token": token, "username": user_dict["username"], "user_id": user_dict["id"], "role": user_dict.get("role", "member")}
+    try:
+        user_row = conn.execute("SELECT * FROM users WHERE username=?", (req.username,)).fetchone()
+        if not user_row:
+            raise HTTPException(401, "用户名或密码错误")
+        user = dict(user_row)
+        if not verify_password(req.password, user["password"]):
+            raise HTTPException(401, "用户名或密码错误")
+        token = create_token(user["id"], user["username"], user.get("role", "member"), user.get("team_id", 0))
+        user_dict = dict(user)
+        return {"success": True, "token": token, "username": user_dict["username"], "user_id": user_dict["id"], "role": user_dict.get("role", "member")}
+    finally:
+        conn.close()
 
 
 @app.get("/api/me")
 async def api_me(user: Optional[dict] = Depends(get_current_user)) -> dict:
     if not user:
         raise HTTPException(401, "未登录")
+    # V11.6: 从数据库读取最新 role/team_id，确保和数据库一致
     conn = get_db()
-    row = conn.execute("SELECT role, team_id FROM users WHERE id=?", (user["user_id"],)).fetchone()
-    conn.close()
-    return {"user_id": user["user_id"], "username": user["username"], "role": row[0] if row else "member", "team_id": row[1] if row else 0}
+    try:
+        row = conn.execute("SELECT id, username, role, team_id FROM users WHERE id=?", (user["user_id"],)).fetchone()
+        if not row:
+            raise HTTPException(401, "用户不存在")
+        user_dict = dict(row)
+        return {
+            "user_id": user_dict["id"],
+            "username": user_dict["username"],
+            "role": user_dict.get("role", "member"),
+            "team_id": user_dict.get("team_id", 0),
+        }
+    finally:
+        conn.close()
 
 
 # ---------- Team Management ----------
@@ -4079,37 +4736,35 @@ async def api_me(user: Optional[dict] = Depends(get_current_user)) -> dict:
 @app.get("/api/team")
 async def api_team(user: dict = Depends(require_login)) -> dict:
     """获取当前用户所在团队的成员列表。"""
-    conn = get_db()
-    my_row = conn.execute("SELECT role, team_id FROM users WHERE id=?", (user["user_id"],)).fetchone()
-    if not my_row:
-        conn.close()
-        raise HTTPException(404, "用户不存在")
-    my_role = my_row[0] or "member"
-    my_team_id = my_row[1] or 0
+    my_role = user.get("role", "member")
+    my_team_id = user.get("team_id", 0) or 0
 
     if my_team_id == 0:
         # 没有团队，返回自己
-        conn.close()
         return {"team_id": 0, "members": [{"user_id": user["user_id"], "username": user["username"], "role": my_role}]}
 
-    rows = conn.execute("SELECT id, username, role, created_at FROM users WHERE team_id=? ORDER BY id", (my_team_id,)).fetchall()
-    conn.close()
-    members = [{"user_id": r[0], "username": r[1], "role": r[2], "created_at": r[3]} for r in rows]
-    return {"team_id": my_team_id, "role": my_role, "members": members}
+    conn = get_db()
+    try:
+        rows = conn.execute("SELECT id, username, role, created_at FROM users WHERE team_id=? ORDER BY id", (my_team_id,)).fetchall()
+        members = [{"user_id": r[0], "username": r[1], "role": r[2], "created_at": r[3]} for r in rows]
+        return {"team_id": my_team_id, "role": my_role, "members": members}
+    finally:
+        conn.close()
 
 
 @app.post("/api/team/create")
 async def api_team_create(user: dict = Depends(require_login)) -> dict:
     """创建团队，当前用户成为 admin。"""
     conn = get_db()
-    my_row = conn.execute("SELECT team_id FROM users WHERE id=?", (user["user_id"],)).fetchone()
-    if my_row and my_row[0] and my_row[0] > 0:
+    try:
+        my_row = conn.execute("SELECT team_id FROM users WHERE id=?", (user["user_id"],)).fetchone()
+        if my_row and my_row[0] and my_row[0] > 0:
+            raise HTTPException(400, "已加入团队，请先退出当前团队")
+        conn.execute("UPDATE users SET role='admin', team_id=? WHERE id=?", (user["user_id"], user["user_id"]))
+        conn.commit()
+        return {"success": True, "team_id": user["user_id"], "message": "团队已创建"}
+    finally:
         conn.close()
-        raise HTTPException(400, "已加入团队，请先退出当前团队")
-    conn.execute("UPDATE users SET role='admin', team_id=? WHERE id=?", (user["user_id"], user["user_id"]))
-    conn.commit()
-    conn.close()
-    return {"success": True, "team_id": user["user_id"], "message": "团队已创建"}
 
 
 @app.post("/api/team/join")
@@ -4119,16 +4774,17 @@ async def api_team_join(req: dict, user: dict = Depends(require_login)) -> dict:
     if not team_id or not isinstance(team_id, int):
         raise HTTPException(400, "team_id 必须是整数")
     conn = get_db()
-    # 验证目标团队存在（team_id 就是 admin 的 user_id）
-    admin_row = conn.execute("SELECT id, role FROM users WHERE id=? AND team_id=?", (team_id, team_id)).fetchone()
-    if not admin_row:
+    try:
+        # 验证目标团队存在（team_id 就是 admin 的 user_id）
+        admin_row = conn.execute("SELECT id, role FROM users WHERE id=? AND team_id=?", (team_id, team_id)).fetchone()
+        if not admin_row:
+            raise HTTPException(404, "团队不存在")
+        # 更新自己的 team_id
+        conn.execute("UPDATE users SET team_id=?, role='member' WHERE id=?", (team_id, user["user_id"]))
+        conn.commit()
+        return {"success": True, "team_id": team_id, "message": "已加入团队"}
+    finally:
         conn.close()
-        raise HTTPException(404, "团队不存在")
-    # 更新自己的 team_id
-    conn.execute("UPDATE users SET team_id=?, role='member' WHERE id=?", (team_id, user["user_id"]))
-    conn.commit()
-    conn.close()
-    return {"success": True, "team_id": team_id, "message": "已加入团队"}
 
 
 @app.post("/api/team/{target_user_id}/role")
@@ -4138,18 +4794,18 @@ async def api_team_set_role(target_user_id: int, req: dict, user: dict = Depends
     if new_role not in ("admin", "member", "viewer"):
         raise HTTPException(400, "角色必须是 admin / member / viewer")
     conn = get_db()
-    my_row = conn.execute("SELECT role, team_id FROM users WHERE id=?", (user["user_id"],)).fetchone()
-    if not my_row or my_row[0] != "admin":
+    try:
+        my_row = conn.execute("SELECT role, team_id FROM users WHERE id=?", (user["user_id"],)).fetchone()
+        if not my_row or my_row[0] != "admin":
+            raise HTTPException(403, "仅团队管理员可修改角色")
+        target = conn.execute("SELECT id, team_id FROM users WHERE id=?", (target_user_id,)).fetchone()
+        if not target or target[1] != my_row[1]:
+            raise HTTPException(404, "目标用户不在你的团队中")
+        conn.execute("UPDATE users SET role=? WHERE id=?", (new_role, target_user_id))
+        conn.commit()
+        return {"success": True, "message": f"已将用户 {target_user_id} 的角色设为 {new_role}"}
+    finally:
         conn.close()
-        raise HTTPException(403, "仅团队管理员可修改角色")
-    target = conn.execute("SELECT id, team_id FROM users WHERE id=?", (target_user_id,)).fetchone()
-    if not target or target[1] != my_row[1]:
-        conn.close()
-        raise HTTPException(404, "目标用户不在你的团队中")
-    conn.execute("UPDATE users SET role=? WHERE id=?", (new_role, target_user_id))
-    conn.commit()
-    conn.close()
-    return {"success": True, "message": f"已将用户 {target_user_id} 的角色设为 {new_role}"}
 
 
 # ---------- Domain Verification ----------
@@ -4237,11 +4893,15 @@ async def verify_file(url: str, token: str) -> Tuple[bool, str]:
         try:
             client = get_httpx_client()
             resp = await asyncio.wait_for(
-                client.get(check_url, follow_redirects=True),
+                client.get(check_url, follow_redirects=False),
                 timeout=8.0,
             )
             if resp.status_code == 200:
-                body = (resp.text or "").strip()
+                # 安全读取：限制响应体最大 64KB，验证文件应该很小
+                body_bytes = await resp.aread()
+                if len(body_bytes) > 64 * 1024:
+                    continue  # 文件过大，不可能是验证文件
+                body = body_bytes.decode("utf-8", errors="ignore").strip()
                 if token in body:
                     return True, "文件验证通过：" + check_url
         except asyncio.TimeoutError:
@@ -4284,7 +4944,7 @@ async def api_verify_fix(req: VerifyFixRequest, request: Request, user: dict = D
         sensitive_paths = await check_sensitive_paths(host, is_https)
         ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
         result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths)
-        # V11.4：11 维交叉验证（降低误报）
+        # V11.6：11 维交叉验证（降低误报）
         try:
             cv_result = await cross_validate_findings(
                 url, headers, result["findings"],
@@ -4293,8 +4953,8 @@ async def api_verify_fix(req: VerifyFixRequest, request: Request, user: dict = D
                 is_https=is_https,
             )
             apply_cross_validation(result["findings"], cv_result)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cross-validation failed in verify-fix: %s", e)
         scan_id = save_scan(
             user["user_id"], url, result["score"], result["risk_level"],
             result["findings"], result["summary"], 0, "verify",
@@ -4415,12 +5075,18 @@ async def api_verify_domain(req: dict, user=Depends(require_login)):
             async with httpx.AsyncClient(timeout=10, follow_redirects=True) as hc:
                 resp = await hc.get(f"http://{domain}/.well-known/vulnsentinel")
                 if resp.status_code == 200:
-                    expected = f"vs-{user['user_id']}"
-                    if expected in resp.text:
-                        verified = True
-                        verify_detail = "文件验证通过"
+                    # 安全读取：限制响应体最大 64KB，验证文件应该很小
+                    body_bytes = await resp.aread()
+                    if len(body_bytes) > 64 * 1024:
+                        verify_detail = "验证文件过大，不符合预期"
                     else:
-                        verify_detail = "文件内容不匹配"
+                        body = body_bytes.decode("utf-8", errors="ignore")
+                        expected = f"vs-{user['user_id']}"
+                        if expected in body:
+                            verified = True
+                            verify_detail = "文件验证通过"
+                        else:
+                            verify_detail = "文件内容不匹配"
                 else:
                     verify_detail = f"验证文件返回 HTTP {resp.status_code}"
         except Exception as e:
@@ -4450,6 +5116,32 @@ async def api_verify_domain(req: dict, user=Depends(require_login)):
 # key: scan_token (str), value: dict {stages, current, start_time, updated_at}
 _scan_progress: Dict[str, dict] = {}
 _scan_progress_lock = asyncio.Lock()
+_SCAN_PROGRESS_TTL_SECONDS = 600  # 扫描进度保留 10 分钟
+
+
+async def _cleanup_scan_progress():
+    """清理过期的扫描进度记录，防止内存泄漏。"""
+    now = time.time()
+    async with _scan_progress_lock:
+        expired = [
+            token for token, data in _scan_progress.items()
+            if now - data.get("updated_at", 0) > _SCAN_PROGRESS_TTL_SECONDS
+        ]
+        for token in expired:
+            _scan_progress.pop(token, None)
+
+
+async def _scan_progress_cleanup_loop():
+    """扫描进度清理循环：每 5 分钟清理一次过期记录。"""
+    while True:
+        await asyncio.sleep(300)  # 每 5 分钟清理一次
+        try:
+            await _cleanup_scan_progress()
+        except Exception as e:
+            logger.warning("Scan progress cleanup failed: %s", e)
+
+
+_scan_progress_cleanup_task: Optional[asyncio.Task] = None
 
 
 # ---------- 真实扫描 ----------
@@ -4461,16 +5153,30 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
     try:
         url = sanitize_url(req.url)
     except ValueError as e:
-        raise HTTPException(422, str(e))
+        # V11.6 fix: 返回友好的扫描失败结果，而不是 HTTP 422
+        return ScanResponse(
+            success=False, scan_type="real", url=req.url, final_url=req.url,
+            time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            is_https=False, score=0, risk_level="无法扫描",
+            findings=[], summary={"high": 0, "medium": 0, "low": 0, "total": 0},
+            owasp_coverage=[], header_details=[], info_leaks=[], cors=None,
+            cookie_issues=[], ssl_info={}, waf=[], sensitive_paths=[],
+            waf_detected=False, raw_headers={}, error=str(e),
+        )
 
     # 扫描结果缓存：30 秒内同 URL 直接返回（防重复点击）
-    cache_key = f"{user['user_id']}:{url}"
-    cached = _SCAN_RESULT_CACHE.get(cache_key)
-    if cached and (time.time() - cached[1]) < _SCAN_CACHE_TTL:
-        return {**cached[0], "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
+    # V11.6: localhost 演示靶场不使用缓存，确保修复后立即可见效果
     parsed = urlparse(url)
     host = parsed.hostname or ""
+    is_demo_target = host in ("localhost", "127.0.0.1", "demo-target.local")
+    
+    cache_key = f"{user['user_id']}:{url}"
+    if not is_demo_target:
+        async with _scan_cache_lock:
+            cached = _SCAN_RESULT_CACHE.get(cache_key)
+        if cached and (time.time() - cached[1]) < _SCAN_CACHE_TTL:
+            return {**cached[0], "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
     user_id = user["user_id"]
 
     # 阶段事件：写入内存字典（带 asyncio.Lock），不再写文件，避免并发覆盖。
@@ -4541,7 +5247,12 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         await _update(0, "done")
         await _update(1, "done")
         await _update(2, "running")
-        headers, is_https, final_url, error = await fetch_headers(url)
+        try:
+            headers, is_https, final_url, error = await asyncio.wait_for(
+                fetch_headers(url), timeout=30.0
+            )
+        except asyncio.TimeoutError:
+            headers, is_https, final_url, error = {}, False, url, "TIMEOUT"
         if error and not headers:
             # 完全拿不到头 → 真失败
             await _update(2, "fail")
@@ -4675,7 +5386,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 vuln_findings, vuln_tests = [], []
 
         result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings)
-        # V11.4：11 维交叉验证（降低误报）
+        # V11.6：11 维交叉验证（降低误报）
         try:
             cv_result = await cross_validate_findings(
                 url, headers, result["findings"],
@@ -4684,8 +5395,8 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 is_https=is_https,
             )
             apply_cross_validation(result["findings"], cv_result)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Cross-validation failed during scan: %s", e)
         fixes = generate_fixes(result["findings"], headers, is_https, host)
         scan_id = save_scan(
             user_id, url, result["score"], result["risk_level"],
@@ -4696,13 +5407,13 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         # 自动为 high/critical finding 创建修复工单
         try:
             auto_create_fix_tickets(user_id, scan_id, result["findings"])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Auto create fix tickets failed: %s", e)
         # 自动同步资产扫描信息
         try:
             update_asset_after_scan(user_id, host, scan_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Update asset after scan failed: %s", e)
         await _update(6, "done")
         # 受限扫描报告：合并 fetch_headers 的 HTTP 状态码限制 + analyze_security 的 WAF/反爬检测
         http_restricted_reason = headers.pop("_restricted_reason", "") if headers else ""
@@ -4750,11 +5461,14 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         result_jsonable = jsonable(result)
         # 写入扫描结果缓存（仅缓存成功结果，30 秒内同 URL 直接返回）
         if isinstance(result_jsonable, dict) and result_jsonable.get("success"):
-            _SCAN_RESULT_CACHE[cache_key] = (result_jsonable, time.time())
-            # 简单淘汰：超过 100 个时清掉最早的
-            if len(_SCAN_RESULT_CACHE) > 100:
-                oldest = min(_SCAN_RESULT_CACHE.items(), key=lambda x: x[1][1])
-                _SCAN_RESULT_CACHE.pop(oldest[0], None)
+            async with _scan_cache_lock:
+                _SCAN_RESULT_CACHE[cache_key] = (result_jsonable, time.time())
+                # 缓存淘汰：超过硬上限时按时间戳淘汰最旧的 20%
+                if len(_SCAN_RESULT_CACHE) > _SCAN_CACHE_MAX_SIZE:
+                    sorted_items = sorted(_SCAN_RESULT_CACHE.items(), key=lambda x: x[1][1])
+                    evict_count = max(1, int(_SCAN_CACHE_MAX_SIZE * 0.2))
+                    for k, _ in sorted_items[:evict_count]:
+                        _SCAN_RESULT_CACHE.pop(k, None)
         return JSONResponse(
             content=result_jsonable,
             headers={"X-Scan-Token": scan_token},
@@ -4781,8 +5495,8 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             logger.error("Scan failed due to event loop error: %s", e)
             try:
                 await close_httpx_client()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("close_httpx_client failed during error recovery: %s", e)
             async with _scan_progress_lock:
                 _scan_progress.pop(scan_token, None)
             return JSONResponse(
@@ -4799,6 +5513,27 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 headers={"X-Scan-Token": scan_token},
             )
         raise
+    except Exception as e:
+        # V11.6: 通用异常兜底，避免返回 500
+        logger.error("Scan failed with unexpected error: %s", e, exc_info=True)
+        try:
+            async with _scan_progress_lock:
+                _scan_progress.pop(scan_token, None)
+        except Exception as e:
+            logger.warning("Failed to clean scan progress after error: %s", e)
+        return JSONResponse(
+            content=jsonable(ScanResponse(
+                success=False, scan_type="real", url=url, final_url=url,
+                time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                is_https=False, score=0, risk_level="扫描异常",
+                findings=[], summary={"high": 0, "medium": 0, "low": 0, "total": 0},
+                owasp_coverage=[], header_details=[], info_leaks=[], cors=None,
+                cookie_issues=[], ssl_info={}, waf=[], sensitive_paths=[],
+                waf_detected=False, raw_headers={},
+                error="扫描过程中发生异常，请稍后重试。如持续失败，请检查目标网站是否可访问。",
+            )),
+            headers={"X-Scan-Token": scan_token},
+        )
 
 
 # ---------- 历史（含 DELETE） ----------
@@ -4813,6 +5548,72 @@ async def api_history(user: dict = Depends(require_login), limit: int = Query(20
         "stats": {
             "scan_count": len(history),
             "fixed_count": fixed_count,
+        },
+    }
+
+
+@app.get("/api/trend")
+async def api_trend(user: dict = Depends(require_login), url: Optional[str] = None, limit: int = Query(30, ge=1, le=100)) -> dict:
+    """安全趋势数据 - 返回评分变化折线图数据
+    如果指定 url，返回该 URL 的评分趋势；否则返回所有扫描的趋势。
+    """
+    user_id = user["user_id"]
+    conn = get_db()
+    try:
+        if url:
+            rows = conn.execute(
+                "SELECT id, url, score, risk_level, findings_count, created_at FROM scans WHERE user_id=? AND url LIKE ? ORDER BY id DESC LIMIT ?",
+                (user_id, f"%{url}%", limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, url, score, risk_level, findings_count, created_at FROM scans WHERE user_id=? ORDER BY id DESC LIMIT ?",
+                (user_id, limit),
+            ).fetchall()
+    finally:
+        conn.close()
+
+    # 按 URL 分组
+    url_groups: Dict[str, list] = {}
+    for r in rows:
+        d = dict(r)
+        scan_url = d["url"]
+        if scan_url not in url_groups:
+            url_groups[scan_url] = []
+        url_groups[scan_url].append({
+            "id": d["id"],
+            "score": d["score"],
+            "risk_level": d["risk_level"],
+            "finding_count": d.get("findings_count", 0),
+            "time": d["created_at"],
+        })
+
+    # 为每个 URL 按时间正序排列
+    for u in url_groups:
+        url_groups[u].reverse()
+
+    # 计算整体统计
+    all_scores = [d["score"] for r_list in url_groups.values() for d in r_list]
+    avg_score = sum(all_scores) / len(all_scores) if all_scores else 0
+    max_score = max(all_scores) if all_scores else 0
+    min_score = min(all_scores) if all_scores else 0
+    latest_score = all_scores[0] if all_scores else 0
+
+    # 评分改善趋势（最近 vs 最早）
+    improved = False
+    if len(all_scores) >= 2:
+        improved = all_scores[-1] > all_scores[0]
+
+    return {
+        "urls": list(url_groups.keys()),
+        "series": url_groups,
+        "summary": {
+            "total_scans": len(all_scores),
+            "avg_score": round(avg_score, 1),
+            "max_score": max_score,
+            "min_score": min_score,
+            "latest_score": latest_score,
+            "improved": improved,
         },
     }
 
@@ -4871,23 +5672,25 @@ async def api_finding_feedback(req: FindingFeedbackRequest, current_user=Depends
         if not current_user or not current_user.get("user_id"):
             return {"success": True, "feedback_id": None, "note": "未登录反馈未持久化"}
         conn = get_db()
-        cur = conn.execute(
-            """INSERT INTO finding_feedback
-               (user_id, scan_id, finding_name, finding_type, is_false_positive, is_confirmed, created_at)
-               VALUES (?,?,?,?,?,?,?)""",
-            (
-                current_user["user_id"],
-                int(req.scan_id),
-                (req.finding_name or "").strip()[:256],
-                (req.finding_type or "").strip()[:128] or None,
-                1 if req.is_false_positive else 0,
-                1 if req.is_confirmed else 0,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            ),
-        )
-        conn.commit()
-        feedback_id = cur.lastrowid
-        conn.close()
+        try:
+            cur = conn.execute(
+                """INSERT INTO finding_feedback
+                   (user_id, scan_id, finding_name, finding_type, is_false_positive, is_confirmed, created_at)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (
+                    current_user["user_id"],
+                    int(req.scan_id),
+                    (req.finding_name or "").strip()[:256],
+                    (req.finding_type or "").strip()[:128] or None,
+                    1 if req.is_false_positive else 0,
+                    1 if req.is_confirmed else 0,
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
+            conn.commit()
+            feedback_id = cur.lastrowid
+        finally:
+            conn.close()
         logger.info(
             "finding_feedback saved: user=%s scan=%s finding=%s fp=%s conf=%s",
             current_user.get("user_id"), req.scan_id, req.finding_name,
@@ -4910,19 +5713,21 @@ async def api_list_finding_feedback(
         if not current_user or not current_user.get("user_id"):
             return {"success": True, "feedbacks": []}
         conn = get_db()
-        if scan_id is not None:
-            rows = conn.execute(
-                """SELECT id, scan_id, finding_name, finding_type, is_false_positive, is_confirmed, created_at
-                   FROM finding_feedback WHERE user_id=? AND scan_id=?""",
-                (current_user["user_id"], int(scan_id)),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """SELECT id, scan_id, finding_name, finding_type, is_false_positive, is_confirmed, created_at
-                   FROM finding_feedback WHERE user_id=? ORDER BY created_at DESC LIMIT 200""",
-                (current_user["user_id"],),
-            ).fetchall()
-        conn.close()
+        try:
+            if scan_id is not None:
+                rows = conn.execute(
+                    """SELECT id, scan_id, finding_name, finding_type, is_false_positive, is_confirmed, created_at
+                       FROM finding_feedback WHERE user_id=? AND scan_id=?""",
+                    (current_user["user_id"], int(scan_id)),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT id, scan_id, finding_name, finding_type, is_false_positive, is_confirmed, created_at
+                       FROM finding_feedback WHERE user_id=? ORDER BY created_at DESC LIMIT 200""",
+                    (current_user["user_id"],),
+                ).fetchall()
+        finally:
+            conn.close()
         return {
             "success": True,
             "feedbacks": [dict(r) for r in rows],
@@ -4937,15 +5742,17 @@ async def api_stats_history(user: dict = Depends(require_login), days: int = Que
     数据：近 N 天该用户所有扫描的 url、score、time。
     """
     conn = get_db()
-    since_ts = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-    rows = conn.execute(
-        """SELECT id, url, score, created_at, risk_level
-           FROM scans
-           WHERE user_id=? AND created_at >= ?
-           ORDER BY created_at ASC""",
-        (user["user_id"], since_ts),
-    ).fetchall()
-    conn.close()
+    try:
+        since_ts = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+        rows = conn.execute(
+            """SELECT id, url, score, created_at, risk_level
+               FROM scans
+               WHERE user_id=? AND created_at >= ?
+               ORDER BY created_at ASC""",
+            (user["user_id"], since_ts),
+        ).fetchall()
+    finally:
+        conn.close()
     points = [
         {
             "id": r["id"],
@@ -4998,14 +5805,16 @@ async def api_stats_history(user: dict = Depends(require_login), days: int = Que
 async def api_alerts(user: dict = Depends(require_login), limit: int = Query(20, ge=1, le=100), unread_only: bool = Query(False)) -> dict:
     """返回用户的扫描告警通知。"""
     conn = get_db()
-    sql = "SELECT * FROM alerts WHERE user_id=?"
-    params = [user["user_id"]]
-    if unread_only:
-        sql += " AND is_read=0"
-    sql += " ORDER BY id DESC LIMIT ?"
-    params.append(limit)
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
+    try:
+        sql = "SELECT * FROM alerts WHERE user_id=?"
+        params = [user["user_id"]]
+        if unread_only:
+            sql += " AND is_read=0"
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
     alerts = []
     for r in rows:
         d = dict(r)
@@ -5022,9 +5831,11 @@ async def api_alerts(user: dict = Depends(require_login), limit: int = Query(20,
 async def api_mark_alert_read(alert_id: int, user: dict = Depends(require_login)) -> dict:
     """标记告警为已读。"""
     conn = get_db()
-    conn.execute("UPDATE alerts SET is_read=1 WHERE id=? AND user_id=?", (alert_id, user["user_id"]))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("UPDATE alerts SET is_read=1 WHERE id=? AND user_id=?", (alert_id, user["user_id"]))
+        conn.commit()
+    finally:
+        conn.close()
     return {"success": True}
 
 
@@ -5050,11 +5861,13 @@ async def api_scan_auth_log(request: Request, user: dict = Depends(require_login
 # ---------- Simulate Fix（用真实 severity） ----------
 
 @app.post("/api/simulate-fix", response_model=None)
-async def simulate_fix(req: SimulateFixRequest):
+async def simulate_fix(req: SimulateFixRequest, request: Request) -> dict:
     """模拟应用修复后的预期评分（不需要登录）。
     输入：scan findings 数组（使用真实 severity 字段 high/medium/low）
     输出：修复前 vs 修复后的评分对比
     """
+    # V11.6: 添加速率限制，防止滥用
+    await rate_limit_dependency(request)
     findings = req.findings or []
     deduction = sum(SEVERITY_SCORE.get(f.get("severity", "low"), 3) for f in findings)
     before = max(0, 100 - deduction)
@@ -5069,7 +5882,7 @@ async def simulate_fix(req: SimulateFixRequest):
             "fix": f.get("fix", ""),
             "summary": f.get("summary", ""),
         })
-    # V11.4：生成可执行的修复配置（按平台分类）
+    # V11.6：生成可执行的修复配置（按平台分类）
     nginx_fixes = []
     for f in findings:
         fix_code = f.get("fix", "")
@@ -5207,7 +6020,7 @@ async def api_generate_fix_package(request: Request, user: dict = Depends(requir
 
     main_cfg = "\n\n".join(code_blocks)
     readme = f"""# {host} 安全配置包
-由漏洞哨兵 V11.4 自动生成
+由漏洞哨兵 V11.6 自动生成
 平台：{platform.upper()}
 修复项数：{len(code_blocks)}
 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}
@@ -5253,7 +6066,7 @@ async def api_generate_fix_package(request: Request, user: dict = Depends(requir
 
 
 # ============================================================
-# V11.4 自动修复：用户授权凭证 → SSH 改服务器配置 → 验证 → 返结果
+# V11.6 自动修复：用户授权凭证 → SSH 改服务器配置 → 验证 → 返结果
 # ============================================================
 import base64
 from cryptography.fernet import Fernet
@@ -5272,6 +6085,16 @@ def _get_credential_key() -> bytes:
 
 _fernet = Fernet(_get_credential_key())
 
+# V11.6: 生产环境强制校验凭证加密密钥，禁止使用硬编码默认值
+if _IS_PRODUCTION:
+    _default_key = base64.urlsafe_b64encode(b"vulnsentinel-v11-default-credential-key-32!!".ljust(32, b"=")[:32])
+    if _fernet._signing_key == Fernet(_default_key)._signing_key:
+        raise RuntimeError(
+            "生产环境必须设置 CREDENTIAL_ENCRYPT_KEY 环境变量（base64 编码的 32 字节密钥），"
+            "禁止使用硬编码默认密钥。\n"
+            "请执行：export CREDENTIAL_ENCRYPT_KEY=$(python3 -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\")"
+        )
+
 
 def _encrypt_credential(text: str) -> str:
     """加密用户凭证（AES + base64）"""
@@ -5289,7 +6112,7 @@ def _generate_fix_patch(findings: list, platform: str = "nginx") -> str:
         lines = [
             "",
             "# ============================================",
-            "# 漏洞哨兵 V11.5 自动应用的安全头",
+            "# 漏洞哨兵 V11.6 自动应用的安全头",
             f"# 应用时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
             f"# 修复项数: {len(findings)}",
             "# ============================================",
@@ -5327,8 +6150,8 @@ def _ssh_execute(host: str, port: int, username: str, password: str,
     返回每条命令的输出（按顺序）
     """
     results = []
+    client = paramiko.SSHClient()
     try:
-        client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(
             hostname=host,
@@ -5350,15 +6173,16 @@ def _ssh_execute(host: str, port: int, username: str, password: str,
                 "error": err[:1000],
                 "exit_code": exit_code,
             })
-        client.close()
     except Exception as e:
         raise RuntimeError(f"SSH 执行失败: {e}")
+    finally:
+        client.close()
     return results
 
 
 def _auto_fix_via_ssh(scan_data: dict, credentials: dict) -> dict:
     """
-    V11.4 核心：通过 SSH 真正修复用户服务器
+    V11.6 核心：通过 SSH 真正修复用户服务器
     流程：备份 → 追加修复配置 → 测试配置 → 重载 → 验证
     """
     host = credentials.get("host")  # 用户服务器 IP/域名
@@ -5453,7 +6277,7 @@ def _auto_fix_via_ssh(scan_data: dict, credentials: dict) -> dict:
 @app.post("/api/auto-fix")
 async def api_auto_fix(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V11.4 终极功能：端到端自动修复
+    V11.6 终极功能：端到端自动修复
     接收：扫描结果 + 用户服务器凭证
     执行：SSH 备份 → 写配置 → 测试 → 重载 → 验证
     返回：完整执行日志 + 验证后的安全头列表
@@ -5508,8 +6332,8 @@ async def api_auto_fix(request: Request, user: dict = Depends(require_login)) ->
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass  # 记录失败不影响主流程
+        except Exception as e:
+            logger.warning("Failed to save SSH fix record: %s", e)  # 记录失败不影响主流程
 
     # 5. 立即清空明文凭证（防止意外泄露）
     credentials.clear()
@@ -5520,7 +6344,7 @@ async def api_auto_fix(request: Request, user: dict = Depends(require_login)) ->
 @app.post("/api/auto-fix-via-cloudflare")
 async def api_auto_fix_cloudflare(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V11.4 Cloudflare 自动修复：通过 Cloudflare API 改安全头（零 SSH 风险）
+    V11.6 Cloudflare 自动修复：通过 Cloudflare API 改安全头（零 SSH 风险）
     用户只需提供 CF API Token 即可一键应用 5+ 项安全头
     """
     try:
@@ -5623,11 +6447,11 @@ async def api_auto_fix_cloudflare(request: Request, user: dict = Depends(require
 
 
 # ============================================================
-# V11.4 进化模块 1：智能学习 — 从历史自动学
+# V11.6 进化模块 1：智能学习 — 从历史自动学
 # ============================================================
 def _learn_from_user_history(user_id: int) -> dict:
     """
-    V11.4 进化：从用户的修复历史自动学习
+    V11.6 进化：从用户的修复历史自动学习
     统计：用户最常修/不修的项、修复后真实效果、最佳修复顺序
     """
     conn = get_db()
@@ -5675,8 +6499,8 @@ def _learn_from_user_history(user_id: int) -> dict:
             try:
                 findings = json.loads(row["findings_json"] or "[]")
                 recent_names.update(f.get("name", "") for f in findings)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to parse findings_json for fixed count: %s", e)
         fixed_names = all_names - recent_names
 
         # 5. 计算用户平均分趋势
@@ -5716,68 +6540,71 @@ def _learn_from_user_history(user_id: int) -> dict:
 
 @app.get("/api/learn/insights")
 async def api_learn_insights(user: dict = Depends(require_login)) -> dict:
-    """V11.4 进化端点：智能学习洞察（基于用户历史）"""
+    """V11.6 进化端点：智能学习洞察（基于用户历史）"""
     insights = _learn_from_user_history(user["user_id"])
     return insights
 
 
 # ============================================================
-# V11.4 进化模块 2：主动监控 — 定期扫描 + 告警
+# V11.6 进化模块 2：主动监控 — 定期扫描 + 告警
 # ============================================================
 # 监控目标：用户可加自己的网站到监控列表
 def _init_monitoring_tables():
-    """V11.4 新增：监控相关表"""
+    """V11.6 新增：监控相关表"""
     conn = get_db()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS monitors (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            url TEXT NOT NULL,
-            frequency_hours INTEGER DEFAULT 24,
-            last_score INTEGER,
-            last_risk TEXT,
-            last_scan_at TEXT,
-            last_patrol_at TEXT,
-            is_active INTEGER DEFAULT 1,
-            created_at TEXT,
-            UNIQUE(user_id, url)
-        );
+    try:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS monitors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                url TEXT NOT NULL,
+                frequency_hours INTEGER DEFAULT 24,
+                last_score INTEGER,
+                last_risk TEXT,
+                last_scan_at TEXT,
+                last_patrol_at TEXT,
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT,
+                UNIQUE(user_id, url)
+            );
 
-        CREATE TABLE IF NOT EXISTS monitor_alerts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            monitor_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            alert_type TEXT NOT NULL,  -- score_drop / new_issue / site_down
-            message TEXT,
-            old_score INTEGER,
-            new_score INTEGER,
-            created_at TEXT,
-            is_read INTEGER DEFAULT 0
-        );
-    """)
-    # 兼容旧库：追加新列
-    for ddl in [
-        "ALTER TABLE monitors ADD COLUMN last_patrol_at TEXT",
-        "ALTER TABLE monitor_alerts ADD COLUMN url TEXT",
-    ]:
-        try:
-            conn.execute(ddl)
-            conn.commit()
-        except Exception:
-            pass
-    conn.close()
+            CREATE TABLE IF NOT EXISTS monitor_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                monitor_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                alert_type TEXT NOT NULL,  -- score_drop / new_issue / site_down
+                message TEXT,
+                old_score INTEGER,
+                new_score INTEGER,
+                created_at TEXT,
+                is_read INTEGER DEFAULT 0
+            );
+        """)
+        # 兼容旧库：追加新列
+        for ddl in [
+            "ALTER TABLE monitors ADD COLUMN last_patrol_at TEXT",
+            "ALTER TABLE monitors ADD COLUMN last_findings_count INTEGER DEFAULT 0",
+            "ALTER TABLE monitor_alerts ADD COLUMN url TEXT",
+        ]:
+            try:
+                conn.execute(ddl)
+                conn.commit()
+            except Exception as e:
+                logger.warning("Monitor table migration DDL skipped: %s", e)
+    finally:
+        conn.close()
 
 
 # 启动时初始化表
 try:
     _init_monitoring_tables()
 except Exception as e:
-    print(f"[V11.4] monitor tables init warning: {e}")
+    print(f"[V11.6] monitor tables init warning: {e}")
 
 
 @app.post("/api/monitors")
 async def api_create_monitor(request: Request, user: dict = Depends(require_login)) -> dict:
-    """V11.4 进化端点：添加监控目标"""
+    """V11.6 进化端点：添加监控目标"""
     try:
         body = await request.json()
     except Exception:
@@ -5788,6 +6615,11 @@ async def api_create_monitor(request: Request, user: dict = Depends(require_logi
         return {"success": False, "error": "URL 必填"}
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
+    # V11.6 fix: SSRF 防护 - 监控目标必须通过 URL 校验
+    try:
+        sanitize_url(url)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
     if freq < 1 or freq > 168:
         return {"success": False, "error": "频率必须在 1-168 小时之间"}
 
@@ -5812,7 +6644,7 @@ async def api_create_monitor(request: Request, user: dict = Depends(require_logi
 
 @app.get("/api/monitors")
 async def api_list_monitors(user: dict = Depends(require_login)) -> dict:
-    """V11.4 进化端点：列出所有监控目标"""
+    """V11.6 进化端点：列出所有监控目标"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -5830,7 +6662,7 @@ async def api_list_monitors(user: dict = Depends(require_login)) -> dict:
 
 @app.delete("/api/monitors/{monitor_id}")
 async def api_delete_monitor(monitor_id: int, user: dict = Depends(require_login)) -> dict:
-    """V11.4 进化端点：删除监控目标"""
+    """V11.6 进化端点：删除监控目标"""
     conn = get_db()
     try:
         conn.execute(
@@ -5844,7 +6676,8 @@ async def api_delete_monitor(monitor_id: int, user: dict = Depends(require_login
 
 
 def _check_monitors_sync():
-    """V11.4：同步执行监控扫描（被 scheduler 调用）"""
+    """V11.6：同步执行监控扫描（被 scheduler 调用）"""
+    import asyncio
     conn = get_db()
     try:
         monitors = conn.execute(
@@ -5860,8 +6693,48 @@ def _check_monitors_sync():
                 continue
             # 到了扫描时间
             try:
-                # 复用 analyze_security（同步版本）
-                score, risk, findings, fixes, _ = analyze_security(m["url"], depth="standard")
+                # V11.6 fix: SSRF 防护 + 正确调用扫描流程
+                url = m["url"]
+                try:
+                    sanitize_url(url)
+                except ValueError:
+                    continue  # 非法 URL 跳过
+                # 使用 asyncio 运行异步扫描（因为 fetch_headers 是 async 的）
+                loop = asyncio.new_event_loop()
+                try:
+                    headers, is_https, final_url, error = loop.run_until_complete(
+                        asyncio.wait_for(fetch_headers(url), timeout=15.0)
+                    )
+                finally:
+                    loop.close()
+                if error and not headers:
+                    # 扫描失败，记录告警
+                    conn.execute(
+                        """INSERT INTO monitor_alerts
+                           (monitor_id, user_id, alert_type, message, created_at)
+                           VALUES (?,?,?,?,?)""",
+                        (
+                            m["id"], m["user_id"], "site_down",
+                            f"网站 {url} 无法访问：{error}",
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        ),
+                    )
+                    conn.execute(
+                        """UPDATE monitors SET last_scan_at=? WHERE id=?""",
+                        (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), m["id"]),
+                    )
+                    conn.commit()
+                    continue
+                # 拿到 headers 后，调用 analyze_security 分析
+                host = urlparse(url).hostname or ""
+                # 简单版：不做 SSL 和敏感路径检测（监控模式简化）
+                ssl_info = {"has_cert": False}
+                waf_list = detect_waf(headers)
+                sensitive_paths: List[dict] = []
+                result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
+                score = result["score"]
+                risk = result["risk_level"]
+                findings = result["findings"]
                 old_score = m["last_score"]
                 # 检测分数下降
                 if old_score is not None and score < old_score - 5:
@@ -5871,27 +6744,41 @@ def _check_monitors_sync():
                            VALUES (?,?,?,?,?,?,?)""",
                         (
                             m["id"], m["user_id"], "score_drop",
-                            f"网站 {m['url']} 评分从 {old_score} 下降到 {score}",
+                            f"网站 {url} 评分从 {old_score} 下降到 {score}",
                             old_score, score,
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        ),
+                    )
+                # 检测新漏洞（简单对比：数量增加）
+                old_count = m["last_findings_count"] or 0
+                new_count = len(findings)
+                if new_count > old_count and old_count > 0:
+                    conn.execute(
+                        """INSERT INTO monitor_alerts
+                           (monitor_id, user_id, alert_type, message, created_at)
+                           VALUES (?,?,?,?,?)""",
+                        (
+                            m["id"], m["user_id"], "new_issue",
+                            f"网站 {url} 发现新的安全问题（{new_count - old_count} 个）",
                             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         ),
                     )
                 # 更新 last_score
                 conn.execute(
-                    """UPDATE monitors SET last_score=?, last_risk=?, last_scan_at=?
+                    """UPDATE monitors SET last_score=?, last_risk=?, last_findings_count=?, last_scan_at=?
                        WHERE id=?""",
-                    (score, risk, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), m["id"]),
+                    (score, risk, new_count, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), m["id"]),
                 )
                 conn.commit()
             except Exception as e:
-                print(f"[monitor] scan {m['url']} failed: {e}")
+                logger.warning("[monitor] scan %s failed: %s", m["url"], e)
     finally:
         conn.close()
 
 
 @app.get("/api/monitors/alerts")
 async def api_list_alerts(user: dict = Depends(require_login)) -> dict:
-    """V11.4 进化端点：列出所有告警"""
+    """V11.6 进化端点：列出所有告警"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -5911,10 +6798,10 @@ async def api_list_alerts(user: dict = Depends(require_login)) -> dict:
 
 
 # ============================================================
-# V11.4 进化模块 3：AI 洞察 — 会话记忆 + 个性化建议
+# V11.6 进化模块 3：AI 洞察 — 会话记忆 + 个性化建议
 # ============================================================
 def _save_conversation(user_id: int, role: str, content: str, context: dict = None) -> int:
-    """V11.4：保存 AI 顾问对话历史（让 AI 记住用户）"""
+    """V11.6：保存 AI 顾问对话历史（让 AI 记住用户）"""
     conn = get_db()
     try:
         conn.executescript("""
@@ -5944,7 +6831,7 @@ def _save_conversation(user_id: int, role: str, content: str, context: dict = No
 
 
 def _get_recent_conversations(user_id: int, limit: int = 10) -> list:
-    """V11.4：取最近 N 条对话（用于上下文）"""
+    """V11.6：取最近 N 条对话（用于上下文）"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -5957,7 +6844,7 @@ def _get_recent_conversations(user_id: int, limit: int = 10) -> list:
         conn.close()
 
 
-# =================== V11.4 LLM 集成（OpenAI 兼容接口） ===================
+# =================== V11.6 LLM 集成（OpenAI 兼容接口） ===================
 
 def _build_llm_prompt(user_msg: str, history: list, insights: dict) -> list:
     """组装发给 LLM 的 messages：系统提示 + 历史 + 用户消息"""
@@ -5970,7 +6857,7 @@ def _build_llm_prompt(user_msg: str, history: list, insights: dict) -> list:
         persistent_text = "暂无反复问题"
 
     system_prompt = (
-        "你是漏洞哨兵 V11.4 的安全顾问，一位简洁专业的中文安全工程师。\n"
+        "你是漏洞哨兵 V11.6 的安全顾问，一位简洁专业的中文安全工程师。\n"
         f"用户统计：已扫描 {insights.get('total_scans', 0)} 次，"
         f"预测下次评分 {insights.get('predicted_next_score', '暂无')}。\n"
         f"{persistent_text}\n"
@@ -6011,7 +6898,7 @@ async def _call_llm(messages: list) -> str:
         "temperature": 0.3,
         "max_tokens": 600,
     }
-    # V11.5：LLM 请求也尊重 TLS_VERIFY 设置
+    # V11.6：LLM 请求也尊重 TLS_VERIFY 设置
     _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
     async with httpx.AsyncClient(timeout=settings.llm_timeout, verify=not _tls_off) as client:
         resp = await client.post(url, headers=headers, json=payload)
@@ -6024,7 +6911,7 @@ async def _call_llm(messages: list) -> str:
 @app.post("/api/ai/chat")
 async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V11.4 进化端点：AI 顾问对话（带会话记忆）
+    V11.6 进化端点：AI 顾问对话（带会话记忆）
     - 记住用户上次问了什么、修复进度
     - 基于用户历史给出个性化建议
     """
@@ -6102,7 +6989,7 @@ async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> 
             )
         elif any(k in user_msg for k in ["你好", "hi", "hello", "你是"]):
             response_text = (
-                f"👋 你好 {user['username']}！我是漏洞哨兵 V11.4 智能顾问。\n\n"
+                f"👋 你好 {user['username']}！我是漏洞哨兵 V11.6 智能顾问。\n\n"
                 f"📊 你已扫描 {insights['total_scans']} 次\n"
                 f"🔄 {len(persistent)} 个反复问题\n"
                 f"📈 预测评分: {insights.get('predicted_next_score', 'N/A')}\n\n"
@@ -6142,7 +7029,7 @@ async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> 
 
 
 # ============================================================
-# V11.4 进化模块 4：协作 — 团队、角色、评论
+# V11.6 进化模块 4：协作 — 团队、角色、评论
 # ============================================================
 def _init_team_tables():
     conn = get_db()
@@ -6179,12 +7066,12 @@ def _init_team_tables():
 try:
     _init_team_tables()
 except Exception as e:
-    print(f"[V11.4] team tables init warning: {e}")
+    print(f"[V11.6] team tables init warning: {e}")
 
 
 @app.post("/api/teams")
 async def api_create_team(request: Request, user: dict = Depends(require_login)) -> dict:
-    """V11.4 进化端点：创建团队"""
+    """V11.6 进化端点：创建团队"""
     try:
         body = await request.json()
     except Exception:
@@ -6212,7 +7099,7 @@ async def api_create_team(request: Request, user: dict = Depends(require_login))
 
 @app.post("/api/scans/{scan_id}/comment")
 async def api_add_comment(scan_id: int, request: Request, user: dict = Depends(require_login)) -> dict:
-    """V11.4 进化端点：给扫描报告添加评论（团队协作）"""
+    """V11.6 进化端点：给扫描报告添加评论（团队协作）"""
     try:
         body = await request.json()
     except Exception:
@@ -6235,7 +7122,7 @@ async def api_add_comment(scan_id: int, request: Request, user: dict = Depends(r
 
 @app.get("/api/scans/{scan_id}/comments")
 async def api_list_comments(scan_id: int, user: dict = Depends(require_login)) -> dict:
-    """V11.4 进化端点：列出扫描报告的所有评论"""
+    """V11.6 进化端点：列出扫描报告的所有评论"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -6254,11 +7141,11 @@ async def api_list_comments(scan_id: int, user: dict = Depends(require_login)) -
 
 
 # ============================================================
-# V11.4 进化模块 5：综合仪表盘
+# V11.6 进化模块 5：综合仪表盘
 # ============================================================
 @app.get("/api/evolution/dashboard")
 async def api_evolution_dashboard(user: dict = Depends(require_login)) -> dict:
-    """V11.4 进化端点：综合仪表盘（学习+监控+协作+AI 一次全看）"""
+    """V11.6 进化端点：综合仪表盘（学习+监控+协作+AI 一次全看）"""
     insights = _learn_from_user_history(user["user_id"])
     conn = get_db()
     try:
@@ -6298,7 +7185,7 @@ async def api_evolution_dashboard(user: dict = Depends(require_login)) -> dict:
 
 
 # ============================================================
-# V11.4 进化模块 5：自动巡检 — 定时回扫所有监控项
+# V11.6 进化模块 5：自动巡检 — 定时回扫所有监控项
 # ============================================================
 
 def _patrol_all_monitors_sync():
@@ -6312,8 +7199,8 @@ def _patrol_all_monitors_sync():
         # 确保表存在
         try:
             _init_monitoring_tables()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Init monitoring tables failed during patrol: %s", e)
 
         conn = get_db()
         try:
@@ -6365,7 +7252,12 @@ async def _patrol_one_monitor(monitor: dict):
         host = parsed.hostname or ""
         if not host:
             return
-        headers, is_https, final_url, error = await fetch_headers(url)
+        try:
+            headers, is_https, final_url, error = await asyncio.wait_for(
+                fetch_headers(url), timeout=25.0
+            )
+        except asyncio.TimeoutError:
+            error = "TIMEOUT"
         if error:
             # 站点不可达 = 告警
             _write_patrol_alert(user_id, monitor_id, url, "site_down", f"巡检发现 {host} 不可达: {error[:100]}")
@@ -6417,7 +7309,7 @@ def _write_patrol_alert(user_id: int, monitor_id: int, url: str, alert_type: str
 
 
 # ============================================================
-# V11.4 AI 顾问增强：LLM 配置端点
+# V11.6 AI 顾问增强：LLM 配置端点
 # ============================================================
 
 @app.get("/api/ai/status")
@@ -6457,17 +7349,42 @@ async def api_ai_test(request: Request, user: dict = Depends(require_login)) -> 
 async def api_fix(req: ScanRequest, request: Request, user: dict = Depends(require_login)) -> dict:
     """生成修复建议。"""
     await rate_limit_dependency(request)
-    url = req.url
+    try:
+        url = sanitize_url(req.url)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     parsed = urlparse(url)
     host = parsed.hostname or ""
-    headers, is_https, final_url, error = await fetch_headers(url)
+    try:
+        headers, is_https, final_url, error = await asyncio.wait_for(
+            fetch_headers(url), timeout=25.0
+        )
+    except asyncio.TimeoutError:
+        error = "TIMEOUT"
     if error:
         return {"success": False, "error": error}
     waf_list = detect_waf(headers)
     # 并行执行：敏感路径探测 + SSL 信息获取（节省 30-50% 时间）
     sensitive_task = asyncio.create_task(check_sensitive_paths(host, is_https))
     ssl_task = asyncio.create_task(get_ssl_info(host, 443) if is_https else asyncio.sleep(0, result={"has_cert": False}))
-    sensitive_paths, ssl_info_raw = await asyncio.gather(sensitive_task, ssl_task)
+    try:
+        sensitive_paths, ssl_info_raw = await asyncio.wait_for(
+            asyncio.gather(sensitive_task, ssl_task, return_exceptions=True),
+            timeout=15.0,
+        )
+        if isinstance(sensitive_paths, Exception):
+            logger.warning("api_fix sensitive_paths failed: %s", sensitive_paths)
+            sensitive_paths = []
+        if isinstance(ssl_info_raw, Exception):
+            logger.warning("api_fix ssl_info failed: %s", ssl_info_raw)
+            ssl_info_raw = {"has_cert": False}
+    except asyncio.TimeoutError:
+        sensitive_paths = []
+        ssl_info_raw = {"has_cert": False}
+    except Exception as e:
+        logger.warning("api_fix gather failed: %s", e)
+        sensitive_paths = []
+        ssl_info_raw = {"has_cert": False}
     ssl_info = ssl_info_raw if is_https else {"has_cert": False}
     result = analyze_security(
         url, headers, is_https, ssl_info, waf_list, sensitive_paths,
@@ -6492,7 +7409,10 @@ async def api_retest(scan_id: int, user: dict = Depends(require_login)) -> dict:
     previous = get_scan_by_id(scan_id, user["user_id"])
     if not previous:
         raise HTTPException(404, "扫描记录不存在或无权限")
-    url = previous["url"]
+    try:
+        url = sanitize_url(previous["url"])
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     parsed = urlparse(url)
     host = parsed.hostname or ""
     try:
@@ -6502,8 +7422,16 @@ async def api_retest(scan_id: int, user: dict = Depends(require_login)) -> dict:
     if error and not headers:
         return {"success": False, "error": error or "无法获取响应头"}
     waf_list = detect_waf(headers)
-    ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
-    sensitive_paths = await check_sensitive_paths(host, is_https)
+    try:
+        ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
+    except Exception as e:
+        logger.warning("api_retest get_ssl_info failed: %s", e)
+        ssl_info = {"has_cert": False}
+    try:
+        sensitive_paths = await check_sensitive_paths(host, is_https)
+    except Exception as e:
+        logger.warning("api_retest check_sensitive_paths failed: %s", e)
+        sensitive_paths = []
     result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
     new_scan_id = save_scan(
         user["user_id"], url, result["score"], result["risk_level"],
@@ -6531,11 +7459,13 @@ async def api_compare(scan_id: int, user: dict = Depends(require_login)) -> dict
         raise HTTPException(404, "扫描记录不存在或无权限")
     url = current["url"]
     conn = get_db()
-    row = conn.execute(
-        "SELECT * FROM scans WHERE user_id=? AND url=? AND id<? ORDER BY id DESC LIMIT 1",
-        (user["user_id"], url, scan_id),
-    ).fetchone()
-    conn.close()
+    try:
+        row = conn.execute(
+            "SELECT * FROM scans WHERE user_id=? AND url=? AND id<? ORDER BY id DESC LIMIT 1",
+            (user["user_id"], url, scan_id),
+        ).fetchone()
+    finally:
+        conn.close()
     if not row:
         raise HTTPException(404, "未找到该 URL 的上一次扫描记录，无法对比")
     previous = dict(row)
@@ -6569,12 +7499,17 @@ async def api_compare(scan_id: int, user: dict = Depends(require_login)) -> dict
 
 
 @app.get("/api/report/{scan_id}")
-async def api_report(scan_id: int, user: dict = Depends(require_login)) -> StreamingResponse:
+async def api_report(scan_id: int, format: str = "pdf", user: dict = Depends(require_login)):
+    """生成安全报告，支持 PDF 和 HTML 格式
+    format: pdf | html
+    """
     scan = get_scan_by_id(scan_id, user["user_id"])
     if not scan:
         raise HTTPException(404, "扫描记录不存在")
     findings = json.loads(scan["findings_json"]) if scan.get("findings_json") else []
-    # V11.4 修复：OWASP Top 10 完整覆盖（不是只有 finding 的分类）
+    score_breakdown = json.loads(scan["score_breakdown_json"]) if scan.get("score_breakdown_json") else []
+    fixes = json.loads(scan["fixes_json"]) if scan.get("fixes_json") else {}
+    # V11.6 修复：OWASP Top 10 完整覆盖（不是只有 finding 的分类）
     owasp_all = [
         {"category": "A01 访问控制失效", "status": "通过", "note": "未检测到问题"},
         {"category": "A02 加密机制失效", "status": "通过", "note": "已启用 HTTPS"},
@@ -6600,12 +7535,21 @@ async def api_report(scan_id: int, user: dict = Depends(require_login)) -> Strea
         "url": scan["url"], "time": scan["created_at"],
         "score": scan["score"], "risk_level": scan["risk_level"],
         "findings": findings, "owasp_coverage": owasp_all,
+        "score_breakdown": score_breakdown, "fixes": fixes,
         "header_details": [], "info_leaks": [], "cors": None,
         "cookie_issues": [], "ssl_info": {}, "waf": [], "sensitive_paths": [],
     }
-    pdf_bytes = generate_pdf_report(report_data)
-    headers = {"Content-Disposition": "attachment; filename=scan-report-" + str(scan_id) + ".pdf"}
-    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)
+
+    if format.lower() == "html":
+        # HTML 格式报告
+        html_content = generate_html_report(report_data)
+        headers = {"Content-Disposition": f"inline; filename=scan-report-{scan_id}.html"}
+        return Response(content=html_content, media_type="text/html; charset=utf-8", headers=headers)
+    else:
+        # PDF 格式（默认）
+        pdf_bytes = generate_pdf_report(report_data)
+        headers = {"Content-Disposition": f"attachment; filename=scan-report-{scan_id}.pdf"}
+        return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)
 
 
 @app.get("/api/share/{share_id}")
@@ -6678,25 +7622,29 @@ async def api_delete_target(target_id: int, user: Optional[dict] = Depends(get_c
     if not user:
         raise HTTPException(401, "未登录")
     conn = get_db()
-    conn.execute("DELETE FROM targets WHERE id=? AND user_id=?", (target_id, user["user_id"]))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("DELETE FROM targets WHERE id=? AND user_id=?", (target_id, user["user_id"]))
+        conn.commit()
+    finally:
+        conn.close()
     return {"success": True}
 
 
 @app.get("/api/dashboard")
 async def api_dashboard(user=Depends(require_login)):
     conn = get_db()
-    user_id = user["user_id"]
-    total = conn.execute("SELECT COUNT(*) FROM scans WHERE user_id=?", (user_id,)).fetchone()[0]
-    high_count = conn.execute("SELECT COUNT(*) FROM scans WHERE user_id=? AND risk_level='高风险'", (user_id,)).fetchone()[0]
-    # fixed: 通过 verify-fix 标记的修复记录数
     try:
-        fixed = conn.execute("SELECT COUNT(*) FROM fix_records WHERE user_id=? AND status='verified'", (user_id,)).fetchone()[0]
-    except Exception:
-        fixed = 0
-    recent = conn.execute("SELECT id, url, score, risk_level, created_at as time FROM scans WHERE user_id=? ORDER BY id DESC LIMIT 5", (user_id,)).fetchall()
-    conn.close()
+        user_id = user["user_id"]
+        total = conn.execute("SELECT COUNT(*) FROM scans WHERE user_id=?", (user_id,)).fetchone()[0]
+        high_count = conn.execute("SELECT COUNT(*) FROM scans WHERE user_id=? AND risk_level='高风险'", (user_id,)).fetchone()[0]
+        # fixed: 通过 verify-fix 标记的修复记录数
+        try:
+            fixed = conn.execute("SELECT COUNT(*) FROM fix_records WHERE user_id=? AND status='verified'", (user_id,)).fetchone()[0]
+        except Exception:
+            fixed = 0
+        recent = conn.execute("SELECT id, url, score, risk_level, created_at as time FROM scans WHERE user_id=? ORDER BY id DESC LIMIT 5", (user_id,)).fetchall()
+    finally:
+        conn.close()
     return {
         "total_scans": total,
         "high_risk_count": high_count,
@@ -6734,6 +7682,8 @@ _PUBLIC_DEMO_HOSTS = {
 # 登录用户扫描结果缓存：30 秒内同一 URL 直接返回（防重复点击 + 节省后端开销）
 _SCAN_RESULT_CACHE: Dict[str, Tuple[dict, float]] = {}
 _SCAN_CACHE_TTL = 30  # 秒
+_SCAN_CACHE_MAX_SIZE = 200  # 最大缓存条数硬上限
+_scan_cache_lock = asyncio.Lock()  # 缓存并发读写锁，防止竞态条件
 
 
 # 公开演示兜底缓存：网络异常时返回预置数据，确保演示 100% 可用
@@ -7785,8 +8735,8 @@ async def api_scan_progress(scan_token: str, user: dict = Depends(require_login)
             stale = [k for k, v in _scan_progress.items() if v.get("updated_at", 0) < cutoff]
             for k in stale:
                 _scan_progress.pop(k, None)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Scan progress stale cleanup failed: %s", e)
 
     async with _scan_progress_lock:
         data = _scan_progress.get(scan_token)
@@ -7831,22 +8781,26 @@ async def public_demo_scan(req: PublicDemoRequest, request: Request):
             if cached:
                 return {**cached, "url": raw_url, "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "cache_reason": "实时扫描失败", "note": "当前是缓存演示数据，不代表实时状态。"}
             return {"success": False, "url": raw_url, "error": error}
-        ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
+        try:
+            ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
+        except Exception as e:
+            logger.warning("public_demo get_ssl_info failed: %s", e)
+            ssl_info = {"has_cert": False}
         waf_list = detect_waf(headers)
-        sensitive_paths = await check_sensitive_paths(host, is_https)
+        try:
+            sensitive_paths = await check_sensitive_paths(host, is_https)
+        except Exception as e:
+            logger.warning("public_demo check_sensitive_paths failed: %s", e)
+            sensitive_paths = []
         result = analyze_security(raw_url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
-        # V11.4：生成修复建议（与登录用户一致）
+        # V11.6：生成修复建议（与登录用户一致）
         fixes = generate_fixes(result.get("findings", []), headers, is_https, host)
-        # V11.4：如果用户已登录，把这次 demo 扫描也保存为他的扫描记录
+        # V11.6：如果用户已登录，把这次 demo 扫描也保存为他的扫描记录
         # 这样可以让他用 scan_id 触发自动修复
         try:
             token = request.headers.get("Authorization", "").replace("Bearer ", "")
             if token:
-                import jwt as _jwt
-                try:
-                    payload = _jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
-                except Exception:
-                    payload = None
+                payload = verify_token(token)
                 if payload:
                     user_id = payload.get("user_id") or payload.get("uid")
                     if user_id:
@@ -7870,10 +8824,10 @@ async def public_demo_scan(req: PublicDemoRequest, request: Request):
             import logging
             logging.getLogger("vuln_sentinel").warning("demo scan save wrapper: " + str(e)[:100])
 
-        # V11.5：确保 scan_id 始终存在（未登录用户用负 ID 表示 demo 模式）
+        # V11.6：确保 scan_id 始终存在（未登录用户用负 ID 表示 demo 模式）
         if "scan_id" not in result:
             result["scan_id"] = -abs(hash(raw_url + str(datetime.now().timestamp()))) % 1000000
-        # V11.5：标记是否使用了 TLS 验证跳过模式
+        # V11.6：标记是否使用了 TLS 验证跳过模式
         _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
         result["tls_verify_skipped"] = _tls_off
         return {
@@ -7911,17 +8865,17 @@ _AI_KB = [
     {"keys": ["permissions-policy", "权限策略", "摄像头", "麦克风", "geolocation"],
      "reply": "**Permissions-Policy** 关闭页面不需要的危险 API。\n\n**推荐配置**：\n```\nadd_header Permissions-Policy \"camera=(), microphone=(), geolocation=(), payment=(), usb=()\" always;\n```"},
     {"keys": ["评分", "分数", "安全评分", "怎么算", "打分"],
-     "reply": "**V11.4 评分公式**：基础 100 分 − critical×25 − high×15 − medium×8 − low×3 + 修复配置加成 +12 + 已验证修复 +10\n\n**快速提分**：加 HSTS / CSP / X-Frame-Options / X-Content-Type-Options（4 个头 +12 分），拦截敏感文件（+6 分），关 Server 版本（+4 分）。"},
+     "reply": "**V11.6 评分公式**：基础 100 分 − critical×25 − high×15 − medium×8 − low×3 + 修复配置加成 +12 + 已验证修复 +10\n\n**快速提分**：加 HSTS / CSP / X-Frame-Options / X-Content-Type-Options（4 个头 +12 分），拦截敏感文件（+6 分），关 Server 版本（+4 分）。"},
     {"keys": ["owasp", "top10", "top 10"],
      "reply": "**OWASP Top 10（2021）**：A01 访问控制失效 / A02 加密机制失效 / A03 注入攻击 / A04 不安全设计 / A05 安全配置错误 / A06 过时组件 / A07 认证失败 / A08 软件完整性 / A09 日志监控不足 / A10 服务端请求伪造。"},
     {"keys": ["你好", "hi", "hello", "在吗", "你是"],
-     "reply": "你好！我是漏洞哨兵 V11.4 的安全顾问 🛡\n\n试试问我：HSTS 是什么、如何修复 CSP、怎么提分。"},
+     "reply": "你好！我是漏洞哨兵 V11.6 的安全顾问 🛡\n\n试试问我：HSTS 是什么、如何修复 CSP、怎么提分。"},
     {"keys": ["怎么用", "怎么开始", "上手", "使用"],
-     "reply": "**30 秒上手流程（V11.4）**：\n1. 用测试账号一键登录（`demo / demo123`）\n2. 打开后看「真实演示报告」（已自动跑 example.com）\n3. 点「一键应用修复」看修复前后对比\n4. 注册后扫描你自己的目标\n5. 用「验证修复效果」看真实评分提升"},
+     "reply": "**30 秒上手流程（V11.6）**：\n1. 用测试账号一键登录（`demo / demo123`）\n2. 打开后看「真实演示报告」（已自动跑 example.com）\n3. 点「一键应用修复」看修复前后对比\n4. 注册后扫描你自己的目标\n5. 用「验证修复效果」看真实评分提升"},
     {"keys": ["批量", "多个", "一次扫", "多 url"],
      "reply": "新上线的**批量扫描**：在扫描页点「📦 批量扫描」按钮，一次最多 5 个 URL，V11 用并发执行。"},
     {"keys": ["v11", "v 11", "更新", "新版本", "11", "升级"],
-     "reply": "**V11.4 主要改进**：\n1. 严重度字段统一为 severity（high/medium/low），不再混用 level\n2. 修复闭环真正打通：verify-fix 输出 fixed/new_issues/delta\n3. 批量扫描并发化（asyncio.gather）\n4. /api/history 新增 DELETE 真清空\n5. /api/version 返回构建信息\n6. 已修复数量从后端真实统计（前 30% 假数据已删除）\n7. JWT secret 默认 48 字节随机生成（不再用 dev 弱密钥）\n8. AI 顾问兜底按真实 severity 取前 3"},
+     "reply": "**V11.6 主要改进**：\n1. 严重度字段统一为 severity（high/medium/low），不再混用 level\n2. 修复闭环真正打通：verify-fix 输出 fixed/new_issues/delta\n3. 批量扫描并发化（asyncio.gather）\n4. /api/history 新增 DELETE 真清空\n5. /api/version 返回构建信息\n6. 已修复数量从后端真实统计（前 30% 假数据已删除）\n7. JWT secret 默认 48 字节随机生成（不再用 dev 弱密钥）\n8. AI 顾问兜底按真实 severity 取前 3"},
 ]
 
 
@@ -7959,8 +8913,8 @@ async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_c
                         "score": row["score"],
                         "risk_level": row["risk_level"],
                     }
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to parse scan row for AI context: %s", e)
         finally:
             conn.close()
 
@@ -8170,7 +9124,12 @@ async def batch_scan(req: BatchScanRequest, request: Request, user=Depends(requi
             return {"url": url, "ok": False, "error": str(e)[:200]}
 
     async def _scan_one_impl(url, host, deep, user_id):
-        headers, is_https, final_url, error = await fetch_headers(url)
+        try:
+            headers, is_https, final_url, error = await asyncio.wait_for(
+                fetch_headers(url), timeout=20.0
+            )
+        except asyncio.TimeoutError:
+            error = "TIMEOUT"
         if error:
             return {"url": url, "ok": False, "error": error}
         ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
@@ -8196,8 +9155,8 @@ async def batch_scan(req: BatchScanRequest, request: Request, user=Depends(requi
         # 批量扫描也同步资产扫描信息
         try:
             update_asset_after_scan(user_id, host, scan_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Batch scan update asset failed: %s", e)
         s = result.get("summary", {})
         return {
             "url": url, "ok": True, "score": result["score"],
@@ -8207,8 +9166,19 @@ async def batch_scan(req: BatchScanRequest, request: Request, user=Depends(requi
             "scan_id": scan_id, "findings_count": len(result["findings"]),
         }
 
-    # 并发跑（asyncio.gather），单个 URL 各自 25s 超时
-    results = await asyncio.gather(*[scan_one(u) for u in urls])
+    # 并发跑（asyncio.gather + return_exceptions=True），单个 URL 各自 25s 超时
+    # 单个 URL 失败不影响其他 URL 结果
+    raw_results = await asyncio.gather(
+        *[scan_one(u) for u in urls],
+        return_exceptions=True,
+    )
+    results = []
+    for i, r in enumerate(raw_results):
+        if isinstance(r, Exception):
+            logger.warning("batch scan task %d failed: %s", i, r)
+            results.append({"url": urls[i] if i < len(urls) else "", "ok": False, "error": f"内部错误: {type(r).__name__}"})
+        else:
+            results.append(r)
     return {"success": True, "results": results, "count": len(results)}
 
 
@@ -8251,14 +9221,32 @@ async def api_scan_asset(asset_id: int, request: Request, user: dict = Depends(r
         raise HTTPException(404, "资产不存在或无权限")
     domain = asset["domain"]
     url = "https://" + domain
+    # V11.6 fix: SSRF 防护 - 确保资产域名不是内网地址
+    try:
+        sanitize_url(url)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
     parsed = urlparse(url)
     host = parsed.hostname or domain
-    headers, is_https, final_url, error = await fetch_headers(url)
+    try:
+        headers, is_https, final_url, error = await asyncio.wait_for(
+            fetch_headers(url), timeout=25.0
+        )
+    except asyncio.TimeoutError:
+        error = "TIMEOUT"
     if error:
         return {"success": False, "error": error}
-    ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
+    try:
+        ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
+    except Exception as e:
+        logger.warning("api_scan_asset get_ssl_info failed: %s", e)
+        ssl_info = {"has_cert": False}
     waf_list = detect_waf(headers)
-    sensitive_paths = await check_sensitive_paths(host, is_https)
+    try:
+        sensitive_paths = await check_sensitive_paths(host, is_https)
+    except Exception as e:
+        logger.warning("api_scan_asset check_sensitive_paths failed: %s", e)
+        sensitive_paths = []
     result = analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
     scan_id = save_scan(
         user["user_id"], url, result["score"], result["risk_level"],
@@ -8266,12 +9254,12 @@ async def api_scan_asset(asset_id: int, request: Request, user: dict = Depends(r
     )
     try:
         auto_create_fix_tickets(user["user_id"], scan_id, result["findings"])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Quick scan auto create fix tickets failed: %s", e)
     try:
         update_asset_after_scan(user["user_id"], host, scan_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Quick scan update asset failed: %s", e)
     return {"success": True, "scan_id": scan_id, "score": result["score"], "risk_level": result["risk_level"]}
 
 
@@ -8281,7 +9269,389 @@ async def index() -> HTMLResponse:
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
-    return HTMLResponse(content="<h1>VulnSentinel V11.4</h1>")
+    return HTMLResponse(content="<h1>VulnSentinel V11.6</h1>")
+
+
+# ============================================================
+# V11.6 本地演示靶场：一键修复 / 一键重置（真实修改本地 nginx）
+# ============================================================
+
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DEMO_NGINX_CONF = os.path.join(_BASE_DIR, "demo-target/conf/nginx.conf")
+DEMO_NGINX_BACKUP = os.path.join(_BASE_DIR, "demo-target/conf/nginx.conf.vulnerable")
+DEMO_NGINX_CMD = "nginx -c " + DEMO_NGINX_CONF
+# 演示靶场 nginx 配置文件读写锁，防止并发写入损坏
+_demo_nginx_lock = threading.RLock()
+
+
+def _demo_nginx_reload() -> tuple[bool, str]:
+    """重新加载本地演示靶场 nginx 配置"""
+    with _demo_nginx_lock:
+        try:
+            # 测试配置
+            result = subprocess.run(
+                ["nginx", "-c", DEMO_NGINX_CONF, "-t"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0:
+                return False, f"配置测试失败: {result.stderr[:500]}"
+            # 重载（如果正在运行）或启动
+            result = subprocess.run(
+                ["nginx", "-c", DEMO_NGINX_CONF, "-s", "reload"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0:
+                # 如果 reload 失败，尝试启动
+                result = subprocess.run(
+                    ["nginx", "-c", DEMO_NGINX_CONF],
+                    capture_output=True, text=True, timeout=10
+                )
+                if result.returncode != 0:
+                    return False, f"启动失败: {result.stderr[:500]}"
+            return True, "配置已生效"
+        except Exception as e:
+            return False, str(e)
+
+
+def _demo_nginx_apply_security_headers() -> tuple[bool, str]:
+    """为本地演示靶场应用安全头修复（真实修改 nginx.conf）"""
+    import re
+    with _demo_nginx_lock:
+        try:
+            if not os.path.exists(DEMO_NGINX_CONF):
+                return False, "演示靶场配置文件不存在"
+
+            # 备份原始漏洞配置（只备份一次）
+            if not os.path.exists(DEMO_NGINX_BACKUP):
+                import shutil
+                shutil.copy2(DEMO_NGINX_CONF, DEMO_NGINX_BACKUP)
+
+            with open(DEMO_NGINX_CONF, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # 如果已经有安全头了，直接返回
+            if "X-Frame-Options" in content and "VulnSentinel" in content:
+                return True, "安全头已经应用过了"
+
+            # 安全头修复块（使用正确的缩进）
+            security_headers_block = """
+            # ===== VulnSentinel V11.6 自动修复：安全响应头 =====
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Content-Security-Policy "default-src 'self'" always;
+            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+            add_header Permissions-Policy "camera=(), microphone=()" always;
+            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+            # ===== 自动修复结束 =====
+    """
+
+            # 找到第一个 server 块（8080端口），在根 location / 之前插入安全头
+            # 策略：找到 "listen 8080" 后面的 "location / {" （精确匹配根location）之前插入
+            lines = content.split("\n")
+            new_lines = []
+            in_target_server = False
+            inserted = False
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                new_lines.append(line)
+
+                # 检测是否进入了目标 server 块
+                if "listen 8080" in line:
+                    in_target_server = True
+
+                # 在目标 server 块中，找到根 location / { 之前插入
+                # 注意：要排除 /admin/ 等子路径，只匹配精确的 "location / {"
+                stripped = line.strip()
+                if in_target_server and not inserted and stripped.startswith("location /") and "{" in stripped:
+                    # 检查是不是根 location（后面没有其他路径）
+                    # 匹配模式: location / { 或 location /{
+                    import re
+                    if re.match(r'^location\s+/\s*\{', stripped):
+                        # 插入安全头（使用与location相同的缩进）
+                        indent = line[:len(line) - len(line.lstrip())]
+                        for h_line in security_headers_block.strip().split("\n"):
+                            new_lines.append(indent + h_line)
+                        inserted = True
+
+                i += 1
+
+            # 处理第二个 server 块（8443端口）
+            content = "\n".join(new_lines)
+            lines = content.split("\n")
+            new_lines = []
+            in_https_server = False
+            inserted_https = False
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                new_lines.append(line)
+
+                if "listen 8443" in line and "ssl" in line:
+                    in_https_server = True
+
+                stripped = line.strip()
+                if in_https_server and not inserted_https and stripped.startswith("location /") and "{" in stripped:
+                    import re
+                    if re.match(r'^location\s+/\s*\{', stripped):
+                        indent = line[:len(line) - len(line.lstrip())]
+                        for h_line in security_headers_block.strip().split("\n"):
+                            new_lines.append(indent + h_line)
+                        inserted_https = True
+
+                i += 1
+
+            content = "\n".join(new_lines)
+
+            # 修复 server_tokens
+            content = re.sub(r'server_tokens\s+on;', 'server_tokens off;', content)
+
+            # 修复 autoindex
+            content = re.sub(r'autoindex\s+on;', 'autoindex off;', content)
+
+            # 修复 CORS 过于宽松
+            content = re.sub(
+                r'add_header\s+Access-Control-Allow-Origin\s+"\*"\s+always;',
+                'add_header Access-Control-Allow-Origin "https://localhost:8000" always;',
+                content
+            )
+
+            # 修复 SSL 弱配置
+            content = re.sub(
+                r'ssl_protocols\s+SSLv3\s+TLSv1\s+TLSv1\.1\s+TLSv1\.2;',
+                'ssl_protocols TLSv1.2 TLSv1.3;',
+                content
+            )
+            content = re.sub(
+                r'ssl_ciphers\s+"ALL:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA";',
+                'ssl_ciphers "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384";',
+                content
+            )
+            content = re.sub(
+                r'ssl_prefer_server_ciphers\s+off;',
+                'ssl_prefer_server_ciphers on;',
+                content
+            )
+
+            with open(DEMO_NGINX_CONF, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            # 重载 nginx
+            ok, msg = _demo_nginx_reload()
+            if not ok:
+                return False, f"配置写入成功但重载失败: {msg}"
+
+            return True, "安全头已应用，nginx 已重载"
+        except Exception as e:
+            return False, f"应用修复失败: {str(e)}"
+
+
+def _demo_nginx_reset() -> tuple[bool, str]:
+    """重置本地演示靶场为有漏洞状态"""
+    with _demo_nginx_lock:
+        try:
+            if not os.path.exists(DEMO_NGINX_BACKUP):
+                return False, "没有备份文件，无法重置（请先应用一次修复）"
+
+            import shutil
+            shutil.copy2(DEMO_NGINX_BACKUP, DEMO_NGINX_CONF)
+
+            ok, msg = _demo_nginx_reload()
+            if not ok:
+                return False, f"配置恢复成功但重载失败: {msg}"
+
+            return True, "演示靶场已重置为初始漏洞状态"
+        except Exception as e:
+            return False, f"重置失败: {str(e)}"
+
+
+class DemoFixRequest(BaseModel):
+    action: str  # "apply" 或 "reset"
+    target: str = "localhost:8080"
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, v: str) -> str:
+        if v not in ("apply", "reset"):
+            raise ValueError("action 只能是 apply 或 reset")
+        return v
+
+    @field_validator("target")
+    @classmethod
+    def validate_target(cls, v: str) -> str:
+        if len(v) > 100:
+            raise ValueError("target 过长")
+        return v.strip()
+
+
+@app.post("/api/demo-fix")
+async def api_demo_fix(req: DemoFixRequest, request: Request, user: dict = Depends(require_login)) -> dict:
+    """
+    V11.6 演示专用：一键修复/重置本地靶场
+    需要登录，仅用于演示环境
+    action: "apply" - 应用安全头修复
+            "reset" - 重置为有漏洞状态
+    """
+    await rate_limit_dependency(request)
+
+    # 安全检查：只允许操作本地靶场
+    if req.target not in ("localhost:8080", "localhost:8443", "127.0.0.1:8080"):
+        return {"success": False, "error": "仅支持本地演示靶场"}
+
+    if req.action == "apply":
+        ok, msg = _demo_nginx_apply_security_headers()
+        return {
+            "success": ok,
+            "action": "apply",
+            "message": msg,
+            "target": req.target,
+        }
+    elif req.action == "reset":
+        ok, msg = _demo_nginx_reset()
+        return {
+            "success": ok,
+            "action": "reset",
+            "message": msg,
+            "target": req.target,
+        }
+    else:
+        return {"success": False, "error": f"未知 action: {req.action}"}
+
+
+class DemoFullCycleRequest(BaseModel):
+    target: str = "localhost:8080"
+    reset_first: bool = True  # 是否先重置为有漏洞状态
+
+
+@app.post("/api/demo-full-cycle")
+async def api_demo_full_cycle(req: DemoFullCycleRequest, request: Request, user: dict = Depends(require_login)) -> dict:
+    """
+    V11.6 一键演示完整闭环：重置 → 第一次扫描 → 应用修复 → 第二次扫描
+    返回完整的前后对比数据，用于前端展示演示效果
+    """
+    await rate_limit_dependency(request)
+
+    target_url = f"http://{req.target}"
+
+    try:
+        # 第0步：可选重置
+        if req.reset_first:
+            ok, msg = _demo_nginx_reset()
+            if not ok:
+                return {"success": False, "error": f"重置失败: {msg}", "step": "reset"}
+            await asyncio.sleep(0.5)  # 等待 nginx reload
+
+        # 第1步：修复前扫描
+        parsed = urlparse(target_url)
+        host = parsed.hostname or ""
+        headers1, is_https1, final_url1, error1 = await fetch_headers(target_url)
+        if error1 and not headers1:
+            return {"success": False, "error": f"初次扫描失败: {error1}", "step": "scan1"}
+        ssl_info1 = await get_ssl_info(host, 443) if is_https1 else {"has_cert": False}
+        waf_list1 = detect_waf(headers1)
+        sensitive_paths1 = await check_sensitive_paths(host, is_https1)
+        result1 = analyze_security(target_url, headers1, is_https1, ssl_info1, waf_list1, sensitive_paths1, [])
+        scan_id1 = save_scan(
+            user["user_id"], target_url, result1["score"], result1["risk_level"],
+            result1["findings"], result1["summary"], 0, "demo_before",
+        )
+
+        # 第2步：应用修复
+        ok, msg = _demo_nginx_apply_security_headers()
+        if not ok:
+            return {"success": False, "error": f"应用修复失败: {msg}", "step": "apply_fix"}
+        await asyncio.sleep(1)  # 等待 nginx reload 生效
+
+        # 第3步：修复后扫描
+        headers2, is_https2, final_url2, error2 = await fetch_headers(target_url)
+        if error2 and not headers2:
+            return {"success": False, "error": f"复测失败: {error2}", "step": "scan2"}
+        ssl_info2 = await get_ssl_info(host, 443) if is_https2 else {"has_cert": False}
+        waf_list2 = detect_waf(headers2)
+        sensitive_paths2 = await check_sensitive_paths(host, is_https2)
+        result2 = analyze_security(target_url, headers2, is_https2, ssl_info2, waf_list2, sensitive_paths2, [])
+        scan_id2 = save_scan(
+            user["user_id"], target_url, result2["score"], result2["risk_level"],
+            result2["findings"], result2["summary"], 0, "demo_after",
+        )
+
+        # 计算 diff
+        names1 = {f.get("name", "") for f in result1["findings"]}
+        names2 = {f.get("name", "") for f in result2["findings"]}
+        fixed = sorted(list(names1 - names2))
+        new_issues = sorted(list(names2 - names1))
+        delta = result2["score"] - result1["score"]
+
+        return {
+            "success": True,
+            "target": target_url,
+            "before": {
+                "scan_id": scan_id1,
+                "score": result1["score"],
+                "risk_level": result1["risk_level"],
+                "findings": result1["findings"],
+                "summary": result1["summary"],
+            },
+            "after": {
+                "scan_id": scan_id2,
+                "score": result2["score"],
+                "risk_level": result2["risk_level"],
+                "findings": result2["findings"],
+                "summary": result2["summary"],
+            },
+            "diff": {
+                "fixed": fixed,
+                "new_issues": new_issues,
+                "score_delta": delta,
+                "findings_fixed": len(fixed),
+            },
+            "steps": ["reset" if req.reset_first else None, "scan_before", "apply_fix", "scan_after"],
+        }
+    except Exception as e:
+        logger.exception("demo full cycle failed")
+        return {"success": False, "error": str(e)[:300]}
+
+
+@app.get("/api/demo-status")
+async def api_demo_status(request: Request) -> dict:
+    """查询本地演示靶场状态"""
+    await rate_limit_dependency(request)
+    try:
+        # 检查 nginx 是否在运行
+        result = subprocess.run(
+            ["pgrep", "-f", DEMO_NGINX_CONF],
+            capture_output=True, text=True, timeout=10
+        )
+        running = result.returncode == 0
+
+        # 快速探测安全头状态
+        headers_status = {}
+        try:
+            resp = await fetch_headers("http://localhost:8080/")
+            hdrs, _, _, err = resp
+            if not err and hdrs:
+                headers_status = {
+                    "x_frame_options": bool(hdrs.get("X-Frame-Options")),
+                    "x_content_type_options": bool(hdrs.get("X-Content-Type-Options")),
+                    "content_security_policy": bool(hdrs.get("Content-Security-Policy")),
+                    "referrer_policy": bool(hdrs.get("Referrer-Policy")),
+                    "permissions_policy": bool(hdrs.get("Permissions-Policy")),
+                    "hsts": bool(hdrs.get("Strict-Transport-Security")),
+                    "server_tokens": "nginx/" in (hdrs.get("Server", "")),
+                    "cors_wildcard": hdrs.get("Access-Control-Allow-Origin") == "*",
+                }
+        except Exception as e:
+            logger.warning("Demo target status parse failed: %s", e)
+
+        return {
+            "success": True,
+            "running": running,
+            "config_path": DEMO_NGINX_CONF,
+            "backup_exists": os.path.exists(DEMO_NGINX_BACKUP),
+            "headers_status": headers_status,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/{path:path}")

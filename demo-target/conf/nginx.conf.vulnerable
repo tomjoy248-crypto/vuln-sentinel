@@ -1,0 +1,86 @@
+worker_processes 1;
+pid /workspace/v11.4/demo-target/logs/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    access_log  /workspace/v11.4/demo-target/logs/access.log;
+    error_log   /workspace/v11.4/demo-target/logs/error.log;
+
+    sendfile        on;
+    keepalive_timeout  65;
+
+    # VULN: 服务器版本信息泄露
+    server_tokens on;
+
+    server {
+        listen 8080;
+        server_name localhost;
+        root /workspace/v11.4/demo-target/html;
+        index index.html;
+
+        # VULN: 错误的 CORS 配置（允许所有来源 + 带凭证）
+        add_header Access-Control-Allow-Origin "*" always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "*" always;
+        add_header Access-Control-Allow-Credentials "true" always;
+
+        # VULN: 目录列表开启
+        autoindex on;
+
+        # VULN: 缺少所有安全响应头
+        # 故意不添加：HSTS / CSP / X-Frame-Options / X-Content-Type-Options /
+        #            Referrer-Policy / Permissions-Policy / Cache-Control /
+        #            X-DNS-Prefetch-Control
+
+        location /admin/ {
+            # VULN: 管理界面无认证 + 目录列表
+            autoindex on;
+        }
+
+        # VULN: 敏感文件可访问（模拟）
+        location ~ /\.env {
+            return 200 'DB_HOST=localhost\nDB_USER=root\nDB_PASSWORD=admin123\nSECRET_KEY=demo-secret-key-12345\nAPI_TOKEN=sk-demo-1234567890\n';
+            add_header Content-Type text/plain;
+        }
+
+        # VULN: 信息泄露 - phpinfo 占位
+        location ~ \.php$ {
+            return 404;
+        }
+
+        location / {
+            try_files $uri $uri/ =404;
+        }
+
+        # VULN: 错误页面泄露服务器信息（因 server_tokens on）
+        error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+            root /usr/share/nginx/html;
+        }
+    }
+
+    # HTTPS server - 弱配置演示
+    server {
+        listen 8443 ssl;
+        server_name localhost;
+        root /workspace/v11.4/demo-target/html;
+
+        # VULN: 自签名证书
+        ssl_certificate     /workspace/v11.4/demo-target/conf/server.crt;
+        ssl_certificate_key /workspace/v11.4/demo-target/conf/server.key;
+
+        # VULN: 缺少安全头
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_prefer_server_ciphers on;
+
+        location / {
+            try_files $uri $uri/ =404;
+        }
+    }
+}

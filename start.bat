@@ -21,7 +21,7 @@ if %errorlevel% neq 0 (
 )
 
 echo [1/3] Installing dependencies...
-python -m pip install --quiet fastapi uvicorn httpx pydantic pydantic-settings PyJWT reportlab apscheduler 2>nul
+python -m pip install --quiet -r requirements.txt 2>nul
 
 echo [2/3] Starting server...
 echo.

@@ -1,4 +1,4 @@
-# 漏洞哨兵 V11.4
+# 漏洞哨兵 V11.6
 
 [![Tests](https://img.shields.io/badge/tests-92%20passed-brightgreen)](tests/)
 [![Coverage](docs/coverage-badge.svg)](docs/coverage_html/)
@@ -119,8 +119,8 @@ python3 main.py
 ## Docker 部署
 
 ```bash
-docker build -t vulnsentinel:v11.4 .
-docker run -p 8000:8000 vulnsentinel:v11.4
+docker build -t vulnsentinel:v11.6 .
+docker run -p 8000:8000 vulnsentinel:v11.6
 ```
 
 或使用 docker-compose：
@@ -226,9 +226,9 @@ MIT License
 
 ## 版本
 
-v11.4 · 2026-06-25
+v11.6 · 2026-06-26
 
-**V11.4 主要更新**：
+**V11.6 主要更新**：
 - WAF 智能识别增强（7 大厂商）
 - WAF 站点智能评分（最高 100 分）
 - 暗色模式输入框适配

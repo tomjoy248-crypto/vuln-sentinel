@@ -1,4 +1,4 @@
-"""V11.5 优化点回归测试
+"""V11.6 优化点回归测试
 - 1) simulate_fix 不再定义局部 SEV_DEDUCT
 - 2) /api/ai/chat 走 limiter_ai(防被刷)
 - 3) apply-fix-and-rescan / retest 加 30s wait_for 超时
@@ -136,7 +136,7 @@ def test_requirements_has_cryptography():
 
 def test_changelog_exists_and_has_v115():
     txt = open(str(ROOT / "CHANGELOG.md")).read()
-    assert "V11.5" in txt
+    assert "V11.6" in txt
 
 
 def test_license_exists():
