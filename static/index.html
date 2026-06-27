@@ -5912,9 +5912,14 @@ async function doPublicDemoFix() {
 }
 
 function renderFixComparison(d) {
-  var c = document.getElementById('demo-content');
-  if (!c) return;
-  var html = '';
+  try {
+    var c = document.getElementById('demo-content');
+    if (!c) return;
+    if (!d || typeof d !== 'object') {
+      c.innerHTML = '<div class="card"><p style="color:var(--danger)">修复对比数据无效</p></div>';
+      return;
+    }
+    var html = '';
   // 头部：返回
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">';
   html += '<h3 style="margin:0;font-size:16px">🛠 修复效果预览</h3>';
@@ -5958,16 +5963,22 @@ function renderFixComparison(d) {
   if (isLoggedIn()) {
     html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 进入修复器获取完整补丁</button>';
     // V11.6 新增：自动修复按钮
-    html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + findings.length + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 自动修复（SSH/Cloudflare）</button>';
+    html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 自动修复（SSH/Cloudflare）</button>';
   } else {
     html += '<button onclick="navigateTo(\'profile\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🔑 登录后获取完整补丁代码</button>';
   }
   html += '</div>';
   c.innerHTML = html;
+  } catch (e) {
+    console.error('renderFixComparison error:', e);
+    var c = document.getElementById('demo-content');
+    if (c) c.innerHTML = '<div class="card"><p style="color:var(--danger)">渲染修复对比失败: ' + escapeHtml(e.message || String(e)) + '</p></div>';
+  }
 }
 
 // ============== V11.6 自动修复对话框 ==============
 function showAutoFixDialog(scanId, fixCount) {
+  try {
   // 防止重复打开
   if (document.getElementById('auto-fix-dialog')) return;
   if (!scanId) {
@@ -6067,6 +6078,10 @@ function showAutoFixDialog(scanId, fixCount) {
       });
     });
   }, 50);
+  } catch (e) {
+    console.error('showAutoFixDialog error:', e);
+    showToast('打开自动修复对话框失败: ' + (e.message || String(e)), 'error');
+  }
 }
 
 function closeAutoFixDialog() {
@@ -9090,6 +9105,9 @@ function generateFixFromResult() {
 }
 
 function generateFixFromFindings(findings, config) {
+  try {
+    if (!Array.isArray(findings)) findings = [];
+    if (typeof config !== 'string') config = '';
   var fixed = config;
   var hasServerBlock = /server\s*\{/.test(fixed);
 
@@ -9154,6 +9172,10 @@ function generateFixFromFindings(findings, config) {
   }
 
   return { fixed: fixed };
+  } catch (e) {
+    console.error('generateFixFromFindings error:', e);
+    return { fixed: config || '', error: e.message || String(e) };
+  }
 }
 
 function goToFixerWithScanResult() {
@@ -9185,6 +9207,8 @@ function goToFixerWithScanResult() {
 
 
 function generateLocalFixes(findings) {
+  try {
+    if (!Array.isArray(findings)) findings = [];
   var fixes = { nginx: [], python: [], nodejs: [], apache: [] };
   findings.forEach(function(f) {
     var fix = f.fix || '';
@@ -9196,9 +9220,15 @@ function generateLocalFixes(findings) {
     }
   });
   return fixes;
+  } catch (e) {
+    console.error('generateLocalFixes error:', e);
+    return { nginx: [], python: [], nodejs: [], apache: [] };
+  }
 }
 
 function renderFixResult(fixes, score) {
+  try {
+    if (!fixes || typeof fixes !== 'object') fixes = { nginx: [], python: [], nodejs: [], apache: [] };
   var promptEl = document.getElementById('fixer-scan-prompt');
   var tabsEl = document.getElementById('fixer-lang-tabs');
   var resultEl = document.getElementById('fixer-result');
@@ -9248,6 +9278,11 @@ function renderFixResult(fixes, score) {
   html += '</div>';
 
   resultEl.innerHTML = html;
+  } catch (e) {
+    console.error('renderFixResult error:', e);
+    var resultEl = document.getElementById('fixer-result');
+    if (resultEl) resultEl.innerHTML = '<div class="card"><p style="color:var(--danger)">渲染修复结果失败: ' + escapeHtml(e.message || String(e)) + '</p></div>';
+  }
 }
 
 function switchFixLang(lang) {
@@ -9371,19 +9406,29 @@ function verifyFix() {
 // Fixer Page
 
 function loadSampleConfig() {
+  try {
   var sample = 'server {\n    listen 80;\n    server_name example.com www.example.com;\n    root /var/www/html;\n    index index.html index.php;\n\n    location / {\n        try_files $uri $uri/ =404;\n    }\n\n    location ~ \\.php$ {\n        fastcgi_pass unix:/run/php/php-fpm.sock;\n        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n        include fastcgi_params;\n    }\n\n    access_log /var/log/nginx/access.log;\n    error_log /var/log/nginx/error.log;\n}';
   var inp = document.getElementById('fixer-input');
   if (inp) inp.value = sample;
   showToast('已加载示例 Nginx 配置');
+  } catch (e) {
+    console.error('loadSampleConfig error:', e);
+    showToast('加载示例配置失败: ' + (e.message || String(e)), 'error');
+  }
 }
 
 function clearFixer() {
+  try {
   if (!confirm("确定要清空当前配置内容吗？")) return;
   var inp = document.getElementById('fixer-input');
   var res = document.getElementById('fixer-result');
   if (inp) inp.value = '';
   if (res) res.innerHTML = '';
   showToast('已清空');
+  } catch (e) {
+    console.error('clearFixer error:', e);
+    showToast('清空失败: ' + (e.message || String(e)), 'error');
+  }
 }
 
 function analyzeFixer() {

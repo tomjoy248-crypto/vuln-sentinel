@@ -5641,8 +5641,29 @@ async def api_list_fix_tickets(status: Optional[str] = None, user: dict = Depend
     return {"success": True, "tickets": tickets}
 
 
+@app.get("/api/fix-tickets/{ticket_id}")
+async def api_get_fix_ticket(ticket_id: int, user: dict = Depends(require_login)) -> dict:
+    """获取单个工单详情。"""
+    ticket = get_fix_ticket(ticket_id, user["user_id"])
+    if not ticket:
+        raise HTTPException(404, "工单不存在或无权限")
+    return {"success": True, "ticket": ticket}
+
+
 @app.patch("/api/fix-tickets/{ticket_id}")
 async def api_update_fix_ticket(ticket_id: int, req: FixTicketUpdate, user: dict = Depends(require_login)) -> dict:
+    ok = update_fix_ticket(
+        ticket_id, user["user_id"],
+        status=req.status, fix_code=req.fix_code, notes=req.notes,
+    )
+    if not ok:
+        raise HTTPException(404, "工单不存在或无权限")
+    return {"success": True}
+
+
+@app.put("/api/fix-tickets/{ticket_id}")
+async def api_put_fix_ticket(ticket_id: int, req: FixTicketUpdate, user: dict = Depends(require_login)) -> dict:
+    """PUT 方式更新工单（与 PATCH 等价，兼容不同调用风格）。"""
     ok = update_fix_ticket(
         ticket_id, user["user_id"],
         status=req.status, fix_code=req.fix_code, notes=req.notes,
@@ -7352,7 +7373,7 @@ async def api_fix(req: ScanRequest, request: Request, user: dict = Depends(requi
     try:
         url = sanitize_url(req.url)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        return {"success": False, "error": str(e)}
     parsed = urlparse(url)
     host = parsed.hostname or ""
     try:
