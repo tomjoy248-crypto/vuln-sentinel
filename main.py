@@ -6855,6 +6855,17 @@ def _get_recent_conversations(user_id: int, limit: int = 10) -> list:
     """V11.6：取最近 N 条对话（用于上下文）"""
     conn = get_db()
     try:
+        # 确保表存在
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ai_conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT,
+                context_json TEXT,
+                created_at TEXT
+            );
+        """)
         rows = conn.execute(
             """SELECT * FROM ai_conversations WHERE user_id=?
                ORDER BY id DESC LIMIT ?""",
@@ -8866,42 +8877,792 @@ async def public_demo_scan(req: PublicDemoRequest, request: Request):
         return {"success": False, "url": raw_url, "error": str(e)[:300]}
 
 
-# ===== AI 安全顾问（规则版，可离线） =====
+# ===== AI 安全顾问 V2（智能规则引擎 + 结构化知识库）=====
 
-_AI_KB = [
-    {"keys": ["hsts", "https", "ssl", "tls", "证书"],
-     "reply": "**HSTS（HTTP Strict Transport Security）** 强制浏览器始终用 HTTPS 访问你的网站，防止降级攻击和 Cookie 劫持。\n\n**修复方法**（Nginx）：\n```\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n```"},
-    {"keys": ["csp", "xss", "跨站脚本", "脚本注入"],
-     "reply": "**CSP（Content-Security-Policy）** 限制页面能加载哪些资源，是防御 XSS 最有效的一招。\n\n**推荐配置**（按需放宽）：\n```\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'\" always;\n```"},
-    {"keys": ["敏感文件", ".env", ".git", "git泄露", "源码泄露"],
-     "reply": "**敏感文件暴露** = 攻击者能直接拿到你的源码、配置、备份。\n\n**Nginx 拦截规则**：\n```nginx\nlocation ~ /\\.(env|git|gitignore|svn|hg|bak|sql|log|DS_Store)$ { deny all; return 403; }\n```"},
-    {"keys": ["x-frame", "点击劫持", "iframe", "frame"],
-     "reply": "**点击劫持（Clickjacking）**：用户被诱导点击看似无害的页面，背后却点在恶意 iframe 里。\n\n**防御**（Nginx）：\n```\nadd_header X-Frame-Options \"DENY\" always;\n```"},
-    {"keys": ["x-content-type", "nosniff", "mime"],
-     "reply": "**MIME 嗅探** 攻击：浏览器把 `.txt` 当 JS 解析执行，可能导致 XSS。\n\n**修复**（Nginx）：\n```\nadd_header X-Content-Type-Options \"nosniff\" always;\n```"},
-    {"keys": ["server", "版本泄露", "信息泄露", "server头"],
-     "reply": "**Server 头泄露版本信息** 会帮助攻击者针对特定版本找漏洞。\n\n**修复**：\n```nginx\nserver_tokens off;  # Nginx\n```"},
-    {"keys": ["referrer", "referer", "引用"],
-     "reply": "**Referrer-Policy** 控制跳转时是否带上来源 URL。\n\n**推荐配置**：\n```\nadd_header Referrer-Policy \"strict-origin-when-cross-origin\" always;\n```"},
-    {"keys": ["permissions-policy", "权限策略", "摄像头", "麦克风", "geolocation"],
-     "reply": "**Permissions-Policy** 关闭页面不需要的危险 API。\n\n**推荐配置**：\n```\nadd_header Permissions-Policy \"camera=(), microphone=(), geolocation=(), payment=(), usb=()\" always;\n```"},
-    {"keys": ["评分", "分数", "安全评分", "怎么算", "打分"],
-     "reply": "**V11.6 评分公式**：基础 100 分 − critical×25 − high×15 − medium×8 − low×3 + 修复配置加成 +12 + 已验证修复 +10\n\n**快速提分**：加 HSTS / CSP / X-Frame-Options / X-Content-Type-Options（4 个头 +12 分），拦截敏感文件（+6 分），关 Server 版本（+4 分）。"},
-    {"keys": ["owasp", "top10", "top 10"],
-     "reply": "**OWASP Top 10（2021）**：A01 访问控制失效 / A02 加密机制失效 / A03 注入攻击 / A04 不安全设计 / A05 安全配置错误 / A06 过时组件 / A07 认证失败 / A08 软件完整性 / A09 日志监控不足 / A10 服务端请求伪造。"},
-    {"keys": ["你好", "hi", "hello", "在吗", "你是"],
-     "reply": "你好！我是漏洞哨兵 V11.6 的安全顾问 🛡\n\n试试问我：HSTS 是什么、如何修复 CSP、怎么提分。"},
-    {"keys": ["怎么用", "怎么开始", "上手", "使用"],
-     "reply": "**30 秒上手流程（V11.6）**：\n1. 用测试账号一键登录（`demo / demo123`）\n2. 打开后看「真实演示报告」（已自动跑 example.com）\n3. 点「一键应用修复」看修复前后对比\n4. 注册后扫描你自己的目标\n5. 用「验证修复效果」看真实评分提升"},
-    {"keys": ["批量", "多个", "一次扫", "多 url"],
-     "reply": "新上线的**批量扫描**：在扫描页点「📦 批量扫描」按钮，一次最多 5 个 URL，V11 用并发执行。"},
-    {"keys": ["v11", "v 11", "更新", "新版本", "11", "升级"],
-     "reply": "**V11.6 主要改进**：\n1. 严重度字段统一为 severity（high/medium/low），不再混用 level\n2. 修复闭环真正打通：verify-fix 输出 fixed/new_issues/delta\n3. 批量扫描并发化（asyncio.gather）\n4. /api/history 新增 DELETE 真清空\n5. /api/version 返回构建信息\n6. 已修复数量从后端真实统计（前 30% 假数据已删除）\n7. JWT secret 默认 48 字节随机生成（不再用 dev 弱密钥）\n8. AI 顾问兜底按真实 severity 取前 3"},
-]
+# ---------- 同义词词典 ----------
+_AI_SYNONYMS = {
+    "fix": ["修复", "怎么修", "如何修", "怎么解决", "解决", "怎么弄", "咋弄", "修一下", "修", "怎么搞", "怎么处理", "处理", "修复方法", "修复方案", "怎么配置", "配置", "加上", "添加", "设置"],
+    "principle": ["原理", "是什么", "什么是", "为啥", "为什么", "原因", "概念", "介绍", "解释", "详解", "详细说明"],
+    "risk": ["危害", "风险", "危险", "后果", "影响", "严重吗", "有多严重", "有什么用", "作用"],
+    "verify": ["验证", "怎么验证", "如何验证", "检查", "怎么检查", "怎么确认", "确认", "测一下", "测试", "生效", "怎么看生效"],
+    "priority": ["优先", "先修", "重要", "顺序", "最该", "最先", "推荐", "建议", "先搞", "先弄", "从哪开始"],
+    "score": ["分数", "评分", "打分", "得分", "安全分", "怎么算", "计算", "规则"],
+    "scan": ["扫描", "扫一下", "检测", "检查网站", "怎么扫", "如何扫描"],
+    "report": ["报告", "扫描报告", "怎么看", "查看报告", "结果", "扫描结果"],
+    "tool": ["怎么用", "使用", "上手", "操作", "教程", "指南", "用法"],
+    "upgrade": ["提升", "提高", "增加", "加多少分", "能提升多少", "预估", "预计"],
+    "greeting": ["你好", "hi", "hello", "在吗", "你是", "嗨", "哈喽", "hi~", "你好啊"],
+    "thanks": ["谢谢", "感谢", "多谢", "thx", "thanks", "谢谢啦", "谢了"],
+    "cookie": ["cookie", "cookies", "饼干", "会话", "session"],
+    "cors": ["cors", "跨域", "跨站资源", "access-control"],
+    "ssrf": ["ssrf", "服务端请求伪造", "服务端伪造"],
+    "csrf": ["csrf", "跨站请求伪造", "xsrf"],
+    "sql": ["sql注入", "sql 注入", "注入攻击", "sql注入攻击", "数据库注入"],
+    "xss": ["xss", "跨站脚本", "脚本注入", "跨站脚本攻击"],
+    "traversal": ["目录遍历", "路径遍历", "路径穿越", "目录穿越", "../"],
+    "clickjack": ["点击劫持", "clickjacking", "x-frame", "iframe攻击"],
+    "mime": ["mime嗅探", "mime 嗅探", "nosniff", "x-content-type"],
+    "hsts": ["hsts", "严格传输", "严格传输安全", "强制https", "强制 https", "https强制"],
+    "csp_full": ["csp", "内容安全策略", "内容安全"],
+    "referrer": ["referrer", "referer", "引用页", "来源页", "引荐"],
+    "permissions": ["permissions-policy", "权限策略", "feature-policy", "摄像头", "麦克风", "地理位置"],
+    "cache": ["cache-control", "缓存控制", "缓存", "cache"],
+    "xxssprotection": ["x-xss-protection", "xss保护", "xss 保护"],
+    "sensitive": ["敏感文件", ".env", ".git", "git泄露", "源码泄露", "敏感信息", "信息泄露", "配置泄露"],
+    "server_header": ["server头", "server 头", "版本泄露", "服务器版本", "banner"],
+    "ssl_tls": ["ssl", "tls", "弱加密", "弱配置", "ssl/tls", "tls配置", "证书"],
+}
+
+# ---------- 意图识别关键词 ----------
+_AI_INTENT_KEYWORDS = {
+    "fix": ["怎么修", "如何修", "怎么解决", "修复", "解决办法", "怎么弄", "咋弄", "修一下", "怎么搞", "怎么处理", "修复方法", "修复方案", "怎么配置", "配置一下", "加上", "添加", "设置一下", "代码", "怎么写"],
+    "principle": ["原理", "是什么", "什么是", "为啥", "为什么", "原因", "概念", "介绍", "解释", "详解", "详细说明", "什么意思", "干嘛的", "作用"],
+    "risk": ["危害", "风险", "危险", "后果", "影响", "严重吗", "有多严重", "有什么风险", "安全吗", "会怎样"],
+    "verify": ["验证", "怎么验证", "如何验证", "检查", "怎么检查", "怎么确认", "确认一下", "测一下", "测试", "生效了吗", "怎么看生效", "如何检查"],
+    "priority": ["优先", "先修", "重要", "顺序", "最该", "最先", "推荐", "建议", "先搞", "先弄", "从哪开始", "哪个重要", "先修什么"],
+    "score": ["分数", "评分", "打分", "得分", "安全分", "怎么算", "计算", "规则", "为什么扣分", "怎么扣的", "扣分原因"],
+    "upgrade": ["提升", "提高", "增加", "加多少分", "能提升多少", "预估", "预计", "能到多少分", "能提多少"],
+    "greeting": ["你好", "hi", "hello", "在吗", "你是", "嗨", "哈喽", "你好啊", "你是谁"],
+    "thanks": ["谢谢", "感谢", "多谢", "thx", "thanks", "谢谢啦", "谢了"],
+    "tool_scan": ["怎么扫描", "如何扫描", "怎么扫", "扫一下", "怎么用", "使用方法", "上手", "操作", "教程", "指南"],
+    "tool_report": ["怎么看报告", "扫描报告", "报告怎么看", "怎么看结果", "结果在哪"],
+    "tool_fixer": ["修复器", "自动修复", "一键修复", "怎么用修复", "修复工具"],
+    "config_location": ["放在哪里", "配置位置", "加在哪里", "写在哪里", "哪个文件", "配置文件", "放哪"],
+    "deployment_risk": ["上线风险", "影响线上", "会挂吗", "影响业务", "会不会崩", "安全上线", "上线有什么风险", "能上线吗", "上线安全"],
+    "second": ["第二个", "第二项", "第二个呢", "下一个", "第二个问题", "下一项"],
+}
+
+# ---------- 结构化安全知识库 ----------
+_AI_KNOWLEDGE_BASE = {
+    # ===== 安全头类 =====
+    "hsts": {
+        "name": "HSTS (HTTP Strict Transport Security)",
+        "category": "security_header",
+        "severity": "high",
+        "aliases": ["hsts", "严格传输安全", "强制https", "https强制", "strict-transport-security", "严格传输"],
+        "principle": "HSTS 是一个安全响应头，告诉浏览器**只能通过 HTTPS** 访问该网站，并且在指定时间内（max-age）禁止降级到 HTTP。\n\n**工作原理**：浏览器收到 HSTS 头后，会将该域名加入 HSTS 列表，后续所有请求自动升级为 HTTPS，即使你输入 http:// 也会直接走 HTTPS。\n\n**为什么重要**：防止 SSL stripping 攻击（中间人把 HTTPS 降级为 HTTP 窃取数据），防止 Cookie 在 HTTP 下泄露。",
+        "risk": "🔴 **高风险**\n- 攻击者可在公共 WiFi 下发动 SSL 降级攻击，把 HTTPS 降级为 HTTP\n- 用户密码、Session Cookie 等敏感数据可能被明文窃取\n- 网银、电商等涉及交易的网站风险尤其高\n- 属于 OWASP A02（加密机制失效）范畴",
+        "fix_nginx": "```nginx\n# 在 server { } 块内添加\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains; preload\" always;\n\n# 说明：\n# max-age=31536000  — 浏览器记住 1 年（秒）\n# includeSubDomains — 所有子域名也强制 HTTPS\n# preload          — 申请加入浏览器 HSTS 预加载列表\n# always           — 所有响应码都加这个头（包括 4xx/5xx）\n```",
+        "fix_apache": "```apache\n# 在 VirtualHost 或 .htaccess 中添加\nHeader always set Strict-Transport-Security \"max-age=31536000; includeSubDomains; preload\"\n```",
+        "fix_cloudflare": "在 Cloudflare Dashboard 中：\n1. SSL/TLS → Edge Certificates\n2. 打开「Always Use HTTPS」\n3. 打开「HTTP Strict Transport Security (HSTS)」\n4. 设置 Max Age 为 12 个月，勾选 Include subdomains 和 Preload",
+        "fix_express": "```javascript\n// 使用 helmet 中间件（推荐）\nconst helmet = require('helmet');\napp.use(helmet.hsts({ maxAge: 31536000, includeSubDomains: true, preload: true }));\n\n// 或手动设置\napp.use((req, res, next) => {\n  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');\n  next();\n});\n```",
+        "fix_flask": "```python\nfrom flask import Flask\nfrom flask_talisman import Talisman\n\napp = Flask(__name__)\nTalisman(app, force_https=True, strict_transport_security=True,\n         strict_transport_security_max_age=31536000,\n         strict_transport_security_include_subdomains=True)\n```",
+        "verify": "**验证方法**（3 种方式任选）：\n\n1. **浏览器开发者工具**：F12 → Network → 刷新页面 → 看 Response Headers 里有没有 `strict-transport-security`\n\n2. **curl 命令**：\n```bash\ncurl -sI https://yourdomain.com | grep -i strict-transport\n```\n\n3. **本工具重新扫描**：修复后点「重新扫描」，HSTS 缺失项应消失，评分相应提升。\n\n⚠ **注意**：HSTS 只能在 HTTPS 站点生效，HTTP 响应中的 HSTS 头会被浏览器忽略。",
+    },
+    "csp": {
+        "name": "CSP (Content Security Policy)",
+        "category": "security_header",
+        "severity": "high",
+        "aliases": ["csp", "内容安全策略", "content-security-policy", "内容安全"],
+        "principle": "CSP（内容安全策略）是一个强大的安全响应头，它**白名单式**地控制页面能加载哪些来源的资源（JS、CSS、图片、字体、iframe 等）。\n\n**核心思想**：默认只允许加载自己域名的资源，其他来源一律拒绝。攻击者即使注入了恶意脚本，也因为不在白名单里而无法执行。\n\n**CSP 是防御 XSS 最有效的手段之一**，被 OWASP 强烈推荐。",
+        "risk": "🔴 **高风险**\n- 没有 CSP 时，XSS 攻击几乎可以为所欲为\n- 攻击者注入的恶意脚本可以窃取 Cookie、劫持页面、钓鱼诈骗\n- 第三方资源（广告、统计脚本）被篡改后直接影响你的站点\n- 属于 OWASP A03（注入攻击）和 A05（安全配置错误）范畴",
+        "fix_nginx": "```nginx\n# 渐进式策略（先从 report-only 开始，确认无误后再 enforcing）\nadd_header Content-Security-Policy \"default-src 'self';\n  script-src 'self' 'unsafe-inline' https://cdn.example.com;\n  style-src 'self' 'unsafe-inline';\n  img-src 'self' data: https:;\n  font-src 'self';\n  frame-ancestors 'none';\n  base-uri 'self';\n  form-action 'self'\" always;\n```",
+        "fix_apache": "```apache\nHeader always set Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'\"\n```",
+        "fix_cloudflare": "Cloudflare Dashboard → Rules → Transform Rules → Modify Response Header\n添加响应头 `Content-Security-Policy`，值填入你的策略内容。",
+        "fix_express": "```javascript\nconst helmet = require('helmet');\napp.use(helmet.contentSecurityPolicy({\n  directives: {\n    defaultSrc: [\"'self'\"],\n    scriptSrc: [\"'self'\"],\n    styleSrc: [\"'self'\", \"'unsafe-inline'\"],\n    imgSrc: [\"'self'\", \"data:\"],\n    frameAncestors: [\"'none'\"],\n  },\n}));\n```",
+        "fix_flask": "```python\nfrom flask_talisman import Talisman\n\nTalisman(app, content_security_policy={\n    'default-src': \"'self'\",\n    'script-src': \"'self'\",\n    'style-src': \"'self' 'unsafe-inline'\",\n    'img-src': \"'self' data:\",\n    'frame-ancestors': \"'none'\",\n})\n```",
+        "verify": "**验证方法**：\n\n1. **浏览器开发者工具**：F12 → Network → 看 Response Headers 中的 `content-security-policy`\n\n2. **Console 面板**：如果有 CSP 违规，Console 里会有红色报错\n\n3. **Report-Only 模式**（推荐先测）：先用 `Content-Security-Policy-Report-Only` 头，只报告不拦截，确认无违规后再切到 enforcing 模式\n\n4. **curl 命令**：\n```bash\ncurl -sI https://yourdomain.com | grep -i content-security\n```\n\n⚠ **建议**：先用 Report-Only 模式观察 1-2 周，确认没有误杀后再开启强制模式。",
+    },
+    "x_frame_options": {
+        "name": "X-Frame-Options",
+        "category": "security_header",
+        "severity": "medium",
+        "aliases": ["x-frame-options", "x-frame", "点击劫持", "clickjacking", "iframe", "frame"],
+        "principle": "X-Frame-Options 控制你的网页**能否被其他网站通过 iframe 嵌入**。\n\n**工作原理**：浏览器收到这个头后，如果检测到当前页面是在 iframe 中加载的，且来源不在允许列表里，就会拒绝渲染页面。\n\n**有三个取值**：\n- `DENY` — 完全禁止被嵌入（最安全）\n- `SAMEORIGIN` — 只允许同域名嵌入\n- `ALLOW-FROM uri` — 允许指定域名嵌入（已废弃，建议用 CSP frame-ancestors）",
+        "risk": "🟡 **中风险**\n- 攻击者可构造透明 iframe 覆盖在正常页面上，诱导用户点击敏感操作\n- 可能被用于：转账、改密码、删除账号等危险操作\n- 称为「点击劫持攻击」（Clickjacking）\n- 对有用户交互的网站（银行、社交、管理后台）风险较高",
+        "fix_nginx": "```nginx\nadd_header X-Frame-Options \"DENY\" always;\n# 或者如果你的站点需要被自己嵌入：\n# add_header X-Frame-Options \"SAMEORIGIN\" always;\n```",
+        "fix_apache": "```apache\nHeader always set X-Frame-Options \"DENY\"\n```",
+        "fix_cloudflare": "Cloudflare → Rules → Transform Rules → 添加响应头 `X-Frame-Options: DENY`",
+        "fix_express": "```javascript\nconst helmet = require('helmet');\napp.use(helmet.frameguard({ action: 'deny' }));\n```",
+        "fix_flask": "```python\nfrom flask_talisman import Talisman\nTalisman(app, frame_options='DENY')\n```",
+        "verify": "**验证方法**：\n\n1. **浏览器开发者工具**：F12 → Network → 查看 Response Headers 中的 `x-frame-options`\n\n2. **手动测试**：在另一个网站用 iframe 嵌入你的页面，如果被拒绝显示说明生效：\n```html\n<iframe src=\"https://yourdomain.com\"></iframe>\n```\n\n3. **curl 检查**：\n```bash\ncurl -sI https://yourdomain.com | grep -i x-frame\n```",
+    },
+    "x_content_type_options": {
+        "name": "X-Content-Type-Options",
+        "category": "security_header",
+        "severity": "medium",
+        "aliases": ["x-content-type-options", "nosniff", "mime嗅探", "mime 嗅探", "x-content-type"],
+        "principle": "X-Content-Type-Options: nosniff 告诉浏览器**不要猜测文件的 MIME 类型**，严格按照服务器声明的 Content-Type 来解析。\n\n**什么是 MIME 嗅探**：旧版浏览器会「猜测」文件类型，比如一个 `.txt` 文件里有 JS 代码，浏览器可能会把它当 JS 执行。这就给了攻击者可乘之机。",
+        "risk": "🟡 **中风险**\n- 攻击者可上传看似图片的恶意脚本文件，浏览器嗅探后执行脚本导致 XSS\n- 对允许用户上传文件的网站风险较高\n- 配合文件上传漏洞可造成严重危害\n- 属于 OWASP A05（安全配置错误）范畴",
+        "fix_nginx": "```nginx\nadd_header X-Content-Type-Options \"nosniff\" always;\n```",
+        "fix_apache": "```apache\nHeader always set X-Content-Type-Options \"nosniff\"\n```",
+        "fix_cloudflare": "Cloudflare → Rules → Transform Rules → 添加响应头 `X-Content-Type-Options: nosniff`",
+        "fix_express": "```javascript\nconst helmet = require('helmet');\napp.use(helmet.noSniff());\n```",
+        "fix_flask": "```python\n@app.after_request\ndef add_security_headers(resp):\n    resp.headers['X-Content-Type-Options'] = 'nosniff'\n    return resp\n```",
+        "verify": "**验证方法**：\n\n1. **浏览器开发者工具**：F12 → Network → 查看 Response Headers\n\n2. **curl 命令**：\n```bash\ncurl -sI https://yourdomain.com | grep -i x-content-type\n```\n\n3. **功能测试**：上传一个内容为 JS 的 .txt 文件，访问时确认浏览器没有执行它。",
+    },
+    "referrer_policy": {
+        "name": "Referrer-Policy",
+        "category": "security_header",
+        "severity": "low",
+        "aliases": ["referrer-policy", "referrer", "referer", "引用页", "来源页", "引荐"],
+        "principle": "Referrer-Policy 控制浏览器在跳转时**是否带上来源页面的 URL**（Referer 头）。\n\n**为什么重要**：URL 里可能包含敏感信息（如重置密码的 token、用户 ID、搜索关键词），如果跳转到第三方网站，这些信息会被泄露。\n\n**常用策略**（从松到严）：\n- `no-referrer` — 从不发送 Referrer\n- `strict-origin-when-cross-origin` — 同站发完整 URL，跨站只发域名（且必须 HTTPS→HTTPS）\n- `origin` — 只发送域名\n- `no-referrer-when-downgrade` — HTTPS→HTTP 不发（默认行为）",
+        "risk": "🟢 **低风险**\n- 跳转时可能泄露 URL 中的敏感参数\n- 如重置密码链接中的 token 可能被第三方站点获取\n- 内部系统的 URL 结构可能被外部知晓\n- 隐私保护层面的问题",
+        "fix_nginx": "```nginx\n# 推荐：跨域时只发送域名，且必须 HTTPS\nadd_header Referrer-Policy \"strict-origin-when-cross-origin\" always;\n\n# 更严格：完全不发送 Referrer\n# add_header Referrer-Policy \"no-referrer\" always;\n```",
+        "fix_apache": "```apache\nHeader always set Referrer-Policy \"strict-origin-when-cross-origin\"\n```",
+        "fix_cloudflare": "Cloudflare → Rules → Transform Rules → 添加响应头 `Referrer-Policy: strict-origin-when-cross-origin`",
+        "fix_express": "```javascript\nconst helmet = require('helmet');\napp.use(helmet.referrerPolicy({ policy: 'strict-origin-when-cross-origin' }));\n```",
+        "fix_flask": "```python\n@app.after_request\ndef add_security_headers(resp):\n    resp.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'\n    return resp\n```",
+        "verify": "**验证方法**：\n\n1. **浏览器开发者工具**：F12 → Network → 点击一个请求 → 看 Response Headers 中的 `referrer-policy`\n\n2. **跳转测试**：从你的页面点击跳转到一个外部网站（如 https://httpbin.org/get），看请求头里的 Referer 值是否符合策略。\n\n3. **curl 检查**：\n```bash\ncurl -sI https://yourdomain.com | grep -i referrer\n```",
+    },
+    "permissions_policy": {
+        "name": "Permissions-Policy",
+        "category": "security_header",
+        "severity": "low",
+        "aliases": ["permissions-policy", "权限策略", "feature-policy", "摄像头", "麦克风", "地理位置", "geolocation"],
+        "principle": "Permissions-Policy（原名 Feature-Policy）控制网页**能使用哪些浏览器 API**，比如摄像头、麦克风、地理位置、支付、USB 等。\n\n**核心思想**：默认关闭不需要的危险 API，防止被恶意脚本滥用。即使网站被 XSS 攻击，攻击者也无法调用这些敏感 API。",
+        "risk": "🟢 **低风险**\n- 恶意脚本可能在用户不知情的情况下开启摄像头/麦克风\n- 可能获取用户地理位置信息\n- 属于深度防御的一环（Defense in Depth）\n- 配合 CSP 等其他措施构建多层防护",
+        "fix_nginx": "```nginx\nadd_header Permissions-Policy \"camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()\" always;\n\n# 说明：空括号 () 表示完全禁用该功能\n# 如果需要启用某些功能，可指定来源：geolocation=(self \"https://example.com\")\n```",
+        "fix_apache": "```apache\nHeader always set Permissions-Policy \"camera=(), microphone=(), geolocation=(), payment=(), usb=()\"\n```",
+        "fix_cloudflare": "Cloudflare → Rules → Transform Rules → 添加响应头",
+        "fix_express": "```javascript\nconst helmet = require('helmet');\napp.use(helmet.permittedCrossDomainPolicies());\napp.use((req, res, next) => {\n  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');\n  next();\n});\n```",
+        "fix_flask": "```python\n@app.after_request\ndef add_security_headers(resp):\n    resp.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=(), payment=(), usb=()'\n    return resp\n```",
+        "verify": "**验证方法**：\n\n1. **浏览器开发者工具**：F12 → Network → 查看 Response Headers 中的 `permissions-policy`\n\n2. **JS 控制台测试**：\n```javascript\n// 测试摄像头权限\nnavigator.permissions.query({name: 'camera'}).then(console.log);\n```\n\n3. **curl 命令**：\n```bash\ncurl -sI https://yourdomain.com | grep -i permissions\n```",
+    },
+    "x_xss_protection": {
+        "name": "X-XSS-Protection",
+        "category": "security_header",
+        "severity": "low",
+        "aliases": ["x-xss-protection", "xss保护", "xss 保护", "xss防护"],
+        "principle": "X-XSS-Protection 是 IE/Chrome/Safari 旧版浏览器的 XSS 过滤机制。\n\n**注意**：现代浏览器已逐步废弃这个头，推荐使用 **CSP** 作为主要的 XSS 防护手段。但为了兼容旧浏览器，仍然建议配置。\n\n**取值**：\n- `0` — 禁用过滤\n- `1` — 启用，发现 XSS 时清理不安全代码\n- `1; mode=block` — 启用，发现 XSS 时直接阻止页面渲染（推荐）",
+        "risk": "🟢 **低风险**\n- 对使用旧版浏览器的用户有一定保护作用\n- 是 CSP 的补充措施，不是替代品\n- 现代浏览器已逐步移除 XSS Auditor\n- 属于防御纵深的一层",
+        "fix_nginx": "```nginx\nadd_header X-XSS-Protection \"1; mode=block\" always;\n```",
+        "fix_apache": "```apache\nHeader always set X-XSS-Protection \"1; mode=block\"\n```",
+        "fix_cloudflare": "Cloudflare → Rules → Transform Rules → 添加响应头",
+        "fix_express": "```javascript\nconst helmet = require('helmet');\napp.use(helmet.xssFilter());\n```",
+        "fix_flask": "```python\n@app.after_request\ndef add_security_headers(resp):\n    resp.headers['X-XSS-Protection'] = '1; mode=block'\n    return resp\n```",
+        "verify": "**验证方法**：\n\n1. **浏览器开发者工具**：F12 → Network → 查看 Response Headers\n\n2. **curl 命令**：\n```bash\ncurl -sI https://yourdomain.com | grep -i x-xss\n```\n\n💡 **建议**：主要依靠 CSP 防护 XSS，这个头作为补充。",
+    },
+    "cache_control": {
+        "name": "Cache-Control",
+        "category": "security_header",
+        "severity": "low",
+        "aliases": ["cache-control", "缓存控制", "缓存策略", "cache", "缓存"],
+        "principle": "Cache-Control 控制浏览器和 CDN 如何缓存页面内容。\n\n**安全角度的重要性**：敏感页面（如用户后台、个人信息）如果被缓存，可能在共享设备上被其他人看到。\n\n**重要指令**：\n- `no-store` — 完全不缓存（最严格，用于敏感页面）\n- `no-cache` — 缓存但每次需要服务器验证\n- `private` — 只能被浏览器缓存，不能被 CDN/代理缓存\n- `max-age` — 缓存有效期（秒）",
+        "risk": "🟢 **低风险**\n- 敏感页面被缓存后可能在共享设备泄露信息\n- 浏览器后退按钮可能显示已退出的用户数据\n- 对有用户登录的系统需要特别注意",
+        "fix_nginx": "```nginx\n# 对敏感页面完全禁用缓存\nlocation ~* /(admin|dashboard|account|user) {\n    add_header Cache-Control \"no-store, no-cache, must-revalidate, proxy-revalidate\" always;\n    add_header Pragma \"no-cache\" always;\n    add_header Expires \"0\" always;\n}\n\n# 静态资源可以长期缓存\nlocation ~* \\.(js|css|png|jpg|gif|ico|svg)$ {\n    expires 30d;\n    add_header Cache-Control \"public, immutable\";\n}\n```",
+        "fix_apache": "```apache\n# 敏感页面不缓存\n<FilesMatch \"(login|admin|dashboard)\">\n  Header set Cache-Control \"no-store, no-cache, must-revalidate\"\n  Header set Pragma \"no-cache\"\n  Header set Expires \"0\"\n</FilesMatch>\n```",
+        "fix_cloudflare": "Cloudflare → Caching → Page Rules → 为敏感路径设置 Cache Level: Bypass",
+        "fix_express": "```javascript\n// 对敏感路由设置不缓存\napp.use('/admin', (req, res, next) => {\n  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');\n  res.setHeader('Pragma', 'no-cache');\n  next();\n});\n\n// 静态资源用 helmet 处理\napp.use(helmet.noCache()); // 全部禁用缓存（按需使用）\n```",
+        "fix_flask": "```python\n@app.after_request\ndef add_cache_headers(resp):\n    # 只对 HTML 页面禁用缓存，静态资源由 Nginx 处理\n    if 'text/html' in resp.content_type:\n        resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'\n        resp.headers['Pragma'] = 'no-cache'\n    return resp\n```",
+        "verify": "**验证方法**：\n\n1. **浏览器开发者工具**：F12 → Network → 看 Response Headers 中的 `cache-control`\n\n2. **缓存测试**：登录后退出，按浏览器后退按钮，确认看不到敏感信息\n\n3. **curl 检查**：\n```bash\ncurl -sI https://yourdomain.com/admin | grep -i cache\n```",
+    },
+    "set_cookie": {
+        "name": "Set-Cookie 安全属性 (HttpOnly / Secure / SameSite)",
+        "category": "security_header",
+        "severity": "high",
+        "aliases": ["cookie", "cookies", "set-cookie", "httponly", "samesite", "secure cookie", "会话安全", "session", "cookie安全"],
+        "principle": "Cookie 有三个关键安全属性：\n\n1. **HttpOnly** — 禁止 JS 读取 Cookie，防止 XSS 窃取 Session\n2. **Secure** — 只在 HTTPS 连接下发送 Cookie，防止网络窃听\n3. **SameSite** — 控制跨站请求是否发送 Cookie，防御 CSRF\n\n**三者配合使用**，可以有效防御 XSS 窃会话、CSRF 攻击、中间人攻击。",
+        "risk": "🔴 **高风险**\n- 没有 HttpOnly：XSS 攻击可以直接窃取 Session Cookie，接管账号\n- 没有 Secure：HTTP 下 Cookie 明文传输，可被中间人窃取\n- 没有 SameSite：容易遭受 CSRF 攻击，用户登录态被冒用\n- 属于 OWASP A07（认证失败）范畴",
+        "fix_nginx": "```nginx\n# 用 proxy_cookie_path 给后端设置的 Cookie 加上属性\nproxy_cookie_path / \"/; HttpOnly; Secure; SameSite=Strict\";\n\n# 或者用更灵活的方式（Nginx 1.19.8+ 支持）\nproxy_cookie_flags ~ secure httponly samesite=strict;\n```",
+        "fix_apache": "```apache\n# 修改所有 Cookie 属性\nHeader always edit Set-Cookie ^(.*)$ $1;HttpOnly;Secure;SameSite=Strict\n```",
+        "fix_cloudflare": "Cloudflare → Rules → Transform Rules → 修改 Set-Cookie 响应头",
+        "fix_express": "```javascript\n// Express session 配置\nconst session = require('express-session');\napp.use(session({\n  secret: 'your-secret-key',\n  cookie: {\n    httpOnly: true,   // 禁止 JS 访问\n    secure: true,     // 只在 HTTPS 下发送\n    sameSite: 'strict', // 严格同站\n    maxAge: 24 * 60 * 60 * 1000, // 24小时\n  },\n  resave: false,\n  saveUninitialized: false,\n}));\n```",
+        "fix_flask": "```python\napp.config.update(\n    SESSION_COOKIE_HTTPONLY=True,\n    SESSION_COOKIE_SECURE=True,\n    SESSION_COOKIE_SAMESITE='Strict',\n    PERMANENT_SESSION_LIFETIME=86400,  # 24小时\n)\n```",
+        "verify": "**验证方法**：\n\n1. **浏览器开发者工具**：F12 → Application → Cookies → 看 HttpOnly、Secure、SameSite 列是否有对勾\n\n2. **Network 面板**：看 Response Headers 中的 `set-cookie`\n\n3. **XSS 测试**：在 Console 输入 `document.cookie`，确认看不到带 HttpOnly 的 Cookie",
+    },
+    "cors": {
+        "name": "CORS (Cross-Origin Resource Sharing)",
+        "category": "security_header",
+        "severity": "medium",
+        "aliases": ["cors", "跨域", "跨站资源共享", "access-control-allow-origin", "跨域问题"],
+        "principle": "CORS（跨域资源共享）是浏览器的安全机制，控制哪些外域网站可以请求你的资源。\n\n**同源策略**：浏览器默认禁止 JS 跨域请求数据。CSP 是「白名单」机制，你可以指定允许的来源。\n\n**关键响应头**：\n- `Access-Control-Allow-Origin` — 允许哪些来源\n- `Access-Control-Allow-Methods` — 允许哪些 HTTP 方法\n- `Access-Control-Allow-Credentials` — 是否允许带 Cookie\n- `Access-Control-Max-Age` — 预检请求缓存时间",
+        "risk": "🟡 **中风险**\n- 配置为 `*`（允许所有来源）且允许 credentials 时，任何网站都可以以用户身份请求数据\n- 可能导致用户数据泄露（个人信息、订单、余额等）\n- 错误配置的 CORS 是常见的安全漏洞\n- 属于 OWASP A05（安全配置错误）范畴",
+        "fix_nginx": "```nginx\n# 正确配置：只允许可信来源\nadd_header Access-Control-Allow-Origin \"https://trusted.example.com\" always;\nadd_header Access-Control-Allow-Methods \"GET, POST, OPTIONS\" always;\nadd_header Access-Control-Allow-Headers \"Content-Type, Authorization\" always;\nadd_header Access-Control-Allow-Credentials \"true\" always;\n\n# 处理预检请求\nif ($request_method = OPTIONS) {\n    return 204;\n}\n\n# ❌ 危险配置（不要这样）：\n# add_header Access-Control-Allow-Origin \"*\" always;\n# add_header Access-Control-Allow-Credentials \"true\" always;\n```",
+        "fix_apache": "```apache\nHeader always set Access-Control-Allow-Origin \"https://trusted.example.com\"\nHeader always set Access-Control-Allow-Methods \"GET, POST, OPTIONS\"\nHeader always set Access-Control-Allow-Credentials \"true\"\n```",
+        "fix_cloudflare": "Cloudflare → Rules → Transform Rules → 添加 CORS 相关响应头",
+        "fix_express": "```javascript\nconst cors = require('cors');\n\n// 安全配置：白名单模式\nconst corsOptions = {\n  origin: ['https://trusted.example.com', 'https://app.yourdomain.com'],\n  credentials: true,\n  methods: ['GET', 'POST', 'PUT', 'DELETE'],\n  allowedHeaders: ['Content-Type', 'Authorization'],\n};\napp.use(cors(corsOptions));\n\n// ❌ 危险配置（不要这样）：\n// app.use(cors({ origin: '*', credentials: true }));\n```",
+        "fix_flask": "```python\nfrom flask_cors import CORS\n\nCORS(app, resources={\n    r\"/api/*\": {\n        \"origins\": [\"https://trusted.example.com\"],\n        \"supports_credentials\": True,\n        \"methods\": [\"GET\", \"POST\", \"OPTIONS\"],\n    }\n})\n```",
+        "verify": "**验证方法**：\n\n1. **浏览器开发者工具**：从其他域名发送请求，看 Network 中的 Response Headers\n\n2. **curl 测试**：\n```bash\ncurl -sI -X OPTIONS \\\n  -H \"Origin: https://evil.com\" \\\n  -H \"Access-Control-Request-Method: GET\" \\\n  https://yourdomain.com/api/data\n# 看 Access-Control-Allow-Origin 是否正确\n```\n\n3. **验证凭证安全**：确认 `Access-Control-Allow-Origin: *` 和 `Allow-Credentials: true` 不同时出现",
+    },
+
+    # ===== 漏洞类 =====
+    "sql_injection": {
+        "name": "SQL 注入 (SQL Injection)",
+        "category": "vulnerability",
+        "severity": "critical",
+        "aliases": ["sql注入", "sql 注入", "注入攻击", "sql注入攻击", "数据库注入", "sqli"],
+        "principle": "SQL 注入是攻击者通过在输入参数中注入恶意 SQL 代码，让后端数据库执行非预期查询的攻击。\n\n**攻击原理**：如果后端代码直接拼接 SQL 语句，攻击者可以构造特殊输入改变 SQL 语义。\n\n**典型例子**：\n```python\n# 危险：直接拼接\nsql = f\"SELECT * FROM users WHERE username='{username}'\"\n# 攻击者输入：' OR '1'='1\n# 变成：SELECT * FROM users WHERE username='' OR '1'='1'\n```\n\n**是 OWASP Top 10 A03（注入攻击）的头号代表**。",
+        "risk": "🔴 **严重（Critical）**\n- 可能泄露整个数据库的数据（用户信息、密码、订单等）\n- 可能修改/删除数据库表（数据破坏）\n- 可能获取服务器权限（通过存储过程、文件读写等）\n- 是最危险的 Web 漏洞之一\n- 每年造成大量数据泄露事件",
+        "fix_code": "**核心修复原则：永远不要拼接 SQL，使用参数化查询（预编译语句）**\n\n```python\n# ✅ 正确：参数化查询\ncursor.execute(\"SELECT * FROM users WHERE username = ?\", (username,))\n\n# ✅ ORM 方式（推荐）\nuser = User.query.filter_by(username=username).first()\n```\n\n```javascript\n// ✅ 参数化查询\nconst result = await pool.query('SELECT * FROM users WHERE username = ?', [username]);\n\n// ✅ ORM (Sequelize / Prisma)\nconst user = await User.findOne({ where: { username } });\n```\n\n**额外防护**：\n- 输入校验和白名单过滤\n- 最小权限原则（数据库账号只给必要权限）\n- WAF 作为补充防线\n- 错误信息不要泄露数据库结构",
+        "verify": "**验证方法**：\n\n1. **手工测试**：在输入框输入单引号 `'`，看是否报数据库错误\n\n2. **经典 payload**：\n- `' OR '1'='1` — 测试布尔注入\n- `' AND SLEEP(5) --` — 测试时间盲注\n- `1' UNION SELECT 1,2,3 --` — 测试 UNION 注入\n\n3. **工具扫描**：使用 SQLMap、AWVS 等专业工具\n\n4. **代码审计**：检查所有数据库操作是否都使用了参数化查询\n\n⚠ **重要**：SQL 注入是高危漏洞，发现后应立即修复。",
+    },
+    "xss": {
+        "name": "XSS (跨站脚本攻击)",
+        "category": "vulnerability",
+        "severity": "high",
+        "aliases": ["xss", "跨站脚本", "脚本注入", "跨站脚本攻击", "cross-site scripting"],
+        "principle": "XSS（跨站脚本攻击）是攻击者在网页中注入恶意脚本，当其他用户访问时脚本在其浏览器中执行。\n\n**三种类型**：\n1. **反射型 XSS** — 脚本来自 URL 参数，服务端直接输出到页面\n2. **存储型 XSS** — 脚本被存入数据库，所有访问者都会触发（危害最大）\n3. **DOM 型 XSS** — 前端 JS 直接把用户输入插入 DOM，不经过服务端\n\n**攻击后果**：窃取 Cookie、劫持会话、钓鱼、挖矿、键盘记录等。",
+        "risk": "🔴 **高风险**\n- 存储型 XSS 可影响所有用户，危害极大\n- 可窃取用户 Session，直接接管账号\n- 可伪造页面进行钓鱼诈骗\n- 可植入恶意代码（挖矿、木马）\n- 是 OWASP Top 10 A03（注入攻击）的核心内容",
+        "fix_code": "**多层防御策略**：\n\n**第 1 层：输出编码（最关键）**\n```javascript\n// ✅ 用 textContent 而不是 innerHTML\nelement.textContent = userInput;\n\n// ✅ React/Vue 等框架默认自动转义\n<div>{userInput}</div>\n```\n\n```python\n# ✅ Jinja2 模板默认自动转义\n{{ user_input }}\n```\n\n**第 2 层：输入校验**\n- 对输入做白名单校验（如邮箱、手机号格式）\n- 限制特殊字符\n\n**第 3 层：CSP（内容安全策略）**\n- 配置 CSP 头，即使注入了脚本也无法执行\n- 这是最有效的 XSS 防御手段\n\n**第 4 层：HttpOnly Cookie**\n- 给 Session Cookie 加 HttpOnly 属性\n- 即使被 XSS 也偷不到 Cookie",
+        "verify": "**验证方法**：\n\n1. **手工测试**：在输入框输入 `<script>alert(1)</script>` 或 `<img src=x onerror=alert(1)>`\n\n2. **专业工具**：使用 OWASP ZAP、Burp Suite 主动扫描\n\n3. **代码审计**：\n- 检查所有 `innerHTML`、`document.write` 等危险 API\n- 检查模板中是否使用了 `|safe` 等跳过转义的指令\n- 检查所有用户输入的输出点\n\n4. **CSP 验证**：配置 CSP 后，故意注入测试脚本，确认被拦截",
+    },
+    "csrf": {
+        "name": "CSRF (跨站请求伪造)",
+        "category": "vulnerability",
+        "severity": "high",
+        "aliases": ["csrf", "跨站请求伪造", "xsrf", "cross-site request forgery"],
+        "principle": "CSRF 是攻击者诱导已登录的用户访问恶意页面，利用用户的登录态自动发起请求。\n\n**攻击原理**：浏览器会自动带上目标网站的 Cookie。如果用户已登录你的网站，访问了恶意网站，恶意网站可以构造表单/图片请求你的 API，浏览器会带着用户的 Cookie 发送。\n\n**典型场景**：用户登录了银行网站，然后访问了攻击者的网站，攻击者的页面自动发了一个转账请求。",
+        "risk": "🔴 **高风险**\n- 攻击者可以以用户的身份执行操作\n- 转账、改密码、删数据、发邮件等都可能被伪造\n- 用户完全不知情\n- 是经典的 Web 安全漏洞\n- 属于 OWASP Top 10 历史常客",
+        "fix_code": "**核心防御手段**：\n\n**1. CSRF Token（推荐）**\n```python\n# Flask-WTF 示例\nfrom flask_wtf.csrf import CSRFProtect\ncsrf = CSRFProtect(app)\n\n# 表单中自动包含\n<form method=\"POST\">\n    {{ form.hidden_tag() }}\n    ...\n</form>\n```\n\n```javascript\n// Express + csurf\nconst csrf = require('csurf');\napp.use(csrf({ cookie: true }));\n// 所有 POST 请求都要带 _csrf token\n```\n\n**2. SameSite Cookie**\n```\nSet-Cookie: session=xxx; SameSite=Strict; HttpOnly; Secure\n```\n- `Strict` — 完全不随跨站请求发送（最严）\n- `Lax` — 顶级导航的 GET 请求会带（默认值，平衡体验）\n\n**3. 验证 Referer/Origin 头**\n- 检查请求来源是否是自己的域名\n- 作为补充手段\n\n**4. 二次验证**\n- 敏感操作要求输入密码或验证码",
+        "verify": "**验证方法**：\n\n1. **手工测试**：\n- 登录目标网站\n- 构造一个包含 POST 表单的恶意 HTML 页面\n- 在同一浏览器打开，看操作是否成功\n\n2. **检查 Token**：\n- 每个表单是否有 CSRF token\n- 不带 token 的请求是否被拒绝\n- token 是否随机且不可预测\n\n3. **SameSite 验证**：\n- 看 Cookie 的 SameSite 属性\n- 跨站请求时 Cookie 是否被正确阻止",
+    },
+    "sensitive_files": {
+        "name": "敏感文件泄露",
+        "category": "vulnerability",
+        "severity": "high",
+        "aliases": ["敏感文件", ".env", ".git", "git泄露", "源码泄露", "敏感信息", "信息泄露", "配置泄露", "备份文件", "sql文件", "环境变量"],
+        "principle": "敏感文件泄露是指网站的配置文件、源码、备份等敏感文件可以通过 URL 直接访问下载。\n\n**常见敏感文件**：\n- `.env` — 环境变量配置（数据库密码、API Key 等）\n- `.git/` — Git 仓库（完整源码 + 提交历史）\n- `.gitignore`、`.svn/` — 版本控制文件\n- `backup.sql`、`dump.sql` — 数据库备份\n- `config.php`、`config.json` — 配置文件\n- `phpinfo.php` — PHP 信息\n- `.DS_Store` — macOS 目录信息",
+        "risk": "🔴 **高风险**\n- .env 泄露直接拿到数据库密码、API 密钥\n- .git 泄露拿到完整源码，可以审计其他漏洞\n- 数据库备份泄露 = 所有数据泄露\n- 可能导致进一步的入侵（拿服务器权限）\n- 很多重大安全事件都始于一个简单的文件泄露",
+        "fix_code": "**多层防护**：\n\n**第 1 层：Web 服务器拦截**\n```nginx\n# Nginx 拦截所有隐藏文件和敏感后缀\nlocation ~ /\\. {\n    deny all;\n    return 403;\n}\n\nlocation ~* \\.(env|git|svn|hg|bak|sql|log|swp|ini|conf)$ {\n    deny all;\n    return 403;\n}\n\nlocation ~* (backup|dump|test|install|setup)\\.(php|sql|tar|zip|gz)$ {\n    deny all;\n    return 403;\n}\n```\n\n```apache\n# Apache .htaccess\n<FilesMatch \"^\\.\">\n    Order allow,deny\n    Deny from all\n</FilesMatch>\n```\n\n**第 2 层：部署规范**\n- 不要把 .env、.git 等文件放在 Web 根目录下\n- 使用部署工具（Git 只拉取代码，不上传 .git 目录）\n- 定期检查 Web 根目录下有没有不该存在的文件\n\n**第 3 层：权限控制**\n- 配置文件权限 600（只有所有者可读）\n- Web 进程用户不要有读配置文件的权限（通过环境变量传递）",
+        "verify": "**验证方法**：\n\n1. **直接访问测试**：\n```\nhttps://yourdomain.com/.env\nhttps://yourdomain.com/.git/HEAD\nhttps://yourdomain.com/backup.sql\n```\n\n2. **本工具扫描**：扫描报告会列出所有发现的敏感文件\n\n3. **curl 批量测试**：\n```bash\nfor f in .env .git/HEAD backup.sql config.php; do\n  echo \"$f: $(curl -s -o /dev/null -w '%{http_code}' https://yourdomain.com/$f)\"\ndone\n```\n\n4. **定期巡检**：用工具定期检查是否有新的敏感文件暴露",
+    },
+    "directory_traversal": {
+        "name": "目录遍历 (Path Traversal)",
+        "category": "vulnerability",
+        "severity": "high",
+        "aliases": ["目录遍历", "路径遍历", "路径穿越", "目录穿越", "../", "dot dot slash", "路径遍历攻击"],
+        "principle": "目录遍历是攻击者通过构造 `../` 等特殊路径，访问到 Web 根目录以外的文件。\n\n**攻击原理**：如果后端代码直接把用户输入拼接到文件路径上，没有做规范化和限制，攻击者可以跳出指定目录。\n\n**典型例子**：\n```\n/download?file=../../../../etc/passwd\n/view?page=../../../windows/system32/config/sam\n```\n\n**攻击后果**：读取系统敏感文件、源代码、配置文件等。",
+        "risk": "🔴 **高风险**\n- 可以读取服务器上的任意文件\n- 泄露源代码、配置、密码、日志等\n- 可能进一步导致 RCE（远程代码执行）\n- 是经典的高危漏洞",
+        "fix_code": "**核心修复原则：永远不要相信用户输入的路径**\n\n**1. 白名单方式（最安全）**\n```python\nALLOWED_FILES = {\n    'report': '/var/data/report.pdf',\n    'manual': '/var/data/manual.pdf',\n}\nfilename = request.args.get('file', '')\nif filename not in ALLOWED_FILES:\n    abort(404)\nfilepath = ALLOWED_FILES[filename]\n```\n\n**2. 路径规范化 + 目录限制**\n```python\nimport os\n\nbase_dir = '/var/data/downloads/'\nuser_file = request.args.get('file', '')\n\n# 规范化路径\nreal_path = os.path.realpath(os.path.join(base_dir, user_file))\n\n# 检查是否在允许的目录内\nif not real_path.startswith(base_dir):\n    abort(403)\n```\n\n**3. 输入过滤**\n- 过滤 `../`、`..\\`、`%2e%2e%2f` 等编码形式\n- 但注意：过滤可以被绕过，必须配合路径规范化检查",
+        "verify": "**验证方法**：\n\n1. **经典 payload 测试**：\n```\n?file=../../../../etc/passwd\n?file=..%2f..%2f..%2fetc%2fpasswd\n?file=....//....//etc/passwd\n```\n\n2. **Windows 系统**：\n```\n?file=..\\..\\..\\windows\\system32\\drivers\\etc\\hosts\n```\n\n3. **代码审计**：\n- 所有文件操作的地方都要检查\n- 看是否对用户输入做了路径安全处理\n- 推荐使用 path 规范化 + 目录前缀检查",
+    },
+    "ssrf": {
+        "name": "SSRF (服务端请求伪造)",
+        "category": "vulnerability",
+        "severity": "high",
+        "aliases": ["ssrf", "服务端请求伪造", "服务端伪造", "server-side request forgery"],
+        "principle": "SSRF 是攻击者让服务器发起请求，访问内网资源或云服务元数据。\n\n**攻击原理**：如果服务端有「根据用户提供的 URL 获取内容」的功能（如截图、图片代理、网页抓取），攻击者可以让它请求内网地址。\n\n**典型攻击目标**：\n- 内网服务（`http://127.0.0.1:6379` Redis、`http://169.254.169.254` 云元数据）\n- 云服务元数据 API（获取临时凭证）\n- 内网管理后台\n- Elasticsearch、MongoDB 等无密码的内网服务",
+        "risk": "🔴 **高风险**\n- 可以探测内网架构和服务\n- 可以攻击内网服务（Redis、MongoDB 等）\n- 在云环境中可能获取服务器权限（通过元数据 API）\n- 是 OWASP Top 10 2021 新增的 A10\n- 近年来云服务普及后危害越来越大",
+        "fix_code": "**多层防御**：\n\n**1. 使用白名单域名（推荐）**\n```python\nALLOWED_DOMAINS = ['trusted.com', 'cdn.example.com']\n\ndef is_safe_url(url):\n    from urllib.parse import urlparse\n    parsed = urlparse(url)\n    if parsed.scheme not in ('http', 'https'):\n        return False\n    if parsed.hostname not in ALLOWED_DOMAINS:\n        return False\n    return True\n```\n\n**2. 禁止内网地址**\n```python\nimport ipaddress\nimport socket\n\ndef is_internal_ip(url):\n    hostname = urlparse(url).hostname\n    try:\n        ip = socket.gethostbyname(hostname)\n        return ipaddress.ip_address(ip).is_private\n    except:\n        return True  # 解析失败也拒绝\n```\n\n**3. 禁用危险协议**\n- 只允许 http/https\n- 禁止 file://、gopher://、dict:// 等\n\n**4. 独立网络隔离**\n- 用单独的安全组/网络策略限制发起请求的服务\n- 不让它能访问内网其他服务",
+        "verify": "**验证方法**：\n\n1. **内网地址测试**：\n```\n?url=http://127.0.0.1/\n?url=http://169.254.169.254/latest/meta-data/\n?url=http://localhost:6379/\n```\n\n2. **协议测试**：\n```\n?url=file:///etc/passwd\n?url=gopher://127.0.0.1:6379/_INFO\n```\n\n3. **DNS 重绑定测试**：用 DNS 重绑定工具绕过 IP 校验\n\n4. **代码审计**：\n- 所有发起 HTTP 请求的地方都要检查\n- 看 URL 参数是否来自用户输入\n- 确认有完整的 SSRF 防护",
+    },
+    "clickjacking": {
+        "name": "点击劫持 (Clickjacking)",
+        "category": "vulnerability",
+        "severity": "medium",
+        "aliases": ["点击劫持", "clickjacking", "ui redressing", "界面伪装"],
+        "principle": "点击劫持是攻击者用透明 iframe 把目标页面覆盖在恶意页面上，用户以为在点正常按钮，实际上点的是目标页面的敏感操作。\n\n**攻击场景**：\n1. 攻击者创建一个诱人的页面（如「点击领取红包」）\n2. 在上面覆盖一个透明的 iframe，加载受害者已登录的网站\n3. 用户点「领取」按钮，实际点的是 iframe 里的「转账」按钮",
+        "risk": "🟡 **中风险**\n- 可以诱导用户执行未授权操作\n- 转账、改密码、关注、点赞等都可能被伪造\n- 对有敏感操作的网站危害较大\n- 用户体验层面的攻击，技术门槛低",
+        "fix_code": "**三层防御**：\n\n**第 1 层：X-Frame-Options 头**\n```nginx\nadd_header X-Frame-Options \"DENY\" always;\n```\n\n**第 2 层：CSP frame-ancestors 指令**\n```nginx\nadd_header Content-Security-Policy \"frame-ancestors 'none'\" always;\n```\n\n**第 3 层：前端防御（frame-busting）**\n```javascript\n// 检测是否被 iframe 嵌入\nif (window.top !== window.self) {\n    window.top.location = window.self.location;\n}\n```\n\n**敏感操作额外保护**：\n- 关键操作要求二次确认（输入密码/验证码）\n- 使用 reCAPTCHA 等人机验证",
+        "verify": "**验证方法**：\n\n1. **iframe 测试**：\n```html\n<iframe src=\"https://yourdomain.com\" width=\"800\" height=\"600\"></iframe>\n```\n如果页面拒绝显示说明生效。\n\n2. **检查响应头**：\n```bash\ncurl -sI https://yourdomain.com | grep -iE 'x-frame|content-security'\n```\n\n3. **浏览器开发者工具**：看 Console 有没有 frame 拦截的报错",
+    },
+    "mime_sniffing": {
+        "name": "MIME 嗅探攻击",
+        "category": "vulnerability",
+        "severity": "medium",
+        "aliases": ["mime嗅探", "mime 嗅探", "nosniff", "x-content-type", "mime类型猜测", "内容嗅探"],
+        "principle": "MIME 嗅探是浏览器的「自动识别」功能：当服务器返回的 Content-Type 不明确时，浏览器会猜测文件类型。\n\n**攻击原理**：攻击者上传一个后缀是 `.jpg` 但内容是 JS/HTML 的文件。浏览器嗅探后把它当脚本/HTML 执行，导致 XSS。\n\n**典型场景**：图片上传功能，用户上传了「图片」实际是 HTML 页面，访问时被浏览器当 HTML 解析。",
+        "risk": "🟡 **中风险**\n- 配合文件上传可导致 XSS\n- 用户上传的文件可能被当作脚本执行\n- 对允许用户上传内容的网站风险较高\n- 是常见的 Web 安全配置问题",
+        "fix_code": "**核心修复**：\n\n**1. 添加 X-Content-Type-Options: nosniff**\n```nginx\nadd_header X-Content-Type-Options \"nosniff\" always;\n```\n\n**2. 正确设置 Content-Type**\n- 服务端明确指定每个文件的 MIME 类型\n- 不要让浏览器猜测\n\n**3. 文件上传加固**\n- 校验文件头（魔数），不仅看后缀名\n- 图片类文件重新编码（破坏恶意代码）\n- 上传文件放在独立域名（用户上传的静态资源和主站隔离）\n- 使用 CDN/OSS 的图片处理功能\n\n**4. 配合 CSP**\n- 配置 `default-src 'self'` 限制脚本执行来源",
+        "verify": "**验证方法**：\n\n1. **响应头检查**：\n```bash\ncurl -sI https://yourdomain.com/ | grep -i x-content-type\n```\n\n2. **功能测试**：\n- 上传一个内容为 `<script>alert(1)</script>` 的 .txt 文件\n- 访问该文件，确认浏览器没有执行脚本\n\n3. **图片上传测试**：\n- 上传伪装成图片的 HTML 文件\n- 确认访问时以下载方式或纯文本方式显示，不执行脚本",
+    },
+    "ssl_weak_config": {
+        "name": "SSL/TLS 弱配置",
+        "category": "vulnerability",
+        "severity": "high",
+        "aliases": ["ssl", "tls", "弱加密", "弱配置", "ssl/tls", "tls配置", "证书", "弱密码套件", "ssl漏洞", "tls漏洞"],
+        "principle": "SSL/TLS 弱配置是指 HTTPS 配置不安全，比如使用过时的协议版本、弱加密算法、弱证书等。\n\n**常见问题**：\n- 仍支持 SSLv3、TLS 1.0、TLS 1.1 等旧协议\n- 使用弱密码套件（如 RC4、DES、3DES）\n- 证书过期或自签名\n- 密钥长度不够（1024 位 RSA）\n- 缺少 OCSP Stapling、HSTS 等增强配置",
+        "risk": "🔴 **高风险**\n- 弱加密可能被破解，导致 HTTPS 传输的数据被窃听\n- 旧协议存在已知漏洞（POODLE、BEAST、Heartbleed 等）\n- 证书问题导致中间人攻击成为可能\n- 是整个网站安全的基础，基础不牢地动山摇",
+        "fix_code": "**推荐配置（以 Nginx 为例）**：\n\n```nginx\n# 协议版本：只保留 TLS 1.2 和 1.3\nssl_protocols TLSv1.2 TLSv1.3;\n\n# 密码套件（强加密优先）\nssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384';\n\n# 服务器优先选择密码套件\nssl_prefer_server_ciphers on;\n\n# SSL 会话缓存\nssl_session_cache shared:SSL:10m;\nssl_session_timeout 10m;\n\n# OCSP Stapling\nssl_stapling on;\nssl_stapling_verify on;\nresolver 8.8.8.8 8.8.4.4 valid=300s;\n\n# DH 参数（2048位以上）\nssl_dhparam /etc/nginx/dhparam.pem;\n```\n\n**证书要求**：\n- RSA 密钥至少 2048 位（推荐 4096 位）\n- ECDSA 密钥至少 256 位\n- 使用 SHA-256 签名算法\n- 证书有效期不超过 1 年",
+        "verify": "**验证方法**：\n\n1. **在线工具**：\n- SSL Labs Server Test（ssllabs.com/ssltest）\n- 得到 A 以上评级才算合格\n\n2. **命令行测试**：\n```bash\n# 测试支持的协议版本\nopenssl s_client -connect yourdomain.com:443 -tls1_1\n# 如果能连上说明还支持旧协议\n\n# 查看证书信息\nopenssl s_client -connect yourdomain.com:443 -showcerts\n```\n\n3. **nmap 脚本扫描**：\n```bash\nnmap --script ssl-enum-ciphers -p 443 yourdomain.com\n```\n\n4. **本工具扫描**：检测 SSL/TLS 配置并给出评分",
+    },
+    "info_leak": {
+        "name": "信息泄露 (Server 头、版本号)",
+        "category": "vulnerability",
+        "severity": "low",
+        "aliases": ["信息泄露", "server头", "server 头", "版本泄露", "服务器版本", "banner", "信息泄漏", "指纹识别"],
+        "principle": "信息泄露是指网站通过响应头、错误页面、注释等方式暴露了服务器软件、版本号、框架、语言等技术细节。\n\n**常见泄露点**：\n- `Server: nginx/1.18.0 (Ubuntu)` — 服务器软件和版本\n- `X-Powered-By: PHP/7.4.3` — 后端语言和版本\n- `X-AspNet-Version` — ASP.NET 版本\n- 错误页面显示完整堆栈信息\n- HTML 注释中遗留调试信息\n- 版本号在 URL、Cookie 中暴露",
+        "risk": "🟢 **低风险**\n- 帮助攻击者缩小攻击范围，针对特定版本找已知漏洞\n- 降低攻击门槛，提高攻击效率\n- 本身不直接造成危害，但会放大其他漏洞的影响\n- 属于安全加固的一部分",
+        "fix_code": "**各平台隐藏版本号方法**：\n\n**Nginx**：\n```nginx\nserver_tokens off;  # 隐藏 Nginx 版本号\n\n# 如需完全隐藏 Server 头（需要第三方模块或 Nginx Plus）\n# more_clear_headers 'Server' 'X-Powered-By';\n```\n\n**Apache**：\n```apache\nServerTokens Prod\nServerSignature Off\nHeader unset X-Powered-By\n```\n\n**PHP**：\n```ini\n# php.ini\nexpose_php = Off\n```\n\n**Express**：\n```javascript\napp.disable('x-powered-by');\n```\n\n**Flask**：\n```python\n@app.after_request\ndef remove_headers(resp):\n    resp.headers.pop('Server', None)\n    return resp\n```\n\n**错误页面**：\n- 自定义 4xx/5xx 错误页面\n- 不要暴露堆栈信息、SQL 错误详情\n- 生产环境关闭 debug 模式",
+        "verify": "**验证方法**：\n\n1. **响应头检查**：\n```bash\ncurl -sI https://yourdomain.com | grep -iE 'server|x-powered|x-asp'\n```\n\n2. **错误页面测试**：\n- 访问不存在的页面（404）看错误信息\n- 故意触发 500 错误看是否泄露堆栈\n\n3. **页面源码检查**：\n- 查看 HTML 源码，看注释中有没有敏感信息\n- 检查 JS 中有没有硬编码的密钥、路径\n\n4. **指纹识别工具**：用 Wappalyzer、WhatWeb 等工具看能识别出多少信息",
+    },
+}
+
+# ---------- 工具使用类知识库 ----------
+_AI_TOOL_KB = {
+    "how_to_scan": {
+         "name": "怎么扫描网站",
+         "question": "怎么扫描网站",
+         "aliases": ["怎么扫描", "如何扫描", "怎么扫", "扫一下", "开始扫描", "怎么用", "如何使用"],
+        "answer": "**🔍 怎么扫描网站（30 秒上手）**\n\n**步骤 1：输入网址**\n在首页的扫描框中输入目标网站地址（比如 `example.com` 或 `https://example.com`），自动补全协议。\n\n**步骤 2：开始扫描**\n点击「开始扫描」按钮，等待 5-15 秒即可完成。\n\n**步骤 3：查看报告**\n扫描完成后自动展示结果，包括：\n- 📊 安全评分（满分 100）\n- 🔴 高风险 / 🟡 中风险 / 🟢 低风险 分类\n- 🛠 每个问题的修复代码\n- ✅ 验证修复效果\n\n**💡 小贴士**：\n- 登录后可以保存扫描历史\n- 支持批量扫描（最多 5 个 URL）\n- 可以添加监控，定期自动扫描\n- 扫描完全在服务端完成，不需要安装任何东西",
+    },
+    "how_to_read_report": {
+        "name": "怎么看扫描报告",
+        "question": "怎么看扫描报告",
+        "aliases": ["怎么看报告", "扫描报告", "报告怎么看", "怎么看结果", "结果在哪", "报告解读"],
+        "answer": "**📋 怎么看扫描报告**\n\n报告从上到下分为几个部分：\n\n**1. 概览区**\n- 评分（满分 100）和风险等级\n- 高/中/低风险项数量统计\n- 扫描的目标 URL 和时间\n\n**2. 真实证据区（可展开）**\n- 🔬 服务器实际响应头列表\n- 🔬 缺失的关键安全头\n- 🔬 敏感文件探测结果\n\n**3. 详细问题列表**\n每个问题包含：\n- 问题名称和严重程度标签\n- OWASP 分类（如有）\n- 问题详情描述\n- 💡 修复建议\n- 🛠 修复代码（可展开，多平台）\n- ✅ 验证方法（可展开）\n\n**4. 修复建议区**\n- 6 大平台的完整修复模板\n- 一键复制配置\n\n**💡 建议阅读顺序**：先看评分 → 再看高风险项 → 逐个看修复方法 → 应用后重新扫描验证",
+    },
+    "how_to_use_fixer": {
+        "name": "怎么用修复器",
+        "question": "怎么用修复器",
+        "aliases": ["修复器", "自动修复", "一键修复", "怎么用修复", "修复工具", "修复代码", "怎么修复"],
+        "answer": "**🛠 怎么用修复功能**\n\n**方式 1：手动复制配置（推荐）**\n1. 扫描后展开「修复代码」部分\n2. 选择你的服务器平台（Nginx/Apache/Express/Flask/Cloudflare）\n3. 点击「复制」按钮复制配置代码\n4. 粘贴到你的配置文件中\n5. 重启服务或重载配置\n\n**方式 2：完整修复模板**\n扫描报告底部有「完整修复建议」区域：\n- 切换不同平台 tab\n- 一键复制整段配置\n- 包含所有检测项的修复代码\n\n**方式 3：Cloudflare 一键应用**\n如果你的网站使用 Cloudflare CDN：\n1. 在设置中配置 Cloudflare API Token\n2. 扫描后点击「一键应用到 Cloudflare」\n3. 自动将安全头配置推送到 Cloudflare\n\n**⚠ 注意事项**：\n- 修改配置前先备份\n- 建议先在测试环境验证\n- CSP 策略可能影响第三方资源，注意观察控制台报错\n- 修改后务必重新扫描验证",
+    },
+    "how_to_verify_fix": {
+        "name": "怎么验证修复效果",
+        "question": "怎么验证修复效果",
+        "aliases": ["怎么验证", "如何验证", "验证修复", "修复后怎么看", "怎么确认", "验证效果"],
+        "answer": "**✅ 怎么验证修复效果**\n\n**方法 1：重新扫描（最简单）**\n1. 应用修复后，在扫描报告页点击「重新扫描」\n2. 工具会重新检测所有项目\n3. 对比修复前后的评分和问题列表\n4. 已修复的问题会消失，评分相应提升\n\n**方法 2：浏览器开发者工具**\n1. 打开网站，按 F12\n2. 切换到 Network 面板\n3. 刷新页面，点击第一个请求\n4. 查看 Response Headers 中是否有安全头\n\n**方法 3：curl 命令**\n```bash\n# 查看所有响应头\ncurl -sI https://yourdomain.com\n\n# 只看安全相关的头\ncurl -sI https://yourdomain.com | grep -iE 'strict-transport|content-security|x-frame|x-content|referrer|permissions'\n```\n\n**方法 4：在线工具**\n- securityheaders.com — 安全头检测\n- SSL Labs — SSL/TLS 配置检测\n\n**💡 建议**：修复后用多种方法验证，确保万无一失。本工具的重新扫描功能最方便，可以同时看评分变化。",
+    },
+    "score_rules": {
+        "name": "评分规则是什么",
+        "question": "评分规则是什么",
+        "aliases": ["评分规则", "怎么算分", "打分规则", "分数怎么算", "评分标准", "计分规则"],
+        "answer": "**📊 评分规则详解（满分 100 分）**\n\n**基础分**：100 分\n\n**扣分项**：\n| 严重程度 | 每个扣分 |\n|---------|---------|\n| Critical（严重） | -25 分 |\n| High（高风险） | -15 分 |\n| Medium（中风险） | -8 分 |\n| Low（低风险） | -3 分 |\n\n**加分项（修复加成）**：\n| 项目 | 加分 |\n|-----|-----|\n| 4 个核心安全头（HSTS+CSP+XFO+XCTO） | +12 分 |\n| 敏感文件拦截 | +6 分 |\n| 隐藏 Server 版本号 | +4 分 |\n| Cookie 安全属性 | +5 分 |\n| Referrer-Policy | +2 分 |\n| Permissions-Policy | +2 分 |\n\n**风险等级对应分数**：\n- 🟢 安全：90-100 分\n- 🟡 中等：60-89 分\n- 🔴 危险：0-59 分\n\n**💡 快速提分技巧**：\n1. 先加 4 个核心安全头（+12 分，5 分钟搞定）\n2. 隐藏 Server 版本号（+4 分，1 行配置）\n3. 拦截敏感文件（+6 分，几行配置）\n这三项加起来就有 22 分提升空间！",
+    },
+}
+
+# ---------- 通用回复 ----------
+_AI_GENERAL_REPLIES = {
+    "greeting": "你好呀！我是漏洞哨兵的安全顾问 🛡️\n\n我可以帮你：\n- 🔍 解释安全概念和漏洞原理\n- 🛠 给出具体的修复代码（多平台）\n- ✅ 告诉你怎么验证修复效果\n- 📊 分析你的扫描报告和扣分原因\n- 🎯 给出修复优先级建议\n\n直接问我就行，比如：\n- 「HSTS 是什么？」\n- 「CSP 怎么配置？」\n- 「SQL 注入怎么防？」\n- 「我应该先修什么？」",
+    "thanks": "不客气！能帮到你我很开心 😊\n\n安全是一场持久战，不是一劳永逸的事情。修完问题后记得定期扫描，保持网站的安全状态。\n\n有任何安全问题随时问我，也欢迎你把工具推荐给朋友～",
+    "fallback": "我还在学习中，暂时不太理解你的问题 🤔\n\n你可以试试这样问：\n- 「HSTS 是什么？怎么修复？」\n- 「XSS 漏洞怎么防？」\n- 「我应该先修什么问题？」\n- 「评分规则是什么？」\n- 「怎么扫描网站？」\n\n或者告诉我你想了解哪方面的安全知识，我来给你推荐～",
+}
 
 
+# ---------- 智能匹配引擎 ----------
+def _ai_calculate_match_score(msg: str, aliases: list) -> float:
+    """计算用户消息与知识条目的匹配分数（加权匹配）"""
+    msg_lower = msg.lower()
+    score = 0.0
+    
+    for alias in aliases:
+        alias_lower = alias.lower()
+        if alias_lower in msg_lower:
+            # 完全包含：基础分 + 长度加权（越长的词匹配权重越高）
+            base = 10.0 + len(alias_lower) * 0.5
+            score += base
+            
+            # 如果是消息中的主要内容（占比较高），额外加分
+            if len(alias_lower) / max(len(msg_lower), 1) > 0.3:
+                score += 5.0
+    
+    return score
+
+
+def _ai_detect_intent(msg: str) -> list:
+    """检测用户意图，返回意图列表（按置信度排序）"""
+    msg_lower = msg.lower()
+    intents = []
+    
+    for intent, keywords in _AI_INTENT_KEYWORDS.items():
+        count = 0
+        for kw in keywords:
+            if kw.lower() in msg_lower:
+                count += 1
+        if count > 0:
+            intents.append((intent, count))
+    
+    intents.sort(key=lambda x: -x[1])
+    return [i[0] for i in intents]
+
+
+def _ai_find_best_knowledge(msg: str) -> tuple:
+    """在知识库中找到最佳匹配的条目，返回 (key, entry, score)"""
+    best_key = None
+    best_entry = None
+    best_score = 0.0
+    
+    # 搜索安全知识库
+    for key, entry in _AI_KNOWLEDGE_BASE.items():
+        score = _ai_calculate_match_score(msg, entry["aliases"])
+        if score > best_score:
+            best_score = score
+            best_key = key
+            best_entry = entry
+    
+    # 搜索工具知识库
+    for key, entry in _AI_TOOL_KB.items():
+        score = _ai_calculate_match_score(msg, entry["aliases"])
+        if score > best_score:
+            best_score = score
+            best_key = key
+            best_entry = entry
+    
+    return best_key, best_entry, best_score
+
+
+def _ai_generate_knowledge_reply(entry: dict, intents: list, msg: str) -> str:
+    """根据知识条目和用户意图生成回答"""
+    # 工具类知识库直接返回 answer
+    if entry.get("answer"):
+        return entry["answer"]
+    
+    category = entry.get("category", "")
+    
+    # 判断用户主要想知道什么
+    wants_fix = any(i in intents for i in ["fix", "config_location"])
+    wants_principle = "principle" in intents
+    wants_risk = "risk" in intents
+    wants_verify = "verify" in intents
+    
+    # 如果没有明确意图，或者是询问"是什么/介绍"，给完整回答
+    if not intents or wants_principle or ("是什么" in msg or "什么是" in msg or "介绍" in msg or "解释" in msg):
+        parts = []
+        parts.append(f"**{entry['name']}**\n")
+        parts.append(entry.get("principle", ""))
+        if entry.get("risk"):
+            parts.append(f"\n---\n**⚠ 风险等级**\n{entry['risk']}")
+        if entry.get("fix_nginx") or entry.get("fix_code"):
+            parts.append(f"\n---\n**🛠 修复方案**")
+            if entry.get("fix_nginx"):
+                parts.append(entry["fix_nginx"])
+            elif entry.get("fix_code"):
+                parts.append(entry["fix_code"])
+        if entry.get("verify"):
+            parts.append(f"\n---\n**✅ 验证方法**\n{entry['verify']}")
+        parts.append("\n---\n**💡 行动建议**\n")
+        sev = entry.get("severity", "medium")
+        if sev in ("critical", "high"):
+            parts.append("这是高风险项，建议尽快修复。先在测试环境验证配置，确认无误后再部署到生产环境。")
+        else:
+            parts.append("虽然风险等级不高，但作为安全加固的一部分，建议在下次迭代中修复。")
+        return "\n".join(parts)
+    
+    # 用户明确问修复
+    if wants_fix:
+        parts = [f"**🛠 {entry['name']} - 修复方案**\n"]
+        if entry.get("fix_nginx"):
+            parts.append("**Nginx 配置：**\n")
+            parts.append(entry["fix_nginx"])
+        if entry.get("fix_apache"):
+            parts.append("\n**Apache 配置：**\n")
+            parts.append(entry["fix_apache"])
+        if entry.get("fix_cloudflare"):
+            parts.append("\n**Cloudflare 配置：**\n")
+            parts.append(entry["fix_cloudflare"])
+        if entry.get("fix_express"):
+            parts.append("\n**Node.js / Express：**\n")
+            parts.append(entry["fix_express"])
+        if entry.get("fix_flask"):
+            parts.append("\n**Python / Flask：**\n")
+            parts.append(entry["fix_flask"])
+        if entry.get("fix_code"):
+            parts.append(entry["fix_code"])
+        if entry.get("verify"):
+            parts.append(f"\n---\n**✅ 验证方法**\n{entry['verify']}")
+        parts.append("\n---\n**💡 小贴士**：修改配置后记得重启服务，然后重新扫描验证效果。")
+        return "\n".join(parts)
+    
+    # 用户明确问风险
+    if wants_risk:
+        parts = [f"**⚠ {entry['name']} - 风险分析**\n"]
+        if entry.get("risk"):
+            parts.append(entry["risk"])
+        else:
+            parts.append("暂无详细风险分析。")
+        return "\n".join(parts)
+    
+    # 用户明确问验证
+    if wants_verify:
+        parts = [f"**✅ {entry['name']} - 验证方法**\n"]
+        if entry.get("verify"):
+            parts.append(entry["verify"])
+        else:
+            parts.append("修复后重新扫描该网站，查看对应问题项是否消失。")
+        return "\n".join(parts)
+    
+    # 默认：给出简要介绍 + 修复
+    parts = [f"**{entry['name']}**\n"]
+    if entry.get("principle"):
+        # 取前两段
+        para = entry["principle"].split("\n\n")[0]
+        parts.append(para)
+    if entry.get("fix_nginx"):
+        parts.append(f"\n**🛠 Nginx 修复示例：**\n{entry['fix_nginx']}")
+    elif entry.get("fix_code"):
+        parts.append(f"\n**🛠 修复方案：**\n{entry['fix_code']}")
+    parts.append(f"\n💡 想了解更多可以问我：「原理是什么」「有什么风险」「怎么验证」")
+    return "\n".join(parts)
+
+
+def _ai_generate_scan_based_reply(msg: str, scan_context: dict, intents: list, matched_knowledge: tuple) -> str:
+    """基于扫描结果生成个性化回答"""
+    findings = scan_context.get("findings", [])
+    score = scan_context.get("score", 0)
+    risk_level = scan_context.get("risk_level", "未知")
+    summary = scan_context.get("summary", {})
+    
+    # 按严重程度排序
+    def sev_rank(sev):
+        return {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(sev, 4)
+    
+    sorted_findings = sorted(findings, key=lambda f: sev_rank(f.get("severity", "low")))
+    high_findings = [f for f in findings if f.get("severity") in ("critical", "high")]
+    
+    # 1. 优先级 / 先修什么
+    if any(i in intents for i in ["priority"]):
+        lines = [f"🔍 基于你最近的扫描结果（{score} 分，{risk_level}），建议按以下优先级修复：\n"]
+        
+        if not sorted_findings:
+            lines.append("🎉 太棒了！没有发现任何安全问题，你的网站安全状况很好！")
+            return "\n".join(lines)
+        
+        for i, f in enumerate(sorted_findings[:5], 1):
+            sev = f.get("severity", "low")
+            tag = "🔴" if sev in ("critical", "high") else "🟡" if sev == "medium" else "🟢"
+            lines.append(f"{tag} **第{i}优先**：{f.get('name', '未知问题')}")
+            if f.get("description") or f.get("detail"):
+                desc = (f.get("description") or f.get("detail", ""))[:60]
+                lines.append(f"   📝 {desc}")
+            lines.append("")
+        
+        # 预估提升
+        estimated_bonus = min(100 - score, len(high_findings) * 15 + 10)
+        lines.append(f"---\n**📈 预估效果**：全部修复后，评分预计可提升到 **{min(100, score + estimated_bonus)} 分** 左右。")
+        lines.append(f"\n💡 建议先集中解决 🔴 高风险项，见效最快。修完后重新扫描验证效果吧！")
+        return "\n".join(lines)
+    
+    # 2. 分数 / 扣分原因
+    if any(i in intents for i in ["score"]):
+        lines = [f"📊 你的当前评分：**{score} 分**（{risk_level}）\n"]
+        
+        if summary:
+            h = summary.get("high", 0)
+            m = summary.get("medium", 0)
+            l = summary.get("low", 0)
+            c = summary.get("critical", 0)
+            
+            lines.append("**扣分明细：**")
+            if c: lines.append(f"- 🔴 严重问题 {c} 个 × 25 分 = -{c * 25} 分")
+            if h: lines.append(f"- 🔴 高风险 {h} 个 × 15 分 = -{h * 15} 分")
+            if m: lines.append(f"- 🟡 中风险 {m} 个 × 8 分 = -{m * 8} 分")
+            if l: lines.append(f"- 🟢 低风险 {l} 个 × 3 分 = -{l * 3} 分")
+        
+        lines.append(f"\n**主要扣分点：**")
+        for f in sorted_findings[:5]:
+            sev = f.get("severity", "low")
+            deduction = {"critical": 25, "high": 15, "medium": 8, "low": 3}.get(sev, 0)
+            tag = "🔴" if sev in ("critical", "high") else "🟡" if sev == "medium" else "🟢"
+            lines.append(f"{tag} {f.get('name', '')}（-{deduction} 分）")
+        
+        # 快速提分建议
+        lines.append(f"\n---\n**💡 快速提分建议**：")
+        easy_fixes = [f for f in findings if "头" in f.get("name", "") or "缺少" in f.get("name", "")]
+        if easy_fixes:
+            lines.append(f"安全头配置是最快的提分方式，加几个响应头就能涨 10-20 分。")
+            lines.append(f"比如加 HSTS、CSP、X-Frame-Options、X-Content-Type-Options 这 4 个头，只需要几分钟。")
+        else:
+            lines.append("你的基础安全配置已经不错了，可以关注更深层的安全问题。")
+        
+        return "\n".join(lines)
+    
+    # 3. 能提升多少分
+    if "upgrade" in intents:
+        high_count = len(high_findings)
+        med_count = len([f for f in findings if f.get("severity") == "medium"])
+        low_count = len([f for f in findings if f.get("severity") == "low"])
+        
+        potential = high_count * 15 + med_count * 8 + low_count * 3
+        estimated = min(100, score + potential)
+        
+        lines = [f"📈 评分提升预估\n"]
+        lines.append(f"当前评分：**{score} 分**")
+        lines.append(f"全部修复后预计：**{estimated} 分**（最多提升 {potential} 分）\n")
+        
+        lines.append("**分阶段提升计划：**")
+        lines.append(f"1️⃣ **第一阶段**（修复所有 🔴 高风险）→ 约 +{high_count * 15} 分，到 {min(100, score + high_count * 15)} 分")
+        lines.append(f"2️⃣ **第二阶段**（修复所有 🟡 中风险）→ 再加 +{med_count * 8} 分，到 {min(100, score + high_count * 15 + med_count * 8)} 分")
+        lines.append(f"3️⃣ **第三阶段**（修复所有 🟢 低风险）→ 再加 +{low_count * 3} 分，到 {min(100, score + potential)} 分")
+        
+        lines.append(f"\n💡 建议从高风险项开始，投入产出比最高。")
+        return "\n".join(lines)
+    
+    # 4. 配置位置
+    if "config_location" in intents:
+        lines = ["📌 安全配置放置位置指南：\n"]
+        lines.append("**Nginx**：")
+        lines.append("- 主配置：`/etc/nginx/nginx.conf`")
+        lines.append("- 站点配置：`/etc/nginx/conf.d/` 或 `/etc/nginx/sites-available/`")
+        lines.append("- 加在 `server { }` 块内")
+        lines.append("- 修改后执行：`nginx -t && nginx -s reload`\n")
+        lines.append("**Apache**：")
+        lines.append("- 主配置：`/etc/httpd/conf/httpd.conf` 或 `/etc/apache2/apache2.conf`")
+        lines.append("- 站点配置：`/etc/httpd/conf.d/` 或 `/etc/apache2/sites-available/`")
+        lines.append("- 也可以放在 `.htaccess` 文件中（需要启用 mod_headers）\n")
+        lines.append("**Express (Node.js)**：")
+        lines.append("- 推荐使用 `helmet` 中间件")
+        lines.append("- 在 `app.js` 中，`app.listen()` 之前添加\n")
+        lines.append("**Flask / FastAPI (Python)**：")
+        lines.append("- 使用 `flask-talisman` 或 `@app.after_request` 装饰器\n")
+        lines.append("**Cloudflare**：")
+        lines.append("- Dashboard → Rules → Transform Rules → Modify Response Header\n")
+        lines.append("⚠ **重要**：修改配置前先备份！修改后务必验证！")
+        return "\n".join(lines)
+    
+    # 5. 上线风险
+    if "deployment_risk" in intents:
+        high_count = len(high_findings)
+        lines = ["⚠ 上线安全风险评估：\n"]
+        
+        if high_count > 0:
+            lines.append(f"🔴 **高风险**：发现 {high_count} 个高风险项，**不建议直接上线**。")
+            lines.append("高风险项可能导致数据泄露、账号被接管等严重后果。")
+        elif score >= 80:
+            lines.append("🟢 **低风险**：整体安全状况良好，可以考虑上线。")
+        else:
+            lines.append("🟡 **中等风险**：存在一些安全配置问题，建议修复关键项后再上线。")
+        
+        lines.append(f"\n**必须修复的高风险项（{len(high_findings)} 个）：**")
+        for f in high_findings[:5]:
+            lines.append(f"- {f.get('name', '')}")
+        
+        lines.append("\n**💡 上线前安全检查清单：**")
+        lines.append("1. HSTS / CSP / X-Frame-Options / X-Content-Type-Options 四个核心头是否配置")
+        lines.append("2. 敏感文件（.env、.git 等）是否可访问")
+        lines.append("3. Cookie 是否设置了 HttpOnly、Secure、SameSite")
+        lines.append("4. 调试模式是否关闭，错误信息是否泄露堆栈")
+        lines.append("5. CSP 是否会影响第三方资源（建议先 report-only 模式）")
+        
+        return "\n".join(lines)
+    
+    # 6. 如果匹配到了具体的知识条目，结合扫描结果回答
+    if matched_knowledge and matched_knowledge[1]:
+        key, entry, match_score = matched_knowledge
+        # 检查用户的扫描结果中是否有这个问题
+        has_issue = any(
+            any(alias.lower() in f.get("name", "").lower() for alias in entry["aliases"])
+            for f in findings
+        )
+        
+        base_reply = _ai_generate_knowledge_reply(entry, intents, msg)
+        
+        if has_issue:
+            return base_reply + f"\n\n---\n**📌 你的网站状态**：\n⚠️ 检测到你的网站存在「{entry['name']}」相关问题，建议尽快修复。修复后重新扫描即可看到评分提升。"
+        else:
+            return base_reply + f"\n\n---\n**📌 你的网站状态**：\n✅ 好消息！你的网站没有检测到「{entry['name']}」相关问题，继续保持～"
+    
+    # 7. 默认：给出扫描摘要
+    lines = [f"📋 你最近的扫描结果摘要：\n"]
+    lines.append(f"- **评分**：{score} 分（{risk_level}）")
+    if summary:
+        lines.append(f"- **高风险**：{summary.get('high', 0) + summary.get('critical', 0)} 个")
+        lines.append(f"- **中风险**：{summary.get('medium', 0)} 个")
+        lines.append(f"- **低风险**：{summary.get('low', 0)} 个")
+    
+    if sorted_findings:
+        lines.append(f"\n**主要问题（前 5 个）：**")
+        for i, f in enumerate(sorted_findings[:5], 1):
+            sev = f.get("severity", "low")
+            tag = "🔴" if sev in ("critical", "high") else "🟡" if sev == "medium" else "🟢"
+            lines.append(f"{tag} {i}. {f.get('name', '')}")
+    
+    lines.append(f"\n💡 可以问我：「先修什么」「为什么扣分」「{sorted_findings[0].get('name', 'HSTS') if sorted_findings else 'HSTS'}怎么修」")
+    return "\n".join(lines)
+
+
+def _ai_get_last_scan(user_id: int) -> dict:
+    """获取用户最近一次扫描结果"""
+    if not user_id:
+        return None
+    try:
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT findings_json, summary_json, score, risk_level, url FROM scans WHERE user_id=? ORDER BY id DESC LIMIT 1",
+                (user_id,)
+            ).fetchone()
+            if row:
+                try:
+                    findings = json.loads(row["findings_json"]) if row["findings_json"] else []
+                    summary = json.loads(row["summary_json"]) if row["summary_json"] else {}
+                    return {
+                        "findings": findings,
+                        "summary": summary,
+                        "score": row["score"],
+                        "risk_level": row["risk_level"],
+                        "url": row["url"],
+                    }
+                except Exception:
+                    return None
+            return None
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("Failed to get last scan for AI: %s", e)
+        return None
+
+
+def _ai_resolve_reference(msg: str, history: list) -> str:
+    """解析指代，比如"第二个呢"、"怎么验证"等，返回展开后的问题"""
+    if not history:
+        return msg
+    
+    msg_lower = msg.lower().strip()
+    msg_len = len(msg_lower)
+    
+    # 找最近一条 AI 的回复中提到的问题列表
+    last_assistant = None
+    last_user = None
+    for h in history:
+        if h.get("role") == "assistant":
+            last_assistant = h.get("content", "")
+        elif h.get("role") == "user":
+            last_user = h.get("content", "")
+    
+    if not last_assistant:
+        return msg
+    
+    # "第二个呢 / 第二个问题 / 第二项"
+    if any(k in msg_lower for k in ["第二个", "第二项", "第二个呢", "下一个", "第二个问题", "第2个"]):
+        # 从最近的优先级回答中提取第二个问题
+        import re
+        # 匹配 "第2优先：xxx" 或 "2. xxx" 格式
+        patterns = [
+            r"第2优先[：:]\s*(.+)",
+            r"第\s*2\s*优先[：:]\s*(.+)",
+            r"\*\*第2优先\*\*[：:]\s*(.+)",
+            r"2\.\s+(.+)",
+        ]
+        for p in patterns:
+            m = re.search(p, last_assistant)
+            if m:
+                issue_name = m.group(1).strip()
+                # 清理 markdown 标记
+                issue_name = re.sub(r"[\*_]", "", issue_name).strip()
+                # 截断到合适长度
+                if len(issue_name) > 50:
+                    issue_name = issue_name[:50]
+                return f"{issue_name} 怎么修复"
+    
+    # 只有当消息很短（<=8字）且不包含知识库关键词时，才考虑指代
+    # 避免把 "目录遍历怎么修复" 这类完整问题错误解析为指代
+    if msg_len <= 8 and last_user:
+        # 先检查消息中是否已经包含了明确的知识库关键词
+        has_kb_keyword = False
+        for entry in _AI_KNOWLEDGE_BASE.values():
+            for alias in entry["aliases"]:
+                if len(alias) >= 2 and alias.lower() in msg_lower:
+                    has_kb_keyword = True
+                    break
+            if has_kb_keyword:
+                break
+        
+        if not has_kb_keyword:
+            # "怎么验证 / 验证方法" - 指代上一个讨论的漏洞
+            if any(k in msg_lower for k in ["怎么验证", "如何验证", "怎么确认", "验证方法", "验证一下"]):
+                # 用上一个用户问题补充 "验证" 意图
+                return f"{last_user} 怎么验证"
+            
+            # "怎么修 / 修复方法" - 如果上一个是原理类问题
+            if any(k in msg_lower for k in ["怎么修", "如何修复", "修复方法", "怎么解决", "咋弄", "怎么办"]):
+                # 检查上一个问题是不是在问某个漏洞
+                last_lower = last_user.lower()
+                is_knowledge_question = any(
+                    any(alias in last_lower for alias in entry["aliases"])
+                    for entry in _AI_KNOWLEDGE_BASE.values()
+                )
+                if is_knowledge_question:
+                    return f"{last_user} 怎么修复"
+    
+    return msg
+
+
+# ---------- 主 AI 顾问函数 ----------
 @app.post("/api/ai-advisor")
 async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_current_user)):
+    """V11.6 升级版 AI 安全顾问：智能匹配 + 上下文感知 + 多轮对话"""
     client_ip = request.client.host if request.client else "unknown"
     if not await limiter_ai.is_allowed(client_ip):
         raise HTTPException(
@@ -8909,201 +9670,128 @@ async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_c
             detail="AI 顾问请求过于频繁，请稍后再试",
             headers={"Retry-After": "60"},
         )
-    msg = (req.message or "").strip().lower()
-    if not msg:
+    
+    original_msg = (req.message or "").strip()
+    if not original_msg:
         return {"reply": "请输入问题，例如：HSTS 是什么？如何修复 CSP？", "source": "empty"}
-
-    # Phase 2.4: 如果提供了 scan_id，从数据库读取扫描结果进行个性化分析
-    # 如果没提供 scan_id 但用户问的是扫描相关问题，自动读取最近一次的扫描
+    
+    msg_lower = original_msg.lower()
+    
+    # 1. 获取对话历史（用于多轮对话上下文）
+    history = []
+    user_id = user.get("user_id") if user else None
+    if user_id:
+        history = _get_recent_conversations(user_id, 10)
+        history.reverse()  # 按时序
+    
+    # 2. 指代消解（处理"第二个呢"、"怎么验证"等）
+    resolved_msg = _ai_resolve_reference(original_msg, history)
+    
+    # 3. 意图识别
+    intents = _ai_detect_intent(resolved_msg)
+    
+    # 4. 快速匹配：问候和感谢
+    if "greeting" in intents:
+        reply = _AI_GENERAL_REPLIES["greeting"]
+        if user_id:
+            _save_conversation(user_id, "user", original_msg)
+            _save_conversation(user_id, "assistant", reply)
+        return {"reply": reply, "source": "greeting"}
+    
+    if "thanks" in intents:
+        reply = _AI_GENERAL_REPLIES["thanks"]
+        if user_id:
+            _save_conversation(user_id, "user", original_msg)
+            _save_conversation(user_id, "assistant", reply)
+        return {"reply": reply, "source": "thanks"}
+    
+    # 5. 获取最近扫描结果（上下文感知）
     scan_context = None
-    if user and user.get("user_id"):
-        conn = get_db()
-        try:
-            if req.scan_id:
-                row = conn.execute("SELECT findings_json, summary_json, score, risk_level FROM scans WHERE id=? AND user_id=?", (req.scan_id, user["user_id"])).fetchone()
-            else:
-                # 自动读取最近一次的扫描（用于"最该先修什么"等通用问题）
-                row = conn.execute("SELECT findings_json, summary_json, score, risk_level FROM scans WHERE user_id=? ORDER BY id DESC LIMIT 1", (user["user_id"],)).fetchone()
-            if row:
+    if user_id:
+        if req.scan_id:
+            try:
+                conn = get_db()
                 try:
-                    findings = json.loads(row["findings_json"]) if row.get("findings_json") else []
-                    summary = json.loads(row["summary_json"]) if row.get("summary_json") else {}
-                    scan_context = {
-                        "findings": findings,
-                        "summary": summary,
-                        "score": row["score"],
-                        "risk_level": row["risk_level"],
-                    }
-                except Exception as e:
-                    logger.warning("Failed to parse scan row for AI context: %s", e)
-        finally:
-            conn.close()
-
-    if scan_context:
-        # 基于扫描结果生成个性化回答
-        findings = scan_context.get("findings", [])
-        score = scan_context.get("score", 0)
-        high_count = scan_context.get("summary", {}).get("high", 0)
-
-        # 生成自然语言总结
-        if not msg or msg in ("总结", "概览", "总体", "整体"):
-            summary_parts = []
-            if score >= 75:
-                summary_parts.append(f"当前安全评分为 {score} 分，整体状况良好。")
-            elif score >= 50:
-                summary_parts.append(f"当前安全评分为 {score} 分，存在一些需要关注的安全配置问题。")
-            else:
-                summary_parts.append(f"当前安全评分为 {score} 分，存在较多安全风险，建议尽快修复。")
-
-            if high_count > 0:
-                summary_parts.append(f"发现 {high_count} 个高风险项，建议优先处理。")
-
-            # 找出最关键的问题
-            high_findings = [f for f in findings if f.get("severity") in ("high", "critical")]
-            if high_findings:
-                names = ", ".join([f["name"] for f in high_findings[:3]])
-                summary_parts.append(f"主要问题集中在：{names}。")
-
-            return {"reply": "".join(summary_parts), "source": "scan_analysis"}
-
-        # 回答关于当前扫描结果的问题
-        if any(kw in msg for kw in ["优先", "先修", "重要", "顺序", "最该", "最先", "推荐", "建议"]):
-            # 按修复优先级排序：高危优先、修复成本低优先
-            prioritized = sorted(findings, key=lambda f: (
-                0 if f.get("severity") in ("critical", "high") else 1 if f.get("severity") == "medium" else 2,
-                f.get("name", "")
-            ))
-            top = prioritized[:5]
-            lines = [f"🔍 当前评分 {score} 分（{scan_context.get('risk_level', '未知风险')}）。建议按以下优先级修复：\n"]
-            for i, f in enumerate(top, 1):
-                sev = f.get("severity", "low")
-                tag = "🔴" if sev in ("critical", "high") else "🟡" if sev == "medium" else "🟢"
-                fix_hint = f.get("fix", "")[:50]
-                lines.append(f"{tag} 第{i}优先：{f['name']}")
-                if fix_hint:
-                    lines.append(f"   💡 快速修复：{fix_hint}")
-                lines.append("")
-            lines.append("✅ 建议先处理 🔴 高风险项，修复后重新扫描验证效果。")
-            return {"reply": "\n".join(lines), "source": "scan_analysis"}
-
-        if any(kw in msg for kw in ["分数", "评分", "为什么", "怎么扣"]):
-            breakdown = scan_context.get("score_breakdown", [])
-            if breakdown:
-                lines = [f"当前评分 {score} 分，扣分明细如下："]
-                for b in breakdown:
-                    lines.append(f"- {b['item']}：-{b['deduction']} 分（{b.get('reason', '')[:40]}）")
-            else:
-                lines = [f"当前评分 {score} 分。"]
-                for f in findings:
-                    lines.append(f"- {f['name']}（{f.get('severity', '')}）")
-            return {"reply": "\n".join(lines), "source": "scan_analysis"}
-
-        if any(kw in msg for kw in ["hsts", "csp", "header", "响应头", "安全头"]):
-            header_findings = [f for f in findings if "缺少" in f.get("name", "") or "HSTS" in f.get("name", "") or "CSP" in f.get("name", "")]
-            if header_findings:
-                lines = ["关于安全响应头的问题："]
-                for f in header_findings:
-                    evidence = f.get("evidence", {})
-                    lines.append(f"- {f['name']}：{f.get('description', '')}")
-                    if evidence.get("impact"):
-                        lines.append(f"  影响：{evidence['impact']}")
-                    if f.get("fix"):
-                        lines.append(f"  修复：{f['fix'][:80]}")
-                return {"reply": "\n".join(lines), "source": "scan_analysis"}
-
-        # 生成修复计划
-        if any(kw in msg for kw in ["修复计划", "修复步骤", "怎么修", "如何修复", "步骤"]):
-            prioritized = sorted(findings, key=lambda f: (
-                0 if f.get("severity") in ("critical", "high") else 1 if f.get("severity") == "medium" else 2,
-                f.get("name", "")
-            ))
-            lines = ["📋 修复计划（按优先级排序）：\n"]
-            for i, f in enumerate(prioritized[:8], 1):
-                sev = f.get("severity", "low")
-                tag = "🔴" if sev in ("critical", "high") else "🟡" if sev == "medium" else "🟢"
-                lines.append(f"{tag} 第{i}步：修复「{f['name']}」")
-                if f.get("fix"):
-                    lines.append(f"   建议：{f['fix'][:80]}")
-                lines.append("")
-            lines.append("✅ 每步修复后建议重新扫描验证效果。")
-            lines.append("📊 全部修复后，评分预计可提升至 85+ 分。")
-            return {"reply": "\n".join(lines), "source": "scan_analysis"}
-
-        # 配置位置建议
-        if any(kw in msg for kw in ["放在哪里", "配置位置", "加在哪里", "写在哪里", "哪个文件"]):
-            lines = ["📌 安全配置放置位置建议：\n"]
-            lines.append("**Nginx**：配置通常放在 `/etc/nginx/nginx.conf` 或 `/etc/nginx/conf.d/` 下的站点配置文件中，加在 `server { }` 块内。")
-            lines.append("\n**Apache**：放在站点 VirtualHost 配置中，或 `.htaccess` 文件里。")
-            lines.append("\n**Express (Node.js)**：在 `app.js` 主文件中，`app.listen()` 之前添加中间件。")
-            lines.append("\n**Flask/FastAPI**：使用 `@app.after_request` 装饰器统一添加安全头。")
-            lines.append("\n**Spring Boot**：在 `SecurityConfig.java` 的 `filterChain` 方法中配置 `HttpSecurity`。")
-            lines.append("\n**Cloudflare**：在 Cloudflare Dashboard > Rules > Transform Rules 中配置响应头修改。")
-            lines.append("\n⚠ 修改配置后记得重启服务或重载配置使生效。")
-            return {"reply": "\n".join(lines), "source": "scan_analysis"}
-
-        # 上线风险提醒
-        if any(kw in msg for kw in ["上线风险", "影响线上", "会挂吗", "安全吗", "风险"]):
-            high_findings = [f for f in findings if f.get("severity") in ("high", "critical")]
-            medium_findings = [f for f in findings if f.get("severity") == "medium"]
-            lines = ["⚠ 上线风险评估：\n"]
-            if high_findings:
-                lines.append(f"🔴 高风险项（{len(high_findings)} 个）：建议在测试环境验证后再上线。")
-                for f in high_findings[:3]:
-                    lines.append(f"   - {f['name']}：{f.get('description', '')[:50]}")
-            if medium_findings:
-                lines.append(f"\n🟡 中风险项（{len(medium_findings)} 个）：建议尽快处理，但不阻塞上线。")
-            lines.append("\n💡 修复建议：")
-            lines.append("1. 先在测试环境/预发环境应用修复")
-            lines.append("2. 使用浏览器开发者工具检查响应头是否正确")
-            lines.append("3. 确认前端资源（JS/CSS/图片）正常加载")
-            lines.append("4. 特别注意 CSP 策略可能影响第三方资源加载")
-            lines.append("5. 确认无误后再部署到生产环境")
-            return {"reply": "\n".join(lines), "source": "scan_analysis"}
-
-    for kb in _AI_KB:
-        for k in kb["keys"]:
-            if k.lower() in msg:
-                return {"reply": kb["reply"], "source": "kb"}
-    if user:
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT url, score, findings_json, risk_level FROM scans WHERE user_id=? ORDER BY id DESC LIMIT 1",
-                (user["user_id"],)
-            ).fetchone()
-            conn.close()
-            if row:
-                findings = json.loads(row["findings_json"] or "[]")
-                # 如果用户问"最该先修什么"，即使没有 scan_context 也给出优先级排序
-                if any(kw in msg for kw in ["优先", "先修", "重要", "顺序", "最该", "最先", "推荐", "建议"]):
-                    prioritized = sorted(findings, key=lambda f: (
-                        0 if f.get("severity") in ("critical", "high") else 1 if f.get("severity") == "medium" else 2,
-                        f.get("name", "")
-                    ))
-                    top = prioritized[:5]
-                    lines = [f"🔍 当前评分 {row['score']} 分（{row['risk_level'] or '未知风险'}）。建议按以下优先级修复：\n"]
-                    for i, f in enumerate(top, 1):
-                        sev = f.get("severity", "low")
-                        tag = "🔴" if sev in ("critical", "high") else "🟡" if sev == "medium" else "🟢"
-                        fix_hint = f.get("fix", "")[:50]
-                        lines.append(f"{tag} 第{i}优先：{f.get('name', '')}")
-                        if fix_hint:
-                            lines.append(f"   💡 快速修复：{fix_hint}")
-                        lines.append("")
-                    lines.append("✅ 建议先处理 🔴 高风险项，修复后重新扫描验证效果。")
-                    return {"reply": "\n".join(lines), "source": "scan"}
-                top = findings[:3]
-                if top:
-                    names = "、".join([f.get("name", "") for f in top])
-                    top_name = top[0].get("name", "")
-                    return {
-                        "reply": f"你最近一次扫描的是 **{row['url']}**，评分 **{row['score']}**。\n\n排名前 3 的问题：{names}\n\n可以问我具体某个问题的修复方法，比如：'怎么修 {top_name}'。",
-                        "source": "scan",
-                    }
-        except Exception as e:
-            logger.warning("ai_advisor fallback failed: %s", e)
-    return {"reply": "我没找到相关知识 😢。试试问我：HSTS、CSP、敏感文件、点击劫持、OWASP Top 10，或者直接说「怎么用」。", "source": "fallback"}
+                    row = conn.execute(
+                        "SELECT findings_json, summary_json, score, risk_level, url FROM scans WHERE id=? AND user_id=?",
+                        (req.scan_id, user_id)
+                    ).fetchone()
+                    if row:
+                        scan_context = {
+                            "findings": json.loads(row["findings_json"]) if row["findings_json"] else [],
+                            "summary": json.loads(row["summary_json"]) if row["summary_json"] else {},
+                            "score": row["score"],
+                            "risk_level": row["risk_level"],
+                            "url": row["url"],
+                        }
+                finally:
+                    conn.close()
+            except Exception as e:
+                logger.warning("Failed to get scan context for AI: %s", e)
+        else:
+            scan_context = _ai_get_last_scan(user_id)
+    
+    # 6. 知识库匹配
+    matched = _ai_find_best_knowledge(resolved_msg)
+    match_score = matched[2] if matched[2] else 0
+    
+    # 7. 生成回答
+    reply = ""
+    source = "fallback"
+    
+    # 7a. 有扫描上下文 + 相关意图 → 基于扫描结果回答
+    scan_related_intents = ["priority", "score", "upgrade", "config_location", "deployment_risk"]
+    if scan_context and any(i in intents for i in scan_related_intents):
+        reply = _ai_generate_scan_based_reply(resolved_msg, scan_context, intents, matched)
+        source = "scan_analysis"
+    
+    # 7b. 匹配到知识库 → 基于知识库回答（可结合扫描上下文）
+    elif match_score >= 8.0 and matched[1]:
+        entry = matched[1]
+        # 如果有扫描上下文，结合上下文回答
+        if scan_context:
+            reply = _ai_generate_scan_based_reply(resolved_msg, scan_context, intents, matched)
+            source = "kb_with_scan"
+        else:
+            reply = _ai_generate_knowledge_reply(entry, intents, resolved_msg)
+            source = "knowledge_base"
+    
+    # 7c. 工具使用类问题
+    elif any(i in intents for i in ["tool_scan", "tool_report", "tool_fixer"]):
+        # 直接从工具知识库找
+        tool_key = None
+        if "tool_scan" in intents:
+            tool_key = "how_to_scan"
+        elif "tool_report" in intents:
+            tool_key = "how_to_read_report"
+        elif "tool_fixer" in intents:
+            tool_key = "how_to_use_fixer"
+        
+        if tool_key and tool_key in _AI_TOOL_KB:
+            reply = _AI_TOOL_KB[tool_key]["answer"]
+            source = "tool_kb"
+    
+    # 7d. 有扫描上下文但没匹配到具体知识 → 给出扫描摘要
+    elif scan_context:
+        reply = _ai_generate_scan_based_reply(resolved_msg, scan_context, intents, matched)
+        source = "scan_summary"
+    
+    # 7e. 兜底
+    if not reply:
+        reply = _AI_GENERAL_REPLIES["fallback"]
+        source = "fallback"
+    
+    # 8. 保存对话历史
+    if user_id:
+        _save_conversation(user_id, "user", original_msg)
+        _save_conversation(user_id, "assistant", reply, {
+            "source": source,
+            "match_score": match_score,
+            "intents": intents,
+            "resolved_msg": resolved_msg if resolved_msg != original_msg else None,
+        })
+    
+    return {"reply": reply, "source": source}
 
 
 # ============== 批量扫描 ==============

@@ -1497,6 +1497,18 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 .ai-typing span:nth-child(2) { animation-delay: 0.2s; }
 .ai-typing span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes typingDot { 0%, 60%, 100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+/* AI 消息 Markdown 样式 */
+.ai-msg pre { margin: 8px 0; padding: 10px 12px; background: #0f172a; color: #e2e8f0; border-radius: 6px; font-size: 12px; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-all; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; position: relative; }
+.ai-msg .ai-code-wrap { position: relative; margin: 8px 0; }
+.ai-msg .ai-code-lang { position: absolute; top: 4px; right: 36px; font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; z-index: 1; }
+.ai-msg .ai-code-copy { position: absolute; top: 4px; right: 4px; padding: 3px 8px; font-size: 11px; background: rgba(255,255,255,0.1); color: #94a3b8; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; cursor: pointer; z-index: 2; transition: all 0.2s; }
+.ai-msg .ai-code-copy:hover { background: rgba(255,255,255,0.2); color: #e2e8f0; }
+.ai-msg code.ai-inline-code { background: rgba(99, 102, 241, 0.1); color: #818cf8; padding: 1px 5px; border-radius: 4px; font-size: 12px; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; }
+.ai-msg .ai-list { margin: 6px 0 6px 18px; padding: 0; }
+.ai-msg .ai-list li { margin: 3px 0; line-height: 1.5; }
+.ai-msg .ai-list.ol { padding-left: 6px; }
+.ai-msg .ai-divider { border: none; border-top: 1px dashed var(--border); margin: 10px 0; }
+.ai-msg strong { color: var(--text-primary); font-weight: 600; }
 @media (max-width: 480px) {
   .ai-fab { right: 14px; bottom: 70px; width: 50px; height: 50px; font-size: 20px; }
   .ai-chat { right: 8px; left: 8px; width: auto; bottom: 130px; height: 60vh; }
@@ -2475,7 +2487,10 @@ img[loading="lazy"] { background: var(--border-light); }
     <button onclick="askAIQuick('怎么修 CSP？')">修复 CSP</button>
     <button onclick="askAIQuick('敏感文件怎么防？')">敏感文件</button>
     <button onclick="askAIQuick('我的评分怎么算？')">评分规则</button>
-    <button onclick="askAIQuick('怎么用？')">怎么用</button>
+    <button onclick="askAIQuick('SQL 注入怎么防？')">SQL 注入</button>
+    <button onclick="askAIQuick('XSS 是什么？')">XSS 漏洞</button>
+    <button onclick="askAIQuick('我该先修什么？')">修复优先级</button>
+    <button onclick="askAIQuick('Cookie 安全怎么弄？')">Cookie 安全</button>
   </div>
   <div class="ai-chat-input">
     <input type="text" id="ai-input" placeholder="问我安全问题..." maxlength="200" onkeydown="if(event.key==='Enter')sendAIMessage()" />
@@ -2485,6 +2500,7 @@ img[loading="lazy"] { background: var(--border-light); }
     <button onclick="askAI('生成修复计划')" style="padding:8px 14px;min-height:36px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-size:12px">📋 修复计划</button>
     <button onclick="askAI('我最该先修什么？')" style="padding:8px 14px;min-height:36px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-size:12px">🔧 先修什么</button>
     <button onclick="askAI('为什么扣这么多分？')" style="padding:8px 14px;min-height:36px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-size:12px">📊 扣分原因</button>
+    <button onclick="askAI('能提升多少分？')" style="padding:8px 14px;min-height:36px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-size:12px">📈 提分预估</button>
   </div>
 </div>
 
@@ -5548,14 +5564,44 @@ function appendAIMsg(text, who) {
   if (!body) return null;
   var div = document.createElement('div');
   div.className = 'ai-msg ' + (who || 'bot');
-  // 简单 markdown：```...``` → pre, **...** → strong
-  text = (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  text = text.replace(/```([\s\S]*?)```/g, function(m, c) {
-    return '<pre>' + c.replace(/^\n+|\n+$/g, '') + '</pre>';
-  });
-  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  text = text.replace(/\n/g, '<br>');
-  div.innerHTML = text;
+  
+  // 增强版 Markdown 渲染
+  var html = renderAIMarkdown(text || '');
+  div.innerHTML = html;
+  
+  // 绑定代码块复制按钮
+  var pres = div.querySelectorAll('pre');
+  for (var i = 0; i < pres.length; i++) {
+    (function(pre) {
+      var wrap = document.createElement('div');
+      wrap.className = 'ai-code-block';
+      var btn = document.createElement('button');
+      btn.className = 'ai-code-copy';
+      btn.textContent = '复制';
+      btn.onclick = function() {
+        var code = pre.textContent;
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(code).then(function() {
+            btn.textContent = '已复制 ✓';
+            setTimeout(function() { btn.textContent = '复制'; }, 1500);
+          });
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = code;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          btn.textContent = '已复制 ✓';
+          setTimeout(function() { btn.textContent = '复制'; }, 1500);
+        }
+      };
+      pre.parentNode.insertBefore(wrap, pre);
+      wrap.appendChild(btn);
+      wrap.appendChild(pre);
+    })(pres[i]);
+  }
+  
   body.appendChild(div);
   body.scrollTop = body.scrollHeight;
   // bot 消息且聊天窗口未打开时，更新徽章未读数
@@ -5566,6 +5612,68 @@ function appendAIMsg(text, who) {
     }
   }
   return div;
+}
+
+// AI 消息 Markdown 渲染器
+function renderAIMarkdown(text) {
+  if (!text) return '';
+  // 1. HTML 转义
+  var t = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  
+  // 2. 代码块 ```...```
+  var codeBlocks = [];
+  t = t.replace(/```([\s\S]*?)```/g, function(m, code) {
+    // 去掉第一行的语言标记（如果有）
+    var lines = code.replace(/^\n+|\n+$/g, '').split('\n');
+    var lang = '';
+    if (lines.length > 0 && /^(nginx|apache|javascript|python|bash|sql|html|css|json|java|php|ruby|go|rust)$/i.test(lines[0].trim())) {
+      lang = lines[0].trim();
+      lines = lines.slice(1);
+    }
+    var cleanCode = lines.join('\n');
+    var idx = codeBlocks.length;
+    codeBlocks.push({ code: cleanCode, lang: lang });
+    return '__CODE_BLOCK_' + idx + '__';
+  });
+  
+  // 3. 行内代码 `code`
+  t = t.replace(/`([^`\n]+)`/g, '<code class="ai-inline-code">$1</code>');
+  
+  // 4. 加粗 **text**
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  
+  // 5. 分隔线 ---
+  t = t.replace(/^---\s*$/gm, '<hr class="ai-divider">');
+  
+  // 6. 无序列表（- 或 * 开头）
+  t = t.replace(/(^|\n)((?:\s*[-*]\s+[^\n]+\n?)+)/g, function(m, prefix, listBlock) {
+    var items = listBlock.trim().split('\n').filter(function(l) { return l.trim(); });
+    var lis = items.map(function(item) {
+      return '<li>' + item.replace(/^\s*[-*]\s+/, '') + '</li>';
+    }).join('');
+    return prefix + '<ul class="ai-list">' + lis + '</ul>';
+  });
+  
+  // 7. 有序列表（数字开头）
+  t = t.replace(/(^|\n)((?:\s*\d+\.\s+[^\n]+\n?)+)/g, function(m, prefix, listBlock) {
+    var items = listBlock.trim().split('\n').filter(function(l) { return l.trim(); });
+    var lis = items.map(function(item) {
+      return '<li>' + item.replace(/^\s*\d+\.\s+/, '') + '</li>';
+    }).join('');
+    return prefix + '<ol class="ai-list ol">' + lis + '</ol>';
+  });
+  
+  // 8. 还原代码块
+  t = t.replace(/__CODE_BLOCK_(\d+)__/g, function(m, idx) {
+    var block = codeBlocks[parseInt(idx)];
+    var langTag = block.lang ? '<span class="ai-code-lang">' + block.lang + '</span>' : '';
+    return '<div class="ai-code-wrap">' + langTag + '<pre><code>' + block.code + '</code></pre></div>';
+  });
+  
+  // 9. 换行
+  t = t.replace(/\n/g, '<br>');
+  
+  return t;
 }
 
 var _aiUnreadCount = 0;
@@ -5607,7 +5715,7 @@ async function sendAIMessage() {
   appendAIMsg(msg, 'user');
   inp.value = '';
   if (!isLoggedIn()) {
-    appendAIMsg('请先登录后再使用 AI 顾问～', 'bot');
+    appendAIMsg('请先登录后再使用 AI 顾问～登录后我还能根据你的扫描历史给出个性化建议哦 💡', 'bot');
     _aiChatSending = false;
     return;
   }
@@ -5622,12 +5730,16 @@ async function sendAIMessage() {
     if (typing && typing.parentNode) typing.remove();
     if (r.ok) {
       appendAIMsg(data.reply || '（无回复）', 'bot');
+    } else if (r.status === 429) {
+      appendAIMsg('⏳ 你问得太快啦，让我歇一会儿～ 1 分钟后再试试吧！', 'bot');
+    } else if (r.status === 401 || r.status === 403) {
+      appendAIMsg('🔐 登录状态好像过期了，刷新一下页面重新登录试试？', 'bot');
     } else {
-      appendAIMsg('抱歉，AI 顾问暂时无法响应：' + extractError(data), 'bot');
+      appendAIMsg('😅 抱歉，我刚才开了个小差。你再说一遍刚才的问题好吗？\n\n（错误：' + escapeHtml(extractError(data)) + '）', 'bot');
     }
   } catch (e) {
     if (typing && typing.parentNode) typing.remove();
-    appendAIMsg('网络错误：' + (e.message || e), 'bot');
+    appendAIMsg('🌐 网络有点小问题，检查一下网络连接再试试？\n\n如果问题一直出现，可以刷新页面试试～', 'bot');
   } finally {
     _aiChatSending = false;
   }
