@@ -3965,13 +3965,40 @@ function offlineApiHandle(method, urlPath, body) {
   if (urlPath === "/api/simulate-fix" && method === "POST") {
     var findings = (body && body.findings) || [];
     var SEV = { "critical": 25, "high": 15, "medium": 8, "low": 3 };
-    var ded = findings.reduce(function(s, f) { return s + (SEV[f.severity] || 3); }, 0);
-    var before = Math.max(0, 100 - ded);
-    var after = Math.min(100, before + ded + 12);
+    // V11.4 fix: 使用实际扫描分数作为 before_score
+    var actualScore = (window._lastScanResult && window._lastScanResult.score) || null;
+    var before;
+    if (actualScore !== null && typeof actualScore === 'number') {
+      before = actualScore;
+    } else {
+      var ded = findings.reduce(function(s, f) { return s + (SEV[f.severity] || 3); }, 0);
+      before = Math.max(0, 100 - ded);
+    }
+    var ded2 = findings.reduce(function(s, f) { return s + (SEV[f.severity] || 3); }, 0);
+    var after = Math.min(100, before + ded2 + 12);
     var items = findings.map(function(f) {
-      return { name: f.name, severity: f.severity, level_zh: { high: "高风险", medium: "中风险", low: "低风险" }[f.severity] || "低风险", owasp: f.owasp || "", fix: f.fix || "", summary: f.summary || "" };
+      var sv = f.severity || 'low';
+      return {
+        name: f.name || '未知漏洞',
+        severity: sv,
+        level_zh: { critical: "高风险", high: "高风险", medium: "中风险", low: "低风险" }[sv] || "低风险",
+        owasp: f.owasp || "",
+        fix: f.fix || "",
+        summary: f.summary || "修复 " + (f.name || '安全问题') + "，消除 " + ({ high: "高", medium: "中", low: "低" }[sv] || "低") + " 风险"
+      };
     });
-    return { status: 200, body: { before_score: before, after_score: after, delta: after - before, fixed_count: findings.length, fixed_items: items, summary: "应用 " + findings.length + " 项修复后，评分预计从 " + before + " 提升到 " + after + "（+" + (after - before) + " 分）" } };
+    return {
+      status: 200,
+      body: {
+        before_score: before,
+        after_score: after,
+        delta: after - before,
+        fixed_count: items.length,
+        fixed_items: items,
+        nginx_config: "",
+        summary: "应用 " + items.length + " 项修复后，评分预计从 " + before + " 提升到 " + after + "（+" + (after - before) + " 分）"
+      }
+    };
   }
   // /api/ai-advisor POST
   if (urlPath === "/api/ai-advisor" && method === "POST") {
@@ -5762,6 +5789,7 @@ async function loadPublicDemo() {
     var data = await r.json();
     if (r.ok && data.success) {
       window._lastScanId = data.scan_id || data.scanId || null;  // V11.6: 保存 scan_id 供自动修复用
+      window._lastScanResult = data;  // V11.4 fix: 保存扫描结果供离线模拟修复使用
       renderDemoReport(data);
     } else {
       if (c) c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ ' + escapeHtml(friendlyError(extractError(data))) + '</div>';
@@ -6010,10 +6038,15 @@ async function doPublicDemoFix() {
   }
   // 调用后端模拟修复
   try {
+    var fixPayload = { findings: findings };
+    // V11.4 fix: 传入 scan_id 以获取真实 before_score
+    if (window._lastScanId) {
+      fixPayload.scan_id = window._lastScanId;
+    }
     var r = await authFetch('/api/simulate-fix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ findings: findings })
+      body: JSON.stringify(fixPayload)
     });
     var data = await r.json();
     if (!r.ok) { showToast('模拟修复失败'); return; }

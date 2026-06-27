@@ -45,7 +45,7 @@ from fastapi import FastAPI, HTTPException, Depends, Header, Query, Request
 from fastapi.encoders import jsonable_encoder as jsonable
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -435,6 +435,7 @@ class VerifyFixRequest(BaseModel):
 
 class SimulateFixRequest(BaseModel):
     findings: List[dict] = Field(default_factory=list)
+    scan_id: Optional[int] = None
 
     @field_validator("findings")
     @classmethod
@@ -5884,24 +5885,42 @@ async def api_scan_auth_log(request: Request, user: dict = Depends(require_login
 @app.post("/api/simulate-fix", response_model=None)
 async def simulate_fix(req: SimulateFixRequest, request: Request) -> dict:
     """模拟应用修复后的预期评分（不需要登录）。
-    输入：scan findings 数组（使用真实 severity 字段 high/medium/low）
+    输入：scan findings 数组（使用真实 severity 字段 high/medium/low）+ 可选 scan_id
     输出：修复前 vs 修复后的评分对比
     """
     # V11.6: 添加速率限制，防止滥用
     await rate_limit_dependency(request)
     findings = req.findings or []
+
+    # V11.4 fix: 如果提供了 scan_id，从数据库获取真实扫描分数作为 before_score
+    before = None
+    if req.scan_id:
+        try:
+            scan_row = get_scan_by_id(req.scan_id)
+            if scan_row and scan_row.get("score") is not None:
+                before = int(scan_row["score"])
+        except Exception:
+            pass
+
+    # 如果没有 scan_id 或查不到，从 findings 估算
+    if before is None:
+        deduction = sum(SEVERITY_SCORE.get(f.get("severity", "low"), 3) for f in findings)
+        before = max(0, 100 - deduction)
+
+    # 修复后分数：消除所有 findings 的扣分，再加 12 分奖励，上限 100
     deduction = sum(SEVERITY_SCORE.get(f.get("severity", "low"), 3) for f in findings)
-    before = max(0, 100 - deduction)
     after = min(100, before + deduction + 12)
+
     fixed_items = []
     for f in findings[:20]:
+        severity = f.get("severity", "low")
         fixed_items.append({
-            "name": f.get("name"),
-            "severity": f.get("severity", "low"),
-            "level_zh": f.get("level_zh") or SEVERITY_ZH.get(f.get("severity", "low"), "低风险"),
+            "name": f.get("name", "未知漏洞"),
+            "severity": severity,
+            "level_zh": f.get("level_zh") or SEVERITY_ZH.get(severity, "低风险"),
             "owasp": f.get("owasp", ""),
             "fix": f.get("fix", ""),
-            "summary": f.get("summary", ""),
+            "summary": f.get("summary") or f"修复 {f.get('name', '安全问题')}，消除 {SEVERITY_ZH.get(severity, '低')} 风险",
         })
     # V11.6：生成可执行的修复配置（按平台分类）
     nginx_fixes = []
@@ -5932,7 +5951,7 @@ async def simulate_fix(req: SimulateFixRequest, request: Request) -> dict:
         "before_score": before,
         "after_score": after,
         "delta": after - before,
-        "fixed_count": len(findings),
+        "fixed_count": len(fixed_items),
         "fixed_items": fixed_items,
         "nginx_config": "\n\n".join(nginx_fixes) if nginx_fixes else "# 配置代码生成中",
         "summary": f"应用 {len(findings)} 项修复后，评分预计从 {before} 提升到 {after}（+{after - before} 分）",
@@ -10363,6 +10382,43 @@ async def api_demo_status(request: Request) -> dict:
         return {"success": False, "error": str(e)}
 
 
+# ---------- 特定静态文件端点（必须在 catch-all 之前注册） ----------
+
+_STATIC_EXT_404 = frozenset([
+    ".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico",
+    ".woff", ".woff2", ".ttf", ".ttc", ".otf", ".eot", ".map",
+    ".webp", ".avif", ".webm", ".mp4", ".mp3", ".json",
+])
+
+
+@app.get("/robots.txt")
+async def serve_robots():
+    return PlainTextResponse("User-agent: *\nAllow: /")
+
+
+@app.get("/favicon.ico")
+async def serve_favicon():
+    """尝试返回 favicon.ico；如果不存在返回 404 而非 HTML。"""
+    fp = Path(STATIC_DIR) / "favicon.ico"
+    if fp.is_file():
+        return FileResponse(str(fp))
+    # fallback: 尝试 favicon.svg（HTML 里引用的是 .svg）
+    fp2 = Path(STATIC_DIR) / "favicon.svg"
+    if fp2.is_file():
+        return FileResponse(str(fp2), media_type="image/svg+xml")
+    return JSONResponse(status_code=404, content={"detail": "not found"})
+
+
+@app.get("/sitemap.xml")
+async def serve_sitemap():
+    return JSONResponse(status_code=404, content={"detail": "not found"})
+
+
+@app.get("/manifest.json")
+async def serve_manifest():
+    return JSONResponse(status_code=404, content={"detail": "not found"})
+
+
 @app.get("/{path:path}")
 async def catch_all(path: str) -> Any:
     # 性能优化：未注册的 /api/* 端点直接返回 JSON 404，
@@ -10372,6 +10428,17 @@ async def catch_all(path: str) -> Any:
             status_code=404,
             content={"success": False, "error": f"endpoint /{path} not found"},
         )
+    # 静态资源后缀的请求：文件不存在时返回 404 而非 HTML
+    _, ext = os.path.splitext(path)
+    if ext.lower() in _STATIC_EXT_404:
+        try:
+            base = Path(STATIC_DIR).resolve()
+            fp = (base / path).resolve()
+            if fp.is_relative_to(base) and fp.is_file():
+                return FileResponse(str(fp))
+        except (OSError, ValueError):
+            pass
+        return JSONResponse(status_code=404, content={"detail": "not found"})
     # 静态资源：使用 Path.resolve() 并校验结果仍在 STATIC_DIR 内，防止路径穿越
     try:
         base = Path(STATIC_DIR).resolve()
