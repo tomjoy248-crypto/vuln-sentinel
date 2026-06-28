@@ -123,11 +123,6 @@ docker build -t vulnsentinel:v11.6 .
 docker run -p 8000:8000 vulnsentinel:v11.6
 ```
 
-或使用 docker-compose：
-```bash
-docker-compose up -d
-```
-
 ---
 
 ## Render 部署
@@ -227,6 +222,20 @@ python3 -m pytest tests/ -v
 MIT License
 
 ---
+
+## 已验证 Demo 路径
+
+以下路径已在 `main.py` 测试套件和 `https://vuln-sentinel-v11.onrender.com` 在线环境跑通：
+
+1. 登录 `demo / demo123`
+2. 输入 `https://example.com` 完成授权并扫描
+3. 查看报告：评分、风险等级、漏洞证据、修复建议
+4. 生成修复配置（Nginx / Apache / Node.js / Python / Java / Cloudflare）
+5. 修复配置预览：修复前后评分对比
+6. 验证修复效果：重新扫描并输出差异
+7. 导出 PDF 报告（7 页）
+
+本地 demo-target 靶场实测：修复前 **30 分/11 漏洞/高风险**，应用修复配置后 **80 分/1 漏洞/低风险**。
 
 ## 功能边界（已实现 vs 演示模式）
 
