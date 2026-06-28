@@ -15,3 +15,7 @@ docs/coverage_html/
 demo-target/logs/
 demo-target/conf/*.bak
 demo-target/conf/*.bak.vuln
+server.crt
+server.key
+*.crt
+*.key
