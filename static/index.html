@@ -2590,7 +2590,7 @@ img[loading="lazy"] { background: var(--border-light); }
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:22px">&#x2728;</span>
         <div style="flex:1">
-          <div style="font-size:15px;font-weight:700;color:var(--text-primary)">安全闭环：扫描 → 修复配置 → 复测验证</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text-primary)">安全闭环：扫描 → 风险定位 → 修复配置生成 → 复测对比 → 报告导出</div>
           <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">多平台修复配置生成 · 交叉验证降低误报 · 导出专业报告</div>
         </div>
         <span style="font-size:11px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;padding:3px 10px;border-radius:12px;font-weight:700">V11.6 核心能力</span>
@@ -2611,7 +2611,7 @@ img[loading="lazy"] { background: var(--border-light); }
       <div style="padding:14px 12px;background:var(--bg-card);text-align:center">
         <div style="font-size:20px;margin-bottom:6px">&#x26A1;</div>
         <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">安全闭环</div>
-        <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">扫描→生成修复配置→复测验证<br>30 秒见证效果</div>
+        <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">扫描→风险定位→修复配置→复测→报告<br>30 秒见证效果</div>
       </div>
     </div>
     <!-- 本地演示靶场入口（登录后显示） -->
@@ -2625,7 +2625,7 @@ img[loading="lazy"] { background: var(--border-light); }
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <button onclick="runLocalDemoFullCycle()" id="btn-demo-fullcycle" style="padding:16px 14px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;border:none;border-radius:12px;cursor:pointer;text-align:left;transition:all 0.2s;font-weight:600;box-shadow:0 4px 15px rgba(139,92,246,0.3)" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 25px rgba(139,92,246,0.4)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 15px rgba(139,92,246,0.3)'">
           <div style="font-size:15px;margin-bottom:6px;display:flex;align-items:center;gap:6px">&#9889; 一键完整演示</div>
-          <div style="font-size:12px;opacity:0.9;font-weight:400;line-height:1.5">扫描 → 修复 → 复测<br>30秒看评分提升效果</div>
+          <div style="font-size:12px;opacity:0.9;font-weight:400;line-height:1.5">扫描 → 风险定位 → 修复配置 → 复测 → 报告<br>30秒看评分提升效果</div>
         </button>
         <button onclick="resetLocalDemoTarget()" id="btn-demo-reset" style="padding:16px 14px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--text-primary);border-radius:12px;cursor:pointer;text-align:left;transition:all 0.2s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 15px rgba(239,68,68,0.2)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none'">
           <div style="font-size:15px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px">&#x1F504; 重置靶场</div>
@@ -6299,7 +6299,7 @@ function renderFixComparison(d) {
     html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 进入修复器获取完整补丁</button>';
     // V11.6 新增：自动修复按钮
     if (!OFFLINE_MODE) {
-      html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 应用修复配置（SSH/Cloudflare）</button>';
+      html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 应用到演示环境</button>';
     }
   } else {
     html += '<button onclick="navigateTo(\'profile\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🔑 登录后获取完整补丁代码</button>';
@@ -6328,7 +6328,7 @@ function showAutoFixDialog(scanId, fixCount) {
 
   // 标题
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
-  html += '<h3 style="margin:0;font-size:18px">🤖 应用修复配置 ' + fixCount + ' 项问题</h3>';
+  html += '<h3 style="margin:0;font-size:18px">🤖 生成修复配置 ' + fixCount + ' 项问题</h3>';
   html += '<button onclick="closeAutoFixDialog()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-secondary)">×</button>';
   html += '</div>';
 
@@ -6379,7 +6379,7 @@ function showAutoFixDialog(scanId, fixCount) {
   html += '</div>';
 
   // 确认按钮
-  html += '<button onclick="executeAutoFix(\'' + scanId + '\')" style="width:100%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:12px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;margin-top:8px">🚀 开始应用修复配置</button>';
+  html += '<button onclick="executeAutoFix(\'' + scanId + '\')" style="width:100%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:12px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;margin-top:8px">🚀 生成修复配置并复测</button>';
 
   // 结果区
   html += '<div id="af-result" style="margin-top:14px"></div>';
@@ -9319,7 +9319,7 @@ function renderResult(data) {
       step2Done = true;
     }
 
-    step3Action = '应用修复后重新扫描，确认分数提升';
+    step3Action = '生成修复配置后重新扫描，确认分数提升';
     step3Effect = '验证闭环';
     step3Done = step1Done && step2Done;
 
