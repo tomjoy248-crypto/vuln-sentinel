@@ -1,6 +1,6 @@
-"""漏洞哨兵 V11.6 - FastAPI 安全扫描后端
+"""漏洞哨兵 V12 - FastAPI 安全扫描后端
 
-V11.6 核心改进：
+V12 核心改进：
 1. 本地演示靶场：一键扫描→修复→复测完整闭环（nginx 真实配置修改）
 2. 置信度系统：每个 finding 标注高/中/低置信度，区分确定项与推测项
 3. 评分逻辑纠正：WAF 只加分不抵消真实缺失，Trusted Domains 白名单移除
@@ -9,7 +9,7 @@ V11.6 核心改进：
 6. 测试便携性：所有测试使用相对路径，可在任意目录运行
 7. 安全加固：生产环境 JWT Secret 强制校验，凭证加密密钥可配置
 8. AI 顾问优化：基于真实 severity 排序，接入当前扫描报告上下文
-9. 版本统一：所有界面/文档/API 返回值统一为 V11.6
+9. 版本统一：所有界面/文档/API 返回值统一为 V12
 10. CI/CD 修复：GitHub Actions 工作流完整跑通测试+扫描+构建
 """
 
@@ -74,8 +74,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_title: str = "漏洞哨兵 V11.6"
-    app_version: str = "11.6"
+    app_title: str = "漏洞哨兵 V12"
+    app_version: str = "12"
     build_time: str = "2026-06-25"
     port: int = 8000
     host: str = "0.0.0.0"
@@ -110,7 +110,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_timeout: float = 15.0
 
-    # 自动巡检 (V11.6 进化)
+    # 自动巡检 (V12 进化)
     patrol_interval_hours: int = 6
     patrol_score_regression_threshold: int = 10
 
@@ -156,7 +156,7 @@ if _IS_PRODUCTION:
         )
 
 # JWT Secret 强制：生产环境必须显式设置，否则拒绝启动
-# V11.6: 使用 _IS_PRODUCTION 统一判定，避免 PRODUCTION=1 绕过校验
+# V12: 使用 _IS_PRODUCTION 统一判定，避免 PRODUCTION=1 绕过校验
 if _IS_PRODUCTION:
     if not settings.jwt_secret or len(settings.jwt_secret) < 32:
         raise RuntimeError(
@@ -221,7 +221,7 @@ BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"}
 
 # 内部白名单：环境变量配置后允许扫描的内网靶场
 # 格式：逗号分隔，如 "192.168.1.100,10.0.0.5,pikachu.local"
-# V11.6: 可通过 ALLOW_LOCALHOST=1 快速启用本地演示靶场
+# V12: 可通过 ALLOW_LOCALHOST=1 快速启用本地演示靶场
 ALLOWED_INTERNAL_HOSTS = {
     h.strip().lower() for h in os.environ.get("ALLOWED_INTERNAL_HOSTS", "").split(",")
     if h.strip()
@@ -265,13 +265,13 @@ SECURITY_HEADERS: Dict[str, Dict[str, str]] = {
         "description": "控制浏览器 API 权限",
         "fix": 'add_header Permissions-Policy "camera=(), microphone=()" always;',
     },
-    # V11.6: 新增缓存控制头检测
+    # V12: 新增缓存控制头检测
     "cache-control": {
         "name": "Cache-Control", "category": "缓存安全", "severity": "low",
         "description": "敏感页面应禁止缓存以防止信息泄露",
         "fix": 'add_header Cache-Control "no-store, no-cache, must-revalidate" always;',
     },
-    # V11.6: 新增 DNS 预取控制头检测
+    # V12: 新增 DNS 预取控制头检测
     "x-dns-prefetch-control": {
         "name": "X-DNS-Prefetch-Control", "category": "隐私", "severity": "low",
         "description": "控制浏览器是否自动 DNS 预取，防止隐私泄露",
@@ -326,7 +326,7 @@ SQLI_PAYLOADS: List[str] = [
     "' UNION SELECT NULL--", "1; DROP TABLE users--", "' OR 1=1 /*",
 ]
 
-# Code-level vulnerability detection payloads (V11.6)
+# Code-level vulnerability detection payloads (V12)
 SQLI_PAYLOADS_V2: List[str] = [
     "' OR '1'='1",
     "'; DROP TABLE users; --",
@@ -430,7 +430,7 @@ def sanitize_url(value: str) -> str:
     hostname = parsed.hostname.lower()
     # 基本域名校验：必须包含点号
     if "." not in hostname:
-        # V11.6: 仅当 ALLOW_LOCALHOST 启用时，localhost 才跳过域名格式校验
+        # V12: 仅当 ALLOW_LOCALHOST 启用时，localhost 才跳过域名格式校验
         if hostname == "localhost" and "localhost" in ALLOWED_INTERNAL_HOSTS:
             pass  # 放行，继续走 SSRF 白名单检查
         else:
@@ -478,7 +478,7 @@ class ScanRequest(BaseModel):
     deep: bool = False
     authorized: bool = False  # 用户是否确认有权扫描该目标
 
-    # V11.6 fix: URL 验证移到 api_scan 中，避免 Pydantic 直接返回 422
+    # V12 fix: URL 验证移到 api_scan 中，避免 Pydantic 直接返回 422
     # 让前端能收到 success: false 的友好错误提示
 
     @field_validator("depth")
@@ -506,7 +506,7 @@ class SimulateFixRequest(BaseModel):
     @field_validator("findings")
     @classmethod
     def validate_findings(cls, v: list) -> list:
-        # V11.6: 限制最大长度，防止滥用
+        # V12: 限制最大长度，防止滥用
         if len(v) > 100:
             raise ValueError("findings 数组最多 100 项")
         return v
@@ -1005,7 +1005,7 @@ def init_db() -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_user_id ON assets(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_domain ON assets(domain)")
-    # V11.6+：用户对 finding 的误报/确认反馈
+    # V12+：用户对 finding 的误报/确认反馈
     conn.execute(
         """CREATE TABLE IF NOT EXISTS finding_feedback (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1785,7 +1785,7 @@ async def lifespan(app: FastAPI):
         init_db()
     except Exception as e:
         logger.error("Database initialization failed: %s", e, exc_info=True)
-    # V11.6+: 多 worker 部署时可通过 ENABLE_SCHEDULER=false 关闭定时任务，避免重复执行
+    # V12+: 多 worker 部署时可通过 ENABLE_SCHEDULER=false 关闭定时任务，避免重复执行
     _enable_scheduler = os.environ.get("ENABLE_SCHEDULER", "true").strip().lower() not in ("0", "false", "no", "off")
     _scheduler_started = False
     if _enable_scheduler:
@@ -1939,7 +1939,7 @@ _MAX_RESPONSE_BODY_BYTES = 2 * 1024 * 1024  # 2 MB
 
 def _create_client() -> None:
     global _httpx_client
-    # V11.6：默认开启 TLS 验证（安全产品必须优先保证通信安全）
+    # V12：默认开启 TLS 验证（安全产品必须优先保证通信安全）
     # 用户可显式设置 TLS_VERIFY=false 启用"不安全兼容模式"
     _raw = os.environ.get("TLS_VERIFY", "true").strip().lower()
     if _raw in ("0", "false", "no", "off"):
@@ -1968,7 +1968,7 @@ def _create_client() -> None:
         verify=_verify,
         timeout=settings.scan_timeout,
         follow_redirects=True,
-        headers={"User-Agent": "VulnSentinel/11.6"},
+        headers={"User-Agent": "VulnSentinel/12"},
         event_hooks={"response": [_response_body_limit]},
         limits=httpx.Limits(
             max_connections=50,
@@ -2155,7 +2155,7 @@ async def run_payload_tests(base_url, pages):
     return vulns, test_results
 
 
-# ---------- Code-Level Vulnerability Detection (V11.6) ----------
+# ---------- Code-Level Vulnerability Detection (V12) ----------
 
 def _build_test_url(url: str, param: str, payload: str) -> str:
     """将 payload 注入到 URL 的指定参数中。"""
@@ -2783,7 +2783,7 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
             except httpx.RemoteProtocolError:
                 last_err = "PROTOCOL_ERROR"
             except (ssl.SSLError, ssl.CertificateError) as e:
-                # V11.6 修复：SSL 错误（如证书过期、协议不匹配）→ 尝试用宽松 SSL 重试
+                # V12 修复：SSL 错误（如证书过期、协议不匹配）→ 尝试用宽松 SSL 重试
                 last_err = f"SSL_ERROR:{str(e)[:40]}"
             except Exception as e:
                 last_err = f"REQUEST_FAIL:{str(e)[:60]}"
@@ -2795,7 +2795,7 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
         elif last_err == "PROTOCOL_ERROR":
             error = "协议错误，目标可能不支持 HTTPS 或使用了非标准端口"
         elif last_err and last_err.startswith("SSL_ERROR:"):
-            # V11.6：SSL 错误时，仅在用户显式关闭 TLS 验证后才允许跳过证书检查
+            # V12：SSL 错误时，仅在用户显式关闭 TLS 验证后才允许跳过证书检查
             _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
             if _tls_off:
                 try:
@@ -3168,7 +3168,7 @@ async def check_sensitive_paths(host: str, is_https: bool) -> List[dict]:
     return results
 
 
-# V11.6: 详细验证步骤（三步验证法：命令行 + 浏览器 + 工具重扫）
+# V12: 详细验证步骤（三步验证法：命令行 + 浏览器 + 工具重扫）
 VERIFY_METHODS = {
     "hsts": {
         "summary": "验证 HSTS 头是否生效",
@@ -4239,7 +4239,7 @@ def add_finding(
         "verify_method": get_verify_method_text(verify_key),
         "verify_steps": get_verify_steps(verify_key),
     }
-    # V11.6：置信度（高/中/低）
+    # V12：置信度（高/中/低）
     if confidence_level is not None:
         finding["confidence_level"] = confidence_level
     elif confidence is not None:
@@ -4249,7 +4249,7 @@ def add_finding(
         finding["confidence_level"] = "高"  # 默认高置信度
     if confidence is not None and "confidence" not in finding:
         finding["confidence"] = confidence
-    # V11.6：交叉验证字段（可选）
+    # V12：交叉验证字段（可选）
     if verified is not None:
         finding["verified"] = verified
     if cv_reason is not None:
@@ -4335,7 +4335,7 @@ async def analyze_security(
         "referrer-policy": "referrer",
         "permissions-policy": "permissions",
     }
-    # V11.6：WAF 只作为"纵深防御能力"单独展示，不消除真实缺失项
+    # V12：WAF 只作为"纵深防御能力"单独展示，不消除真实缺失项
     # Trusted Domains 白名单已移除：不能以"知名"为由自动判定安全
     waf_protected = len(waf_list) > 0
     waf_name = waf_list[0].get("name", "WAF") if waf_list else ""
@@ -4349,7 +4349,7 @@ async def analyze_security(
             "category": rule["category"], "severity": rule["severity"],
         })
         if not value:
-            # V11.6：所有站点统一扣分 + finding，WAF 不消除真实缺失项
+            # V12：所有站点统一扣分 + finding，WAF 不消除真实缺失项
             if key in HIGH_CONFIG_HEADERS:
                 points = SCORE_DEDUCTION["high_config_missing"]
             else:
@@ -4363,7 +4363,7 @@ async def analyze_security(
                         verify_key=HEADER_VERIFY_KEY.get(key, "info"),
                         confidence_level=conf_level)
 
-    # V11.6: HSTS 强度评估
+    # V12: HSTS 强度评估
     hsts_value = headers.get("strict-transport-security", headers.get("Strict-Transport-Security", None))
     if hsts_value:
         hsts_lower = hsts_value.lower()
@@ -4383,7 +4383,7 @@ async def analyze_security(
             # 低风险提示，不额外扣分（已经扣过了）
             pass
 
-    # V11.6: CSP 强度评估
+    # V12: CSP 强度评估
     csp_value = headers.get("content-security-policy", headers.get("Content-Security-Policy", None))
     if csp_value:
         csp_lower = csp_value.lower()
@@ -4409,7 +4409,7 @@ async def analyze_security(
         value = headers.get(key, headers.get(key.title(), None))
         if value:
             info_leaks.append({"name": key.title(), "value": value})
-            # V11.6：WAF 标识头不算泄露，但其它情况仍报告
+            # V12：WAF 标识头不算泄露，但其它情况仍报告
             is_waf_signature = any(
                 w.get("value", "").lower() in value.lower() or value.lower() in w.get("value", "").lower()
                 for w in waf_list
@@ -4495,7 +4495,7 @@ async def analyze_security(
         # suspect 疑似项：不扣分，只作为信息提示
         pass
 
-    # V11.6: 代码层漏洞动态检测（温和 fuzzing）
+    # V12: 代码层漏洞动态检测（温和 fuzzing）
     parsed_url = urlparse(url)
     params = [p.split("=")[0] for p in parsed_url.query.split("&") if "=" in p] if parsed_url.query else []
     if params:
@@ -4538,7 +4538,7 @@ async def analyze_security(
                 deduct(v.get("name", "漏洞"), 25, "critical", "检测到严重漏洞")
             elif sev == "high":
                 deduct(v.get("name", "漏洞"), 15, "high", "检测到高风险漏洞")
-            # V11.6: 补充 medium 和 low 的扣分逻辑，确保评分与 summary 统计一致
+            # V12: 补充 medium 和 low 的扣分逻辑，确保评分与 summary 统计一致
             elif sev == "medium":
                 deduct(v.get("name", "漏洞"), 8, "medium", "检测到中风险漏洞")
             elif sev == "low":
@@ -4572,7 +4572,7 @@ async def analyze_security(
         if cat not in owasp_map:
             owasp.append({"category": cat, "status": status, "note": note})
     owasp.sort(key=lambda x: int(x["category"][1:3]))
-    # V11.6：WAF 作为纵深防御能力，最多 +3 分奖励，不覆盖真实缺失项
+    # V12：WAF 作为纵深防御能力，最多 +3 分奖励，不覆盖真实缺失项
     waf_bonus = 0
     if waf_protected:
         waf_bonus = 2
@@ -4622,7 +4622,7 @@ async def analyze_security(
                         restricted_code = "ANTI_BOT"
                     break
 
-    # V11.6：受限扫描时所有发现标记为"证据不足"（低置信度）
+    # V12：受限扫描时所有发现标记为"证据不足"（低置信度）
     if restricted:
         for f in findings:
             f["confidence_level"] = "低"
@@ -4662,7 +4662,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     from reportlab.pdfbase.ttfonts import TTFont
 
     _cn_font = "Helvetica"
-    # V11.6 修复：先尝试 WQY（TTF 格式，reportlab 完美支持）
+    # V12 修复：先尝试 WQY（TTF 格式，reportlab 完美支持）
     # NotoSansCJK 是 CFF/OTF 格式，reportlab 的 TTFont 不支持
     for _fp in [
         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
@@ -4863,7 +4863,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
             ])
         t = Table(table_data, colWidths=[8*mm, 28*mm, 18*mm, 25*mm, 30*mm, 41*mm])
         t.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V11.6 修复：表格用中文字体
+            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V12 修复：表格用中文字体
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("FONTSIZE", (0, 0), (-1, -1), 7),
@@ -4881,7 +4881,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
             owasp_data.append([o["category"], o["status"], o.get("note", "")])
         t2 = Table(owasp_data, colWidths=[50 * mm, 30 * mm, 70 * mm])
         t2.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V11.6 修复：表格用中文字体
+            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V12 修复：表格用中文字体
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("FONTSIZE", (0, 0), (-1, -1), 8),
@@ -5214,7 +5214,7 @@ def generate_html_report(scan_data: dict) -> str:
     </div>
 
     <div class="report-footer">
-        漏洞哨兵 V11.6 · 自动生成于 {_html_escape(time_str)}
+        漏洞哨兵 V12 · 自动生成于 {_html_escape(time_str)}
     </div>
 </div>
 </body>
@@ -5512,7 +5512,7 @@ async def api_login(req: LoginRequest, request: Request) -> dict:
 async def api_me(user: Optional[dict] = Depends(get_current_user)) -> dict:
     if not user:
         raise HTTPException(401, "未登录")
-    # V11.6: 从数据库读取最新 role/team_id，确保和数据库一致
+    # V12: 从数据库读取最新 role/team_id，确保和数据库一致
     conn = get_db()
     try:
         row = conn.execute("SELECT id, username, role, team_id FROM users WHERE id=?", (user["user_id"],)).fetchone()
@@ -5742,7 +5742,7 @@ async def api_verify_fix(req: VerifyFixRequest, request: Request, user: dict = D
         sensitive_paths = await check_sensitive_paths(host, is_https)
         ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
         result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths)
-        # V11.6：11 维交叉验证（降低误报）
+        # V12：11 维交叉验证（降低误报）
         try:
             cv_result = await cross_validate_findings(
                 url, headers, result["findings"],
@@ -5951,7 +5951,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
     try:
         url = sanitize_url(req.url)
     except ValueError as e:
-        # V11.6 fix: 返回友好的扫描失败结果，而不是 HTTP 422
+        # V12 fix: 返回友好的扫描失败结果，而不是 HTTP 422
         return ScanResponse(
             success=False, scan_type="real", url=req.url, final_url=req.url,
             time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -5963,7 +5963,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         )
 
     # 扫描结果缓存：30 秒内同 URL 直接返回（防重复点击）
-    # V11.6: localhost 演示靶场不使用缓存，确保修复后立即可见效果
+    # V12: localhost 演示靶场不使用缓存，确保修复后立即可见效果
     parsed = urlparse(url)
     host = parsed.hostname or ""
     is_demo_target = host in ("localhost", "127.0.0.1", "demo-target.local")
@@ -6184,7 +6184,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 vuln_findings, vuln_tests = [], []
 
         result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings)
-        # V11.6：11 维交叉验证（降低误报）
+        # V12：11 维交叉验证（降低误报）
         try:
             cv_result = await cross_validate_findings(
                 url, headers, result["findings"],
@@ -6367,7 +6367,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             )
         raise
     except Exception as e:
-        # V11.6: 通用异常兜底，避免返回 500
+        # V12: 通用异常兜底，避免返回 500
         logger.error("Scan failed with unexpected error: %s", e, exc_info=True)
         try:
             async with _scan_progress_lock:
@@ -6779,7 +6779,7 @@ async def simulate_fix(req: SimulateFixRequest, request: Request) -> dict:
     输入：scan findings 数组（使用真实 severity 字段 high/medium/low）+ 可选 scan_id
     输出：修复前 vs 修复后的评分对比
     """
-    # V11.6: 添加速率限制，防止滥用
+    # V12: 添加速率限制，防止滥用
     await rate_limit_dependency(request)
     findings = req.findings or []
 
@@ -6813,7 +6813,7 @@ async def simulate_fix(req: SimulateFixRequest, request: Request) -> dict:
             "fix": f.get("fix", ""),
             "summary": f.get("summary") or f"修复 {f.get('name', '安全问题')}，消除 {SEVERITY_ZH.get(severity, '低')} 风险",
         })
-    # V11.6：生成可执行的修复配置（按平台分类）
+    # V12：生成可执行的修复配置（按平台分类）
     nginx_fixes = []
     for f in findings:
         fix_code = f.get("fix", "")
@@ -6951,7 +6951,7 @@ async def api_generate_fix_package(request: Request, user: dict = Depends(requir
 
     main_cfg = "\n\n".join(code_blocks)
     readme = f"""# {host} 安全配置包
-由漏洞哨兵 V11.6 自动生成
+由漏洞哨兵 V12 自动生成
 平台：{platform.upper()}
 修复项数：{len(code_blocks)}
 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}
@@ -6997,7 +6997,7 @@ async def api_generate_fix_package(request: Request, user: dict = Depends(requir
 
 
 # ============================================================
-# V11.6 应用修复配置：用户授权凭证 → SSH 改服务器配置 → 验证 → 返结果
+# V12 应用修复配置：用户授权凭证 → SSH 改服务器配置 → 验证 → 返结果
 # ============================================================
 import base64
 from cryptography.fernet import Fernet
@@ -7016,7 +7016,7 @@ def _get_credential_key() -> bytes:
 
 _fernet = Fernet(_get_credential_key())
 
-# V11.6: 生产环境强制校验凭证加密密钥，禁止使用硬编码默认值
+# V12: 生产环境强制校验凭证加密密钥，禁止使用硬编码默认值
 if _IS_PRODUCTION:
     _default_key = base64.urlsafe_b64encode(b"vulnsentinel-v11-default-credential-key-32!!".ljust(32, b"=")[:32])
     if _fernet._signing_key == Fernet(_default_key)._signing_key:
@@ -7043,7 +7043,7 @@ def _generate_fix_patch(findings: list, platform: str = "nginx") -> str:
         lines = [
             "",
             "# ============================================",
-            "# 漏洞哨兵 V11.6 自动应用的安全头",
+            "# 漏洞哨兵 V12 自动应用的安全头",
             f"# 应用时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
             f"# 修复项数: {len(findings)}",
             "# ============================================",
@@ -7113,7 +7113,7 @@ def _ssh_execute(host: str, port: int, username: str, password: str,
 
 def _auto_fix_via_ssh(scan_data: dict, credentials: dict) -> dict:
     """
-    V11.6 核心：通过 SSH 真正修复用户服务器
+    V12 核心：通过 SSH 真正修复用户服务器
     流程：备份 → 追加修复配置 → 测试配置 → 重载 → 验证
     """
     host = credentials.get("host")  # 用户服务器 IP/域名
@@ -7208,7 +7208,7 @@ def _auto_fix_via_ssh(scan_data: dict, credentials: dict) -> dict:
 @app.post("/api/auto-fix")
 async def api_auto_fix(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V11.6 终极功能：端到端应用修复配置
+    V12 终极功能：端到端应用修复配置
     接收：扫描结果 + 用户服务器凭证
     执行：SSH 备份 → 写配置 → 测试 → 重载 → 验证
     返回：完整执行日志 + 验证后的安全头列表
@@ -7275,7 +7275,7 @@ async def api_auto_fix(request: Request, user: dict = Depends(require_login)) ->
 @app.post("/api/auto-fix-via-cloudflare")
 async def api_auto_fix_cloudflare(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V11.6 Cloudflare 应用修复配置：通过 Cloudflare API 改安全头（零 SSH 风险）
+    V12 Cloudflare 应用修复配置：通过 Cloudflare API 改安全头（零 SSH 风险）
     用户只需提供 CF API Token 即可一键应用 5+ 项安全头
     """
     try:
@@ -7378,11 +7378,11 @@ async def api_auto_fix_cloudflare(request: Request, user: dict = Depends(require
 
 
 # ============================================================
-# V11.6 进化模块 1：智能学习 — 从历史自动学
+# V12 进化模块 1：智能学习 — 从历史自动学
 # ============================================================
 def _learn_from_user_history(user_id: int) -> dict:
     """
-    V11.6 进化：从用户的修复历史自动学习
+    V12 进化：从用户的修复历史自动学习
     统计：用户最常修/不修的项、修复后真实效果、最佳修复顺序
     """
     conn = get_db()
@@ -7471,17 +7471,17 @@ def _learn_from_user_history(user_id: int) -> dict:
 
 @app.get("/api/learn/insights")
 async def api_learn_insights(user: dict = Depends(require_login)) -> dict:
-    """V11.6 进化端点：智能学习洞察（基于用户历史）"""
+    """V12 进化端点：智能学习洞察（基于用户历史）"""
     insights = _learn_from_user_history(user["user_id"])
     return insights
 
 
 # ============================================================
-# V11.6 进化模块 2：主动监控 — 定期扫描 + 告警
+# V12 进化模块 2：主动监控 — 定期扫描 + 告警
 # ============================================================
 # 监控目标：用户可加自己的网站到监控列表
 def _init_monitoring_tables():
-    """V11.6 新增：监控相关表"""
+    """V12 新增：监控相关表"""
     conn = get_db()
     try:
         conn.executescript("""
@@ -7530,12 +7530,12 @@ def _init_monitoring_tables():
 try:
     _init_monitoring_tables()
 except Exception as e:
-    print(f"[V11.6] monitor tables init warning: {e}")
+    print(f"[V12] monitor tables init warning: {e}")
 
 
 @app.post("/api/monitors")
 async def api_create_monitor(request: Request, user: dict = Depends(require_login)) -> dict:
-    """V11.6 进化端点：添加监控目标"""
+    """V12 进化端点：添加监控目标"""
     try:
         body = await request.json()
     except Exception:
@@ -7546,7 +7546,7 @@ async def api_create_monitor(request: Request, user: dict = Depends(require_logi
         return {"success": False, "error": "URL 必填"}
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
-    # V11.6 fix: SSRF 防护 - 监控目标必须通过 URL 校验
+    # V12 fix: SSRF 防护 - 监控目标必须通过 URL 校验
     try:
         sanitize_url(url)
     except ValueError as e:
@@ -7575,7 +7575,7 @@ async def api_create_monitor(request: Request, user: dict = Depends(require_logi
 
 @app.get("/api/monitors")
 async def api_list_monitors(user: dict = Depends(require_login)) -> dict:
-    """V11.6 进化端点：列出所有监控目标"""
+    """V12 进化端点：列出所有监控目标"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -7593,7 +7593,7 @@ async def api_list_monitors(user: dict = Depends(require_login)) -> dict:
 
 @app.delete("/api/monitors/{monitor_id}")
 async def api_delete_monitor(monitor_id: int, user: dict = Depends(require_login)) -> dict:
-    """V11.6 进化端点：删除监控目标"""
+    """V12 进化端点：删除监控目标"""
     conn = get_db()
     try:
         conn.execute(
@@ -7607,7 +7607,7 @@ async def api_delete_monitor(monitor_id: int, user: dict = Depends(require_login
 
 
 def _check_monitors_sync():
-    """V11.6：同步执行监控扫描（被 scheduler 调用）"""
+    """V12：同步执行监控扫描（被 scheduler 调用）"""
     import asyncio
     conn = get_db()
     try:
@@ -7624,7 +7624,7 @@ def _check_monitors_sync():
                 continue
             # 到了扫描时间
             try:
-                # V11.6 fix: SSRF 防护 + 正确调用扫描流程
+                # V12 fix: SSRF 防护 + 正确调用扫描流程
                 url = m["url"]
                 try:
                     sanitize_url(url)
@@ -7783,7 +7783,7 @@ def _check_monitors_sync():
 
 @app.get("/api/monitors/alerts")
 async def api_list_alerts(user: dict = Depends(require_login)) -> dict:
-    """V11.6 进化端点：列出所有告警"""
+    """V12 进化端点：列出所有告警"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -7803,10 +7803,10 @@ async def api_list_alerts(user: dict = Depends(require_login)) -> dict:
 
 
 # ============================================================
-# V11.6 进化模块 3：AI 洞察 — 会话记忆 + 个性化建议
+# V12 进化模块 3：AI 洞察 — 会话记忆 + 个性化建议
 # ============================================================
 def _save_conversation(user_id: int, role: str, content: str, context: dict = None) -> int:
-    """V11.6：保存 AI 顾问对话历史（让 AI 记住用户）"""
+    """V12：保存 AI 顾问对话历史（让 AI 记住用户）"""
     conn = get_db()
     try:
         conn.executescript("""
@@ -7836,7 +7836,7 @@ def _save_conversation(user_id: int, role: str, content: str, context: dict = No
 
 
 def _get_recent_conversations(user_id: int, limit: int = 10) -> list:
-    """V11.6：取最近 N 条对话（用于上下文）"""
+    """V12：取最近 N 条对话（用于上下文）"""
     conn = get_db()
     try:
         # 确保表存在
@@ -7860,7 +7860,7 @@ def _get_recent_conversations(user_id: int, limit: int = 10) -> list:
         conn.close()
 
 
-# =================== V11.6 LLM 集成（OpenAI 兼容接口） ===================
+# =================== V12 LLM 集成（OpenAI 兼容接口） ===================
 
 def _build_llm_prompt(user_msg: str, history: list, insights: dict) -> list:
     """组装发给 LLM 的 messages：系统提示 + 历史 + 用户消息"""
@@ -7873,7 +7873,7 @@ def _build_llm_prompt(user_msg: str, history: list, insights: dict) -> list:
         persistent_text = "暂无反复问题"
 
     system_prompt = (
-        "你是漏洞哨兵 V11.6 的安全顾问，一位简洁专业的中文安全工程师。\n"
+        "你是漏洞哨兵 V12 的安全顾问，一位简洁专业的中文安全工程师。\n"
         f"用户统计：已扫描 {insights.get('total_scans', 0)} 次，"
         f"预测下次评分 {insights.get('predicted_next_score', '暂无')}。\n"
         f"{persistent_text}\n"
@@ -7914,7 +7914,7 @@ async def _call_llm(messages: list) -> str:
         "temperature": 0.3,
         "max_tokens": 600,
     }
-    # V11.6：LLM 请求也尊重 TLS_VERIFY 设置
+    # V12：LLM 请求也尊重 TLS_VERIFY 设置
     _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
     async with httpx.AsyncClient(timeout=settings.llm_timeout, verify=not _tls_off) as client:
         resp = await client.post(url, headers=headers, json=payload)
@@ -8023,7 +8023,7 @@ def _build_ai_advisor_llm_prompt(user_msg: str, history: list, scan_context: Opt
 @app.post("/api/ai/chat")
 async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V11.6 进化端点：AI 顾问对话（带会话记忆）
+    V12 进化端点：AI 顾问对话（带会话记忆）
     - 记住用户上次问了什么、修复进度
     - 基于用户历史给出个性化建议
     """
@@ -8101,7 +8101,7 @@ async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> 
             )
         elif any(k in user_msg for k in ["你好", "hi", "hello", "你是"]):
             response_text = (
-                f"👋 你好 {user['username']}！我是漏洞哨兵 V11.6 智能顾问。\n\n"
+                f"👋 你好 {user['username']}！我是漏洞哨兵 V12 智能顾问。\n\n"
                 f"📊 你已扫描 {insights['total_scans']} 次\n"
                 f"🔄 {len(persistent)} 个反复问题\n"
                 f"📈 预测评分: {insights.get('predicted_next_score', 'N/A')}\n\n"
@@ -8141,7 +8141,7 @@ async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> 
 
 
 # ============================================================
-# V11.6 进化模块 4：协作 — 团队、角色、评论
+# V12 进化模块 4：协作 — 团队、角色、评论
 # ============================================================
 def _init_team_tables():
     conn = get_db()
@@ -8178,12 +8178,12 @@ def _init_team_tables():
 try:
     _init_team_tables()
 except Exception as e:
-    print(f"[V11.6] team tables init warning: {e}")
+    print(f"[V12] team tables init warning: {e}")
 
 
 @app.post("/api/teams")
 async def api_create_team(request: Request, user: dict = Depends(require_login)) -> dict:
-    """V11.6 进化端点：创建团队"""
+    """V12 进化端点：创建团队"""
     try:
         body = await request.json()
     except Exception:
@@ -8211,7 +8211,7 @@ async def api_create_team(request: Request, user: dict = Depends(require_login))
 
 @app.post("/api/scans/{scan_id}/comment")
 async def api_add_comment(scan_id: int, request: Request, user: dict = Depends(require_login)) -> dict:
-    """V11.6 进化端点：给扫描报告添加评论（团队协作）"""
+    """V12 进化端点：给扫描报告添加评论（团队协作）"""
     try:
         body = await request.json()
     except Exception:
@@ -8234,7 +8234,7 @@ async def api_add_comment(scan_id: int, request: Request, user: dict = Depends(r
 
 @app.get("/api/scans/{scan_id}/comments")
 async def api_list_comments(scan_id: int, user: dict = Depends(require_login)) -> dict:
-    """V11.6 进化端点：列出扫描报告的所有评论"""
+    """V12 进化端点：列出扫描报告的所有评论"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -8253,11 +8253,11 @@ async def api_list_comments(scan_id: int, user: dict = Depends(require_login)) -
 
 
 # ============================================================
-# V11.6 进化模块 5：综合仪表盘
+# V12 进化模块 5：综合仪表盘
 # ============================================================
 @app.get("/api/evolution/dashboard")
 async def api_evolution_dashboard(user: dict = Depends(require_login)) -> dict:
-    """V11.6 进化端点：综合仪表盘（学习+监控+协作+AI 一次全看）"""
+    """V12 进化端点：综合仪表盘（学习+监控+协作+AI 一次全看）"""
     insights = _learn_from_user_history(user["user_id"])
     conn = get_db()
     try:
@@ -8297,7 +8297,7 @@ async def api_evolution_dashboard(user: dict = Depends(require_login)) -> dict:
 
 
 # ============================================================
-# V11.6 进化模块 5：自动巡检 — 定时回扫所有监控项
+# V12 进化模块 5：自动巡检 — 定时回扫所有监控项
 # ============================================================
 
 def _patrol_all_monitors_sync():
@@ -8427,7 +8427,7 @@ def _write_patrol_alert(user_id: int, monitor_id: int, url: str, alert_type: str
 
 
 # ============================================================
-# V11.6 AI 顾问增强：LLM 配置端点
+# V12 AI 顾问增强：LLM 配置端点
 # ============================================================
 
 @app.get("/api/ai/status")
@@ -8655,7 +8655,7 @@ async def api_report(scan_id: int, format: str = "pdf", user: dict = Depends(req
     findings = json.loads(scan["findings_json"]) if scan.get("findings_json") else []
     score_breakdown = json.loads(scan["score_breakdown_json"]) if scan.get("score_breakdown_json") else []
     fixes = json.loads(scan["fixes_json"]) if scan.get("fixes_json") else {}
-    # V11.6 修复：OWASP Top 10 完整覆盖（不是只有 finding 的分类）
+    # V12 修复：OWASP Top 10 完整覆盖（不是只有 finding 的分类）
     owasp_all = [
         {"category": "A01 访问控制失效", "status": "通过", "note": "未检测到问题"},
         {"category": "A02 加密机制失效", "status": "通过", "note": "已启用 HTTPS"},
@@ -9939,9 +9939,9 @@ async def public_demo_scan(req: PublicDemoRequest, request: Request):
             logger.warning("public_demo check_sensitive_paths failed: %s", e)
             sensitive_paths = []
         result = await analyze_security(raw_url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
-        # V11.6：生成修复建议（与登录用户一致）
+        # V12：生成修复建议（与登录用户一致）
         fixes = generate_fixes(result.get("findings", []), headers, is_https, host)
-        # V11.6：如果用户已登录，把这次 demo 扫描也保存为他的扫描记录
+        # V12：如果用户已登录，把这次 demo 扫描也保存为他的扫描记录
         # 这样可以让他用 scan_id 触发自动修复
         try:
             token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -9970,10 +9970,10 @@ async def public_demo_scan(req: PublicDemoRequest, request: Request):
             import logging
             logging.getLogger("vuln_sentinel").warning("demo scan save wrapper: " + str(e)[:100])
 
-        # V11.6：确保 scan_id 始终存在（未登录用户用负 ID 表示 demo 模式）
+        # V12：确保 scan_id 始终存在（未登录用户用负 ID 表示 demo 模式）
         if "scan_id" not in result:
             result["scan_id"] = -abs(hash(raw_url + str(datetime.now().timestamp()))) % 1000000
-        # V11.6：标记是否使用了 TLS 验证跳过模式
+        # V12：标记是否使用了 TLS 验证跳过模式
         _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
         result["tls_verify_skipped"] = _tls_off
         return {
@@ -10776,7 +10776,7 @@ def _ai_resolve_reference(msg: str, history: list) -> str:
 # ---------- 主 AI 顾问函数 ----------
 @app.post("/api/ai-advisor")
 async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_current_user)):
-    """V11.6 升级版 AI 安全顾问：智能匹配 + 上下文感知 + 多轮对话"""
+    """V12 升级版 AI 安全顾问：智能匹配 + 上下文感知 + 多轮对话"""
     client_ip = request.client.host if request.client else "unknown"
     if not await limiter_ai.is_allowed(client_ip):
         raise HTTPException(
@@ -11048,7 +11048,7 @@ async def api_scan_asset(asset_id: int, request: Request, user: dict = Depends(r
         raise HTTPException(404, "资产不存在或无权限")
     domain = asset["domain"]
     url = "https://" + domain
-    # V11.6 fix: SSRF 防护 - 确保资产域名不是内网地址
+    # V12 fix: SSRF 防护 - 确保资产域名不是内网地址
     try:
         sanitize_url(url)
     except ValueError as e:
@@ -11096,11 +11096,11 @@ async def index() -> HTMLResponse:
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
-    return HTMLResponse(content="<h1>VulnSentinel V11.6</h1>")
+    return HTMLResponse(content="<h1>VulnSentinel V12</h1>")
 
 
 # ============================================================
-# V11.6 本地演示靶场：应用修复配置 / 一键重置（真实修改本地 nginx）
+# V12 本地演示靶场：应用修复配置 / 一键重置（真实修改本地 nginx）
 # ============================================================
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -11256,7 +11256,7 @@ def _demo_nginx_apply_security_headers() -> tuple[bool, str]:
 
             # 安全头修复块（使用正确的缩进）
             security_headers_block = """
-            # ===== VulnSentinel V11.6 应用修复配置：安全响应头 =====
+            # ===== VulnSentinel V12 应用修复配置：安全响应头 =====
             add_header X-Frame-Options "SAMEORIGIN" always;
             add_header X-Content-Type-Options "nosniff" always;
             add_header Content-Security-Policy "default-src 'self'" always;
@@ -11413,7 +11413,7 @@ class DemoFixRequest(BaseModel):
 @app.post("/api/demo-fix")
 async def api_demo_fix(req: DemoFixRequest, request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V11.6 演示专用：应用修复配置/重置本地靶场
+    V12 演示专用：应用修复配置/重置本地靶场
     需要登录，仅用于演示环境
     action: "apply" - 应用安全头修复
             "reset" - 重置为有漏洞状态
@@ -11452,7 +11452,7 @@ class DemoFullCycleRequest(BaseModel):
 @app.post("/api/demo-full-cycle")
 async def api_demo_full_cycle(req: DemoFullCycleRequest, request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V11.6 一键演示完整闭环：重置 → 第一次扫描 → 应用修复 → 第二次扫描
+    V12 一键演示完整闭环：重置 → 第一次扫描 → 应用修复 → 第二次扫描
     返回完整的前后对比数据，用于前端展示演示效果
     """
     await rate_limit_dependency(request)
@@ -11641,7 +11641,7 @@ async def catch_all(path: str) -> Any:
     try:
         base = Path(STATIC_DIR).resolve()
         fp = (base / path).resolve()
-        # V11.6 fix: is_file() 在路径过长时会抛出 OSError(Errno 36)，
+        # V12 fix: is_file() 在路径过长时会抛出 OSError(Errno 36)，
         # 同时 is_relative_to 也需要捕获异常，避免返回 500
         if not fp.is_relative_to(base):
             # 解析后路径已逃出静态目录 → 拒绝

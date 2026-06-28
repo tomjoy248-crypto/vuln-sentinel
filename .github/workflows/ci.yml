@@ -42,7 +42,7 @@ jobs:
 
       - name: Version check
         run: |
-          curl -sf http://localhost:8000/api/version | grep -q '"version":"11.6"' || exit 1
+          curl -sf http://localhost:8000/api/version | grep -q '"version":"12"' || exit 1
 
       - name: Public demo scan (example.com)
         id: demo_scan
@@ -70,7 +70,7 @@ jobs:
             const score = result.score || 'N/A';
             const scanId = result.scan_id || 'N/A';
             const findings = (result.findings || []).length;
-            const body = `## 🛡️ 漏洞哨兵 V11.6 CI 扫描结果
+            const body = `## 🛡️ 漏洞哨兵 V12 CI 扫描结果
 
 | 指标 | 值 |
 |---|---|

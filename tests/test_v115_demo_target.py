@@ -1,4 +1,4 @@
-"""V11.6 本地演示靶场测试 - 测试扫描-修复-复测完整闭环"""
+"""V12 本地演示靶场测试 - 测试扫描-修复-复测完整闭环"""
 import pytest
 import sys
 import os
@@ -24,7 +24,7 @@ def client():
     app_module.DB_PATH = tmp_db
     app_module._TEST_MODE = True
 
-    # V11.6: 允许 localhost 扫描（演示靶场测试用）
+    # V12: 允许 localhost 扫描（演示靶场测试用）
     app_module.ALLOWED_INTERNAL_HOSTS.add("localhost")
     app_module.ALLOWED_INTERNAL_HOSTS.add("127.0.0.1")
 
@@ -235,7 +235,7 @@ class TestDemoTargetNginxConfig:
         assert "server_tokens on" in content, "缺少 server_tokens on（版本泄露）"
         assert "autoindex on" in content, "缺少 autoindex on（目录遍历）"
         assert 'Access-Control-Allow-Origin "*"' in content, "缺少 CORS 通配符配置"
-        # V11.6: 检查缺少安全头（通过注释标记验证）
+        # V12: 检查缺少安全头（通过注释标记验证）
         assert "缺少所有安全响应头" in content, "配置应标记缺少安全响应头"
 
     def test_security_headers_not_in_original_config(self):

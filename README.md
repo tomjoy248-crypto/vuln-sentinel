@@ -1,4 +1,4 @@
-# 漏洞哨兵 V11.6
+# 漏洞哨兵 V12
 
 [![Tests](https://img.shields.io/badge/tests-186%20passed-brightgreen)](tests/)
 [![Coverage](docs/coverage-badge.svg)](docs/coverage_html/)
@@ -119,8 +119,8 @@ python3 main.py
 ## Docker 部署
 
 ```bash
-docker build -t vulnsentinel:v11.6 .
-docker run -p 8000:8000 vulnsentinel:v11.6
+docker build -t vulnsentinel:v12 .
+docker run -p 8000:8000 vulnsentinel:v12
 ```
 
 ---
@@ -261,14 +261,13 @@ MIT License
 
 ## 版本
 
-v11.6 · 2026-06-27
+v12 · 2026-06-28
 
-**V11.6 主要更新**：
-- 全局 SSRF 防护审计（所有外部请求入口统一过 sanitize_url）
-- 扫描-修复-复测闭环数据真实化（before_score 从数据库读取）
-- 离线模式体验优化（隐藏未实现入口、AI Chat 支持）
-- 14 个前端崩溃点修复 + 全局错误兜底
-- 42 个 API 端点
+**V12 主要更新**：
+- 版本升级至 V12，全局版本号统一
+- 演示靶场环境自愈：自动生成 HTTPS 证书、配置路径自动修正
+- nginx 重载兼容增强（PID 文件失效、进程残留等测试环境）
+- 文案可信度优化：弱化绝对化表达（误报率、自动登录）
 - 186 个测试用例（0 failed, 3 skipped）
 
 ---
