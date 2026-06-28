@@ -6919,10 +6919,10 @@ async def apply_fix_and_rescan(req: ApplyFixRequest, user: dict = Depends(requir
         return {"success": False, "error": str(e)[:300]}
 
 
-# ----- 一键修复包：把所有修复方案打包成可下载 zip -----
+# ----- 修复配置包：把所有修复方案打包成可下载 zip -----
 @app.post("/api/generate-fix-package")
 async def api_generate_fix_package(request: Request, user: dict = Depends(require_login)) -> FileResponse:
-    """AI 一键修复：根据 body 中的 findings + host + is_https 生成平台配置 + 部署脚本，打包成 zip。"""
+    """AI 生成修复配置包：根据 body 中的 findings + host + is_https 生成平台配置 + 部署脚本，打包成 zip。"""
     import io, zipfile, time
     await rate_limit_dependency(request)
     body = await request.json()
@@ -6996,7 +6996,7 @@ async def api_generate_fix_package(request: Request, user: dict = Depends(requir
 
 
 # ============================================================
-# V11.6 自动修复：用户授权凭证 → SSH 改服务器配置 → 验证 → 返结果
+# V11.6 应用修复配置：用户授权凭证 → SSH 改服务器配置 → 验证 → 返结果
 # ============================================================
 import base64
 from cryptography.fernet import Fernet
@@ -7067,10 +7067,10 @@ def _generate_fix_patch(findings: list, platform: str = "nginx") -> str:
                     applied.add(k)
                     break
         if not applied:
-            lines.append("# （未匹配到可自动修复的项）")
+            lines.append("# （未匹配到可生成修复配置的项）")
         return "\n".join(lines)
     else:
-        return f"# 平台 {platform} 自动修复补丁（暂未实现）\n"
+        return f"# 平台 {platform} 修复配置补丁（暂未实现）\n"
 
 
 def _ssh_execute(host: str, port: int, username: str, password: str,
@@ -7207,7 +7207,7 @@ def _auto_fix_via_ssh(scan_data: dict, credentials: dict) -> dict:
 @app.post("/api/auto-fix")
 async def api_auto_fix(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V11.6 终极功能：端到端自动修复
+    V11.6 终极功能：端到端应用修复配置
     接收：扫描结果 + 用户服务器凭证
     执行：SSH 备份 → 写配置 → 测试 → 重载 → 验证
     返回：完整执行日志 + 验证后的安全头列表
@@ -7274,7 +7274,7 @@ async def api_auto_fix(request: Request, user: dict = Depends(require_login)) ->
 @app.post("/api/auto-fix-via-cloudflare")
 async def api_auto_fix_cloudflare(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V11.6 Cloudflare 自动修复：通过 Cloudflare API 改安全头（零 SSH 风险）
+    V11.6 Cloudflare 应用修复配置：通过 Cloudflare API 改安全头（零 SSH 风险）
     用户只需提供 CF API Token 即可一键应用 5+ 项安全头
     """
     try:
@@ -10039,7 +10039,7 @@ _AI_INTENT_KEYWORDS = {
     "thanks": ["谢谢", "感谢", "多谢", "thx", "thanks", "谢谢啦", "谢了"],
     "tool_scan": ["怎么扫描", "如何扫描", "怎么扫", "扫一下", "怎么用", "使用方法", "上手", "操作", "教程", "指南"],
     "tool_report": ["怎么看报告", "扫描报告", "报告怎么看", "怎么看结果", "结果在哪"],
-    "tool_fixer": ["修复器", "自动修复", "一键修复", "怎么用修复", "修复工具"],
+    "tool_fixer": ["修复器", "修复配置生成", "生成修复配置", "怎么用修复", "修复工具"],
     "config_location": ["放在哪里", "配置位置", "加在哪里", "写在哪里", "哪个文件", "配置文件", "放哪"],
     "deployment_risk": ["上线风险", "影响线上", "会挂吗", "影响业务", "会不会崩", "安全上线", "上线有什么风险", "能上线吗", "上线安全"],
     "second": ["第二个", "第二项", "第二个呢", "下一个", "第二个问题", "下一项"],
@@ -10309,7 +10309,7 @@ _AI_TOOL_KB = {
     "how_to_use_fixer": {
         "name": "怎么用修复器",
         "question": "怎么用修复器",
-        "aliases": ["修复器", "自动修复", "一键修复", "怎么用修复", "修复工具", "修复代码", "怎么修复"],
+        "aliases": ["修复器", "修复配置生成", "生成修复配置", "怎么用修复", "修复工具", "修复代码", "怎么修复"],
         "answer": "**🛠 怎么用修复功能**\n\n**方式 1：手动复制配置（推荐）**\n1. 扫描后展开「修复代码」部分\n2. 选择你的服务器平台（Nginx/Apache/Express/Flask/Cloudflare）\n3. 点击「复制」按钮复制配置代码\n4. 粘贴到你的配置文件中\n5. 重启服务或重载配置\n\n**方式 2：完整修复模板**\n扫描报告底部有「完整修复建议」区域：\n- 切换不同平台 tab\n- 一键复制整段配置\n- 包含所有检测项的修复代码\n\n**方式 3：Cloudflare 一键应用**\n如果你的网站使用 Cloudflare CDN：\n1. 在设置中配置 Cloudflare API Token\n2. 扫描后点击「一键应用到 Cloudflare」\n3. 自动将安全头配置推送到 Cloudflare\n\n**⚠ 注意事项**：\n- 修改配置前先备份\n- 建议先在测试环境验证\n- CSP 策略可能影响第三方资源，注意观察控制台报错\n- 修改后务必重新扫描验证",
     },
     "how_to_verify_fix": {
@@ -11099,7 +11099,7 @@ async def index() -> HTMLResponse:
 
 
 # ============================================================
-# V11.6 本地演示靶场：一键修复 / 一键重置（真实修改本地 nginx）
+# V11.6 本地演示靶场：应用修复配置 / 一键重置（真实修改本地 nginx）
 # ============================================================
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -11161,14 +11161,14 @@ def _demo_nginx_apply_security_headers() -> tuple[bool, str]:
 
             # 安全头修复块（使用正确的缩进）
             security_headers_block = """
-            # ===== VulnSentinel V11.6 自动修复：安全响应头 =====
+            # ===== VulnSentinel V11.6 应用修复配置：安全响应头 =====
             add_header X-Frame-Options "SAMEORIGIN" always;
             add_header X-Content-Type-Options "nosniff" always;
             add_header Content-Security-Policy "default-src 'self'" always;
             add_header Referrer-Policy "strict-origin-when-cross-origin" always;
             add_header Permissions-Policy "camera=(), microphone=()" always;
             add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-            # ===== 自动修复结束 =====
+            # ===== 应用修复配置结束 =====
     """
 
             # 找到第一个 server 块（8080端口），在根 location / 之前插入安全头
@@ -11313,7 +11313,7 @@ class DemoFixRequest(BaseModel):
 @app.post("/api/demo-fix")
 async def api_demo_fix(req: DemoFixRequest, request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V11.6 演示专用：一键修复/重置本地靶场
+    V11.6 演示专用：应用修复配置/重置本地靶场
     需要登录，仅用于演示环境
     action: "apply" - 应用安全头修复
             "reset" - 重置为有漏洞状态

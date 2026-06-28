@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-<meta name="description" content="漏洞哨兵 V11.6 - AI 驱动的 Web 安全配置扫描与修复建议平台">
+<meta name="description" content="漏洞哨兵 V11.6 - AI 安全修复闭环平台：扫描发现风险、生成修复配置、复测验证、导出报告">
 <meta name="theme-color" content="#6366f1">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<title>漏洞哨兵 V11.6 - 安全扫描</title>
+<title>漏洞哨兵 V11.6 - AI 安全修复闭环</title>
 <style>
 /* 字体：优先使用本地打包的文泉驿微米黑（保证中文显示一致） */
 @font-face {
@@ -296,14 +296,15 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 
 /* Hero */
 .hero {
-  background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark2) 50%, var(--hero-end) 100%);
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
   border-radius: var(--radius);
-  padding: 40px 24px 36px;
+  padding: 44px 24px 40px;
   text-align: center;
-  color: var(--text-white);
+  color: #fff;
   margin-bottom: 20px;
   position: relative;
   overflow: hidden;
+  border: 1px solid rgba(139,92,246,0.2);
 }
 .hero::before {
   content: '';
@@ -336,11 +337,12 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   100% { transform: translate(-2%, 2%); }
 }
 .hero h1 {
-  font-size: 28px;
-  font-weight: 800;
-  margin-bottom: 8px;
+  font-size: 22px;
+  font-weight: 900;
+  margin-bottom: 4px;
   position: relative;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
 }
 .hero h1 span { color: var(--primary-light); }
 .hero p {
@@ -355,25 +357,26 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 .one-minute-cta {
   display: inline-block;
   margin: 0 auto 4px;
-  padding: 14px 32px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  padding: 16px 40px;
+  background: linear-gradient(135deg, #6366f1, #a78bfa);
   color: #fff;
   border: none;
-  border-radius: 12px;
-  font-size: 16px;
-  font-weight: 700;
+  border-radius: 14px;
+  font-size: 18px;
+  font-weight: 800;
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
-  box-shadow: 0 4px 15px rgba(99,102,241,0.3);
-  animation: cta-pulse 2.5s ease-in-out infinite;
+  box-shadow: 0 4px 20px rgba(99,102,241,0.4);
+  animation: cta-pulse 2s ease-in-out infinite;
+  letter-spacing: 0.5px;
 }
 .one-minute-cta:hover {
-  transform: translateY(-2px) scale(1.03);
-  box-shadow: 0 6px 20px rgba(99,102,241,0.5);
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 8px 30px rgba(139,92,246,0.6);
 }
 @keyframes cta-pulse {
-  0%, 100% { box-shadow: 0 4px 15px rgba(99,102,241,0.3); }
-  50% { box-shadow: 0 4px 25px rgba(139,92,246,0.5); }
+  0%, 100% { box-shadow: 0 4px 20px rgba(99,102,241,0.4); transform: scale(1); }
+  50% { box-shadow: 0 8px 35px rgba(139,92,246,0.6); transform: scale(1.02); }
 }
 
 /* Cards */
@@ -2538,27 +2541,19 @@ img[loading="lazy"] { background: var(--border-light); }
 <div class="page active" id="page-home" role="main">
   <!-- Hero -->
   <div class="hero fade-in-up">
-    <h1>&#x1F6E1; <span>漏洞哨兵</span></h1>
-    <p>让中小团队不用安全专家，也能发现基础 Web 安全配置问题，并拿到可执行的修复方案。</p>
-    <p class="card-desc" style="margin-top:4px;font-size:13px;color:#22c55e;font-weight:600">把网站安全问题从发现、解释、修复到复测闭环跑完</p>
-    <div style="display:flex;justify-content:center;gap:6px;margin-top:10px;flex-wrap:wrap;font-size:12px">
-      <span style="color:rgba(255,255,255,0.7)">🎯 适合：</span>
-      <span style="color:rgba(255,255,255,0.85)">个人开发者</span><span style="color:rgba(255,255,255,0.4)">·</span>
-      <span style="color:rgba(255,255,255,0.85)">初创团队</span><span style="color:rgba(255,255,255,0.4)">·</span>
-      <span style="color:rgba(255,255,255,0.85)">学校项目</span><span style="color:rgba(255,255,255,0.4)">·</span>
-      <span style="color:rgba(255,255,255,0.85)">运维同学</span>
-    </div>
-    <div style="display:flex;justify-content:center;gap:8px;margin-top:18px;flex-wrap:wrap">
-      <span style="background:rgba(255,255,255,0.12);color:#fff;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600">&#x2705; 真实扫描</span>
-      <span style="background:rgba(255,255,255,0.12);color:#fff;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600">&#x1F4CA; 评分解读</span>
-      <span style="background:rgba(255,255,255,0.12);color:#fff;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600">&#x1F4C4; HTML/PDF 报告</span>
-      <span style="background:rgba(255,255,255,0.12);color:#fff;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600">&#x1F510; 账号隔离</span>
-      <span style="background:rgba(255,255,255,0.12);color:#fff;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600">&#x2728; 强度评估</span>
+    <h1 style="font-size:22px;font-weight:900;letter-spacing:0.5px;line-height:1.4;text-align:center">发现风险 → 生成修复 → 验证复测 → 导出报告</h1>
+    <p style="font-size:15px;margin-top:10px;line-height:1.6;text-align:center">漏洞哨兵把传统"只发现问题"的安全工具，升级为 <b style="color:#a78bfa">AI 安全修复闭环</b></p>
+    <p style="font-size:13px;color:rgba(255,255,255,0.6);margin-top:6px;line-height:1.5;text-align:center">面向没有安全团队的中小企业 · 扫描、生成修复配置、复测验证、导出报告，一站搞定</p>
+    <div style="display:flex;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap">
+      <span style="background:linear-gradient(135deg,rgba(99,102,241,0.25),rgba(139,92,246,0.25));color:#a78bfa;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(139,92,246,0.3)">&#x1F50D; 安全闭环</span>
+      <span style="background:linear-gradient(135deg,rgba(34,197,94,0.2),rgba(16,185,129,0.2));color:#4ade80;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(34,197,94,0.3)">&#x1F527; 修复配置生成</span>
+      <span style="background:linear-gradient(135deg,rgba(245,158,11,0.2),rgba(251,191,36,0.2));color:#fbbf24;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(245,158,11,0.3)">&#x1F504; 复测验证</span>
+      <span style="background:linear-gradient(135deg,rgba(236,72,153,0.2),rgba(244,114,182,0.2));color:#f472b6;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(236,72,153,0.3)">&#x26A1; 一键体验</span>
     </div>
     <!-- 一分钟体验 CTA -->
     <div style="margin-top:24px;text-align:center">
       <button class="one-minute-cta" onclick="startOneMinuteDemo()">&#x26A1; 一分钟体验完整闭环</button>
-      <p style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">自动登录 → 填充网址 → 扫描 → 查看结果，全程无需手动操作</p>
+      <p style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">自动登录 → 扫描 → 查看修复配置 → 复测验证，全程无需手动操作</p>
     </div>
   </div>
 
@@ -2595,8 +2590,8 @@ img[loading="lazy"] { background: var(--border-light); }
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:22px">&#x2728;</span>
         <div style="flex:1">
-          <div style="font-size:15px;font-weight:700;color:var(--text-primary)">AI 驱动的智能安全扫描</div>
-          <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">置信度分级 · 误报过滤 · 越用越准</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text-primary)">安全闭环：扫描 → 修复配置 → 复测验证</div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">多平台修复配置生成 · 交叉验证降低误报 · 导出专业报告</div>
         </div>
         <span style="font-size:11px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;padding:3px 10px;border-radius:12px;font-weight:700">V11.6 核心能力</span>
       </div>
@@ -2615,8 +2610,8 @@ img[loading="lazy"] { background: var(--border-light); }
       </div>
       <div style="padding:14px 12px;background:var(--bg-card);text-align:center">
         <div style="font-size:20px;margin-bottom:6px">&#x26A1;</div>
-        <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">一键闭环</div>
-        <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">扫描→修复→复测<br>30 秒见证效果</div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">安全闭环</div>
+        <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">扫描→生成修复配置→复测验证<br>30 秒见证效果</div>
       </div>
     </div>
     <!-- 本地演示靶场入口（登录后显示） -->
@@ -2923,7 +2918,7 @@ img[loading="lazy"] { background: var(--border-light); }
     </div>
     <div class="trust-card fade-in-up" style="animation-delay:0.4s">
       <div class="icon green">&#x1F527;</div>
-      <h3>一键修复配置</h3>
+      <h3>修复配置生成</h3>
       <p>自动生成安全配置代码，直接复制应用到生产环境</p>
     </div>
     <div class="trust-card fade-in-up" style="animation-delay:0.45s">
@@ -2977,7 +2972,7 @@ img[loading="lazy"] { background: var(--border-light); }
         </thead>
         <tbody>
           <tr style="border-bottom:1px solid var(--border)">
-            <td style="padding:10px">一键修复配置</td>
+            <td style="padding:10px">修复配置生成</td>
             <td style="padding:10px;text-align:center;color:var(--success)">&#10004; 6 种平台</td>
             <td style="padding:10px;text-align:center;color:var(--text-lighter)">&#10008; 仅报告</td>
             <td style="padding:10px;text-align:center;color:var(--text-lighter)">&#10008; 仅报告</td>
@@ -4153,7 +4148,7 @@ function offlineApiHandle(method, urlPath, body) {
     } else if (msg.indexOf("v11") >= 0 || msg.indexOf("更新") >= 0 || msg.indexOf("新版本") >= 0) {
       reply = "**V11.6 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站误报率 → 0）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
     } else if (msg.indexOf("怎么用") >= 0 || msg.indexOf("上手") >= 0) {
-      reply = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 默认账号 demo / demo123 已自动登录\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「一键应用修复」看修复前后对比\n5. 用 AI 顾问聊天";
+      reply = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 默认账号 demo / demo123 已自动登录\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
     }
     var source = useLLMOffline ? "llm" : "rule_engine";
     return { status: 200, body: { reply: reply, source: source } };
@@ -4185,7 +4180,7 @@ function offlineApiHandle(method, urlPath, body) {
       reply2 = "**V11.6 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站误报率 → 0）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
       type2 = "explanation";
     } else if (msg2.indexOf("怎么用") >= 0 || msg2.indexOf("上手") >= 0) {
-      reply2 = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 默认账号 demo / demo123 已自动登录\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「一键应用修复」看修复前后对比\n5. 用 AI 顾问聊天";
+      reply2 = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 默认账号 demo / demo123 已自动登录\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
       type2 = "explanation";
     }
     return { status: 200, body: { response: reply2, reply: reply2, confidence: "high", type: type2, source: "offline_kb" } };
@@ -6163,9 +6158,9 @@ function renderDemoReport(d) {
   html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
   html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 用 AI 修复器生成补丁</button>';
   if (isLoggedIn() && !OFFLINE_MODE) {
-    html += '<button onclick="doPublicDemoFix()" style="background:var(--primary-dark,#4f46e5);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">📋 一键应用修复</button>';
+    html += '<button onclick="doPublicDemoFix()" style="background:var(--primary-dark,#4f46e5);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">📋 生成修复配置并预览</button>';
   } else if (!OFFLINE_MODE) {
-    html += '<button onclick="navigateTo(\'profile\')" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px">🔑 登录后自动修复</button>';
+    html += '<button onclick="navigateTo(\'profile\')" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px">🔑 登录后获取修复配置</button>';
   }
   html += '</div>';
 
@@ -6244,7 +6239,7 @@ async function doPublicDemoFix() {
       body: JSON.stringify(fixPayload)
     });
     var data = await r.json();
-    if (!r.ok) { showToast('模拟修复失败'); return; }
+    if (!r.ok) { showToast('生成修复配置失败'); return; }
     renderFixComparison(data);
   } catch (e) {
     showToast('网络错误：' + (e.message || e));
@@ -6304,7 +6299,7 @@ function renderFixComparison(d) {
     html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 进入修复器获取完整补丁</button>';
     // V11.6 新增：自动修复按钮
     if (!OFFLINE_MODE) {
-      html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 自动修复（SSH/Cloudflare）</button>';
+      html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 应用修复配置（SSH/Cloudflare）</button>';
     }
   } else {
     html += '<button onclick="navigateTo(\'profile\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🔑 登录后获取完整补丁代码</button>';
@@ -6333,7 +6328,7 @@ function showAutoFixDialog(scanId, fixCount) {
 
   // 标题
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
-  html += '<h3 style="margin:0;font-size:18px">🤖 自动修复 ' + fixCount + ' 项问题</h3>';
+  html += '<h3 style="margin:0;font-size:18px">🤖 应用修复配置 ' + fixCount + ' 项问题</h3>';
   html += '<button onclick="closeAutoFixDialog()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-secondary)">×</button>';
   html += '</div>';
 
@@ -6384,7 +6379,7 @@ function showAutoFixDialog(scanId, fixCount) {
   html += '</div>';
 
   // 确认按钮
-  html += '<button onclick="executeAutoFix(\'' + scanId + '\')" style="width:100%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:12px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;margin-top:8px">🚀 开始自动修复</button>';
+  html += '<button onclick="executeAutoFix(\'' + scanId + '\')" style="width:100%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:12px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;margin-top:8px">🚀 开始应用修复配置</button>';
 
   // 结果区
   html += '<div id="af-result" style="margin-top:14px"></div>';
@@ -6422,7 +6417,7 @@ function showAutoFixDialog(scanId, fixCount) {
   }, 50);
   } catch (e) {
     console.error('showAutoFixDialog error:', e);
-    showToast('打开自动修复对话框失败: ' + (e.message || String(e)), 'error');
+    showToast('打开修复配置对话框失败: ' + (e.message || String(e)), 'error');
   }
 }
 
@@ -6495,7 +6490,7 @@ async function executeAutoFix(scanId) {
     html += '<button onclick="closeAutoFixDialog();loadHistory&&loadHistory()" style="width:100%;margin-top:10px;background:var(--primary);color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-size:12px">完成</button>';
     html += '</div>';
     result.innerHTML = html;
-    showToast('🎉 自动修复成功！已验证 ' + (data.verified_headers ? data.verified_headers.length : 0) + ' 个安全头');
+    showToast('🎉 修复配置已应用！已验证 ' + (data.verified_headers ? data.verified_headers.length : 0) + ' 个安全头');
   } catch (e) {
     result.innerHTML = '<div style="background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px;padding:12px;font-size:12px">❌ 网络错误: ' + escapeHtml(e.message || String(e)) + '</div>';
   }
@@ -7401,7 +7396,7 @@ function renderDemoCompareResult(result) {
     html += '<div class="fade-in-up" style="background:linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.08));border:1px solid rgba(99,102,241,0.2);border-radius:16px;padding:24px;margin-bottom:20px">';
     html += '<div style="text-align:center;margin-bottom:20px">';
     html += '<div style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:6px">&#x2728; 修复效果对比</div>';
-    html += '<div style="font-size:13px;color:var(--text-secondary)">一键应用安全配置，见证立竿见影</div>';
+    html += '<div style="font-size:13px;color:var(--text-secondary)">生成修复配置后复测验证，见证评分提升效果</div>';
     html += '</div>';
     
     // 评分大数字对比
@@ -8636,7 +8631,7 @@ function renderResult(data) {
   // Pay Banner
   html += '<div class="pay-banner fade-in-up" style="animation-delay:0.2s">';
   html += '<h3>&#x1F514; 发现 ' + data.findings.length + ' 个安全问题</h3>';
-  html += '<p>升级专业版获取深度扫描、自动修复和持续监控</p>';
+  html += '<p>升级专业版获取深度扫描、应用修复配置和持续监控</p>';
   html += '<button class="pay-btn" onclick="showToast(\'专业版即将上线，敬请期待\')">升级专业版</button>';
   html += '</div>';
 
