@@ -1,6 +1,6 @@
 # 漏洞哨兵 V11.6
 
-[![Tests](https://img.shields.io/badge/tests-184%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-186%20passed-brightgreen)](tests/)
 [![Coverage](docs/coverage-badge.svg)](docs/coverage_html/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
@@ -59,7 +59,7 @@ vuln-sentinel/
 ├── main.py                  # FastAPI 后端主程序（150+ API）
 ├── static/
 │   └── index.html           # 单文件前端（含离线演示模式）
-├── tests/                   # pytest 测试套件（184 用例）
+├── tests/                   # pytest 测试套件（186 用例）
 │   └── test_main.py
 ├── docs/                    # 文档 + 截图 + 架构图
 │   ├── screenshots/         # 实际运行截图
@@ -150,10 +150,11 @@ ALLOWED_INTERNAL_HOSTS="192.168.1.100,10.0.0.5,pikachu.local" python3 main.py
 python3 -m pytest tests/ -v
 ```
 
-当前测试结果：**184 passed, 5 skipped, 0 failed**
+当前测试结果：**186 passed, 3 skipped, 0 failed**
 
-> 5 个 skipped 为可选功能（无对应依赖不影响核心功能）：
+> 3 个 skipped 为可选功能（无对应依赖不影响核心功能）：
 > - `test_ssh_execute_safety`：paramiko 未安装（SSH 修复为可选功能）
+> - 两条 `test_main.py` 用例依赖外部网络扫描返回 scan_id
 > - 其余为 LLM / 网络相关依赖未配置
 
 ---
@@ -268,7 +269,7 @@ v11.6 · 2026-06-27
 - 离线模式体验优化（隐藏未实现入口、AI Chat 支持）
 - 14 个前端崩溃点修复 + 全局错误兜底
 - 42 个 API 端点
-- 184 个测试用例（0 failed, 5 skipped）
+- 186 个测试用例（0 failed, 3 skipped）
 
 ---
 

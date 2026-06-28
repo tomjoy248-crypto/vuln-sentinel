@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import smtplib
 import socket
 import sqlite3
@@ -11106,12 +11107,73 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEMO_NGINX_CONF = os.path.join(_BASE_DIR, "demo-target/conf/nginx.conf")
 DEMO_NGINX_BACKUP = os.path.join(_BASE_DIR, "demo-target/conf/nginx.conf.vulnerable")
 DEMO_NGINX_CMD = "nginx -c " + DEMO_NGINX_CONF
+DEMO_CERT_CRT = os.path.join(_BASE_DIR, "demo-target/conf/server.crt")
+DEMO_CERT_KEY = os.path.join(_BASE_DIR, "demo-target/conf/server.key")
 # 演示靶场 nginx 配置文件读写锁，防止并发写入损坏
 _demo_nginx_lock = threading.RLock()
 
 
+def _ensure_demo_target_ready() -> tuple[bool, str]:
+    """确保演示靶场配置文件路径、证书文件与环境一致（项目被移动后仍能自检修复）"""
+    try:
+        expected_base = _BASE_DIR
+
+        # 1. 确保日志目录存在
+        logs_dir = os.path.join(expected_base, "demo-target/logs")
+        os.makedirs(logs_dir, exist_ok=True)
+
+        # 2. 确保自签名证书存在（8443 HTTPS 演示需要）
+        if not os.path.exists(DEMO_CERT_CRT) or not os.path.exists(DEMO_CERT_KEY):
+            if not shutil.which("openssl"):
+                return False, "缺少自签名证书且未安装 openssl，无法启动 HTTPS 演示"
+            subprocess.run(
+                [
+                    "openssl", "req", "-x509", "-nodes", "-days", "365",
+                    "-newkey", "rsa:2048",
+                    "-keyout", DEMO_CERT_KEY,
+                    "-out", DEMO_CERT_CRT,
+                    "-subj", "/C=CN/ST=Demo/L=Demo/O=VulnSentinel/CN=localhost",
+                    "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1",
+                ],
+                capture_output=True, text=True, timeout=30, check=True,
+            )
+
+        # 3. 修正配置文件中的绝对路径（兼容项目被解压到不同目录）
+        def _rewrite_paths(path: str) -> bool:
+            if not os.path.exists(path):
+                return False
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            original = content
+            # 替换任何 /.../v11.X-vuln-sentinel/demo-target/... 路径为当前实际路径
+            content = re.sub(
+                r"/[^\s\n\"']*/v11\.\d+(-vuln-sentinel)?/demo-target/([a-zA-Z0-9_./-]+)",
+                lambda m: os.path.join(expected_base, "demo-target", m.group(2)).replace("\\", "/"),
+                content,
+            )
+            # 额外兜底：替换直接写死的旧 workspace 路径前缀
+            content = re.sub(
+                r"/workspace/v11\.\d+(-vuln-sentinel)?/demo-target/([a-zA-Z0-9_./-]+)",
+                lambda m: os.path.join(expected_base, "demo-target", m.group(2)).replace("\\", "/"),
+                content,
+            )
+            if content != original:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                return True
+            return False
+
+        _rewrite_paths(DEMO_NGINX_CONF)
+        _rewrite_paths(DEMO_NGINX_BACKUP)
+        return True, "演示靶场环境已就绪"
+    except subprocess.CalledProcessError as e:
+        return False, f"环境准备失败: {e.stderr[:500]}"
+    except Exception as e:
+        return False, f"环境准备失败: {str(e)}"
+
+
 def _demo_nginx_reload() -> tuple[bool, str]:
-    """重新加载本地演示靶场 nginx 配置"""
+    """重新加载本地演示靶场 nginx 配置（兼容 PID 文件失效、旧进程残留等测试环境）"""
     with _demo_nginx_lock:
         try:
             # 测试配置
@@ -11121,20 +11183,48 @@ def _demo_nginx_reload() -> tuple[bool, str]:
             )
             if result.returncode != 0:
                 return False, f"配置测试失败: {result.stderr[:500]}"
-            # 重载（如果正在运行）或启动
+
+            # 重载（如果正在运行）
             result = subprocess.run(
                 ["nginx", "-c", DEMO_NGINX_CONF, "-s", "reload"],
                 capture_output=True, text=True, timeout=10
             )
+            if result.returncode == 0:
+                return True, "配置已生效"
+
+            # reload 失败常见原因：PID 文件为空/失效，但 nginx 仍在运行
+            # 通过 pgrep 找到属于本配置的主进程，发送 SIGHUP 强制重载
+            pgrep = subprocess.run(
+                ["pgrep", "-f", f"nginx: master process.*-c {DEMO_NGINX_CONF}"],
+                capture_output=True, text=True, timeout=5
+            )
+            if pgrep.returncode == 0 and pgrep.stdout.strip():
+                master_pid = pgrep.stdout.strip().splitlines()[0].strip()
+                try:
+                    os.kill(int(master_pid), 1)  # SIGHUP
+                    time.sleep(0.3)
+                    return True, "配置已生效（SIGHUP 重载）"
+                except (ProcessLookupError, ValueError, OSError):
+                    pass
+
+            # 仍然失败：停止旧实例并重新启动
+            subprocess.run(
+                ["nginx", "-c", DEMO_NGINX_CONF, "-s", "stop"],
+                capture_output=True, text=True, timeout=5
+            )
+            subprocess.run(
+                ["pkill", "-f", f"nginx -c {DEMO_NGINX_CONF}"],
+                capture_output=True, text=True, timeout=5
+            )
+            time.sleep(0.5)
+
+            result = subprocess.run(
+                ["nginx", "-c", DEMO_NGINX_CONF],
+                capture_output=True, text=True, timeout=10
+            )
             if result.returncode != 0:
-                # 如果 reload 失败，尝试启动
-                result = subprocess.run(
-                    ["nginx", "-c", DEMO_NGINX_CONF],
-                    capture_output=True, text=True, timeout=10
-                )
-                if result.returncode != 0:
-                    return False, f"启动失败: {result.stderr[:500]}"
-            return True, "配置已生效"
+                return False, f"启动失败: {result.stderr[:500]}"
+            return True, "配置已生效（已重启 nginx）"
         except Exception as e:
             return False, str(e)
 
@@ -11144,6 +11234,11 @@ def _demo_nginx_apply_security_headers() -> tuple[bool, str]:
     import re
     with _demo_nginx_lock:
         try:
+            # 自检：证书、路径一致性
+            ok, msg = _ensure_demo_target_ready()
+            if not ok:
+                return False, msg
+
             if not os.path.exists(DEMO_NGINX_CONF):
                 return False, "演示靶场配置文件不存在"
 
@@ -11276,6 +11371,11 @@ def _demo_nginx_reset() -> tuple[bool, str]:
     """重置本地演示靶场为有漏洞状态"""
     with _demo_nginx_lock:
         try:
+            # 自检：证书、路径一致性
+            ok, msg = _ensure_demo_target_ready()
+            if not ok:
+                return False, msg
+
             if not os.path.exists(DEMO_NGINX_BACKUP):
                 return False, "没有备份文件，无法重置（请先应用一次修复）"
 

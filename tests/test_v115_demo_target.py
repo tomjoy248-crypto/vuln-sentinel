@@ -88,10 +88,12 @@ class TestDemoTarget:
 
     def test_demo_fix_apply_and_reset(self, client, auth_headers):
         """测试应用修复和重置功能"""
-        # 检查 nginx 是否可用
+        # 检查 nginx / openssl 是否可用
         import shutil
         if not shutil.which("nginx"):
             pytest.skip("nginx 未安装，跳过此测试")
+        if not shutil.which("openssl"):
+            pytest.skip("openssl 未安装，无法生成演示 HTTPS 证书，跳过此测试")
 
         # 先重置
         resp = client.post(
@@ -238,7 +240,7 @@ class TestDemoTargetNginxConfig:
 
     def test_security_headers_not_in_original_config(self):
         """测试原始配置不包含实际的安全头配置"""
-        backup_path = "/workspace/v11.4/demo-target/conf/nginx.conf.vulnerable"
+        backup_path = os.path.join(os.path.dirname(__file__), "..", "demo-target", "conf", "nginx.conf.vulnerable")
         if not os.path.exists(backup_path):
             pytest.skip("备份文件不存在，跳过此测试")
 
