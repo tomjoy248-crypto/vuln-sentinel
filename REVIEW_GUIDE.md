@@ -8,7 +8,7 @@
 
 ## 体验路径（6 步）
 
-1. 打开 https://vuln-sentinel-v11.onrender.com，已自动登录（demo / demo123）
+1. 打开 https://vuln-sentinel-v11.onrender.com，使用 demo / demo123 一键登录体验
 2. 输入 example.com，点击"开始安全扫描"，3-5 秒出结果
 3. 查看评分 + 风险等级，展开漏洞详情看修复建议
 4. 点击"生成修复配置"，切换 Nginx/Apache/Node.js 等平台查看配置代码

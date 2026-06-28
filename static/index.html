@@ -2421,7 +2421,7 @@ img[loading="lazy"] { background: var(--border-light); }
 <!-- 离线模式提示 banner（双击 HTML 时显示） -->
 <div id="offline-banner" style="display:none;background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e;padding:10px 16px;text-align:center;font-size:13px;border-bottom:2px solid #f59e0b;position:sticky;top:0;z-index:9999">
   <span style="font-weight:600">⚡ 离线演示模式</span> · 直接双击 HTML 文件即可使用，数据保存在浏览器本地。
-  <span style="margin-left:8px;opacity:0.85">默认账号 <code style="background:#fff3;padding:2px 6px;border-radius:4px">demo / demo123</code> 已自动登录</span>
+  <span style="margin-left:8px;opacity:0.85">使用 <code style="background:#fff3;padding:2px 6px;border-radius:4px">demo / demo123</code> 即可体验</span>
   <a href="http://localhost:8000" style="margin-left:12px;background:#92400e;color:#fff;padding:4px 10px;border-radius:6px;text-decoration:none;font-size:12px">启动后端 → http://localhost:8000</a>
   <span onclick="this.parentNode.style.display='none'" style="margin-left:8px;cursor:pointer;opacity:0.6;font-weight:bold">×</span>
 </div>
@@ -2553,7 +2553,7 @@ img[loading="lazy"] { background: var(--border-light); }
     <!-- 一分钟体验 CTA -->
     <div style="margin-top:24px;text-align:center">
       <button class="one-minute-cta" onclick="startOneMinuteDemo()">&#x26A1; 一分钟体验完整闭环</button>
-      <p style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">自动登录 → 扫描 → 查看修复配置 → 复测验证，全程无需手动操作</p>
+      <p style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">一键登录 → 扫描 → 查看修复配置 → 复测验证，全程无需手动操作</p>
     </div>
   </div>
 
@@ -2561,9 +2561,9 @@ img[loading="lazy"] { background: var(--border-light); }
   <div class="card fade-in-up" style="margin-top:14px;padding:14px;background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff">
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
       <div>
-        <div data-count="0" data-suffix="%" style="font-size:24px;font-weight:800;color:#22c55e;line-height:1" class="counter">0%</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:4px">误报率</div>
-        <div style="font-size:9px;color:#64748b;margin-top:2px">5 维交叉验证</div>
+        <div style="font-size:24px;font-weight:800;color:#22c55e;line-height:1">基准测试</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:4px">0 误报</div>
+        <div style="font-size:9px;color:#64748b;margin-top:2px">多维交叉验证</div>
       </div>
       <div>
         <div data-count="15" style="font-size:24px;font-weight:800;color:#6366f1;line-height:1" class="counter">15</div>
@@ -2707,7 +2707,7 @@ img[loading="lazy"] { background: var(--border-light); }
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:auto">
           <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(245,158,11,0.12);color:#d97706;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">受限扫描</span>
           <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(59,130,246,0.12);color:#2563eb;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">WAF 识别</span>
-          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,0.12);color:#16a34a;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">0 误报</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,0.12);color:#16a34a;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">多维验证降误报</span>
         </div>
         <button onclick="loadDemoCaseB()" style="margin-top:4px;padding:10px 14px;background:linear-gradient(135deg,var(--warning),var(--warning-dark));color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all 0.2s" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(245,158,11,0.3)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none'">查看演示结果</button>
       </div>
@@ -4146,9 +4146,9 @@ function offlineApiHandle(method, urlPath, body) {
     } else if (msg.indexOf("你好") >= 0 || msg.indexOf("hi") >= 0 || msg.indexOf("hello") >= 0) {
       reply = "你好！我是漏洞哨兵 V11.6 安全顾问 🛡 试试问我：HSTS 是什么？如何修复 CSP？怎么提分？";
     } else if (msg.indexOf("v11") >= 0 || msg.indexOf("更新") >= 0 || msg.indexOf("新版本") >= 0) {
-      reply = "**V11.6 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站误报率 → 0）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
+      reply = "**V11.6 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
     } else if (msg.indexOf("怎么用") >= 0 || msg.indexOf("上手") >= 0) {
-      reply = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 默认账号 demo / demo123 已自动登录\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
+      reply = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 离线模式下可直接使用 demo / demo123 体验\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
     }
     var source = useLLMOffline ? "llm" : "rule_engine";
     return { status: 200, body: { reply: reply, source: source } };
@@ -4177,10 +4177,10 @@ function offlineApiHandle(method, urlPath, body) {
       reply2 = "你好！我是漏洞哨兵 V11.6 安全顾问 🛡 试试问我：HSTS 是什么？如何修复 CSP？怎么提分？";
       type2 = "greeting";
     } else if (msg2.indexOf("v11") >= 0 || msg2.indexOf("更新") >= 0 || msg2.indexOf("新版本") >= 0) {
-      reply2 = "**V11.6 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站误报率 → 0）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
+      reply2 = "**V11.6 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
       type2 = "explanation";
     } else if (msg2.indexOf("怎么用") >= 0 || msg2.indexOf("上手") >= 0) {
-      reply2 = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 默认账号 demo / demo123 已自动登录\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
+      reply2 = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 离线模式下可直接使用 demo / demo123 体验\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
       type2 = "explanation";
     }
     return { status: 200, body: { response: reply2, reply: reply2, confidence: "high", type: type2, source: "offline_kb" } };
