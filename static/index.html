@@ -4285,6 +4285,11 @@ function offlineApiHandle(method, urlPath, body) {
 // authFetch: 自动附加 Authorization header 的 fetch 封装
 var API_BASE = (window.location.protocol === 'file:') ? 'offline' : '';
 
+function authHeaders() {
+  var token = getToken();
+  return token ? { 'Authorization': 'Bearer ' + token } : {};
+}
+
 function authFetch(url, options) {
   options = options || {};
   options.headers = options.headers || {};
