@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-<meta name="description" content="漏洞哨兵 V12 - AI 安全修复闭环平台：扫描发现风险、生成修复配置、复测验证、导出报告">
+<meta name="description" content="漏洞哨兵 11-S - AI 安全修复闭环平台：扫描发现风险、生成修复配置、复测验证、导出报告">
 <meta name="theme-color" content="#6366f1">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<title>漏洞哨兵 V12 - AI 安全修复闭环</title>
+<title>漏洞哨兵 11-S - AI 安全修复闭环</title>
 <style>
 /* 字体：优先使用本地打包的文泉驿微米黑（保证中文显示一致） */
 @font-face {
@@ -75,7 +75,7 @@
   --score-rules-bg: #f8fafc;
   --pr-info-bg: #f8fafc;
   --pr-step-bg: #f8fafc;
-  /* V12 fix: AI 聊天 & 进化中心使用的变量 */
+  /* 11-S fix: AI 聊天 & 进化中心使用的变量 */
   --card: #ffffff;
   --card-bg: #ffffff;
   --bg-primary: #ffffff;
@@ -127,7 +127,7 @@
   --score-rules-bg: #1e293b;
   --pr-info-bg: #1e293b;
   --pr-step-bg: #1e293b;
-  /* V12 fix: AI 聊天 & 进化中心使用的变量（暗色模式） */
+  /* 11-S fix: AI 聊天 & 进化中心使用的变量（暗色模式） */
   --card: #1e293b;
   --card-bg: #1e293b;
   --bg-primary: #0f172a;
@@ -443,7 +443,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 .scan-btn:active { transform: scale(0.97); }
 .scan-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
-/* V12: 扫描按钮脉冲动画 */
+/* 11-S: 扫描按钮脉冲动画 */
 .scan-btn:not(:disabled) {
   position: relative;
   overflow: hidden;
@@ -461,7 +461,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   50% { opacity: 1; transform: translateX(100%); }
 }
 
-/* V12: 卡片悬浮增强 */
+/* 11-S: 卡片悬浮增强 */
 .card {
   transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
@@ -470,13 +470,13 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   box-shadow: 0 8px 24px rgba(0,0,0,0.12);
 }
 
-/* V12: 按钮通用波纹效果 */
+/* 11-S: 按钮通用波纹效果 */
 .auth-form-btn, .fixer-btn, .nav-item {
   position: relative;
   overflow: hidden;
 }
 
-/* V12: Toast 动画增强（堆叠队列模式） */
+/* 11-S: Toast 动画增强（堆叠队列模式） */
 .toast {
   animation: toast-in-bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
@@ -492,7 +492,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   to { opacity: 0; transform: translateY(-10px) scale(0.9); }
 }
 
-/* V12: 页面切换动画增强 */
+/* 11-S: 页面切换动画增强 */
 .page {
   animation: page-enter 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -501,7 +501,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* V12: 导航激活指示器 */
+/* 11-S: 导航激活指示器 */
 .nav-item.active::after {
   content: '';
   position: absolute;
@@ -935,7 +935,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* V12: 优先级标签 */
+/* 11-S: 优先级标签 */
 .finding-priority {
   font-size: 9px;
   font-weight: 700;
@@ -991,7 +991,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 }
 .finding-section ul { padding-left: 20px; }
 .finding-section li { margin-bottom: 4px; }
-/* V12+ 置信度 + 误报反馈 */
+/* 11-S+ 置信度 + 误报反馈 */
 .finding-feedback-row {
   display: flex; align-items: center; gap: 8px;
   margin-top: 12px; padding-top: 10px;
@@ -1930,7 +1930,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 .pdf-download-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
 .pdf-download-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
-/* V12: 报告下载下拉菜单 */
+/* 11-S: 报告下载下拉菜单 */
 .report-download-dropdown {
   position: relative;
   display: inline-block;
@@ -2258,7 +2258,7 @@ img[loading="lazy"] { background: var(--border-light); }
   .asset-actions { justify-content: flex-end; }
 }
 
-/* AI 顾问聊天界面 V12 — 移动端优化 */
+/* AI 顾问聊天界面 11-S — 移动端优化 */
 .ai-chat-wrap { display: flex; flex-direction: column; height: min(75vh, 600px); padding: 0; }
 .ai-status-bar {
   display: flex; align-items: center; gap: 8px;
@@ -2354,7 +2354,7 @@ img[loading="lazy"] { background: var(--border-light); }
   .ai-input { font-size: 16px; } /* 防止 iOS 缩放 */
 }
 
-/* 进化中心 V12 */
+/* 进化中心 11-S */
 .evo-score-card {
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
   border: 1px solid var(--border-color);
@@ -2583,7 +2583,7 @@ img[loading="lazy"] { background: var(--border-light); }
     </div>
   </div>
 
-  <!-- V12: 技术亮点 + 本地演示靶场（最醒目的位置） -->
+  <!-- 11-S: 技术亮点 + 本地演示靶场（最醒目的位置） -->
   <div class="card fade-in-up" style="margin-top:18px;background:linear-gradient(135deg,rgba(139,92,246,0.08),rgba(236,72,153,0.08));border:1px solid rgba(139,92,246,0.25);border-radius:14px;overflow:hidden">
     <!-- 顶部标题栏 -->
     <div style="padding:16px 16px 12px;background:linear-gradient(135deg,rgba(139,92,246,0.12),rgba(236,72,153,0.12));border-bottom:1px solid rgba(139,92,246,0.15)">
@@ -2593,7 +2593,7 @@ img[loading="lazy"] { background: var(--border-light); }
           <div style="font-size:15px;font-weight:700;color:var(--text-primary)">安全闭环：扫描 → 风险定位 → 修复配置生成 → 复测对比 → 报告导出</div>
           <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">多平台修复配置生成 · 交叉验证降低误报 · 导出专业报告</div>
         </div>
-        <span style="font-size:11px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;padding:3px 10px;border-radius:12px;font-weight:700">V12 核心能力</span>
+        <span style="font-size:11px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;padding:3px 10px;border-radius:12px;font-weight:700">11-S 核心能力</span>
       </div>
     </div>
     <!-- 三大技术亮点 -->
@@ -2739,7 +2739,7 @@ img[loading="lazy"] { background: var(--border-light); }
       <div class="stat-card" style="background:var(--bg-secondary);padding:16px;border-radius:12px;text-align:center"><div style="font-size:24px;font-weight:700;color:var(--primary)" id="stat-score">-</div><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">最近评分</div></div>
     </div>
 
-    <!-- V12: 安全趋势面板 -->
+    <!-- 11-S: 安全趋势面板 -->
     <div id="trend-panel" style="display:none;margin-bottom:20px">
       <div class="card" style="padding:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -3066,7 +3066,7 @@ img[loading="lazy"] { background: var(--border-light); }
   <div id="fixer-result"></div>
 </div>
 
-<!-- 进化页面 V12 -->
+<!-- 进化页面 11-S -->
 <div class="page" id="page-evolution">
   <div class="section-title">&#x1F4CA; 进化中心</div>
   <div class="section-subtitle">从历史自动学习，主动监控修复</div>
@@ -3150,7 +3150,7 @@ img[loading="lazy"] { background: var(--border-light); }
   <div class="profile-header">
     <div class="profile-avatar">&#x1F6E1;</div>
     <h2>漏洞哨兵</h2>
-    <p>AI 安全扫描平台 V12</p>
+    <p>AI 安全扫描平台 11-S</p>
   </div>
 
   <!-- 登录/注册区域 -->
@@ -3464,7 +3464,7 @@ img[loading="lazy"] { background: var(--border-light); }
   <div id="profile-tab-about" class="profile-tab" style="display:none">
     <div class="card" style="text-align:center;">
       <div style="font-size:48px;margin-bottom:12px">&#x1F6E1;</div>
-      <h3 style="margin-bottom:8px">漏洞哨兵 V12</h3>
+      <h3 style="margin-bottom:8px">漏洞哨兵 11-S</h3>
       <p style="color:var(--text-light);font-size:13px;margin-bottom:16px">智能驱动的 Web 安全扫描与配置修复平台</p>
       <div style="text-align:left;font-size:13px;color:var(--text-secondary);line-height:2">
         <p>&#x2705; 基于 OWASP Top 10 安全标准</p>
@@ -3482,7 +3482,7 @@ img[loading="lazy"] { background: var(--border-light); }
 
   <div class="card" style="margin-top:20px;text-align:center;">
     <div class="card-desc">
-      <p style="margin-bottom:8px;"><strong>漏洞哨兵 V12</strong></p>
+      <p style="margin-bottom:8px;"><strong>漏洞哨兵 11-S</strong></p>
       <p>需要登录使用的安全扫描 Web 应用</p>
       <p>基于 OWASP Top 10 安全标准</p>
       <p style="margin-top:8px;color:var(--text-lighter);">每个账号独立存储扫描历史，数据安全隔离</p>
@@ -3606,12 +3606,12 @@ function safeSetDisplay(id, display) { var el = safeGetElement(id); if (el) el.s
   document.addEventListener('DOMContentLoaded', function() {
     bindCheckboxToButton('auth-check-step1', 'scan-btn-step1');
     bindCheckboxToButton('auth-check', 'scan-btn');
-    // V12: 自动恢复授权勾选状态 + checkbox 联动
+    // 11-S: 自动恢复授权勾选状态 + checkbox 联动
     try { restoreAuthCheckbox(); } catch(e) { console.warn('restoreAuthCheckbox error:', e); }
   });
 })();
 
-// V12: 授权 checkbox 联动 + 持久化
+// 11-S: 授权 checkbox 联动 + 持久化
 var _updatingAuthCheckbox = false;
 function restoreAuthCheckbox() {
   // 从 localStorage 恢复勾选状态
@@ -3908,7 +3908,7 @@ var historyPageSize = 5;
 
 var OFFLINE_MODE = window.location.protocol === 'file:' || !!window.__FORCE_OFFLINE__;
 
-// 预置的真实扫描数据（与 v12 后端在 example.com 上跑出来的结果完全一致）
+// 预置的真实扫描数据（与 v11-s 后端在 example.com 上跑出来的结果完全一致）
 var OFFLINE_DEMO_SCANS = {
   "https://example.com": {
     success: true, scan_type: "real", url: "https://example.com", is_https: true,
@@ -4142,11 +4142,11 @@ function offlineApiHandle(method, urlPath, body) {
     } else if (msg.indexOf("iframe") >= 0 || msg.indexOf("frame") >= 0) {
       reply = "**点击劫持** 防御（Nginx）：\n```\nadd_header X-Frame-Options \"DENY\" always;\n```";
     } else if (msg.indexOf("评分") >= 0 || msg.indexOf("分数") >= 0 || msg.indexOf("怎么算") >= 0) {
-      reply = "**V12 评分公式**：基础 100 分 − critical×25 − high×15 − medium×8 − low×3 + 修复加成 +12。";
+      reply = "**11-S 评分公式**：基础 100 分 − critical×25 − high×15 − medium×8 − low×3 + 修复加成 +12。";
     } else if (msg.indexOf("你好") >= 0 || msg.indexOf("hi") >= 0 || msg.indexOf("hello") >= 0) {
-      reply = "你好！我是漏洞哨兵 V12 安全顾问 🛡 试试问我：HSTS 是什么？如何修复 CSP？怎么提分？";
+      reply = "你好！我是漏洞哨兵 11-S 安全顾问 🛡 试试问我：HSTS 是什么？如何修复 CSP？怎么提分？";
     } else if (msg.indexOf("v11") >= 0 || msg.indexOf("更新") >= 0 || msg.indexOf("新版本") >= 0) {
-      reply = "**V12 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
+      reply = "**11-S 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
     } else if (msg.indexOf("怎么用") >= 0 || msg.indexOf("上手") >= 0) {
       reply = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 离线模式下可直接使用 demo / demo123 体验\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
     }
@@ -4171,13 +4171,13 @@ function offlineApiHandle(method, urlPath, body) {
       reply2 = "**点击劫持** 防御（Nginx）：\n```\nadd_header X-Frame-Options \"DENY\" always;\n```";
       type2 = "fix";
     } else if (msg2.indexOf("评分") >= 0 || msg2.indexOf("分数") >= 0 || msg2.indexOf("怎么算") >= 0) {
-      reply2 = "**V12 评分公式**：基础 100 分 − critical×25 − high×15 − medium×8 − low×3 + 修复加成 +12。";
+      reply2 = "**11-S 评分公式**：基础 100 分 − critical×25 − high×15 − medium×8 − low×3 + 修复加成 +12。";
       type2 = "explanation";
     } else if (msg2.indexOf("你好") >= 0 || msg2.indexOf("hi") >= 0 || msg2.indexOf("hello") >= 0) {
-      reply2 = "你好！我是漏洞哨兵 V12 安全顾问 🛡 试试问我：HSTS 是什么？如何修复 CSP？怎么提分？";
+      reply2 = "你好！我是漏洞哨兵 11-S 安全顾问 🛡 试试问我：HSTS 是什么？如何修复 CSP？怎么提分？";
       type2 = "greeting";
     } else if (msg2.indexOf("v11") >= 0 || msg2.indexOf("更新") >= 0 || msg2.indexOf("新版本") >= 0) {
-      reply2 = "**V12 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
+      reply2 = "**11-S 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
       type2 = "explanation";
     } else if (msg2.indexOf("怎么用") >= 0 || msg2.indexOf("上手") >= 0) {
       reply2 = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 离线模式下可直接使用 demo / demo123 体验\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
@@ -4273,7 +4273,7 @@ function offlineApiHandle(method, urlPath, body) {
   }
   // /api/version GET
   if (urlPath === "/api/version" && method === "GET") {
-    return { status: 200, body: { version: "12", title: "漏洞哨兵 V12 (离线演示模式)", build_time: "2026-06-25" } };
+    return { status: 200, body: { version: "11-S", title: "漏洞哨兵 11-S (离线演示模式)", build_time: "2026-06-28" } };
   }
   return { status: 404, body: { success: false, error: "离线模式未实现该端点: " + method + " " + urlPath } };
   } catch (e) {
@@ -4662,7 +4662,7 @@ function navigateTo(page) {
   var target = document.getElementById('page-' + page);
   if (target) target.classList.add('active');
   document.querySelectorAll('.page').forEach(function(p) { if (p.id !== 'page-' + page) p.classList.remove('active'); });
-  // V12 fix: result 页面没有对应导航项，高亮"扫描"按钮
+  // 11-S fix: result 页面没有对应导航项，高亮"扫描"按钮
   var navPage = (page === 'result') ? 'scan' : page;
   var navItem = document.querySelector('.nav-item[data-page="' + navPage + '"]');
   if (navItem) navItem.classList.add('active');
@@ -4730,7 +4730,7 @@ function _processToastQueue() {
   }, _TOAST_DURATION);
 }
 
-// ========== V12+ finding 误报反馈 ==========
+// ========== 11-S+ finding 误报反馈 ==========
 function submitFindingFeedback(btn, findingName, scanId, isFalsePositive) {
   if (!findingName) { showToast('finding 名称缺失', 'error'); return; }
   if (!isLoggedIn()) {
@@ -5091,7 +5091,7 @@ function showEvolutionDetail(name) {
     html += '      <div class="ai-msg-avatar">AI</div>';
     html += '      <div class="ai-msg-body">';
     html += '        <div class="ai-msg-name">漏洞哨兵 AI 顾问</div>';
-    html += '        <div class="ai-msg-content">你好！我是漏洞哨兵 V12 的 AI 安全顾问 👋<br><br>我可以帮你：<br>• 分析扫描报告与漏洞优先级<br>• 给出可执行的安全修复步骤<br>• 解释安全概念与配置示例<br>• 基于你的历史给出个性化建议<br><br>试试上面的快捷问题，或直接输入你的问题~</div>';
+    html += '        <div class="ai-msg-content">你好！我是漏洞哨兵 11-S 的 AI 安全顾问 👋<br><br>我可以帮你：<br>• 分析扫描报告与漏洞优先级<br>• 给出可执行的安全修复步骤<br>• 解释安全概念与配置示例<br>• 基于你的历史给出个性化建议<br><br>试试上面的快捷问题，或直接输入你的问题~</div>';
     html += '      </div>';
     html += '    </div>';
     html += '  </div>';
@@ -5551,11 +5551,11 @@ function loadDashboard() {
       el4.textContent = '-';
     }
   }).catch(function() {});
-  // V12: 加载安全趋势
+  // 11-S: 加载安全趋势
   loadTrend();
 }
 
-// V12: 安全趋势面板
+// 11-S: 安全趋势面板
 function loadTrend() {
   var panel = document.getElementById('trend-panel');
   if (!isLoggedIn() || !panel) return;
@@ -5973,7 +5973,7 @@ async function loadPublicDemo() {
     });
     var data = await r.json();
     if (r.ok && data.success) {
-      window._lastScanId = data.scan_id || data.scanId || null;  // V12: 保存 scan_id 供自动修复用
+      window._lastScanId = data.scan_id || data.scanId || null;  // 11-S: 保存 scan_id 供自动修复用
       window._lastScanResult = data;  // V11.4 fix: 保存扫描结果供离线模拟修复使用
       renderDemoReport(data);
     } else {
@@ -6083,7 +6083,7 @@ function renderDemoReport(d) {
       var priority = priorityMap[f.severity] || 'P3';
       var priorityColors = { P0: '#ef4444', P1: '#f97316', P2: '#eab308', P3: '#22c55e' };
       html += '<span style="font-size:11px;padding:2px 6px;border-radius:4px;background:' + priorityColors[priority] + '22;color:' + priorityColors[priority] + ';font-weight:600;margin-left:6px">' + priority + '</span></div>';
-      // V12: 代码层漏洞分类标签
+      // 11-S: 代码层漏洞分类标签
       var codeVulnTypes = ['sqli', 'xss', 'cmdi', 'traversal', 'deserialization', 'ssrf'];
       if (codeVulnTypes.indexOf(f.type || '') >= 0) {
         html += '<div style="margin-top:4px"><span style="font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#dc2626;font-weight:600;border:1px solid rgba(239,68,68,0.2)">代码层漏洞</span></div>';
@@ -6091,13 +6091,13 @@ function renderDemoReport(d) {
       if (f.owasp) html += '<div style="font-size:11px;color:#a5b4fc;margin-top:2px">OWASP: ' + f.owasp + '</div>';
       if (f.detail) html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">' + escapeHtml(f.detail) + '</div>';
       if (f.recommendation) html += '<div style="font-size:12px;color:#10b981;margin-top:4px">💡 ' + escapeHtml(f.recommendation) + '</div>';
-      // 修复方法代码（V12: 真实修复建议直接显示）
+      // 修复方法代码（11-S: 真实修复建议直接显示）
       if (fixText) {
         html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--primary);font-weight:600">🛠 该怎么修</summary>';
         html += '<pre style="margin-top:4px;padding:8px;background:#0f172a;color:#a7f3d0;border-radius:6px;font-size:12px;line-height:1.4;overflow-x:auto;white-space:pre-wrap;word-break:break-all">' + escapeHtml(fixText) + '</pre>';
         html += '</details>';
       }
-      // V12: 验证方法（增强版：显示三步验证法摘要）
+      // 11-S: 验证方法（增强版：显示三步验证法摘要）
       if (fixText) {
         if (f && f.verify_steps && f.verify_steps.length > 0) {
           html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--success);font-weight:600">✅ 如何验证修复</summary>';
@@ -6122,7 +6122,7 @@ function renderDemoReport(d) {
     html += '</div></details>';
   }
 
-  // V12：完整修复建议摘要（6 平台 tab，登录后展示）
+  // 11-S：完整修复建议摘要（6 平台 tab，登录后展示）
   if (d && d.fixes && Object.keys(d.fixes).length > 0) {
     var fixPlatforms2 = d.fixes;
     var platformNames2 = { nginx: 'Nginx', apache: 'Apache', express: 'Express', flask: 'Flask', spring_boot: 'Spring Boot', cloudflare: 'Cloudflare', python: 'Python', nodejs: 'Node.js' };
@@ -6206,7 +6206,7 @@ async function doPublicDemoFix() {
     showToast('没有发现需要修复的问题');
     return;
   }
-  // V12：先调用后端把 demo 扫描保存为用户的扫描记录
+  // 11-S：先调用后端把 demo 扫描保存为用户的扫描记录
   try {
     if (isLoggedIn() && window._lastScanId) {
       // 已经有 scan_id，不需要重新保存
@@ -6297,7 +6297,7 @@ function renderFixComparison(d) {
   html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
   if (isLoggedIn()) {
     html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 进入修复器获取完整补丁</button>';
-    // V12 新增：自动修复按钮
+    // 11-S 新增：自动修复按钮
     if (!OFFLINE_MODE) {
       html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 应用到演示环境</button>';
     }
@@ -6313,7 +6313,7 @@ function renderFixComparison(d) {
   }
 }
 
-// ============== V12 自动修复对话框 ==============
+// ============== 11-S 自动修复对话框 ==============
 function showAutoFixDialog(scanId, fixCount) {
   try {
   // 防止重复打开
@@ -6640,7 +6640,7 @@ function startScanDirect() {
     if (urlInput) urlInput.value = url;
   }
   if (!isLoggedIn()) { showToast('请先登录'); navigateTo('profile'); return; }
-  // V12 fix: 同步首页授权状态到扫描页，避免 step1 勾了但 step3 没勾导致卡住
+  // 11-S fix: 同步首页授权状态到扫描页，避免 step1 勾了但 step3 没勾导致卡住
   // authStep1 已在函数开头声明，此处复用
   var authStep3 = document.getElementById('auth-check');
   if (authStep1 && authStep3 && authStep1.checked) {
@@ -6649,7 +6649,7 @@ function startScanDirect() {
     var scanBtn = document.getElementById('scan-btn');
     if (scanBtn) scanBtn.disabled = false;
   }
-  // V12：已登录用户跳过 step3 二次确认，直接开始扫描（合规授权已在 step1 完成）
+  // 11-S：已登录用户跳过 step3 二次确认，直接开始扫描（合规授权已在 step1 完成）
   // 同时把 URL 也填到 step3 输入框，保留 step3 备用
   var confirmedInput = document.getElementById('scan-url-confirmed');
   if (confirmedInput) confirmedInput.value = url;
@@ -6995,7 +6995,7 @@ function loadTrendChart(days) {
   var container = document.getElementById('trend-chart');
   if (!container) return;
   if (!isLoggedIn()) {
-    // V12 修复：未登录时也显示演示趋势图
+    // 11-S 修复：未登录时也显示演示趋势图
     renderTrendChart({
       days: days,
       data: [
@@ -7190,7 +7190,7 @@ function quickDemo(url) {
   }
 }
 
-// ============== V12 本地演示靶场 ==============
+// ============== 11-S 本地演示靶场 ==============
 var _demoTargetAvailable = false;
 
 // 页面加载时检查本地靶场是否可用
@@ -7758,7 +7758,7 @@ function startScan() {
       body: JSON.stringify({ authorized_at: authTime })
     }).catch(function(){});
   } catch(e) {}
-  // V12 兼容：如果 scan-url-confirmed 是空（直接走 startScan），用 scan-url 兜底
+  // 11-S 兼容：如果 scan-url-confirmed 是空（直接走 startScan），用 scan-url 兜底
   var confirmedInput = document.getElementById('scan-url-confirmed');
   var url = confirmedInput ? confirmedInput.value.trim() : '';
   if (!url) {
@@ -8232,7 +8232,7 @@ function finishStages() {
   setScanProgress(100, '扫描完成，正在生成报告...');
 }
 
-// V12: 扫描进度动画（百分比 + 实时检测项文字）
+// 11-S: 扫描进度动画（百分比 + 实时检测项文字）
 var _progressTimer = null;
 var _progressTextTimeouts = [];
 var _currentProgress = 0;
@@ -8779,7 +8779,7 @@ function renderResult(data) {
 
   // Findings
   html += '<div class="section-title fade-in-up" style="animation-delay:0.3s">&#x1F50D; 漏洞详情</div>';
-  // V12: 0 漏洞时显示友好的安全提示，避免用户觉得"扫了个空"
+  // 11-S: 0 漏洞时显示友好的安全提示，避免用户觉得"扫了个空"
   if (!data.findings || data.findings.length === 0) {
     html += '<div class="card fade-in-up" style="animation-delay:0.35s;text-align:center;padding:40px 20px;background:linear-gradient(135deg,rgba(34,197,94,0.06),rgba(16,185,129,0.04));border:1px solid rgba(34,197,94,0.2)">';
     html += '<div style="font-size:56px;margin-bottom:16px">✅</div>';
@@ -8790,7 +8790,7 @@ function renderResult(data) {
     html += '<button onclick="navigateTo(\'evolution\')" style="background:transparent;color:var(--text);border:1px solid var(--border);padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px">📈 查看进化中心</button>';
     html += '</div></div>';
   }
-  // V12: 给没有置信度的 finding 自动设置默认值（响应头检测=高，敏感路径=中，信息泄露=高）
+  // 11-S: 给没有置信度的 finding 自动设置默认值（响应头检测=高，敏感路径=中，信息泄露=高）
   data.findings.forEach(function(f) {
     if (!f.confidence_level && typeof f.confidence !== 'number') {
       var name = f.name || '';
@@ -8816,7 +8816,7 @@ function renderResult(data) {
     var fpClass = fbInitial && fbInitial.is_false_positive ? ' fp-marked' : '';
     var confClass = fbInitial && fbInitial.is_confirmed ? ' confirmed' : '';
     
-    // V12: 优先级标签
+    // 11-S: 优先级标签
     var priorityLabel = '';
     var priorityClass = '';
     var fLevel = f.level || f.severity || '';
@@ -8938,7 +8938,7 @@ function renderResult(data) {
         html += '<div class="finding-section"><h4>验证方法</h4><p>' + escapeHtml(f.remediation.verify) + '</p></div>';
       }
     }
-    // V12: 详细验证步骤（三步验证法）
+    // 11-S: 详细验证步骤（三步验证法）
     if (f.verify_steps && f.verify_steps.length > 0) {
       html += '<div class="finding-section">';
       html += '<h4 style="display:flex;align-items:center;gap:6px"><span style="font-size:14px">&#x2705;</span> 验证修复（三步验证法）</h4>';
@@ -8993,7 +8993,7 @@ function renderResult(data) {
       }
       html += '</div>';
     }
-    // V12 置信度（高/中/低）+ 误报反馈行
+    // 11-S 置信度（高/中/低）+ 误报反馈行
     var confLevel = f.confidence_level || '';
     var conf = (typeof f.confidence === 'number') ? f.confidence : null;
     var cvReason = f.cv_reason || '';
@@ -9135,7 +9135,7 @@ function renderResult(data) {
       html += '<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:rgba(59,130,246,0.15);color:#3b82f6;border:1px solid rgba(59,130,246,0.3);border-radius:20px;font-size:12px;font-weight:600">' + escapeHtml(w.name) + '</span>';
     });
     html += '</div>';
-    // V12：明确说明 WAF 不能替代安全响应头
+    // 11-S：明确说明 WAF 不能替代安全响应头
     html += '<div style="padding:8px 12px;background:rgba(59,130,246,0.06);border-radius:6px;font-size:12px;color:var(--text-light);line-height:1.5">';
     html += 'WAF 提供应用层防护，但不能替代 HSTS、CSP、Cookie 安全策略等配置。下方发现的缺失项仍需修复。';
     html += '</div>';
@@ -9618,7 +9618,7 @@ function generateFixFromFindings(findings, config) {
       var before = fixed.substring(0, insertPos);
       var after = fixed.substring(insertPos);
       if (headers.length > 0) {
-        before += '\n    # === 安全响应头（由漏洞哨兵 V12 生成） ===\n';
+        before += '\n    # === 安全响应头（由漏洞哨兵 11-S 生成） ===\n';
         headers.forEach(function(h) {
           var lines = h.split('\n');
           lines.forEach(function(line) {
@@ -9627,7 +9627,7 @@ function generateFixFromFindings(findings, config) {
         });
       }
       if (rules.length > 0) {
-        before += '\n    # === 拦截规则（由漏洞哨兵 V12 生成） ===\n';
+        before += '\n    # === 拦截规则（由漏洞哨兵 11-S 生成） ===\n';
         rules.forEach(function(r) {
           before += '    ' + r + '\n';
         });
@@ -10814,7 +10814,7 @@ document.addEventListener('DOMContentLoaded', function() {
   try { updateProfileStats(); } catch(e) { console.warn('updateProfileStats error:', e); }
   try { updateAuthUI(); } catch(e) { console.warn('updateAuthUI error:', e); }
   try { renderAIConfig(); } catch(e) { console.warn('renderAIConfig error:', e); }
-  // V12：默认不自动跑真实扫描，避免与 step1 步骤冲突
+  // 11-S：默认不自动跑真实扫描，避免与 step1 步骤冲突
   // 用户点"重新扫描"或 combobox 变化时再触发
   if (typeof loadTrendChart === 'function') loadTrendChart(30);
   // 验证已保存的 token 是否仍有效（后端 secret 可能已变）

@@ -44,4 +44,4 @@
 
 ### 在线地址相关
 - Render 免费子域名 `vuln-sentinel-v11.onrender.com` 绑定的是 Service Name，代码层面改不了
-- 如需改为 v12，可到 Render 控制台把 Service Name 从 `vuln-sentinel-v11` 改为 `vuln-sentinel-v12`，重新部署即可
+- 如需改为 v11-s，可到 Render 控制台把 Service Name 从 `vuln-sentinel-v11` 改为 `vuln-sentinel-v11-s`，重新部署即可

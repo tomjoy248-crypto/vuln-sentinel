@@ -4,7 +4,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [V12] - 2026-06-27
+## [11-S] - 2026-06-27
 
 ### 新增
 - 扫描取消功能：扫描过程中可随时取消

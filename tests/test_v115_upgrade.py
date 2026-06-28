@@ -1,7 +1,7 @@
-"""V12 版本升级验证测试
+"""11-S 版本升级验证测试
 
-确认所有面向用户的版本标识都已从 V11.4 → V12,
-并且 V12 新增的能力(LLM/auto-patrol/trusted domains/AI 顾问优化)都还在。
+确认所有面向用户的版本标识都已从 V11.4 → 11-S,
+并且 11-S 新增的能力(LLM/auto-patrol/trusted domains/AI 顾问优化)都还在。
 """
 import re
 from pathlib import Path
@@ -21,24 +21,24 @@ def client():
 # ============================================================
 # 1) Settings 中的版本号必须是 11.5
 # ============================================================
-def test_settings_app_version_is_11_5():
-    """Settings.app_version 应为 12"""
-    assert M.settings.app_version == "12"
+def test_settings_app_version_is_11_s():
+    """Settings.app_version 应为 11-S"""
+    assert M.settings.app_version == "11-S"
 
 
 def test_settings_app_title_is_v11_5():
-    """Settings.app_title 应为 漏洞哨兵 V12"""
-    assert M.settings.app_title == "漏洞哨兵 V12"
+    """Settings.app_title 应为 漏洞哨兵 11-S"""
+    assert M.settings.app_title == "漏洞哨兵 11-S"
 
 
-def test_api_version_endpoint_returns_11_5():
-    """/api/version 应返回 version=12"""
+def test_api_version_endpoint_returns_11_s():
+    """/api/version 应返回 version=11-S"""
     client = TestClient(M.app)
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
-    assert body.get("version") == "12", f"got {body.get('version')}"
-    assert "V12" in body.get("title", "")
+    assert body.get("version") == "11-S", f"got {body.get('version')}"
+    assert "11-S" in body.get("title", "")
 
 
 def test_health_endpoint_works():
@@ -50,48 +50,47 @@ def test_health_endpoint_works():
 
 
 # ============================================================
-# 2) index.html 用户可见标识必须都是 V12
+# 2) index.html 用户可见标识必须都是 11-S
 # ============================================================
 def test_index_html_title_is_v11_5():
     html = open(str(ROOT / "static/index.html")).read()
-    assert "<title>漏洞哨兵 V12" in html
-    # 离线 /api/version 返回的 title 也得是 V12
-    assert '漏洞哨兵 V12 (离线演示模式)' in html
+    assert "<title>漏洞哨兵 11-S" in html
+    # 离线 /api/version 返回的 title 也得是 11-S
+    assert '漏洞哨兵 11-S (离线演示模式)' in html
 
 
 def test_index_html_meta_description_is_v11_5():
     html = open(str(ROOT / "static/index.html")).read()
-    assert 'name="description" content="漏洞哨兵 V12' in html
+    assert 'name="description" content="漏洞哨兵 11-S' in html
 
 
 def test_index_html_user_facing_v11_5_strings():
-    """卡片/页脚中的 V12 字样"""
+    """卡片/页脚中的 11-S 字样"""
     html = open(str(ROOT / "static/index.html")).read()
     # 进化页面 h3
-    assert ">漏洞哨兵 V12<" in html
+    assert ">漏洞哨兵 11-S<" in html
     # 我的页面段落
-    assert "<strong>漏洞哨兵 V12</strong>" in html
-    # AI 顾问话术: "你好！我是漏洞哨兵 V12"
-    assert "我是漏洞哨兵 V12" in html
-    # 评分公式回复提到 V12
-    assert "V12 评分公式" in html
-    # 版本更新回复提到 V12
-    assert "V12 主要改进" in html
+    assert "<strong>漏洞哨兵 11-S</strong>" in html
+    # AI 顾问话术: "你好！我是漏洞哨兵 11-S"
+    assert "我是漏洞哨兵 11-S" in html
+    # 评分公式回复提到 11-S
+    assert "11-S 评分公式" in html
+    # 版本更新回复提到 11-S
+    assert "11-S 主要改进" in html
 
 
-def test_index_html_offline_version_11_5():
-    """离线模式 /api/health, /api/version 返回 11.5"""
+def test_index_html_offline_version_11_s():
+    """离线模式 /api/health, /api/version 返回 11-S"""
     html = open(str(ROOT / "static/index.html")).read()
-    assert 'version: "12-offline"' in html
-    assert 'version: "12"' in html
-    assert 'build_time: "2026-06-25"' in html
+    assert 'version: "11-S"' in html
+    assert 'build_time: "2026-06-28"' in html
 
 
 # ============================================================
-# 3) V12 新增能力仍然存在(没在升级过程中丢)
+# 3) 11-S 新增能力仍然存在(没在升级过程中丢)
 # ============================================================
 def test_v115_has_confidence_system():
-    """V12 置信度系统还在"""
+    """11-S 置信度系统还在"""
     src = open(str(ROOT / "main.py")).read()
     assert "confidence_level" in src, "confidence_level field missing"
     assert "_confidence_level_from_int" in src, "confidence mapping helper missing"
