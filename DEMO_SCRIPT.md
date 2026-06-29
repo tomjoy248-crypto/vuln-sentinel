@@ -4,7 +4,7 @@
 
 "漏洞哨兵是一个面向中小企业的 **安全修复闭环平台**。传统安全工具只发现问题，我们从扫描、生成修复配置、复测验证到导出报告，全链路闭环。"
 
-> 操作：打开 https://vuln-sentinel-v11.onrender.com，指着首页 Hero 区域的闭环流程展示。
+> 操作：打开 https://vuln-sentinel-v11-s.onrender.com，指着首页 Hero 区域的闭环流程展示。
 
 ## 10-25 秒：扫描 example.com
 
@@ -43,5 +43,5 @@
 - 表格右上角有「预估」标签，可以指着说
 
 ### 在线地址相关
-- Render 免费子域名 `vuln-sentinel-v11.onrender.com` 绑定的是 Service Name，代码层面改不了
+- Render 免费子域名 `vuln-sentinel-v11-s.onrender.com` 绑定的是 Service Name，代码层面改不了
 - 如需改为 v11-s，可到 Render 控制台把 Service Name 从 `vuln-sentinel-v11` 改为 `vuln-sentinel-v11-s`，重新部署即可

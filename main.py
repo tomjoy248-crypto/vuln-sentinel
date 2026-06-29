@@ -7908,8 +7908,14 @@ async def _call_llm(messages: list) -> str:
         "Authorization": f"Bearer {settings.llm_api_key}",
         "Content-Type": "application/json",
     }
+    # 根据 provider 自动选默认模型，避免用户只改 provider 忘改 model 导致报错
+    model = settings.llm_model
+    if model == "gpt-4o-mini" and settings.llm_provider == "deepseek":
+        model = "deepseek-chat"
+    elif model == "gpt-4o-mini" and settings.llm_provider == "qwen":
+        model = "qwen-turbo"
     payload = {
-        "model": settings.llm_model,
+        "model": model,
         "messages": messages,
         "temperature": 0.3,
         "max_tokens": 600,
@@ -7944,8 +7950,16 @@ async def _call_real_llm(api_key: str, model: str, provider: Optional[str], mess
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    # 根据 provider 自动选默认模型
+    if not model or model == "gpt-4o-mini":
+        if provider == "deepseek":
+            model = "deepseek-chat"
+        elif provider in ("qwen", "tongyi", "dashscope"):
+            model = "qwen-turbo"
+        else:
+            model = "gpt-4o-mini"
     payload = {
-        "model": model or "gpt-4o-mini",
+        "model": model,
         "messages": messages,
         "temperature": 0.3,
         "max_tokens": 800,
