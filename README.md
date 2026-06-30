@@ -19,7 +19,7 @@
 | **WAF 智能识别** | 7 大 WAF 厂商识别（Cloudflare / AWS / Baidu bfe / 阿里云 / 腾讯云 / Imperva / Akamai）|
 | **智能评分** | 100 分制 + WAF 加权（WAF 站点最高 100 分，无 WAF 最高 98 分）|
 | **OWASP Top 10** | 全 10 大类风险覆盖 + 交叉验证降低误报率 |
-| **多平台修复** | 6 种部署环境配置生成（Nginx / Apache / Express / Flask / Spring Boot / Cloudflare）|
+| **多平台修复** | 8 个修复入口（6 个核心部署环境 + Node.js / Python 兼容入口）|
 | **AI 安全顾问** | 读取扫描结果，给出修复计划 + 配置位置 + 上线风险 |
 | **PDF 报告** | 7 页专业报告（封面 + 总览 + 评分明细 + 证据列 + 修复建议）|
 | **批量扫描** | 一次最多 5 个 URL，asyncio 并发 |
@@ -34,11 +34,12 @@
 | 目标 | 评分 | 风险等级 | 漏洞数 | WAF |
 |---|---:|---|---:|---|
 | https://www.baidu.com | **66** | 中风险 | 8 | baidu (bfe) |
-| https://example.com | **61** | 中风险 | 8 | cloudflare |
+| https://example.com | **63** | 中风险 | 8 | cloudflare |
 | https://httpbin.org | **50** | 中风险 | 10 | 无 |
-| https://www.iana.org | 89 | 低风险 | 4 | 无（真实配置缺失）|
+| https://www.iana.org | 84 | 低风险 | 3 | 无（演示缓存样例）|
 
 > **WAF 智能评分**：识别到大厂 WAF 保护时，WAF 作为纵深防御能力展示，响应头缺失仍计入真实发现，置信度标记为"中"（WAF 提供部分防御，但不能替代安全头）。
+> 公开网站配置会随时间变化，表格为 2026-06-30 的在线演示样例结果。
 
 ---
 
@@ -56,7 +57,7 @@
 
 ```
 vuln-sentinel/
-├── main.py                  # FastAPI 后端主程序（150+ API）
+├── main.py                  # FastAPI 后端主程序（72 个 API 路由）
 ├── static/
 │   └── index.html           # 单文件前端（含离线演示模式）
 ├── tests/                   # pytest 测试套件（186 用例）
@@ -177,7 +178,7 @@ python3 -m pytest tests/ -v
 
 ---
 
-## API 端点（42 个）
+## API 端点（72 个）
 
 主要端点：
 
@@ -230,7 +231,7 @@ MIT License
 1. 登录 `demo / demo123`
 2. 输入 `https://example.com` 完成授权并扫描
 3. 查看报告：评分、风险等级、漏洞证据、修复建议
-4. 生成修复配置（Nginx / Apache / Node.js / Python / Java / Cloudflare）
+4. 生成修复配置（Nginx / Apache / Express / Flask / Spring Boot / Cloudflare / Node.js / Python）
 5. 修复配置预览：修复前后评分对比
 6. 验证修复效果：重新扫描并输出差异
 7. 导出 PDF 报告（7 页）
@@ -242,7 +243,7 @@ MIT License
 | 功能 | 状态 | 说明 |
 |---|---|---|
 | 安全扫描（HTTP响应头/SSL/敏感路径） | ✅ 已实现 | 真实 HTTP 请求，结果入库 |
-| 修复建议生成（6种平台） | ✅ 已实现 | 基于 findings 真实计算 |
+| 修复建议生成（8 个入口） | ✅ 已实现 | 基于 findings 真实计算，含 6 个核心部署环境和 2 个兼容入口 |
 | 修复前后对比（模拟评分） | ✅ 已实现 | 预估效果，非真实修改目标站 |
 | 验证修复（重新扫描） | ✅ 已实现 | 真实重新扫描并对比差异 |
 | PDF/HTML 报告导出 | ✅ 已实现 | reportlab 真实生成 |
@@ -254,7 +255,7 @@ MIT License
 | SSH 应用修复配置 | 🟡 可选 | 需安装 paramiko，配置服务器凭证 |
 | 离线模式 | ✅ 已实现 | 纯前端可用，部分功能降级 |
 
-> **演示说明**：在线演示（render.com）使用规则引擎版 AI 顾问。配置 `OPENAI_API_KEY` 环境变量后可接入 GPT-4 等真实大模型。
+> **演示说明**：在线演示（render.com）默认使用规则引擎版 AI 顾问。配置 `OPENAI_API_KEY` 环境变量后可接入 OpenAI 兼容大模型。
 
 ---
 

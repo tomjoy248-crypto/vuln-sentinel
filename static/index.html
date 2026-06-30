@@ -6125,7 +6125,7 @@ function renderDemoReport(d) {
     html += '</div></details>';
   }
 
-  // 11-S：完整修复建议摘要（6 平台 tab，登录后展示）
+  // 11-S：完整修复建议摘要（8 个修复入口，登录后展示）
   if (d && d.fixes && Object.keys(d.fixes).length > 0) {
     var fixPlatforms2 = d.fixes;
     var platformNames2 = { nginx: 'Nginx', apache: 'Apache', express: 'Express', flask: 'Flask', spring_boot: 'Spring Boot', cloudflare: 'Cloudflare', python: 'Python', nodejs: 'Node.js' };

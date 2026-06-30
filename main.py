@@ -5426,19 +5426,6 @@ def generate_fixes(findings: List[dict], headers: dict, is_https: bool, host: st
             if fix_text:
                 add("nginx", fix_text)
 
-    # 如果无法判断服务器类型，在所有 Fix 对象中补充所有方式的修复建议
-    if detected_server == "unknown":
-        for lang in fixes:
-            for entry in fixes[lang]:
-                all_examples = {}
-                for other_lang in fixes:
-                    if other_lang == lang:
-                        continue
-                    for other_entry in fixes[other_lang]:
-                        if other_entry["code"] not in all_examples.values():
-                            all_examples.setdefault(other_lang, other_entry["code"])
-                entry["config_examples"].update(all_examples)
-
     return fixes
 
 

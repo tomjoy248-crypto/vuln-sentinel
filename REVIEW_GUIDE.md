@@ -3,7 +3,7 @@
 ## 项目一句话
 
 漏洞哨兵：面向中小企业的 AI 安全修复闭环平台。
-扫描发现安全配置问题 → 生成 6 平台修复配置 → 复测验证效果 → 导出 PDF 报告。
+扫描发现安全配置问题 → 生成 8 个修复入口配置 → 复测验证效果 → 导出 PDF 报告。
 不是"又一个扫描器"，而是从发现到验证的完整闭环。
 
 ## 体验路径（7 步）
@@ -21,7 +21,7 @@
 - 安全响应头扫描（HSTS / CSP / X-Frame-Options 等 15 个检测维度）
 - SSL/TLS 证书检查（有效期、协议版本、密码套件）
 - 敏感路径检测（.env / .git / /admin 等常见路径）
-- 修复配置生成（Nginx / Apache / Express / Flask / Spring Boot / Cloudflare）
+- 修复配置生成（Nginx / Apache / Express / Flask / Spring Boot / Cloudflare / Node.js / Python）
 - 修复后复测（真实重新扫描，对比前后评分差异）
 - PDF 报告导出（7 页专业报告）
 - 批量扫描（最多 5 个 URL，asyncio 并发）

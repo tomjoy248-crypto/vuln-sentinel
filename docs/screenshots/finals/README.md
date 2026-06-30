@@ -18,7 +18,7 @@
 | 09 | `09-assets-empty.png` | 资产管理 | 添加资产表单、空状态引导 | 帖子的"资产管理模块" |
 | 10 | `10-tickets.png` | 修复工单 | 待修复/修复中/已修复/已忽略 4 状态流转、批量操作 | 帖子的"工单跟踪" |
 | 11 | `11-mobile.png` | 移动端视图 | 响应式布局、底部 tab 导航、卡片堆叠 | 帖子的"全平台适配" |
-| 12 | `12-iana-report.png` | 反例对比 | iana.org 96 分、0 高 0 中 2 低、关键安全头全配 | 帖子的"误报率低" |
+| 12 | `12-iana-report.png` | 反例对比 | iana.org 低风险样例、关键安全头基本完整，具体评分以实时扫描/缓存返回为准 | 帖子的"误报率低" |
 
 ## 🎯 推荐组合（用于比赛帖）
 
@@ -29,7 +29,7 @@
 1. 01-home → 03-findings-detail → 04-findings-and-fix → 06-fix-generator → 07-fix-diff → 08-fix-compare → 10-tickets → 12-iana-report
 
 ### 方案 C：差异化亮点（5 张）
-1. 01-home → 04-findings-and-fix（8 平台 tab）→ 07-fix-diff（4 高 2 中 2 低）→ 08-fix-compare（Diff 高亮）→ 12-iana-report（高安全 96 分）
+1. 01-home → 04-findings-and-fix（8 平台 tab）→ 07-fix-diff（4 高 2 中 2 低）→ 08-fix-compare（Diff 高亮）→ 12-iana-report（低风险反例）
 
 ## 📊 截图元数据
 
@@ -44,7 +44,8 @@
 
 ```bash
 # 启动服务
-cd v11-s-vuln-sentinel
+# 进入项目根目录
+cd vuln-sentinel
 python3 main.py &
 
 # 用浏览器/Playwright 打开 http://localhost:8000/?v=6
