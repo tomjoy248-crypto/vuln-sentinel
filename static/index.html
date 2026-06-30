@@ -2359,12 +2359,13 @@ img[loading="lazy"] { background: var(--border-light); }
 #ai-chat .ai-msg.bot {
   align-self: stretch;
   width: 100%;
-  max-width: 100%;
+  max-width: 100% !important;
+  min-width: 0;
 }
 #ai-chat .ai-msg.user {
   align-self: flex-end;
   width: fit-content;
-  max-width: 78%;
+  max-width: 78% !important;
 }
 #ai-chat .ai-msg p,
 #ai-chat .ai-msg li,
@@ -3501,7 +3502,7 @@ img[loading="lazy"] { background: var(--border-light); }
       <div style="margin-top:14px">
         <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">模型提供商</label>
         <select id="ai-config-provider" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text)">
-          <option value="openai">OpenAI (GPT-4)</option>
+          <option value="openai">OpenAI 兼容模型</option>
         </select>
       </div>
       <div style="margin-top:14px">
