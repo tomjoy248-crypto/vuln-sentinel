@@ -5265,12 +5265,12 @@ function renderAiMarkdown(s) {
       t = t.replace(/`([^`\n]+)`/g, '<code class="ai-code-inline">$1</code>');
       // 加粗 **xx**
       t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      // 合并连续换行，最多保留一个空行（双换行→单换行）
-      t = t.replace(/\n{3,}/g, '\n\n');
-      // 换行：双换行分段落，单换行转 <br>
-      t = t.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
-      // 包装成段落
-      out.push('<p>' + t + '</p>');
+      // 按空行分段，段内把单换行合并为空格（解决 DeepSeek 短句竖排问题）
+      var paras = t.split(/\n\n+/);
+      paras.forEach(function(para) {
+        var line = para.replace(/\n/g, ' ').trim();
+        if (line) out.push('<p>' + line + '</p>');
+      });
     }
   }
   return out.join('');
