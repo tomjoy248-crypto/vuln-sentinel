@@ -1786,6 +1786,15 @@ async def lifespan(app: FastAPI):
         logger.info("Settings reloaded from environment: llm_enabled=%s provider=%s", settings.llm_enabled, settings.llm_provider)
     except Exception as e:
         logger.error("Settings reload failed: %s", e, exc_info=True)
+    # Render 免费套餐环境变量注入有 bug，fallback：直接启用 DeepSeek（生产环境建议通过环境变量配置）
+    import os
+    if not os.environ.get("LLM_ENABLED"):
+        logger.info("LLM_ENABLED not found in env, enabling DeepSeek fallback")
+        settings.llm_enabled = True
+        settings.llm_provider = "deepseek"
+        settings.llm_model = "deepseek-chat"
+        settings.llm_base_url = "https://api.deepseek.com/v1"
+        settings.llm_api_key = os.environ.get("LLM_API_KEY") or "sk-4c97dfd0c7eb473fa06eaa0b28deaeb6"
     # 初始化数据库（失败时记录错误但不阻止启动，服务以降级模式运行）
     try:
         init_db()
