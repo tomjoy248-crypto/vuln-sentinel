@@ -1779,22 +1779,7 @@ scheduler.add_job(
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _scan_progress_cleanup_task, settings
-    # 启动时重新加载环境变量（覆盖模块导入时的默认值，解决 Docker 运行时环境变量不生效问题）
-    try:
-        settings = Settings()
-        logger.info("Settings reloaded from environment: llm_enabled=%s provider=%s", settings.llm_enabled, settings.llm_provider)
-    except Exception as e:
-        logger.error("Settings reload failed: %s", e, exc_info=True)
-    # Render 免费套餐环境变量注入有 bug，fallback：直接启用 DeepSeek（生产环境建议通过环境变量配置）
-    import os
-    if not os.environ.get("LLM_ENABLED"):
-        logger.info("LLM_ENABLED not found in env, enabling DeepSeek fallback")
-        settings.llm_enabled = True
-        settings.llm_provider = "deepseek"
-        settings.llm_model = "deepseek-chat"
-        settings.llm_base_url = "https://api.deepseek.com/v1"
-        settings.llm_api_key = os.environ.get("LLM_API_KEY") or "sk-4c97dfd0c7eb473fa06eaa0b28deaeb6"
+    global _scan_progress_cleanup_task
     # 初始化数据库（失败时记录错误但不阻止启动，服务以降级模式运行）
     try:
         init_db()
@@ -7923,14 +7908,8 @@ async def _call_llm(messages: list) -> str:
         "Authorization": f"Bearer {settings.llm_api_key}",
         "Content-Type": "application/json",
     }
-    # 根据 provider 自动选默认模型，避免用户只改 provider 忘改 model 导致报错
-    model = settings.llm_model
-    if model == "gpt-4o-mini" and settings.llm_provider == "deepseek":
-        model = "deepseek-chat"
-    elif model == "gpt-4o-mini" and settings.llm_provider == "qwen":
-        model = "qwen-turbo"
     payload = {
-        "model": model,
+        "model": settings.llm_model,
         "messages": messages,
         "temperature": 0.3,
         "max_tokens": 600,
@@ -7965,16 +7944,8 @@ async def _call_real_llm(api_key: str, model: str, provider: Optional[str], mess
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    # 根据 provider 自动选默认模型
-    if not model or model == "gpt-4o-mini":
-        if provider == "deepseek":
-            model = "deepseek-chat"
-        elif provider in ("qwen", "tongyi", "dashscope"):
-            model = "qwen-turbo"
-        else:
-            model = "gpt-4o-mini"
     payload = {
-        "model": model,
+        "model": model or "gpt-4o-mini",
         "messages": messages,
         "temperature": 0.3,
         "max_tokens": 800,
@@ -8462,7 +8433,6 @@ def _write_patrol_alert(user_id: int, monitor_id: int, url: str, alert_type: str
 @app.get("/api/ai/status")
 async def api_ai_status() -> dict:
     """前端可拉取当前 AI 顾问配置（API Key 仅返回是否配置）"""
-    import os
     return {
         "success": True,
         "llm_enabled": settings.llm_enabled,
@@ -8471,11 +8441,6 @@ async def api_ai_status() -> dict:
         "api_key_configured": bool(settings.llm_api_key),
         "base_url": settings.llm_base_url,
         "providers_supported": ["openai", "deepseek", "qwen", "custom"],
-        "_debug_env": {
-            "LLM_ENABLED_raw": os.environ.get("LLM_ENABLED", "<not set>"),
-            "LLM_PROVIDER_raw": os.environ.get("LLM_PROVIDER", "<not set>"),
-            "LLM_API_KEY_present": bool(os.environ.get("LLM_API_KEY")),
-        }
     }
 
 

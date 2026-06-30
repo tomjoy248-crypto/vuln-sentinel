@@ -2308,8 +2308,6 @@ img[loading="lazy"] { background: var(--border-light); }
 .ai-msg-name { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
 .ai-msg.user .ai-msg-name { display: none; }
 .ai-msg-content { font-size: 15px; line-height: 1.6; word-break: break-word; }
-.ai-msg-content p { margin: 0 0 8px 0; }
-.ai-msg-content p:last-child { margin-bottom: 0; }
 .ai-msg-content code.ai-code-inline {
   background: rgba(0,0,0,0.08); padding: 1px 5px; border-radius: 4px;
   font-family: ui-monospace, monospace; font-size: 13px;
@@ -5265,12 +5263,9 @@ function renderAiMarkdown(s) {
       t = t.replace(/`([^`\n]+)`/g, '<code class="ai-code-inline">$1</code>');
       // 加粗 **xx**
       t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      // 按空行分段，段内把单换行合并为空格（解决 DeepSeek 短句竖排问题）
-      var paras = t.split(/\n\n+/);
-      paras.forEach(function(para) {
-        var line = para.replace(/\n/g, ' ').trim();
-        if (line) out.push('<p>' + line + '</p>');
-      });
+      // 换行
+      t = t.replace(/\n/g, '<br>');
+      out.push(t);
     }
   }
   return out.join('');
