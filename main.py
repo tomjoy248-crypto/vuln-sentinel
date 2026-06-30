@@ -104,7 +104,7 @@ class Settings(BaseSettings):
 
     # LLM (AI 顾问可调用真实 LLM，未配置时降级到关键字匹配)
     llm_enabled: bool = False
-    llm_provider: str = "openai"  # openai / deepseek / qwen / custom
+    llm_provider: str = "openai"  # openai / custom
     llm_api_key: str = Field(default="", repr=False)
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
@@ -7896,12 +7896,7 @@ async def _call_llm(messages: list) -> str:
     if not settings.llm_enabled or not settings.llm_api_key:
         raise RuntimeError("LLM 未启用或缺少 API Key")
 
-    # 不同 provider 的默认 base_url
     base_url = settings.llm_base_url
-    if settings.llm_provider == "deepseek" and "deepseek" not in base_url.lower():
-        base_url = "https://api.deepseek.com/v1"
-    elif settings.llm_provider == "qwen" and "dashscope" not in base_url.lower():
-        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     url = base_url.rstrip("/") + "/chat/completions"
     headers = {
@@ -7930,11 +7925,7 @@ async def _call_real_llm(api_key: str, model: str, provider: Optional[str], mess
         raise RuntimeError("缺少 API Key")
 
     provider = (provider or "openai").lower()
-    if provider == "deepseek":
-        base_url = "https://api.deepseek.com/v1"
-    elif provider in ("qwen", "tongyi", "dashscope"):
-        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    elif provider == "openai":
+    if provider == "openai":
         base_url = "https://api.openai.com/v1"
     else:
         base_url = provider if provider.startswith("http") else "https://api.openai.com/v1"
@@ -8440,7 +8431,7 @@ async def api_ai_status() -> dict:
         "model": settings.llm_model,
         "api_key_configured": bool(settings.llm_api_key),
         "base_url": settings.llm_base_url,
-        "providers_supported": ["openai", "deepseek", "qwen", "custom"],
+        "providers_supported": ["openai", "custom"],
     }
 
 

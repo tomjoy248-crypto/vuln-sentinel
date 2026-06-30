@@ -255,7 +255,7 @@ MIT License
 | SSH 应用修复配置 | 🟡 可选 | 需安装 paramiko，配置服务器凭证 |
 | 离线模式 | ✅ 已实现 | 纯前端可用，部分功能降级 |
 
-> **演示说明**：在线演示（render.com）使用规则引擎版 AI 顾问。配置 `OPENAI_API_KEY` 环境变量后可接入 GPT-4 / DeepSeek / 通义千问等真实大模型。
+> **演示说明**：在线演示（render.com）使用规则引擎版 AI 顾问。配置 `OPENAI_API_KEY` 环境变量后可接入 GPT-4 等真实大模型。
 
 ---
 

@@ -58,7 +58,7 @@
 ## [V11.5] - 2026-06-25
 
 ### 新增
-- AI 顾问接入真实 LLM(OpenAI 兼容,支持 OpenAI/DeepSeek/通义千问/自定义 base_url)
+- AI 顾问支持接入 OpenAI 兼容 LLM（自定义 API Key 和 base_url）
 - APScheduler 自动巡检 + 评分回退告警
 - Trusted Domains 白名单(30+ 大站,误报率 → 0)
 - AI 顾问手机端全屏优化(告别透明背景)
