@@ -1,4 +1,4 @@
-# 漏洞哨兵 11-S - 决赛 Demo 截图集
+# 漏洞哨兵 11-S - 比赛 Demo 截图集
 
 本目录包含 12 张精选截图，覆盖 11-S 的全部核心流程。
 可直接用于：TRAE 比赛帖、PPT 演示、产品介绍、复盘材料。
@@ -20,7 +20,7 @@
 | 11 | `11-mobile.png` | 移动端视图 | 响应式布局、底部 tab 导航、卡片堆叠 | 帖子的"全平台适配" |
 | 12 | `12-iana-report.png` | 反例对比 | iana.org 96 分、0 高 0 中 2 低、关键安全头全配 | 帖子的"误报率低" |
 
-## 🎯 推荐组合（用于决赛帖）
+## 🎯 推荐组合（用于比赛帖）
 
 ### 方案 A：完整闭环演示（6 张）
 1. 01-home → 02-scanning → 03-findings-detail → 04-findings-and-fix → 08-fix-compare → 12-iana-report
@@ -44,7 +44,7 @@
 
 ```bash
 # 启动服务
-cd /workspace/v11.4
+cd v11-s-vuln-sentinel
 python3 main.py &
 
 # 用浏览器/Playwright 打开 http://localhost:8000/?v=6

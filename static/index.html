@@ -2308,8 +2308,6 @@ img[loading="lazy"] { background: var(--border-light); }
 .ai-msg-name { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
 .ai-msg.user .ai-msg-name { display: none; }
 .ai-msg-content { font-size: 15px; line-height: 1.6; word-break: break-word; }
-.ai-msg-content p { margin: 0 0 8px 0; }
-.ai-msg-content p:last-child { margin-bottom: 0; }
 .ai-msg-content code.ai-code-inline {
   background: rgba(0,0,0,0.08); padding: 1px 5px; border-radius: 4px;
   font-family: ui-monospace, monospace; font-size: 13px;
@@ -3442,8 +3440,6 @@ img[loading="lazy"] { background: var(--border-light); }
         <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">模型提供商</label>
         <select id="ai-config-provider" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text)">
           <option value="openai">OpenAI (GPT-4)</option>
-          <option value="deepseek">DeepSeek</option>
-          <option value="qwen">通义千问</option>
         </select>
       </div>
       <div style="margin-top:14px">
@@ -4092,7 +4088,7 @@ function offlineApiHandle(method, urlPath, body) {
   if (urlPath === "/api/simulate-fix" && method === "POST") {
     var findings = (body && body.findings) || [];
     var SEV = { "critical": 25, "high": 15, "medium": 8, "low": 3 };
-    // V11.4 fix: 使用实际扫描分数作为 before_score
+    // 11-S fix: 使用实际扫描分数作为 before_score
     var actualScore = (window._lastScanResult && window._lastScanResult.score) || null;
     var before;
     if (actualScore !== null && typeof actualScore === 'number') {
@@ -4148,7 +4144,7 @@ function offlineApiHandle(method, urlPath, body) {
     } else if (msg.indexOf("你好") >= 0 || msg.indexOf("hi") >= 0 || msg.indexOf("hello") >= 0) {
       reply = "你好！我是漏洞哨兵 11-S 安全顾问 🛡 试试问我：HSTS 是什么？如何修复 CSP？怎么提分？";
     } else if (msg.indexOf("v11") >= 0 || msg.indexOf("更新") >= 0 || msg.indexOf("新版本") >= 0) {
-      reply = "**11-S 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
+      reply = "**11-S 主要改进**：\n1. AI 安全顾问（规则引擎 + 可选 OpenAI LLM）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
     } else if (msg.indexOf("怎么用") >= 0 || msg.indexOf("上手") >= 0) {
       reply = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 离线模式下可直接使用 demo / demo123 体验\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
     }
@@ -4179,7 +4175,7 @@ function offlineApiHandle(method, urlPath, body) {
       reply2 = "你好！我是漏洞哨兵 11-S 安全顾问 🛡 试试问我：HSTS 是什么？如何修复 CSP？怎么提分？";
       type2 = "greeting";
     } else if (msg2.indexOf("v11") >= 0 || msg2.indexOf("更新") >= 0 || msg2.indexOf("新版本") >= 0) {
-      reply2 = "**11-S 主要改进**：\n1. AI 顾问接入真实 LLM（OpenAI 兼容，可接 DeepSeek/通义千问）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
+      reply2 = "**11-S 主要改进**：\n1. AI 安全顾问（规则引擎 + 可选 OpenAI LLM）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
       type2 = "explanation";
     } else if (msg2.indexOf("怎么用") >= 0 || msg2.indexOf("上手") >= 0) {
       reply2 = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 离线模式下可直接使用 demo / demo123 体验\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
@@ -5265,12 +5261,9 @@ function renderAiMarkdown(s) {
       t = t.replace(/`([^`\n]+)`/g, '<code class="ai-code-inline">$1</code>');
       // 加粗 **xx**
       t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      // 按空行分段，段内把单换行合并为空格（解决 DeepSeek 短句竖排问题）
-      var paras = t.split(/\n\n+/);
-      paras.forEach(function(para) {
-        var line = para.replace(/\n/g, ' ').trim();
-        if (line) out.push('<p>' + line + '</p>');
-      });
+      // 换行
+      t = t.replace(/\n/g, '<br>');
+      out.push(t);
     }
   }
   return out.join('');
@@ -5984,7 +5977,7 @@ async function loadPublicDemo() {
     var data = await r.json();
     if (r.ok && data.success) {
       window._lastScanId = data.scan_id || data.scanId || null;  // 11-S: 保存 scan_id 供自动修复用
-      window._lastScanResult = data;  // V11.4 fix: 保存扫描结果供离线模拟修复使用
+      window._lastScanResult = data;  // 11-S fix: 保存扫描结果供离线模拟修复使用
       renderDemoReport(data);
     } else {
       if (c) c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ ' + escapeHtml(friendlyError(extractError(data))) + '</div>';
@@ -6239,7 +6232,7 @@ async function doPublicDemoFix() {
   // 调用后端模拟修复
   try {
     var fixPayload = { findings: findings };
-    // V11.4 fix: 传入 scan_id 以获取真实 before_score
+    // 11-S fix: 传入 scan_id 以获取真实 before_score
     if (window._lastScanId) {
       fixPayload.scan_id = window._lastScanId;
     }

@@ -8,7 +8,7 @@
 
 ## 体验路径（7 步）
 
-1. 打开 https://vuln-sentinel-v11-s.onrender.com，使用 demo / demo123 一键登录体验
+1. 打开 https://vuln-sentinel-v11.onrender.com，使用 demo / demo123 一键登录体验
 2. 输入 example.com，点击"开始安全扫描"，3-5 秒出结果
 3. 查看评分 + 风险等级，展开漏洞详情看修复建议
 4. 查看报告页「修复前后价值对比」表格（评分、风险数、处理时间等预估变化）
@@ -25,7 +25,7 @@
 - 修复后复测（真实重新扫描，对比前后评分差异）
 - PDF 报告导出（7 页专业报告）
 - 批量扫描（最多 5 个 URL，asyncio 并发）
-- AI 安全顾问（支持接入 OpenAI / DeepSeek / 通义千问）
+- AI 安全顾问（规则引擎 + 可选接入 OpenAI LLM）
 
 ## 安全边界
 

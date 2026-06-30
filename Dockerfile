@@ -1,5 +1,4 @@
-# 漏洞哨兵 11-S - 生产环境 Dockerfile
-# cache-bust: 2026-06-30 v2
+# 漏洞哨兵 V11-4 - 生产环境 Dockerfile
 FROM python:3.11-slim
 
 WORKDIR /app

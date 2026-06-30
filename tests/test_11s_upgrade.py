@@ -1,6 +1,6 @@
 """11-S 版本升级验证测试
 
-确认所有面向用户的版本标识都已从 V11.4 → 11-S,
+确认所有面向用户的版本标识都已从 11-S → 11-S,
 并且 11-S 新增的能力(LLM/auto-patrol/trusted domains/AI 顾问优化)都还在。
 """
 import re
@@ -89,14 +89,14 @@ def test_index_html_offline_version_11_s():
 # ============================================================
 # 3) 11-S 新增能力仍然存在(没在升级过程中丢)
 # ============================================================
-def test_v115_has_confidence_system():
+def test_11s_has_confidence_system():
     """11-S 置信度系统还在"""
     src = open(str(ROOT / "main.py")).read()
     assert "confidence_level" in src, "confidence_level field missing"
     assert "_confidence_level_from_int" in src, "confidence mapping helper missing"
 
 
-def test_v115_has_llm_integration():
+def test_11s_has_llm_integration():
     """真实 LLM 接入还在"""
     src = open(str(ROOT / "main.py")).read()
     assert "_call_llm" in src, "LLM 调用函数缺失"
@@ -104,14 +104,14 @@ def test_v115_has_llm_integration():
     assert "llm_api_key" in src, "LLM 配置字段缺失"
 
 
-def test_v115_has_auto_patrol():
+def test_11s_has_auto_patrol():
     """auto-patrol 还在"""
     src = open(str(ROOT / "main.py")).read()
     assert "_patrol_all_monitors_sync" in src, "auto-patrol 函数缺失"
     assert "patrol_interval_hours" in src, "patrol 配置字段缺失"
 
 
-def test_v115_has_ai_advisor_optimization():
+def test_11s_has_ai_advisor_optimization():
     """AI 顾问手机端优化还在"""
     html = open(str(ROOT / "static/index.html")).read()
     # fullscreen CSS 还在

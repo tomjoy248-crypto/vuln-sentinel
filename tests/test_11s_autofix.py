@@ -1,4 +1,4 @@
-"""V11.4 终极验收：自动修复闭环（SSH + Cloudflare）"""
+"""11-S 终极验收：自动修复闭环（SSH + Cloudflare）"""
 import os
 import sys
 

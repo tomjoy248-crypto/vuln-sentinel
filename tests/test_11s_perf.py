@@ -1,4 +1,4 @@
-"""V11.4 性能优化验证测试
+"""11-S 性能优化验证测试
 - catch-all 不再返回 411KB HTML
 - 静态资源带 Cache-Control 头
 - gzip 压缩有效

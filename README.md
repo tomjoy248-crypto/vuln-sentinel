@@ -1,15 +1,13 @@
 # 漏洞哨兵 11-S
 
 [![Tests](https://img.shields.io/badge/tests-186%20passed-brightgreen)](tests/)
-[![Coverage](docs/coverage-badge.svg)](docs/coverage_html/)
+[![Coverage](docs/coverage-badge.svg)](docs/coverage-badge.svg)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
 > AI 驱动的 Web 安全配置扫描与修复建议平台 · 让中小团队不用安全专家也能发现并修复基础 Web 安全问题
 
-**在线演示**: https://vuln-sentinel-v11-s.onrender.com
-
-> AI 顾问默认已接入 DeepSeek 真实大模型（在线环境配置），也可在「个人设置」中自行填写 OpenAI / 通义千问 API Key。
+**在线演示**: https://vuln-sentinel-v11.onrender.com
 
 ---
 
@@ -65,7 +63,6 @@ vuln-sentinel/
 │   └── test_main.py
 ├── docs/                    # 文档 + 截图 + 架构图
 │   ├── screenshots/         # 实际运行截图
-│   ├── coverage_html/       # 测试覆盖率报告
 │   └── architecture.svg
 ├── .github/workflows/       # CI 配置
 ├── Dockerfile               # Docker 镜像构建
@@ -228,7 +225,7 @@ MIT License
 
 ## 已验证 Demo 路径
 
-以下路径已在 `main.py` 测试套件和 `https://vuln-sentinel-v11-s.onrender.com` 在线环境跑通：
+以下路径已在 `main.py` 测试套件和 `https://vuln-sentinel-v11.onrender.com` 在线环境跑通：
 
 1. 登录 `demo / demo123`
 2. 输入 `https://example.com` 完成授权并扫描
@@ -253,11 +250,11 @@ MIT License
 | 批量扫描 | ✅ 已实现 | 最多 5 URL 并发 |
 | 工单系统 | ✅ 已实现 | 完整 CRUD，在线模式可用 |
 | 资产 & 监控 | ✅ 已实现 | 在线模式可用 |
-| AI 安全顾问 | ✅ 已接入 DeepSeek | 在线环境默认真实大模型，离线模式为规则引擎 |
+| AI 安全顾问 | 🟡 规则引擎 | 配置 LLM API Key 后接入真实大模型 |
 | SSH 应用修复配置 | 🟡 可选 | 需安装 paramiko，配置服务器凭证 |
 | 离线模式 | ✅ 已实现 | 纯前端可用，部分功能降级 |
 
-> **演示说明**：在线演示默认接入 DeepSeek 真实大模型（Render 环境变量配置）。用户也可在「个人设置」中自行填写 OpenAI / 通义千问 API Key。离线模式使用规则引擎。
+> **演示说明**：在线演示（render.com）使用规则引擎版 AI 顾问。配置 `OPENAI_API_KEY` 环境变量后可接入 GPT-4 等真实大模型。
 
 ---
 
@@ -277,4 +274,4 @@ v11-s · 2026-06-28
 ## 联系方式
 
 - GitHub: https://github.com/tomjoy248-crypto/vuln-sentinel
-- 在线演示: https://vuln-sentinel-v11-s.onrender.com
+- 在线演示: https://vuln-sentinel-v11.onrender.com

@@ -7,8 +7,8 @@ This directory holds product screenshots referenced by the top-level `README.md`
 | `home.png` | 首页主界面：产品定位 + 登录 + 快速扫描入口 |
 | `report.png` | 扫描报告页：三区分层 + 评分仪表盘 + 证据列 |
 | `fix.png` | 修复包下载页：多平台（Nginx/Apache/Express/Flask/Spring Boot/Cloudflare）配置生成 |
-| `v11.4-example-scan.png` | 11-S 真实扫描 example.com 完整报告（评分 66，7 个发现） |
-| `v11.4-home.png` | 11-S 首页：趋势图（7 个真实站点分数）|
+| `01-home.png` | 11-S 首页：产品定位、闭环入口、演示目标 |
+| `02-scan-report.png` | 11-S 真实扫描报告：评分、风险等级、漏洞证据 |
 
 ## 占位说明
 

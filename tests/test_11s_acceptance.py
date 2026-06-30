@@ -1,4 +1,4 @@
-"""V11.4 验收测试：PDF 中文字体不能退化为 ■"""
+"""11-S 验收测试：PDF 中文字体不能退化为 ■"""
 import json
 import os
 import sys

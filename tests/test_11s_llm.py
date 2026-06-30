@@ -1,4 +1,4 @@
-"""V11.4 真 LLM 接入 + 自动巡检 + AI 状态端点测试"""
+"""11-S 真 LLM 接入 + 自动巡检 + AI 状态端点测试"""
 import json
 import os
 import pytest

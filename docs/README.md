@@ -27,7 +27,7 @@ docs/
 
 1. 启动 VulnSentinel：
    ```bash
-   cd v11.4
+   cd v11-s-vuln-sentinel
    pip3 install -r requirements.txt --break-system-packages
    python3 main.py
    ```

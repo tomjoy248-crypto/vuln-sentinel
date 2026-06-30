@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # 测试模式
 os.environ["TEST_MODE"] = "1"
-os.environ["JWT_SECRET"] = "test-secret-key-for-v115-demo-tests"
+os.environ["JWT_SECRET"] = "test-secret-key-for-11s-demo-tests"
 
 from fastapi.testclient import TestClient
 import main as app_module

@@ -134,7 +134,7 @@ def test_requirements_has_cryptography():
     assert "cryptography" in txt
 
 
-def test_changelog_exists_and_has_v115():
+def test_changelog_exists_and_has_11s():
     txt = open(str(ROOT / "CHANGELOG.md")).read()
     assert "11-S" in txt
 

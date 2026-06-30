@@ -49,16 +49,16 @@
 - 数据库连接 try/finally 统一：登录、团队、反馈等接口
 - JWT payload 增加 role 和 team_id（减少数据库查询）
 - 30 处异常静默失败加日志：不再完全吞掉错误
-- 演示靶场路径相对化：不再硬编码 /workspace/v11.4/
+- 演示靶场路径相对化：不再硬编码历史版本目录
 - 演示靶场文件操作加锁：防止并发写入损坏配置
 - subprocess.run 超时统一：pgrep 等命令加 timeout
 - 多 worker 调度器开关：ENABLE_SCHEDULER 环境变量控制
 - public_demo_scan 复用 verify_token：不再手动 JWT 解码
 
-## [V11.5] - 2026-06-25
+## [11-S] - 2026-06-25
 
 ### 新增
-- AI 顾问接入真实 LLM(OpenAI 兼容,支持 OpenAI/DeepSeek/通义千问/自定义 base_url)
+- AI 顾问支持接入 OpenAI 兼容 LLM（自定义 API Key 和 base_url）
 - APScheduler 自动巡检 + 评分回退告警
 - Trusted Domains 白名单(30+ 大站,误报率 → 0)
 - AI 顾问手机端全屏优化(告别透明背景)
@@ -77,7 +77,7 @@
 - `/api/ai/chat` 加 IP 限流(防被刷爆 LLM token)
 - `apply-fix-and-rescan` / `retest` 加 30s 总超时,避免网络 hang
 
-## [V11.4] - 2026-06-22
+## [11-S] - 2026-06-22
 
 ### 新增
 - 统一 finding 严重度字段为英文 `severity`

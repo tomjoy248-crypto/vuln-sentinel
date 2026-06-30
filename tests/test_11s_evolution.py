@@ -1,4 +1,4 @@
-"""V11.4 进化验收：智能学习/主动监控/AI对话/团队协作"""
+"""11-S 进化验收：智能学习/主动监控/AI对话/团队协作"""
 import os
 import sys
 
@@ -102,7 +102,7 @@ def test_create_team_and_comment():
     # 创建团队
     r1 = client.post(
         "/api/teams",
-        json={"name": "测试团队 V11.4"},
+        json={"name": "测试团队 11-S"},
         headers=headers,
     )
     assert r1.status_code == 200
