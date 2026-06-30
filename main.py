@@ -323,13 +323,13 @@ XSS_PAYLOADS: List[str] = [
 
 SQLI_PAYLOADS: List[str] = [
     "' OR 1=1--", "1' OR '1'='1", "admin'--",
-    "' UNION SELECT NULL--", "1; DROP TABLE users--", "' OR 1=1 /*",
+    "' UNION SELECT NULL--", "1 OR 1=1--", "' OR 1=1 /*",
 ]
 
 # Code-level vulnerability detection payloads (11-S)
 SQLI_PAYLOADS_V2: List[str] = [
     "' OR '1'='1",
-    "'; DROP TABLE users; --",
+    "' OR 'a'='a' --",
     "' UNION SELECT null,null--",
     "' OR 1=1--",
     "1' OR '1'='1",
@@ -345,10 +345,10 @@ XSS_PAYLOADS_V2: List[str] = [
 ]
 
 CMDI_PAYLOADS: List[str] = [
-    "; cat /etc/passwd",
-    "| whoami",
-    "`id`",
-    "$(id)",
+    "; echo vuln_sentinel_cmdi",
+    "| echo vuln_sentinel_cmdi",
+    "`echo vuln_sentinel_cmdi`",
+    "$(echo vuln_sentinel_cmdi)",
     "&& echo vuln_sentinel_cmdi",
 ]
 
@@ -10003,6 +10003,12 @@ _AI_SYNONYMS = {
     "sensitive": ["敏感文件", ".env", ".git", "git泄露", "源码泄露", "敏感信息", "信息泄露", "配置泄露"],
     "server_header": ["server头", "server 头", "版本泄露", "服务器版本", "banner"],
     "ssl_tls": ["ssl", "tls", "弱加密", "弱配置", "ssl/tls", "tls配置", "证书"],
+    "access_control": ["越权", "idor", "访问控制", "权限绕过", "水平越权", "垂直越权", "未授权访问"],
+    "file_upload": ["文件上传", "上传漏洞", "任意文件上传", "webshell", "上传图片"],
+    "cmdi": ["命令注入", "命令执行", "rce", "远程命令执行", "代码执行"],
+    "dependency": ["组件漏洞", "依赖漏洞", "cve", "供应链", "第三方组件", "过时组件"],
+    "auth": ["弱口令", "认证失败", "登录安全", "密码安全", "暴力破解", "多因素认证", "mfa"],
+    "common_vulns": ["常见漏洞", "基础漏洞", "有哪些漏洞", "漏洞知识", "web漏洞", "安全知识"],
 }
 
 # ---------- 意图识别关键词 ----------
@@ -10019,6 +10025,7 @@ _AI_INTENT_KEYWORDS = {
     "tool_scan": ["怎么扫描", "如何扫描", "怎么扫", "扫一下", "怎么用", "使用方法", "上手", "操作", "教程", "指南"],
     "tool_report": ["怎么看报告", "扫描报告", "报告怎么看", "怎么看结果", "结果在哪"],
     "tool_fixer": ["修复器", "修复配置生成", "生成修复配置", "怎么用修复", "修复工具"],
+    "tool_common_vulns": ["常见漏洞", "基础漏洞", "有哪些漏洞", "web漏洞有哪些", "漏洞知识", "安全知识"],
     "config_location": ["放在哪里", "配置位置", "加在哪里", "写在哪里", "哪个文件", "配置文件", "放哪"],
     "deployment_risk": ["上线风险", "影响线上", "会挂吗", "影响业务", "会不会崩", "安全上线", "上线有什么风险", "能上线吗", "上线安全"],
     "second": ["第二个", "第二项", "第二个呢", "下一个", "第二个问题", "下一项"],
@@ -10269,6 +10276,56 @@ _AI_KNOWLEDGE_BASE = {
         "fix_code": "**各平台隐藏版本号方法**：\n\n**Nginx**：\n```nginx\nserver_tokens off;  # 隐藏 Nginx 版本号\n\n# 如需完全隐藏 Server 头（需要第三方模块或 Nginx Plus）\n# more_clear_headers 'Server' 'X-Powered-By';\n```\n\n**Apache**：\n```apache\nServerTokens Prod\nServerSignature Off\nHeader unset X-Powered-By\n```\n\n**PHP**：\n```ini\n# php.ini\nexpose_php = Off\n```\n\n**Express**：\n```javascript\napp.disable('x-powered-by');\n```\n\n**Flask**：\n```python\n@app.after_request\ndef remove_headers(resp):\n    resp.headers.pop('Server', None)\n    return resp\n```\n\n**错误页面**：\n- 自定义 4xx/5xx 错误页面\n- 不要暴露堆栈信息、SQL 错误详情\n- 生产环境关闭 debug 模式",
         "verify": "**验证方法**：\n\n1. **响应头检查**：\n```bash\ncurl -sI https://yourdomain.com | grep -iE 'server|x-powered|x-asp'\n```\n\n2. **错误页面测试**：\n- 访问不存在的页面（404）看错误信息\n- 故意触发 500 错误看是否泄露堆栈\n\n3. **页面源码检查**：\n- 查看 HTML 源码，看注释中有没有敏感信息\n- 检查 JS 中有没有硬编码的密钥、路径\n\n4. **指纹识别工具**：用 Wappalyzer、WhatWeb 等工具看能识别出多少信息",
     },
+    "access_control": {
+        "name": "访问控制失效 / 越权 (IDOR)",
+        "category": "vulnerability",
+        "severity": "high",
+        "aliases": ["越权", "idor", "访问控制", "权限绕过", "水平越权", "垂直越权", "未授权访问", "access control"],
+        "principle": "访问控制失效是指用户能访问本不属于自己的数据或功能。\n\n**常见类型**：\n1. **水平越权**：普通用户 A 通过改 `user_id=2` 查看用户 B 的订单。\n2. **垂直越权**：普通用户访问管理员接口。\n3. **未授权访问**：接口不校验登录态，直接返回敏感数据。\n\n**典型原因**：后端只相信前端隐藏按钮或 URL 参数，没有在服务端做权限校验。",
+        "risk": "🔴 **高风险**\n- 用户隐私和订单数据泄露\n- 普通用户可能执行管理员操作\n- 企业后台、预约系统、电商订单尤其容易出问题\n- 对应 OWASP A01：访问控制失效",
+        "fix_code": "**核心修复原则：每个敏感接口都在服务端校验权限。**\n\n```python\n# 错误：只按 URL 参数查订单\norder = db.get_order(order_id)\n\n# 正确：同时校验当前登录用户是否拥有该资源\norder = db.get_order(order_id)\nif order.user_id != current_user.id and not current_user.is_admin:\n    abort(403)\n```\n\n**加固清单**：\n- 后端统一鉴权中间件，不依赖前端隐藏按钮\n- 所有资源查询都加 `owner_id / tenant_id` 限制\n- 管理员接口单独做角色校验\n- 禁止连续可猜的敏感 ID，必要时使用 UUID\n- 给权限失败返回 403，不泄露资源是否存在",
+        "verify": "**验证方法**：\n\n1. 准备两个普通账号 A/B。\n2. A 登录后访问自己的订单、报名记录或资料接口。\n3. 把 URL 或请求体中的 ID 改成 B 的资源 ID。\n4. 正确结果应返回 403/404，而不是 B 的数据。\n\n**重点检查接口**：订单、个人资料、报名记录、后台管理、文件下载、发票、地址簿。",
+    },
+    "file_upload": {
+        "name": "文件上传漏洞",
+        "category": "vulnerability",
+        "severity": "high",
+        "aliases": ["文件上传", "上传漏洞", "任意文件上传", "webshell", "上传图片", "上传文件"],
+        "principle": "文件上传漏洞是指攻击者上传恶意文件，并让服务器保存或执行它。\n\n**典型攻击**：上传伪装成图片的脚本文件，例如 `shell.php.jpg`，如果服务器解析配置不当，就可能被当作代码执行。\n\n**风险点**：只检查后缀、不检查文件内容；上传目录可执行脚本；文件名可控；上传后直接返回可访问 URL。",
+        "risk": "🔴 **高风险**\n- 可能导致 WebShell 和服务器被接管\n- 可用于挂马、钓鱼、数据窃取\n- 对有头像、附件、资质上传、富文本图片的网站尤其重要",
+        "fix_code": "**安全上传四件套**：\n\n1. **白名单后缀**：只允许 jpg/png/pdf 等必要类型。\n2. **校验文件头**：检查魔数，不只看后缀。\n3. **重命名文件**：服务端生成随机文件名，禁止使用用户原始文件名。\n4. **上传目录禁止执行**：静态资源目录不能执行 PHP/JSP/ASP。\n\n```nginx\n# 上传目录禁止脚本执行\nlocation /uploads/ {\n    autoindex off;\n    types { }\n    default_type application/octet-stream;\n}\n\nlocation ~* ^/uploads/.*\\.(php|jsp|asp|aspx|sh|py)$ {\n    deny all;\n}\n```\n\n**更稳的做法**：图片上传后重新编码，文件放对象存储/CDN，主站与上传资源隔离域名。",
+        "verify": "**验证方法**：\n\n1. 尝试上传 `test.php`、`test.php.jpg`、包含 HTML/JS 的伪图片。\n2. 检查服务器是否拒绝，或是否仅作为下载文件返回。\n3. 访问上传后的 URL，确认不会执行脚本。\n4. 检查响应头是否为正确的 `Content-Type`，并配合 `X-Content-Type-Options: nosniff`。",
+    },
+    "command_injection": {
+        "name": "命令注入 / RCE",
+        "category": "vulnerability",
+        "severity": "critical",
+        "aliases": ["命令注入", "命令执行", "rce", "远程命令执行", "代码执行", "command injection"],
+        "principle": "命令注入是指后端把用户输入拼接进系统命令，导致攻击者可以执行额外命令。\n\n**典型例子**：\n```python\n# 危险：用户输入直接拼接命令\nos.system('ping ' + host)\n\n# 正确方向：不要让用户输入参与 shell 拼接\n```\n\n它属于非常高危的漏洞，因为一旦成功，攻击者可能直接控制服务器。",
+        "risk": "🔴 **严重风险**\n- 读取服务器文件和环境变量\n- 获取服务器执行权限\n- 横向移动到内网其他服务\n- 删除数据或植入后门",
+        "fix_code": "**修复原则：不要拼接 shell 命令。**\n\n```python\n# 正确：传数组参数，禁用 shell\nsubprocess.run(['ping', '-c', '4', host], shell=False, check=True)\n\n# 额外做白名单校验\nimport re\nif not re.match(r'^[a-zA-Z0-9.-]+$', host):\n    raise ValueError('invalid host')\n```\n\n**加固建议**：\n- 能不用系统命令就不用，优先使用语言内置库\n- 必须调用命令时使用参数数组\n- 禁用 `shell=True`\n- 输入只允许白名单字符\n- 运行进程使用最低权限账号",
+        "verify": "**验证方法**：\n\n1. 优先做代码审计，搜索 `system`, `exec`, `popen`, `shell=True`, `Runtime.exec` 等危险调用。\n2. 检查这些调用是否拼接了用户可控输入。\n3. 如需动态验证，只在授权测试环境中使用无害测试命令，观察响应时间或输出是否异常。\n\n⚠ 不要对第三方网站做命令注入测试。",
+    },
+    "dependency_cve": {
+        "name": "依赖组件漏洞 / CVE",
+        "category": "vulnerability",
+        "severity": "high",
+        "aliases": ["组件漏洞", "依赖漏洞", "cve", "供应链", "第三方组件", "过时组件", "漏洞版本"],
+        "principle": "依赖组件漏洞是指项目使用的框架、库、中间件或系统组件存在已公开 CVE。\n\n**常见来源**：Nginx、Apache、Spring、Log4j、OpenSSL、jQuery、WordPress 插件、npm/pip 依赖等。\n\n攻击者不一定需要发现你的业务漏洞，只要你用了有漏洞的版本，就可能被批量扫描利用。",
+        "risk": "🔴 **高风险**\n- 已公开漏洞通常有现成利用代码\n- 容易被自动化扫描批量攻击\n- 可能导致 RCE、信息泄露、权限绕过\n- 供应链问题会影响整个系统",
+        "fix_code": "**治理方法**：\n\n1. 建立依赖清单：记录语言依赖、系统包、中间件版本。\n2. 使用官方工具扫描：\n```bash\n# Python\npip-audit\n\n# Node.js\nnpm audit\n\n# Docker 镜像\ntrivy image your-image:tag\n```\n3. 优先升级高危/可远程利用组件。\n4. 无法升级时使用 WAF、配置缓解或禁用风险功能。\n5. 固定版本并定期复查，不要长期使用无人维护依赖。",
+        "verify": "**验证方法**：\n\n- 查看依赖锁文件：`requirements.txt`、`package-lock.json`、`pom.xml`。\n- 用 CVE 扫描工具生成报告。\n- 对照官方安全公告确认是否受影响。\n- 升级后重新跑测试和安全扫描。",
+    },
+    "auth_weakness": {
+        "name": "认证失败 / 弱口令",
+        "category": "vulnerability",
+        "severity": "high",
+        "aliases": ["弱口令", "认证失败", "登录安全", "密码安全", "暴力破解", "mfa", "多因素认证", "账号安全"],
+        "principle": "认证失败是指登录、会话或密码管理存在缺陷，让攻击者更容易接管账号。\n\n**常见问题**：弱密码、无登录限速、验证码可绕过、Session 不过期、Cookie 未加 HttpOnly/Secure、找回密码流程不安全。",
+        "risk": "🔴 **高风险**\n- 管理员账号被爆破后可能直接接管后台\n- 用户账号被撞库登录\n- Session 被窃取后可冒充用户操作\n- 对应 OWASP A07：识别和认证失败",
+        "fix_code": "**登录安全基线**：\n\n- 密码使用 bcrypt/argon2 哈希，禁止明文或 MD5。\n- 登录失败限速：同 IP/同账号多次失败后延迟或锁定。\n- 管理员强制 MFA。\n- Session Cookie 设置 `HttpOnly; Secure; SameSite=Lax/Strict`。\n- 修改密码、绑定邮箱、提现等敏感操作要求二次验证。\n- 找回密码 token 一次性、短有效期、不可预测。\n\n```python\n# bcrypt 示例\nhashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()\n```\n",
+        "verify": "**验证方法**：\n\n1. 连续输入错误密码，确认系统有限速或锁定。\n2. 检查 Cookie 是否有 HttpOnly/Secure/SameSite。\n3. 修改密码后，旧 Session 是否失效。\n4. 找回密码链接是否一次性、短期有效。\n5. 管理员账号是否启用 MFA。",
+    },
 }
 
 # ---------- 工具使用类知识库 ----------
@@ -10296,6 +10353,12 @@ _AI_TOOL_KB = {
         "question": "怎么验证修复效果",
         "aliases": ["怎么验证", "如何验证", "验证修复", "修复后怎么看", "怎么确认", "验证效果"],
         "answer": "**✅ 怎么验证修复效果**\n\n**方法 1：重新扫描（最简单）**\n1. 应用修复后，在扫描报告页点击「重新扫描」\n2. 工具会重新检测所有项目\n3. 对比修复前后的评分和问题列表\n4. 已修复的问题会消失，评分相应提升\n\n**方法 2：浏览器开发者工具**\n1. 打开网站，按 F12\n2. 切换到 Network 面板\n3. 刷新页面，点击第一个请求\n4. 查看 Response Headers 中是否有安全头\n\n**方法 3：curl 命令**\n```bash\n# 查看所有响应头\ncurl -sI https://yourdomain.com\n\n# 只看安全相关的头\ncurl -sI https://yourdomain.com | grep -iE 'strict-transport|content-security|x-frame|x-content|referrer|permissions'\n```\n\n**方法 4：在线工具**\n- securityheaders.com — 安全头检测\n- SSL Labs — SSL/TLS 配置检测\n\n**💡 建议**：修复后用多种方法验证，确保万无一失。本工具的重新扫描功能最方便，可以同时看评分变化。",
+    },
+    "common_vulns_overview": {
+        "name": "常见 Web 漏洞总览",
+        "question": "常见 Web 漏洞有哪些",
+        "aliases": ["常见漏洞", "基础漏洞", "有哪些漏洞", "web漏洞有哪些", "漏洞知识", "安全知识"],
+        "answer": "**📚 常见 Web 漏洞速查**\n\n可以先按这 4 类理解：\n\n**1. 身份与权限类**\n- 访问控制失效 / 越权：用户能看别人的订单、资料、报名记录。\n- 认证失败：弱口令、无登录限速、找回密码 token 不安全。\n- 会话风险：Cookie 缺少 HttpOnly / Secure / SameSite。\n\n**2. 输入注入类**\n- SQL 注入：把用户输入拼到 SQL 里，可能读库、改库。\n- XSS：把用户输入当页面脚本执行，可能盗取会话或篡改页面。\n- 命令注入 / RCE：把用户输入拼进系统命令，风险最高。\n- SSRF：服务器被诱导访问内网或云元数据地址。\n\n**3. 文件与资源类**\n- 任意文件上传：上传脚本或伪装文件，可能变成 WebShell。\n- 目录遍历：通过路径参数读取不该读的文件。\n- 敏感文件泄露：`.env`、`.git`、备份包、日志暴露。\n\n**4. 配置与供应链类**\n- 安全响应头缺失：HSTS、CSP、X-Frame-Options、nosniff 等。\n- CORS 配置过宽：`Access-Control-Allow-Origin: *` 搭配凭证会很危险。\n- 组件 CVE：框架、插件、中间件版本过旧，被公开漏洞批量利用。\n\n**漏洞哨兵当前更擅长**：公开配置检查、安全响应头、Cookie/CORS、敏感路径、TLS、WAF 识别、修复配置生成。\n\n**需要授权深测的内容**：SQL 注入、越权、文件上传、SSRF、RCE 等业务漏洞。它们必须在授权环境里验证，不能对第三方网站做破坏性测试。",
     },
     "score_rules": {
         "name": "评分规则是什么",
@@ -10858,7 +10921,7 @@ async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_c
                     reply = _ai_generate_scan_based_reply(resolved_msg, scan_context, intents, matched)
                 else:
                     reply = _ai_generate_knowledge_reply(entry, intents, resolved_msg)
-            elif any(i in intents for i in ["tool_scan", "tool_report", "tool_fixer"]):
+            elif any(i in intents for i in ["tool_scan", "tool_report", "tool_fixer", "tool_common_vulns"]):
                 tool_key = None
                 if "tool_scan" in intents:
                     tool_key = "how_to_scan"
@@ -10866,6 +10929,8 @@ async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_c
                     tool_key = "how_to_read_report"
                 elif "tool_fixer" in intents:
                     tool_key = "how_to_use_fixer"
+                elif "tool_common_vulns" in intents:
+                    tool_key = "common_vulns_overview"
                 if tool_key and tool_key in _AI_TOOL_KB:
                     reply = _AI_TOOL_KB[tool_key]["answer"]
             elif scan_context:
