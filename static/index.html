@@ -1510,10 +1510,16 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   display: flex; flex-direction: column; gap: 10px;
   background: var(--bg);
 }
-.ai-msg { max-width: 92%; padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.55; word-break: normal; overflow-wrap: anywhere; }
-.ai-msg.user { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
-.ai-msg.bot  { align-self: flex-start; background: var(--card); color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
-.ai-chat.expanded .ai-msg.bot { max-width: 98%; }
+.ai-msg {
+  max-width: 100%; padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.65;
+  word-break: normal; overflow-wrap: break-word; writing-mode: horizontal-tb; box-sizing: border-box;
+}
+.ai-msg.user { align-self: flex-end; max-width: 78%; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+.ai-msg.bot  {
+  align-self: stretch; width: 100%; background: var(--card); color: var(--text);
+  border: 1px solid var(--border); border-bottom-left-radius: 4px;
+}
+.ai-chat.expanded .ai-msg.bot { width: 100%; max-width: 100%; }
 .ai-msg pre { background: #0f172a; color: #e2e8f0; padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; font-size: 12px; }
 .ai-msg code { background: rgba(99,102,241,0.12); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 .ai-msg strong { color: var(--primary); }
@@ -1547,7 +1553,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 .ai-typing span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes typingDot { 0%, 60%, 100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 /* AI 消息 Markdown 样式 */
-.ai-msg pre { margin: 8px 0; padding: 12px 14px; background: #0f172a; color: #e2e8f0; border-radius: 8px; font-size: 12px; line-height: 1.55; overflow-x: auto; white-space: pre; word-break: normal; overflow-wrap: normal; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; position: relative; max-width: 100%; }
+.ai-msg pre { margin: 8px 0; padding: 12px 14px; background: #0f172a; color: #e2e8f0; border-radius: 8px; font-size: 12px; line-height: 1.55; overflow-x: auto; white-space: pre; word-break: normal; overflow-wrap: normal; writing-mode: horizontal-tb; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; position: relative; max-width: 100%; }
 .ai-msg pre code { display: block; min-width: max-content; background: transparent; padding: 0; color: inherit; white-space: pre; }
 .ai-msg .ai-code-wrap { position: relative; margin: 10px 0; max-width: 100%; }
 .ai-msg .ai-code-block { max-width: 100%; overflow: hidden; }
@@ -1556,7 +1562,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 .ai-msg .ai-code-copy:hover { background: rgba(255,255,255,0.2); color: #e2e8f0; }
 .ai-msg code.ai-inline-code { background: rgba(99, 102, 241, 0.1); color: #818cf8; padding: 1px 5px; border-radius: 4px; font-size: 12px; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; }
 .ai-msg .ai-list { margin: 6px 0 6px 18px; padding: 0; }
-.ai-msg .ai-list li { margin: 3px 0; line-height: 1.5; }
+.ai-msg .ai-list li { margin: 3px 0; line-height: 1.6; word-break: normal; overflow-wrap: break-word; writing-mode: horizontal-tb; }
 .ai-msg .ai-list.ol { padding-left: 6px; }
 .ai-msg .ai-divider { border: none; border-top: 1px dashed var(--border); margin: 10px 0; }
 .ai-msg strong { color: var(--text-primary); font-weight: 600; }
@@ -2339,6 +2345,39 @@ img[loading="lazy"] { background: var(--border-light); }
   font-family: ui-monospace, monospace;
 }
 .ai-msg-content pre.ai-code code { background: none; padding: 0; color: inherit; }
+
+/* 浮动 AI 顾问窗口专用覆盖：避免被页面内 AI 模块的通用 .ai-msg flex 样式挤压 */
+#ai-chat .ai-msg {
+  display: block;
+  box-sizing: border-box;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+  line-height: 1.68;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+#ai-chat .ai-msg.bot {
+  align-self: stretch;
+  width: 100%;
+  max-width: 100%;
+}
+#ai-chat .ai-msg.user {
+  align-self: flex-end;
+  width: fit-content;
+  max-width: 78%;
+}
+#ai-chat .ai-msg p,
+#ai-chat .ai-msg li,
+#ai-chat .ai-msg strong,
+#ai-chat .ai-msg span,
+#ai-chat .ai-msg div {
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+}
+#ai-chat .ai-list {
+  margin-left: 20px;
+  padding-left: 0;
+}
 
 .ai-tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
 .ai-tag.real { background: #dcfce7; color: #166534; }
