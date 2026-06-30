@@ -2308,6 +2308,8 @@ img[loading="lazy"] { background: var(--border-light); }
 .ai-msg-name { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
 .ai-msg.user .ai-msg-name { display: none; }
 .ai-msg-content { font-size: 15px; line-height: 1.6; word-break: break-word; }
+.ai-msg-content p { margin: 0 0 8px 0; }
+.ai-msg-content p:last-child { margin-bottom: 0; }
 .ai-msg-content code.ai-code-inline {
   background: rgba(0,0,0,0.08); padding: 1px 5px; border-radius: 4px;
   font-family: ui-monospace, monospace; font-size: 13px;
@@ -5263,9 +5265,12 @@ function renderAiMarkdown(s) {
       t = t.replace(/`([^`\n]+)`/g, '<code class="ai-code-inline">$1</code>');
       // 加粗 **xx**
       t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      // 换行
-      t = t.replace(/\n/g, '<br>');
-      out.push(t);
+      // 合并连续换行，最多保留一个空行（双换行→单换行）
+      t = t.replace(/\n{3,}/g, '\n\n');
+      // 换行：双换行分段落，单换行转 <br>
+      t = t.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
+      // 包装成段落
+      out.push('<p>' + t + '</p>');
     }
   }
   return out.join('');
