@@ -1779,7 +1779,13 @@ scheduler.add_job(
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _scan_progress_cleanup_task
+    global _scan_progress_cleanup_task, settings
+    # 启动时重新加载环境变量（覆盖模块导入时的默认值，解决 Docker 运行时环境变量不生效问题）
+    try:
+        settings = Settings()
+        logger.info("Settings reloaded from environment: llm_enabled=%s provider=%s", settings.llm_enabled, settings.llm_provider)
+    except Exception as e:
+        logger.error("Settings reload failed: %s", e, exc_info=True)
     # 初始化数据库（失败时记录错误但不阻止启动，服务以降级模式运行）
     try:
         init_db()
