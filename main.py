@@ -8453,6 +8453,7 @@ def _write_patrol_alert(user_id: int, monitor_id: int, url: str, alert_type: str
 @app.get("/api/ai/status")
 async def api_ai_status() -> dict:
     """前端可拉取当前 AI 顾问配置（API Key 仅返回是否配置）"""
+    import os
     return {
         "success": True,
         "llm_enabled": settings.llm_enabled,
@@ -8461,6 +8462,11 @@ async def api_ai_status() -> dict:
         "api_key_configured": bool(settings.llm_api_key),
         "base_url": settings.llm_base_url,
         "providers_supported": ["openai", "deepseek", "qwen", "custom"],
+        "_debug_env": {
+            "LLM_ENABLED_raw": os.environ.get("LLM_ENABLED", "<not set>"),
+            "LLM_PROVIDER_raw": os.environ.get("LLM_PROVIDER", "<not set>"),
+            "LLM_API_KEY_present": bool(os.environ.get("LLM_API_KEY")),
+        }
     }
 
 
