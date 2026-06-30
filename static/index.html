@@ -2319,6 +2319,8 @@ img[loading="lazy"] { background: var(--border-light); }
   font-family: ui-monospace, monospace;
 }
 .ai-msg-content pre.ai-code code { background: none; padding: 0; color: inherit; }
+.ai-msg-content p { margin: 0 0 8px 0; }
+.ai-msg-content p:last-child { margin-bottom: 0; }
 
 .ai-tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
 .ai-tag.real { background: #dcfce7; color: #166534; }
@@ -5261,9 +5263,12 @@ function renderAiMarkdown(s) {
       t = t.replace(/`([^`\n]+)`/g, '<code class="ai-code-inline">$1</code>');
       // 加粗 **xx**
       t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      // 换行
-      t = t.replace(/\n/g, '<br>');
-      out.push(t);
+      // 按空行分段，段内把单换行合并为空格（解决短句竖排问题）
+      var paras = t.split(/\n\n+/);
+      paras.forEach(function(para) {
+        var line = para.replace(/\n/g, ' ').trim();
+        if (line) out.push('<p>' + line + '</p>');
+      });
     }
   }
   return out.join('');
