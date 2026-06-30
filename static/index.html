@@ -2617,6 +2617,7 @@ img[loading="lazy"] { background: var(--border-light); }
     <div style="margin-top:24px;text-align:center">
       <button class="one-minute-cta" onclick="startOneMinuteDemo()">&#x26A1; 一分钟体验完整闭环</button>
       <p style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">一键登录 → 扫描 → 查看修复配置 → 复测验证，全程无需手动操作</p>
+      <p style="font-size:11px;color:rgba(255,255,255,0.42);margin-top:5px">安全边界：仅做授权配置检测与探测性请求，不执行攻击利用</p>
     </div>
   </div>
 
@@ -2634,12 +2635,12 @@ img[loading="lazy"] { background: var(--border-light); }
         <div style="font-size:9px;color:#64748b;margin-top:2px">含强度评估</div>
       </div>
       <div>
-        <div data-count="6" style="font-size:24px;font-weight:800;color:#f59e0b;line-height:1" class="counter">6</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:4px">平台修复</div>
-        <div style="font-size:9px;color:#64748b;margin-top:2px">Nginx/Apache...</div>
+        <div data-count="8" style="font-size:24px;font-weight:800;color:#f59e0b;line-height:1" class="counter">8</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:4px">修复入口</div>
+        <div style="font-size:9px;color:#64748b;margin-top:2px">6 核心环境+兼容入口</div>
       </div>
       <div>
-        <div data-count="101" style="font-size:24px;font-weight:800;color:#ec4899;line-height:1" class="counter">101</div>
+        <div data-count="186" style="font-size:24px;font-weight:800;color:#ec4899;line-height:1" class="counter">186</div>
         <div style="font-size:11px;color:#94a3b8;margin-top:4px">测试通过</div>
         <div style="font-size:9px;color:#64748b;margin-top:2px">pytest 全绿</div>
       </div>
@@ -3036,7 +3037,7 @@ img[loading="lazy"] { background: var(--border-light); }
         <tbody>
           <tr style="border-bottom:1px solid var(--border)">
             <td style="padding:10px">修复配置生成</td>
-            <td style="padding:10px;text-align:center;color:var(--success)">&#10004; 6 种平台</td>
+            <td style="padding:10px;text-align:center;color:var(--success)">&#10004; 8 个入口</td>
             <td style="padding:10px;text-align:center;color:var(--text-lighter)">&#10008; 仅报告</td>
             <td style="padding:10px;text-align:center;color:var(--text-lighter)">&#10008; 仅报告</td>
           </tr>
@@ -3507,7 +3508,7 @@ img[loading="lazy"] { background: var(--border-light); }
       </div>
       <div style="margin-top:14px">
         <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">模型名称</label>
-        <input id="ai-config-model" type="text" placeholder="gpt-4o-mini" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text)" />
+        <input id="ai-config-model" type="text" placeholder="兼容模型名称" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text)" />
       </div>
       <div class="menu-item" style="margin-top:14px" onclick="toggleAISetting('useLLM')">
         <div class="menu-icon green">&#x2705;</div>
@@ -9359,7 +9360,7 @@ function renderResult(data) {
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.8">';
   html += '<div>&#x2705; <strong>风险摘要</strong>：确认漏洞数 / 疑似风险数 / 配置缺失数总览</div>';
   html += '<div>&#x2705; <strong>证据详情</strong>：每个 finding 的响应头值、敏感路径内容片段、WAF 检测依据</div>';
-  html += '<div>&#x2705; <strong>修复建议</strong>：按服务器类型（Nginx / Apache / Express / Flask / Spring Boot / Cloudflare）分类的修复配置，含优先级排序</div>';
+  html += '<div>&#x2705; <strong>修复建议</strong>：按服务器类型（Nginx / Apache / Express / Flask / Spring Boot / Cloudflare / Node.js / Python）分类的修复配置，含优先级排序</div>';
   html += '<div>&#x2705; <strong>复测结果</strong>：上次 vs 本次分数对比、新增问题 / 已修复问题列表</div>';
   html += '<div>&#x2705; <strong>评分变化</strong>：如有历史记录，展示分数变化趋势</div>';
   html += '</div>';

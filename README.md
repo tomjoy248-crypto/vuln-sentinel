@@ -49,7 +49,7 @@
 |:---:|:---:|:---:|:---:|
 | ![首页](docs/screenshots/finals/01-home.png) | ![报告](docs/screenshots/finals/03-findings-detail.png) | ![修复](docs/screenshots/finals/04-findings-and-fix.png) | ![对比](docs/screenshots/finals/08-fix-compare.png) |
 
-> 截图说明：首页展示产品定位；扫描报告展示 OWASP Top 10 分类详情；修复建议展示 6 种平台配置代码；修复前后对比展示 Diff 高亮+一键复制。
+> 截图说明：首页展示产品定位；扫描报告展示 OWASP Top 10 分类详情；修复建议展示 8 个入口配置代码；修复前后对比展示 Diff 高亮+一键复制。
 
 ---
 
