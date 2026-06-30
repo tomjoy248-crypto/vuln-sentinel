@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"  # openai / custom
     llm_api_key: str = Field(default="", repr=False)
     llm_base_url: str = "https://api.openai.com/v1"
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "compatible-chat-model"
     llm_timeout: float = 15.0
 
     # 自动巡检 (11-S 进化)
@@ -7923,7 +7923,7 @@ async def _call_real_llm(api_key: str, model: str, provider: Optional[str], mess
         "Content-Type": "application/json",
     }
     payload = {
-        "model": model or "gpt-4o-mini",
+        "model": model or "compatible-chat-model",
         "messages": messages,
         "temperature": 0.3,
         "max_tokens": 800,
@@ -10832,7 +10832,7 @@ async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_c
             messages = _build_ai_advisor_llm_prompt(resolved_msg, history, scan_context, matched)
             response_text = await _call_real_llm(
                 api_key=user_api_key,
-                model=req.model or "gpt-4o-mini",
+                model=req.model or "compatible-chat-model",
                 provider=req.provider,
                 messages=messages,
             )
