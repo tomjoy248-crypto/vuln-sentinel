@@ -1450,7 +1450,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 .theme-fab svg { stroke: var(--text); }
 .ai-chat {
   position: fixed; right: 20px; bottom: 150px; z-index: 998;
-  width: 380px; max-width: calc(100vw - 24px); height: 520px; max-height: calc(100vh - 180px);
+  width: 520px; max-width: calc(100vw - 24px); height: 600px; max-height: calc(100vh - 140px);
   background: var(--card) !important; opacity: 1 !important;
   border: 1px solid var(--border);
   border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.35);
@@ -1458,6 +1458,13 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   animation: aiChatIn 0.3s ease-out;
 }
 .ai-chat.show { display: flex; }
+.ai-chat.expanded {
+  left: 50%; right: auto; bottom: 5vh; top: auto;
+  width: min(960px, calc(100vw - 32px));
+  height: min(82vh, 760px);
+  max-width: none; max-height: none;
+  transform: translateX(-50%);
+}
 @keyframes aiChatIn { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
 /* 移动端：全屏、字号加大、消息气泡不透明高对比 */
 @media (max-width: 640px) {
@@ -1465,7 +1472,9 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
     left: 8px; right: 8px; bottom: 8px; top: 8px;
     width: auto; max-width: none; height: auto; max-height: none;
     border-radius: 14px;
+    transform: none;
   }
+  .ai-chat.expanded { left: 8px; right: 8px; bottom: 8px; top: 8px; width: auto; height: auto; transform: none; }
   .ai-msg { font-size: 15px !important; line-height: 1.6 !important; padding: 12px 14px !important; max-width: 90% !important; }
   .ai-chat-body { padding: 12px !important; gap: 10px; }
   .ai-chat-header { padding: 16px 18px !important; font-size: 16px !important; }
@@ -1480,6 +1489,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   font-weight: 600;
 }
 .ai-chat-header-info { display: flex; align-items: center; gap: 10px; }
+.ai-chat-actions { display: flex; align-items: center; gap: 6px; }
 .ai-avatar {
   width: 36px; height: 36px; border-radius: 50%;
   background: rgba(255,255,255,0.2);
@@ -1487,15 +1497,23 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   font-size: 18px;
 }
 .ai-chat-close { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; opacity: 0.8; padding: 8px; line-height: 1; min-width: 36px; min-height: 36px; display: flex; align-items: center; justify-content: center; }
+.ai-chat-size {
+  background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.22);
+  color: #fff; border-radius: 8px; cursor: pointer; opacity: 0.92;
+  min-width: 36px; min-height: 36px; display: flex; align-items: center; justify-content: center;
+  font-size: 15px; line-height: 1; transition: all 0.2s;
+}
+.ai-chat-size:hover { background: rgba(255,255,255,0.22); opacity: 1; }
 .ai-chat-close:hover { opacity: 1; }
 .ai-chat-body {
   flex: 1; overflow-y: auto; padding: 14px;
   display: flex; flex-direction: column; gap: 10px;
   background: var(--bg);
 }
-.ai-msg { max-width: 86%; padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.55; word-break: break-word; }
+.ai-msg { max-width: 92%; padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.55; word-break: normal; overflow-wrap: anywhere; }
 .ai-msg.user { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
 .ai-msg.bot  { align-self: flex-start; background: var(--card); color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+.ai-chat.expanded .ai-msg.bot { max-width: 98%; }
 .ai-msg pre { background: #0f172a; color: #e2e8f0; padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; font-size: 12px; }
 .ai-msg code { background: rgba(99,102,241,0.12); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 .ai-msg strong { color: var(--primary); }
@@ -1529,8 +1547,10 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 .ai-typing span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes typingDot { 0%, 60%, 100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 /* AI 消息 Markdown 样式 */
-.ai-msg pre { margin: 8px 0; padding: 10px 12px; background: #0f172a; color: #e2e8f0; border-radius: 6px; font-size: 12px; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-all; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; position: relative; }
-.ai-msg .ai-code-wrap { position: relative; margin: 8px 0; }
+.ai-msg pre { margin: 8px 0; padding: 12px 14px; background: #0f172a; color: #e2e8f0; border-radius: 8px; font-size: 12px; line-height: 1.55; overflow-x: auto; white-space: pre; word-break: normal; overflow-wrap: normal; font-family: 'Menlo', 'Monaco', 'Consolas', monospace; position: relative; max-width: 100%; }
+.ai-msg pre code { display: block; min-width: max-content; background: transparent; padding: 0; color: inherit; white-space: pre; }
+.ai-msg .ai-code-wrap { position: relative; margin: 10px 0; max-width: 100%; }
+.ai-msg .ai-code-block { max-width: 100%; overflow: hidden; }
 .ai-msg .ai-code-lang { position: absolute; top: 4px; right: 36px; font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; z-index: 1; }
 .ai-msg .ai-code-copy { position: absolute; top: 4px; right: 4px; padding: 3px 8px; font-size: 11px; background: rgba(255,255,255,0.1); color: #94a3b8; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; cursor: pointer; z-index: 2; transition: all 0.2s; }
 .ai-msg .ai-code-copy:hover { background: rgba(255,255,255,0.2); color: #e2e8f0; }
@@ -1542,7 +1562,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 .ai-msg strong { color: var(--text-primary); font-weight: 600; }
 @media (max-width: 480px) {
   .ai-fab { right: 14px; bottom: 70px; width: 50px; height: 50px; font-size: 20px; }
-  .ai-chat { right: 8px; left: 8px; width: auto; bottom: 130px; height: 60vh; }
+  .ai-chat { right: 8px; left: 8px; width: auto; bottom: 90px; height: 68vh; }
 }
 
 /* Back Button */
@@ -2501,7 +2521,10 @@ img[loading="lazy"] { background: var(--border-light); }
         <div style="font-size:11px;opacity:0.85">在线 · 离线也能用</div>
       </div>
     </div>
-    <button class="ai-chat-close" onclick="toggleAIChat()" aria-label="关闭">×</button>
+    <div class="ai-chat-actions">
+      <button class="ai-chat-size" id="ai-chat-size-btn" onclick="toggleAIChatSize()" aria-label="放大AI顾问" title="放大/还原">⛶</button>
+      <button class="ai-chat-close" onclick="toggleAIChat()" aria-label="关闭">×</button>
+    </div>
   </div>
   <div class="ai-chat-body" id="ai-chat-body">
     <div id="ai-offline-notice" style="display:none;padding:8px 10px;background:linear-gradient(135deg,rgba(99,102,241,0.1),rgba(168,85,247,0.05));border:1px solid rgba(99,102,241,0.2);border-radius:8px;font-size:12px;color:var(--text-secondary);text-align:center;margin-bottom:8px">
@@ -5754,6 +5777,7 @@ function toggleAIChat() {
   var badge = document.getElementById('ai-fab-badge');
   if (chat.classList.contains('show')) {
     chat.classList.remove('show');
+    chat.classList.remove('expanded');
     chat.style.display = '';
   } else {
     chat.classList.add('show');
@@ -5764,6 +5788,21 @@ function toggleAIChat() {
       if (inp) inp.focus();
     }, 300);
   }
+}
+
+function toggleAIChatSize() {
+  var chat = document.getElementById('ai-chat');
+  if (!chat) return;
+  chat.classList.toggle('expanded');
+  var btn = document.getElementById('ai-chat-size-btn');
+  if (btn) {
+    var expanded = chat.classList.contains('expanded');
+    btn.textContent = expanded ? '↙' : '⛶';
+    btn.setAttribute('aria-label', expanded ? '还原AI顾问' : '放大AI顾问');
+    btn.title = expanded ? '还原' : '放大';
+  }
+  var body = document.getElementById('ai-chat-body');
+  if (body) body.scrollTop = body.scrollHeight;
 }
 
 function appendAIMsg(text, who) {
@@ -10887,6 +10926,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (e.key === 'Escape') {
       var aiChat = document.getElementById('ai-chat');
       if (aiChat && aiChat.classList.contains('show')) {
+        if (aiChat.classList.contains('expanded')) {
+          toggleAIChatSize();
+          return;
+        }
         aiChat.classList.remove('show');
         aiChat.style.display = '';
         return;
