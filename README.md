@@ -7,7 +7,7 @@
 
 > AI 驱动的 Web 安全配置扫描与修复建议平台 · 让中小团队不用安全专家也能发现并修复基础 Web 安全问题
 
-**在线演示**: https://vuln-sentinel-v11.onrender.com
+**在线演示**: https://vuln-sentinel-v11-s.onrender.com
 
 ---
 
@@ -225,7 +225,7 @@ MIT License
 
 ## 已验证 Demo 路径
 
-以下路径已在 `main.py` 测试套件和 `https://vuln-sentinel-v11.onrender.com` 在线环境跑通：
+以下路径已在 `main.py` 测试套件和 `https://vuln-sentinel-v11-s.onrender.com` 在线环境跑通：
 
 1. 登录 `demo / demo123`
 2. 输入 `https://example.com` 完成授权并扫描
@@ -274,4 +274,4 @@ v11-s · 2026-06-28
 ## 联系方式
 
 - GitHub: https://github.com/tomjoy248-crypto/vuln-sentinel
-- 在线演示: https://vuln-sentinel-v11.onrender.com
+- 在线演示: https://vuln-sentinel-v11-s.onrender.com
