@@ -2316,35 +2316,35 @@ img[loading="lazy"] { background: var(--border-light); }
 .ai-msgs::-webkit-scrollbar { width: 4px; }
 .ai-msgs::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
 
-.ai-msg { display: flex; gap: 10px; align-items: flex-start; max-width: 100%; }
-.ai-msg.user { flex-direction: row-reverse; }
-.ai-msg-avatar {
+.ai-msgs .ai-msg { display: flex; gap: 10px; align-items: flex-start; max-width: 100%; }
+.ai-msgs .ai-msg.user { flex-direction: row-reverse; }
+.ai-msgs .ai-msg-avatar {
   flex: 0 0 32px; width: 32px; height: 32px; border-radius: 50%;
   background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 600;
 }
-.ai-msg-avatar.user { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
-.ai-msg-body {
+.ai-msgs .ai-msg-avatar.user { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+.ai-msgs .ai-msg-body {
   max-width: calc(100% - 50px); background: var(--bg-secondary);
   border-radius: 12px; padding: 10px 14px;
   border: 1px solid var(--border-color);
 }
-.ai-msg.user .ai-msg-body { background: var(--primary); color: #fff; border-color: var(--primary); }
-.ai-msg-name { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
-.ai-msg.user .ai-msg-name { display: none; }
-.ai-msg-content { font-size: 15px; line-height: 1.6; word-break: break-word; }
-.ai-msg-content code.ai-code-inline {
+.ai-msgs .ai-msg.user .ai-msg-body { background: var(--primary); color: #fff; border-color: var(--primary); }
+.ai-msgs .ai-msg-name { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.ai-msgs .ai-msg.user .ai-msg-name { display: none; }
+.ai-msgs .ai-msg-content { font-size: 15px; line-height: 1.6; word-break: break-word; }
+.ai-msgs .ai-msg-content code.ai-code-inline {
   background: rgba(0,0,0,0.08); padding: 1px 5px; border-radius: 4px;
   font-family: ui-monospace, monospace; font-size: 13px;
 }
-.ai-msg.user .ai-msg-content code.ai-code-inline { background: rgba(255,255,255,0.2); }
-.ai-msg-content pre.ai-code {
+.ai-msgs .ai-msg.user .ai-msg-content code.ai-code-inline { background: rgba(255,255,255,0.2); }
+.ai-msgs .ai-msg-content pre.ai-code {
   background: #0f172a; color: #e2e8f0; padding: 10px 12px; border-radius: 8px;
   overflow-x: auto; margin: 8px 0; font-size: 13px;
   font-family: ui-monospace, monospace;
 }
-.ai-msg-content pre.ai-code code { background: none; padding: 0; color: inherit; }
+.ai-msgs .ai-msg-content pre.ai-code code { background: none; padding: 0; color: inherit; }
 
 /* 浮动 AI 顾问窗口专用覆盖：避免被页面内 AI 模块的通用 .ai-msg flex 样式挤压 */
 #ai-chat .ai-msg {
