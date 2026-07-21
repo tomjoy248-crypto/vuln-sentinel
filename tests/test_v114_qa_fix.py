@@ -1,4 +1,4 @@
-"""V12 QA 修复验证测试
+"""11-S QA 修复验证测试
 - 扫描深度档位可点
 - 字体加载
 - 置信度系统
@@ -84,10 +84,10 @@ def test_ai_msg_has_text_color():
 
 
 # ============================================================
-# 4) V12：置信度系统 + WAF 不消除漏洞
+# 4) 11-S：置信度系统 + WAF 不消除漏洞
 # ============================================================
 def test_trusted_domains_removed():
-    """V12 已移除 TRUSTED_DOMAINS 白名单，不能以"知名"为由自动判定安全"""
+    """11-S 已移除 TRUSTED_DOMAINS 白名单，不能以"知名"为由自动判定安全"""
     src = open(str(ROOT / "main.py")).read()
     # TRUSTED_DOMAINS 局部定义应已删除
     assert "TRUSTED_DOMAINS = {" not in src, "TRUSTED_DOMAINS should be removed"

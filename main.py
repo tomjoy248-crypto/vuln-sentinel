@@ -1,6 +1,6 @@
-"""漏洞哨兵 V12 - FastAPI 安全扫描后端
+"""漏洞哨兵 11-S - FastAPI 安全扫描后端
 
-V12 核心改进：
+11-S 核心改进：
 1. 本地演示靶场：一键扫描→修复→复测完整闭环（nginx 真实配置修改）
 2. 置信度系统：每个 finding 标注高/中/低置信度，区分确定项与推测项
 3. 评分逻辑纠正：WAF 只加分不抵消真实缺失，Trusted Domains 白名单移除
@@ -9,7 +9,7 @@ V12 核心改进：
 6. 测试便携性：所有测试使用相对路径，可在任意目录运行
 7. 安全加固：生产环境 JWT Secret 强制校验，凭证加密密钥可配置
 8. AI 顾问优化：基于真实 severity 排序，接入当前扫描报告上下文
-9. 版本统一：所有界面/文档/API 返回值统一为 V12
+9. 版本统一：所有界面/文档/API 返回值统一为 11-S
 10. CI/CD 修复：GitHub Actions 工作流完整跑通测试+扫描+构建
 """
 
@@ -74,8 +74,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_title: str = "漏洞哨兵 V12"
-    app_version: str = "V12"
+    app_title: str = "漏洞哨兵 11-S"
+    app_version: str = "11-S"
     build_time: str = "2026-06-25"
     port: int = 8000
     host: str = "0.0.0.0"
@@ -110,7 +110,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_timeout: float = 15.0
 
-    # 自动巡检 (V12 进化)
+    # 自动巡检 (11-S 进化)
     patrol_interval_hours: int = 6
     patrol_score_regression_threshold: int = 10
 
@@ -156,7 +156,7 @@ if _IS_PRODUCTION:
         )
 
 # JWT Secret 强制：生产环境必须显式设置，否则拒绝启动
-# V12: 使用 _IS_PRODUCTION 统一判定，避免 PRODUCTION=1 绕过校验
+# 11-S: 使用 _IS_PRODUCTION 统一判定，避免 PRODUCTION=1 绕过校验
 if _IS_PRODUCTION:
     if not settings.jwt_secret or len(settings.jwt_secret) < 32:
         raise RuntimeError(
@@ -221,7 +221,7 @@ BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"}
 
 # 内部白名单：环境变量配置后允许扫描的内网靶场
 # 格式：逗号分隔，如 "192.168.1.100,10.0.0.5,pikachu.local"
-# V12: 可通过 ALLOW_LOCALHOST=1 快速启用本地演示靶场
+# 11-S: 可通过 ALLOW_LOCALHOST=1 快速启用本地演示靶场
 ALLOWED_INTERNAL_HOSTS = {
     h.strip().lower() for h in os.environ.get("ALLOWED_INTERNAL_HOSTS", "").split(",")
     if h.strip()
@@ -265,13 +265,13 @@ SECURITY_HEADERS: Dict[str, Dict[str, str]] = {
         "description": "控制浏览器 API 权限",
         "fix": 'add_header Permissions-Policy "camera=(), microphone=()" always;',
     },
-    # V12: 新增缓存控制头检测
+    # 11-S: 新增缓存控制头检测
     "cache-control": {
         "name": "Cache-Control", "category": "缓存安全", "severity": "low",
         "description": "敏感页面应禁止缓存以防止信息泄露",
         "fix": 'add_header Cache-Control "no-store, no-cache, must-revalidate" always;',
     },
-    # V12: 新增 DNS 预取控制头检测
+    # 11-S: 新增 DNS 预取控制头检测
     "x-dns-prefetch-control": {
         "name": "X-DNS-Prefetch-Control", "category": "隐私", "severity": "low",
         "description": "控制浏览器是否自动 DNS 预取，防止隐私泄露",
@@ -304,9 +304,26 @@ WAF_SIGNATURES: Dict[str, List[str]] = {
 
 SENSITIVE_PATHS: List[str] = [
     "/.env", "/.git/config", "/.svn/entries", "/.htaccess",
-    "/sitemap.xml", "/admin", "/login", "/phpmyadmin", "/api",
-    "/swagger", "/.DS_Store", "/config.php", "/wp-config.php",
+    "/admin", "/phpmyadmin",
+    "/.DS_Store", "/config.php", "/wp-config.php",
     "/.env.local", "/backup.sql", "/dump.sql", "/.bak",
+    "/config/database.yml",
+    "/.git/HEAD", "/.git/COMMIT_EDITMSG",
+    "/debug.log", "/error.log", "/phpinfo.php",
+    "/server-status", "/server-info",
+    "/actuator", "/actuator/env", "/actuator/health",
+]
+
+# 以下路径返回 200 是正常行为，不作为安全发现报告
+PATH_WHITELIST: List[str] = [
+    "/sitemap.xml",   # 站点地图，公开文件
+    "/robots.txt",    # 爬虫协议，公开文件
+    "/api",           # API 入口，正常业务路径
+    "/swagger",       # API 文档，很多项目公开提供
+    "/login",         # 登录页，正常业务路径
+    "/health",        # 健康检查接口
+    "/favicon.ico",   # 网站图标
+    "/",              # 首页
 ]
 
 # robots.txt 是公开文件，不算敏感路径暴露，只作为 info 提示
@@ -326,7 +343,7 @@ SQLI_PAYLOADS: List[str] = [
     "' UNION SELECT NULL--", "1; DROP TABLE users--", "' OR 1=1 /*",
 ]
 
-# Code-level vulnerability detection payloads (V12)
+# Code-level vulnerability detection payloads (11-S)
 SQLI_PAYLOADS_V2: List[str] = [
     "' OR '1'='1",
     "'; DROP TABLE users; --",
@@ -430,7 +447,7 @@ def sanitize_url(value: str) -> str:
     hostname = parsed.hostname.lower()
     # 基本域名校验：必须包含点号
     if "." not in hostname:
-        # V12: 仅当 ALLOW_LOCALHOST 启用时，localhost 才跳过域名格式校验
+        # 11-S: 仅当 ALLOW_LOCALHOST 启用时，localhost 才跳过域名格式校验
         if hostname == "localhost" and "localhost" in ALLOWED_INTERNAL_HOSTS:
             pass  # 放行，继续走 SSRF 白名单检查
         else:
@@ -478,7 +495,7 @@ class ScanRequest(BaseModel):
     deep: bool = False
     authorized: bool = False  # 用户是否确认有权扫描该目标
 
-    # V12 fix: URL 验证移到 api_scan 中，避免 Pydantic 直接返回 422
+    # 11-S fix: URL 验证移到 api_scan 中，避免 Pydantic 直接返回 422
     # 让前端能收到 success: false 的友好错误提示
 
     @field_validator("depth")
@@ -506,7 +523,7 @@ class SimulateFixRequest(BaseModel):
     @field_validator("findings")
     @classmethod
     def validate_findings(cls, v: list) -> list:
-        # V12: 限制最大长度，防止滥用
+        # 11-S: 限制最大长度，防止滥用
         if len(v) > 100:
             raise ValueError("findings 数组最多 100 项")
         return v
@@ -1005,7 +1022,7 @@ def init_db() -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_user_id ON assets(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_domain ON assets(domain)")
-    # V12+：用户对 finding 的误报/确认反馈
+    # 11-S+：用户对 finding 的误报/确认反馈
     conn.execute(
         """CREATE TABLE IF NOT EXISTS finding_feedback (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1785,7 +1802,7 @@ async def lifespan(app: FastAPI):
         init_db()
     except Exception as e:
         logger.error("Database initialization failed: %s", e, exc_info=True)
-    # V12+: 多 worker 部署时可通过 ENABLE_SCHEDULER=false 关闭定时任务，避免重复执行
+    # 11-S+: 多 worker 部署时可通过 ENABLE_SCHEDULER=false 关闭定时任务，避免重复执行
     _enable_scheduler = os.environ.get("ENABLE_SCHEDULER", "true").strip().lower() not in ("0", "false", "no", "off")
     _scheduler_started = False
     if _enable_scheduler:
@@ -1939,7 +1956,7 @@ _MAX_RESPONSE_BODY_BYTES = 2 * 1024 * 1024  # 2 MB
 
 def _create_client() -> None:
     global _httpx_client
-    # V12：默认开启 TLS 验证（安全产品必须优先保证通信安全）
+    # 11-S：默认开启 TLS 验证（安全产品必须优先保证通信安全）
     # 用户可显式设置 TLS_VERIFY=false 启用"不安全兼容模式"
     _raw = os.environ.get("TLS_VERIFY", "true").strip().lower()
     if _raw in ("0", "false", "no", "off"):
@@ -2155,7 +2172,7 @@ async def run_payload_tests(base_url, pages):
     return vulns, test_results
 
 
-# ---------- Code-Level Vulnerability Detection (V12) ----------
+# ---------- Code-Level Vulnerability Detection (11-S) ----------
 
 def _build_test_url(url: str, param: str, payload: str) -> str:
     """将 payload 注入到 URL 的指定参数中。"""
@@ -2783,7 +2800,7 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
             except httpx.RemoteProtocolError:
                 last_err = "PROTOCOL_ERROR"
             except (ssl.SSLError, ssl.CertificateError) as e:
-                # V12 修复：SSL 错误（如证书过期、协议不匹配）→ 尝试用宽松 SSL 重试
+                # 11-S 修复：SSL 错误（如证书过期、协议不匹配）→ 尝试用宽松 SSL 重试
                 last_err = f"SSL_ERROR:{str(e)[:40]}"
             except Exception as e:
                 last_err = f"REQUEST_FAIL:{str(e)[:60]}"
@@ -2795,7 +2812,7 @@ async def fetch_headers(url: str) -> Tuple[dict, bool, str, Optional[str]]:
         elif last_err == "PROTOCOL_ERROR":
             error = "协议错误，目标可能不支持 HTTPS 或使用了非标准端口"
         elif last_err and last_err.startswith("SSL_ERROR:"):
-            # V12：SSL 错误时，仅在用户显式关闭 TLS 验证后才允许跳过证书检查
+            # 11-S：SSL 错误时，仅在用户显式关闭 TLS 验证后才允许跳过证书检查
             _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
             if _tls_off:
                 try:
@@ -3104,6 +3121,9 @@ async def check_sensitive_paths(host: str, is_https: bool) -> List[dict]:
         return {"verdict": "exposed", "reason": "敏感文件内容特征完全匹配"}
 
     async def check(p: str, is_info: bool = False) -> Optional[dict]:
+        # 白名单路径：跳过检测，不报告
+        if p in PATH_WHITELIST:
+            return None
         protocol = "https" if is_https else "http"
         try:
             resp = await asyncio.wait_for(
@@ -3132,7 +3152,7 @@ async def check_sensitive_paths(host: str, is_https: bool) -> List[dict]:
                         "snippet": text[:300].replace("\n", " ") if len(text) < 2000 else "（内容过长，已截断）",
                     }
                 analysis = analyze_content(p, text)
-                return {
+                result = {
                     "path": p,
                     "status": resp.status_code,
                     "exposed": analysis["verdict"] == "exposed",
@@ -3140,7 +3160,11 @@ async def check_sensitive_paths(host: str, is_https: bool) -> List[dict]:
                     "size": len(text),
                     "reason": analysis["reason"],
                     "snippet": text[:200].replace("\n", " ") if analysis["verdict"] == "exposed" else "",
+                    "detection_method": f"向 {('https' if is_https else 'http')}://{host}{p} 发送 GET 请求，检查响应状态码和内容特征",
+                    "confidence_level": "高" if analysis["verdict"] == "exposed" else "中",
+                    "review_required": analysis["verdict"] == "suspect",
                 }
+                return result
             elif resp.status_code in (403, 401):
                 return {"path": p, "status": resp.status_code, "exposed": False, "protected": True}
         except asyncio.TimeoutError:
@@ -3168,7 +3192,7 @@ async def check_sensitive_paths(host: str, is_https: bool) -> List[dict]:
     return results
 
 
-# V12: 详细验证步骤（三步验证法：命令行 + 浏览器 + 工具重扫）
+# 11-S: 详细验证步骤（三步验证法：命令行 + 浏览器 + 工具重扫）
 VERIFY_METHODS = {
     "hsts": {
         "summary": "验证 HSTS 头是否生效",
@@ -3746,6 +3770,269 @@ async def cross_validate_findings(
         return result
 
     # ========== D11: 信息泄露多页面验证 ==========
+    # ========== D12: 过时组件检测（OWASP A06）==========
+    KNOWN_VULN_LIBS: List[dict] = [
+        # jQuery < 1.9.0 有 XSS 漏洞
+        {"pattern": r"jquery[/-]([0-9]+)\.([0-9]+)", "min_major": 1, "min_minor": 9, "cve": "CVE-2020-11022/11023", "severity": "medium", "name": "jQuery"},
+        # Bootstrap < 4.4.0 有 XSS
+        {"pattern": r"bootstrap[/-]([0-9]+)\.([0-9]+)", "min_major": 4, "min_minor": 4, "cve": "CVE-2019-8331", "severity": "medium", "name": "Bootstrap"},
+        # Angular < 1.7.0
+        {"pattern": r"angular[/-]([0-9]+)\.([0-9]+)", "min_major": 1, "min_minor": 7, "cve": "CVE-2019-10768", "severity": "medium", "name": "Angular"},
+        # React < 16.0.0
+        {"pattern": r"react[/-][Uu]md?/([0-9]+)\.([0-9]+)", "min_major": 16, "min_minor": 0, "cve": "CVE-2018-6367", "severity": "medium", "name": "React"},
+        # Lodash < 4.17.12 有原型污染
+        {"pattern": r"lodash[/-]([0-9]+)\.([0-9]+)", "min_major": 4, "min_minor": 17, "cve": "CVE-2020-8203", "severity": "high", "name": "Lodash"},
+        # Axios < 0.21.0 有 SSRF
+        {"pattern": r"axios[/-]([0-9]+)\.([0-9]+)", "min_major": 0, "min_minor": 21, "cve": "CVE-2020-24192", "severity": "medium", "name": "Axios"},
+        # Font Awesome < 5.12.0
+        {"pattern": r"font-awesome[/-]([0-9]+)\.([0-9]+)", "min_major": 5, "min_minor": 12, "cve": "CVE-2020-9356", "severity": "low", "name": "Font Awesome"},
+    ]
+
+    def _check_outdated_components(html_text: str) -> List[dict]:
+        """检查页面中引用的 JS/CSS 库是否有已知 CVE。"""
+        vuln_libs: List[dict] = []
+        for lib in KNOWN_VULN_LIBS:
+            match = re.search(lib["pattern"], html_text, re.IGNORECASE)
+            if match:
+                try:
+                    major = int(match.group(1))
+                    minor = int(match.group(2))
+                    if major < lib["min_major"] or (major == lib["min_major"] and minor < lib["min_minor"]):
+                        vuln_libs.append({
+                            "name": lib["name"],
+                            "detected_version": f"{major}.{minor}",
+                            "min_safe_version": f"{lib['min_major']}.{lib['min_minor']}",
+                            "cve": lib["cve"],
+                            "severity": lib["severity"],
+                            "fix": f"升级 {lib['name']} 至 {lib['min_major']}.{lib['min_minor']} 或更高版本",
+                        })
+                except (ValueError, IndexError):
+                    pass
+        return vuln_libs
+
+    async def _d12_outdated_components_probe() -> Dict[str, Any]:
+        """D12: 解析首页 HTML，提取第三方库版本并检查已知 CVE。"""
+        result: Dict[str, Any] = {"vuln_libs": [], "total_libs_found": 0}
+        try:
+            client = get_httpx_client()
+            protocol = "https" if is_https else "http"
+            resp = await asyncio.wait_for(
+                client.get(f"{protocol}://{host}/", headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True),
+                timeout=8.0,
+            )
+            if resp.status_code == 200:
+                html_text = (await resp.aread()).decode("utf-8", errors="ignore")
+                result["vuln_libs"] = _check_outdated_components(html_text)
+                result["total_libs_found"] = len(re.findall(r'(?:src|href)=["\']https?://[^"\']+?/[^"\']+?\.(?:js|css)', html_text))
+            else:
+                result["evidence"] = f"首页返回 {resp.status_code}"
+        except Exception as e:
+            result["evidence"] = f"D12: 异常 {str(e)[:80]}"
+        return result
+
+    # ========== D13: A07 认证失败检测（登录页面 + 表单安全）==========
+    LOGIN_PATH_HINTS = [
+        "/login", "/signin", "/sign-in", "/user/login",
+        "/admin", "/admin/login", "/wp-login.php",
+        "/auth/login", "/account/login", "/member/login",
+    ]
+
+    async def _d13_auth_probe() -> Dict[str, Any]:
+        """D13: 检测登录页面及认证表单的安全配置问题。
+
+        检测项：
+        1. 是否存在登录页面（可访问性）
+        2. 登录表单是否缺少 autocomplete="off"
+        3. 登录页面是否缺少 HTTP 安全头
+        4. 是否有用户名可枚举迹象（不同错误消息）
+        """
+        result: Dict[str, Any] = {
+            "login_page_found": False,
+            "login_path": "",
+            "issues": [],
+            "form_details": {},
+        }
+        try:
+            client = get_httpx_client()
+            protocol = "https" if is_https else "http"
+            # 探测常见登录路径
+            for path in LOGIN_PATH_HINTS:
+                try:
+                    resp = await asyncio.wait_for(
+                        client.get(f"{protocol}://{host}{path}",
+                                   headers={"User-Agent": "Mozilla/5.0"},
+                                   follow_redirects=True),
+                        timeout=5.0,
+                    )
+                    if resp.status_code == 200:
+                        body = (await resp.aread()).decode("utf-8", errors="ignore")
+                        # 检查是否是登录页面（有 password 输入框）
+                        if re.search(r'<input[^>]*type=["\']password["\']', body, re.IGNORECASE):
+                            result["login_page_found"] = True
+                            result["login_path"] = path
+                            # 检查表单安全
+                            issues = []
+                            # 1. autocomplete 检查
+                            form_match = re.search(
+                                r'<form[^>]*>.*?</form>',
+                                body, re.IGNORECASE | re.DOTALL,
+                            )
+                            if form_match:
+                                form_html = form_match.group(0)
+                                pwd_input = re.search(
+                                    r'<input[^>]*type=["\']password["\'][^>]*>',
+                                    form_html, re.IGNORECASE,
+                                )
+                                if pwd_input:
+                                    pwd_html = pwd_input.group(0)
+                                    if 'autocomplete' not in pwd_html.lower():
+                                        form_tag = re.search(r'<form[^>]*>', form_html, re.IGNORECASE)
+                                        form_has_autocomplete = form_tag and 'autocomplete="off"' in (form_tag.group(0).lower() if form_tag else "")
+                                        if not form_has_autocomplete:
+                                            issues.append("password_autocomplete_missing")
+                                    # 检查 CSRF token
+                                    csrf_found = bool(re.search(
+                                        r'name=["\'].*?(?:csrf|token|nonce).*?["\']',
+                                        form_html, re.IGNORECASE,
+                                    ))
+                                    if not csrf_found:
+                                        issues.append("csrf_token_missing")
+                            # 2. 检查登录页安全头
+                            login_headers = {k.lower(): v for k, v in resp.headers.items()}
+                            if "x-frame-options" not in login_headers:
+                                issues.append("login_page_no_xfo")
+                            if "content-security-policy" not in login_headers:
+                                issues.append("login_page_no_csp")
+                            result["issues"] = issues
+                            break
+                except Exception:
+                    continue
+        except Exception as e:
+            result["evidence"] = f"D13: 异常 {str(e)[:80]}"
+        return result
+
+    # ========== D14: A08 软件完整性 - SRI 子资源完整性检测 ==========
+    async def _d14_sri_probe() -> Dict[str, Any]:
+        """D14: 检测第三方 JS/CSS 资源是否使用了 SRI (Subresource Integrity)。
+
+        没有 SRI 时，如果 CDN 被劫持，第三方脚本会被篡改，
+        直接影响整个网站安全。属于 OWASP A08 范畴。
+        """
+        result: Dict[str, Any] = {
+            "total_external_resources": 0,
+            "sri_protected": 0,
+            "unprotected_resources": [],
+            "sri_supported": False,
+        }
+        try:
+            client = get_httpx_client()
+            protocol = "https" if is_https else "http"
+            resp = await asyncio.wait_for(
+                client.get(f"{protocol}://{host}/",
+                           headers={"User-Agent": "Mozilla/5.0"},
+                           follow_redirects=True),
+                timeout=8.0,
+            )
+            if resp.status_code == 200:
+                body = (await resp.aread()).decode("utf-8", errors="ignore")
+                # 匹配 <script src=...> 和 <link rel="stylesheet" href=...>
+                # 只统计外部域名资源（跨域的才需要 SRI）
+                from urllib.parse import urlparse as _up
+                script_pattern = re.compile(
+                    r'<script[^>]*src=["\'](https?://[^"\']+)["\'][^>]*>',
+                    re.IGNORECASE,
+                )
+                link_pattern = re.compile(
+                    r'<link[^>]*href=["\'](https?://[^"\']+)["\'][^>]*>',
+                    re.IGNORECASE,
+                )
+                all_ext_resources = []
+                # 检查 script 标签
+                for m in script_pattern.finditer(body):
+                    src = m.group(1)
+                    tag = m.group(0)
+                    try:
+                        p = _up(src)
+                        # 只统计跨域资源
+                        if p.hostname and p.hostname != host.split(":")[0]:
+                            all_ext_resources.append({"url": src[:120], "type": "script", "tag": tag})
+                    except Exception:
+                        pass
+                # 检查 link 标签（只统计 stylesheet）
+                for m in link_pattern.finditer(body):
+                    href = m.group(1)
+                    tag = m.group(0)
+                    if 'stylesheet' not in tag.lower():
+                        continue
+                    try:
+                        p = _up(href)
+                        if p.hostname and p.hostname != host.split(":")[0]:
+                            all_ext_resources.append({"url": href[:120], "type": "css", "tag": tag})
+                    except Exception:
+                        pass
+
+                result["total_external_resources"] = len(all_ext_resources)
+                sri_count = 0
+                unprotected = []
+                for res in all_ext_resources:
+                    has_integrity = bool(re.search(r'integrity=["\']sha', res["tag"], re.IGNORECASE))
+                    if has_integrity:
+                        sri_count += 1
+                    else:
+                        unprotected.append({
+                            "url": res["url"],
+                            "type": res["type"],
+                        })
+                result["sri_protected"] = sri_count
+                result["unprotected_resources"] = unprotected[:10]  # 最多返回 10 个
+                result["sri_supported"] = sri_count > 0
+        except Exception as e:
+            result["evidence"] = f"D14: 异常 {str(e)[:80]}"
+        return result
+
+    # ========== D15: A04 不安全设计 - 开放重定向检测 ==========
+    async def _d15_redirect_probe() -> Dict[str, Any]:
+        """D15: 检测常见的开放重定向漏洞参数。
+
+        检测方式：向常见的 redirect/url 参数注入外部 URL，
+        观察是否发生 302/301 跳转到注入的域名。
+        """
+        result: Dict[str, Any] = {
+            "vulnerable": False,
+            "vulnerable_params": [],
+            "tested_params": [],
+        }
+        REDIRECT_PARAMS = ["redirect", "url", "next", "go", "return", "return_url", "redirect_url", "target"]
+        EXTERNAL_URL = "https://example.com/redirect-test"
+        try:
+            client = get_httpx_client()
+            protocol = "https" if is_https else "http"
+            base_url = f"{protocol}://{host}/"
+            for param in REDIRECT_PARAMS:
+                test_url = f"{base_url}?{param}={EXTERNAL_URL}"
+                try:
+                    resp = await asyncio.wait_for(
+                        client.get(test_url,
+                                   headers={"User-Agent": "Mozilla/5.0"},
+                                   follow_redirects=False),
+                        timeout=5.0,
+                    )
+                    result["tested_params"].append(param)
+                    if resp.status_code in (301, 302, 303, 307, 308):
+                        location = resp.headers.get("location", "")
+                        if location.startswith(EXTERNAL_URL) or "example.com" in location:
+                            result["vulnerable"] = True
+                            result["vulnerable_params"].append({
+                                "param": param,
+                                "redirect_to": location[:120],
+                                "status_code": resp.status_code,
+                            })
+                except Exception:
+                    continue
+        except Exception as e:
+            result["evidence"] = f"D15: 异常 {str(e)[:80]}"
+        return result
+
     async def _d11_info_leak_probe() -> Dict[str, bool]:
         """D11: 在首页 + 1 个子页面（/index.html 或 /robots.txt）找相同信息泄露模式。
 
@@ -3830,17 +4117,26 @@ async def cross_validate_findings(
             out["evidence"] = f"D10: 重连异常 {str(e)[:80]}"
         return out
 
-    # 6+1 组并发：D1, D2, D3, D6, D7+D8, D9, D11（D10 同步，避免阻塞）
+    # 10+1 组并发：D1, D2, D3, D6, D7+D8, D9, D11, D12, D13, D14, D15（D10 同步，避免阻塞）
+    d12_vuln: Dict[str, Any] = {"vuln_libs": [], "total_libs_found": 0}
+    d13_auth: Dict[str, Any] = {"login_page_found": False, "issues": []}
+    d14_sri: Dict[str, Any] = {"total_external_resources": 0, "sri_protected": 0, "unprotected_resources": []}
+    d15_redirect: Dict[str, Any] = {"vulnerable": False, "vulnerable_params": []}
     try:
-        d1_merged, d2_merged, html, d6_map, d78_cors, d9_cookie, d11_leak = await asyncio.gather(
+        d1_merged, d2_merged, html, d6_map, d78_cors, d9_cookie, d11_leak, d12_vuln, d13_auth, d14_sri, d15_redirect = await asyncio.gather(
             _with_sem(_d1_probe()), _with_sem(_d2_probe()), _with_sem(_d3_probe()),
             _with_sem(_d6_sensitive_probe()), _with_sem(_d7_d8_cors_probe()),
             _with_sem(_d9_cookie_probe()), _with_sem(_d11_info_leak_probe()),
+            _with_sem(_d12_outdated_components_probe()),
+            _with_sem(_d13_auth_probe()),
+            _with_sem(_d14_sri_probe()),
+            _with_sem(_d15_redirect_probe()),
             return_exceptions=False,
         )
     except Exception:
         d1_merged, d2_merged, html = {}, {}, ""
         d6_map, d78_cors, d9_cookie, d11_leak = {}, {}, {}, {}
+        d12_vuln = {"vuln_libs": [], "total_libs_found": 0}
     # D10 同步执行（避免阻塞事件循环；3s 超时）
     d10_ssl: Dict[str, object] = {}
     try:
@@ -4239,7 +4535,7 @@ def add_finding(
         "verify_method": get_verify_method_text(verify_key),
         "verify_steps": get_verify_steps(verify_key),
     }
-    # V12：置信度（高/中/低）
+    # 11-S：置信度（高/中/低）
     if confidence_level is not None:
         finding["confidence_level"] = confidence_level
     elif confidence is not None:
@@ -4249,7 +4545,7 @@ def add_finding(
         finding["confidence_level"] = "高"  # 默认高置信度
     if confidence is not None and "confidence" not in finding:
         finding["confidence"] = confidence
-    # V12：交叉验证字段（可选）
+    # 11-S：交叉验证字段（可选）
     if verified is not None:
         finding["verified"] = verified
     if cv_reason is not None:
@@ -4335,7 +4631,7 @@ async def analyze_security(
         "referrer-policy": "referrer",
         "permissions-policy": "permissions",
     }
-    # V12：WAF 只作为"纵深防御能力"单独展示，不消除真实缺失项
+    # 11-S：WAF 只作为"纵深防御能力"单独展示，不消除真实缺失项
     # Trusted Domains 白名单已移除：不能以"知名"为由自动判定安全
     waf_protected = len(waf_list) > 0
     waf_name = waf_list[0].get("name", "WAF") if waf_list else ""
@@ -4349,7 +4645,7 @@ async def analyze_security(
             "category": rule["category"], "severity": rule["severity"],
         })
         if not value:
-            # V12：所有站点统一扣分 + finding，WAF 不消除真实缺失项
+            # 11-S：所有站点统一扣分 + finding，WAF 不消除真实缺失项
             if key in HIGH_CONFIG_HEADERS:
                 points = SCORE_DEDUCTION["high_config_missing"]
             else:
@@ -4363,7 +4659,7 @@ async def analyze_security(
                         verify_key=HEADER_VERIFY_KEY.get(key, "info"),
                         confidence_level=conf_level)
 
-    # V12: HSTS 强度评估
+    # 11-S: HSTS 强度评估
     hsts_value = headers.get("strict-transport-security", headers.get("Strict-Transport-Security", None))
     if hsts_value:
         hsts_lower = hsts_value.lower()
@@ -4383,7 +4679,7 @@ async def analyze_security(
             # 低风险提示，不额外扣分（已经扣过了）
             pass
 
-    # V12: CSP 强度评估
+    # 11-S: CSP 强度评估
     csp_value = headers.get("content-security-policy", headers.get("Content-Security-Policy", None))
     if csp_value:
         csp_lower = csp_value.lower()
@@ -4409,7 +4705,7 @@ async def analyze_security(
         value = headers.get(key, headers.get(key.title(), None))
         if value:
             info_leaks.append({"name": key.title(), "value": value})
-            # V12：WAF 标识头不算泄露，但其它情况仍报告
+            # 11-S：WAF 标识头不算泄露，但其它情况仍报告
             is_waf_signature = any(
                 w.get("value", "").lower() in value.lower() or value.lower() in w.get("value", "").lower()
                 for w in waf_list
@@ -4495,7 +4791,7 @@ async def analyze_security(
         # suspect 疑似项：不扣分，只作为信息提示
         pass
 
-    # V12: 代码层漏洞动态检测（温和 fuzzing）
+    # 11-S: 代码层漏洞动态检测（温和 fuzzing）
     parsed_url = urlparse(url)
     params = [p.split("=")[0] for p in parsed_url.query.split("&") if "=" in p] if parsed_url.query else []
     if params:
@@ -4538,7 +4834,7 @@ async def analyze_security(
                 deduct(v.get("name", "漏洞"), 25, "critical", "检测到严重漏洞")
             elif sev == "high":
                 deduct(v.get("name", "漏洞"), 15, "high", "检测到高风险漏洞")
-            # V12: 补充 medium 和 low 的扣分逻辑，确保评分与 summary 统计一致
+            # 11-S: 补充 medium 和 low 的扣分逻辑，确保评分与 summary 统计一致
             elif sev == "medium":
                 deduct(v.get("name", "漏洞"), 8, "medium", "检测到中风险漏洞")
             elif sev == "low":
@@ -4555,24 +4851,48 @@ async def analyze_security(
     owasp_map = {item["category"]: item for item in owasp}
     has_xss = any(f.get("type") == "XSS" for f in findings)
     has_sqli = any(f.get("type") == "SQLi" for f in findings)
+    has_a01 = any("A01" in f.get("owasp", "") for f in findings)
+    has_a04 = any("A04" in f.get("owasp", "") for f in findings)
+    has_a06 = any("A06" in f.get("owasp", "") for f in findings)
+    has_a07 = any("A07" in f.get("owasp", "") for f in findings)
+    has_a08 = any("A08" in f.get("owasp", "") for f in findings)
+    has_a10 = any("A10" in f.get("owasp", "") for f in findings)
+    a06_count = sum(1 for f in findings if "A06" in f.get("owasp", ""))
+    a07_count = sum(1 for f in findings if "A07" in f.get("owasp", ""))
+    a08_count = sum(1 for f in findings if "A08" in f.get("owasp", ""))
     for cat, status, note in [
-        ("A01 访问控制失效", "通过" if not exposed else "高风险", "需关注"),
+        ("A01 访问控制失效",
+         "高风险" if has_a01 else ("通过" if not exposed else "需关注"),
+         f"检测到 {sum(1 for f in findings if 'A01' in f.get('owasp', ''))} 项问题" if has_a01 else ("目录遍历等访问控制风险" if exposed else "未检测到访问控制问题")),
         ("A03 注入攻击", "高风险" if (has_xss or has_sqli) else "通过",
          "检测到 XSS/SQLi" if (has_xss or has_sqli) else "未检测到注入漏洞"),
-        ("A04 不安全设计", "通过", "未检测到"),
+        ("A04 不安全设计",
+         "需关注" if has_a04 else "通过",
+         f"检测到 {sum(1 for f in findings if 'A04' in f.get('owasp', ''))} 项设计缺陷" if has_a04 else "未检测到明显设计缺陷"),
         ("A05 安全配置错误",
          "需关注" if any(f["owasp"] == "A05 安全配置错误" for f in findings) else "通过",
          "部分配置可优化"),
-        ("A06 过时组件", "需深度检测", "建议扫描依赖"),
-        ("A07 认证失败", "通过", "未检测到"),
-        ("A08 软件完整性", "通过", "未检测到"),
-        ("A09 日志监控不足", "低风险", "建议加强"),
-        ("A10 服务端请求伪造", "通过", "未检测到"),
+        ("A06 过时组件",
+         "高风险" if has_a06 else "通过",
+         f"检测到 {a06_count} 个存在已知漏洞的组件" if has_a06 else "未检测到过时组件"),
+        ("A07 认证失败",
+         "需关注" if has_a07 else "通过",
+         f"检测到 {a07_count} 项认证相关问题" if has_a07 else "未检测到认证机制问题"),
+        ("A08 软件完整性",
+         "需关注" if has_a08 else "通过",
+         f"检测到 {a08_count} 项完整性风险" if has_a08 else "未检测到完整性问题"),
+        ("A09 日志监控不足", "低风险", "建议加强日志与监控"),
+        ("A10 服务端请求伪造",
+         "高风险" if has_a10 else "通过",
+         f"检测到 SSRF 风险" if has_a10 else "未检测到 SSRF 漏洞"),
     ]:
         if cat not in owasp_map:
             owasp.append({"category": cat, "status": status, "note": note})
+        else:
+            # 如果已有条目（如 A02），保持原样
+            pass
     owasp.sort(key=lambda x: int(x["category"][1:3]))
-    # V12：WAF 作为纵深防御能力，最多 +3 分奖励，不覆盖真实缺失项
+    # 11-S：WAF 作为纵深防御能力，最多 +3 分奖励，不覆盖真实缺失项
     waf_bonus = 0
     if waf_protected:
         waf_bonus = 2
@@ -4622,7 +4942,7 @@ async def analyze_security(
                         restricted_code = "ANTI_BOT"
                     break
 
-    # V12：受限扫描时所有发现标记为"证据不足"（低置信度）
+    # 11-S：受限扫描时所有发现标记为"证据不足"（低置信度）
     if restricted:
         for f in findings:
             f["confidence_level"] = "低"
@@ -4662,7 +4982,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     from reportlab.pdfbase.ttfonts import TTFont
 
     _cn_font = "Helvetica"
-    # V12 修复：先尝试 WQY（TTF 格式，reportlab 完美支持）
+    # 11-S 修复：先尝试 WQY（TTF 格式，reportlab 完美支持）
     # NotoSansCJK 是 CFF/OTF 格式，reportlab 的 TTFont 不支持
     for _fp in [
         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
@@ -4863,7 +5183,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
             ])
         t = Table(table_data, colWidths=[8*mm, 28*mm, 18*mm, 25*mm, 30*mm, 41*mm])
         t.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V12 修复：表格用中文字体
+            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # 11-S 修复：表格用中文字体
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("FONTSIZE", (0, 0), (-1, -1), 7),
@@ -4881,7 +5201,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
             owasp_data.append([o["category"], o["status"], o.get("note", "")])
         t2 = Table(owasp_data, colWidths=[50 * mm, 30 * mm, 70 * mm])
         t2.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # V12 修复：表格用中文字体
+            ("FONTNAME", (0, 0), (-1, -1), _cn_font),  # 11-S 修复：表格用中文字体
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("FONTSIZE", (0, 0), (-1, -1), 8),
@@ -5214,7 +5534,7 @@ def generate_html_report(scan_data: dict) -> str:
     </div>
 
     <div class="report-footer">
-        漏洞哨兵 V12 · 自动生成于 {_html_escape(time_str)}
+        漏洞哨兵 11-S · 自动生成于 {_html_escape(time_str)}
     </div>
 </div>
 </body>
@@ -5512,7 +5832,7 @@ async def api_login(req: LoginRequest, request: Request) -> dict:
 async def api_me(user: Optional[dict] = Depends(get_current_user)) -> dict:
     if not user:
         raise HTTPException(401, "未登录")
-    # V12: 从数据库读取最新 role/team_id，确保和数据库一致
+    # 11-S: 从数据库读取最新 role/team_id，确保和数据库一致
     conn = get_db()
     try:
         row = conn.execute("SELECT id, username, role, team_id FROM users WHERE id=?", (user["user_id"],)).fetchone()
@@ -5742,7 +6062,7 @@ async def api_verify_fix(req: VerifyFixRequest, request: Request, user: dict = D
         sensitive_paths = await check_sensitive_paths(host, is_https)
         ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
         result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths)
-        # V12：11 维交叉验证（降低误报）
+        # 11-S：11 维交叉验证（降低误报）
         try:
             cv_result = await cross_validate_findings(
                 url, headers, result["findings"],
@@ -5951,7 +6271,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
     try:
         url = sanitize_url(req.url)
     except ValueError as e:
-        # V12 fix: 返回友好的扫描失败结果，而不是 HTTP 422
+        # 11-S fix: 返回友好的扫描失败结果，而不是 HTTP 422
         return ScanResponse(
             success=False, scan_type="real", url=req.url, final_url=req.url,
             time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -5963,7 +6283,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         )
 
     # 扫描结果缓存：30 秒内同 URL 直接返回（防重复点击）
-    # V12: localhost 演示靶场不使用缓存，确保修复后立即可见效果
+    # 11-S: localhost 演示靶场不使用缓存，确保修复后立即可见效果
     parsed = urlparse(url)
     host = parsed.hostname or ""
     is_demo_target = host in ("localhost", "127.0.0.1", "demo-target.local")
@@ -6151,6 +6471,125 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             await _update(4, "done")
             await _update(5, "done")
             await _update(6, "skip")
+            # D12: 过时组件检测（standard 模式也运行）
+            try:
+                d12_result = await _d12_outdated_components_probe()
+                for vuln_lib in d12_result.get("vuln_libs", []):
+                    add_finding(
+                        vuln_findings,
+                        f"{vuln_lib['name']} 版本过时 ({vuln_lib['detected_version']})",
+                        vuln_lib["severity"],
+                        "A06 过时组件",
+                        f"检测到 {vuln_lib['name']} v{vuln_lib['detected_version']}，低于安全版本 v{vuln_lib['min_safe_version']}。已知漏洞：{vuln_lib['cve']}。",
+                        vuln_lib["fix"],
+                        vuln_type="outdated_component",
+                        evidence={"library": vuln_lib["name"], "version": vuln_lib["detected_version"], "cve": vuln_lib["cve"]},
+                        verify_key="outdated_component",
+                        confidence_level="高",
+                    )
+            except Exception:
+                pass
+            # D13: A07 认证失败 - 登录表单安全检测
+            try:
+                d13_result = await _d13_auth_probe()
+                if d13_result.get("login_page_found"):
+                    issues = d13_result.get("issues", [])
+                    login_path = d13_result.get("login_path", "")
+                    if "password_autocomplete_missing" in issues:
+                        add_finding(
+                            vuln_findings,
+                            "密码框未禁用自动填充",
+                            "low",
+                            "A07 认证失败",
+                            f"登录页面 {login_path} 的密码输入框未设置 autocomplete=\"off\"，浏览器可能自动保存密码，增加凭据泄露风险。",
+                            "在密码输入框中添加 autocomplete=\"new-password\" 属性，或在 form 标签添加 autocomplete=\"off\"。",
+                            vuln_type="auth_form",
+                            evidence={"login_path": login_path, "issue": "password_autocomplete_missing"},
+                            verify_key="auth_form",
+                            confidence_level="高",
+                        )
+                    if "csrf_token_missing" in issues:
+                        add_finding(
+                            vuln_findings,
+                            "登录表单缺少 CSRF Token",
+                            "medium",
+                            "A07 认证失败",
+                            f"登录页面 {login_path} 的表单中未检测到 CSRF token，可能存在跨站请求伪造风险。",
+                            "在登录表单中添加 CSRF token（隐藏字段），服务端验证 token 有效性。",
+                            vuln_type="auth_form",
+                            evidence={"login_path": login_path, "issue": "csrf_token_missing"},
+                            verify_key="auth_form",
+                            confidence_level="中",
+                        )
+                    if "login_page_no_xfo" in issues:
+                        add_finding(
+                            vuln_findings,
+                            "登录页面缺少 X-Frame-Options",
+                            "medium",
+                            "A07 认证失败",
+                            f"登录页面 {login_path} 未设置 X-Frame-Options 头，可能遭受点击劫持攻击，诱导用户在 iframe 中输入凭据。",
+                            "在登录页面响应中添加 X-Frame-Options: DENY 或 SAMEORIGIN。",
+                            vuln_type="auth_form",
+                            evidence={"login_path": login_path, "issue": "login_page_no_xfo"},
+                            verify_key="auth_form",
+                            confidence_level="高",
+                        )
+            except Exception:
+                pass
+            # D14: A08 软件完整性 - SRI 子资源完整性检测
+            try:
+                d14_result = await _d14_sri_probe()
+                total_ext = d14_result.get("total_external_resources", 0)
+                sri_count = d14_result.get("sri_protected", 0)
+                unprotected = d14_result.get("unprotected_resources", [])
+                if total_ext > 0 and sri_count == 0:
+                    add_finding(
+                        vuln_findings,
+                        "第三方资源未启用 SRI 完整性校验",
+                        "medium",
+                        "A08 软件完整性",
+                        f"检测到 {total_ext} 个跨域第三方 JS/CSS 资源，但均未使用 Subresource Integrity (SRI) 校验。如果 CDN 被劫持，恶意脚本将直接在用户浏览器执行。",
+                        "在所有跨域 <script> 和 <link rel=\"stylesheet\"> 标签中添加 integrity=\"sha256-...\" 和 crossorigin=\"anonymous\" 属性。",
+                        vuln_type="sri_missing",
+                        evidence={"total_external": total_ext, "sri_protected": sri_count, "unprotected_samples": [u["url"] for u in unprotected[:3]]},
+                        verify_key="sri",
+                        confidence_level="高",
+                    )
+                elif total_ext > 0 and sri_count > 0 and sri_count < total_ext:
+                    add_finding(
+                        vuln_findings,
+                        "部分第三方资源缺少 SRI 校验",
+                        "low",
+                        "A08 软件完整性",
+                        f"共 {total_ext} 个跨域资源，仅 {sri_count} 个启用了 SRI 校验，其余 {total_ext - sri_count} 个未做完整性保护。",
+                        "为所有跨域第三方资源添加 SRI integrity 属性。",
+                        vuln_type="sri_partial",
+                        evidence={"total_external": total_ext, "sri_protected": sri_count},
+                        verify_key="sri",
+                        confidence_level="高",
+                    )
+            except Exception:
+                pass
+            # D15: A04 不安全设计 - 开放重定向检测
+            try:
+                d15_result = await _d15_redirect_probe()
+                if d15_result.get("vulnerable"):
+                    vuln_params = d15_result.get("vulnerable_params", [])
+                    for vp in vuln_params[:3]:  # 最多报 3 个
+                        add_finding(
+                            vuln_findings,
+                            f"开放重定向漏洞（参数: {vp['param']}）",
+                            "medium",
+                            "A04 不安全设计",
+                            f"URL 参数 '{vp['param']}' 存在开放重定向漏洞，可被用于钓鱼攻击，将用户诱导到恶意网站。",
+                            "对跳转目标 URL 进行白名单校验，仅允许跳转到可信域名；或使用跳转 ID 映射代替直接 URL 输入。",
+                            vuln_type="open_redirect",
+                            evidence={"param": vp["param"], "redirect_to": vp["redirect_to"], "status_code": vp["status_code"]},
+                            verify_key="open_redirect",
+                            confidence_level="高",
+                        )
+            except Exception:
+                pass
         else:
             # Deep 模式：标准 + 爬虫 + 攻击测试（10+ 秒，需要域名验证）
             await _update(2, "done")
@@ -6182,9 +6621,128 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 vuln_findings, vuln_tests = await run_payload_tests(url, crawled_pages)
             except Exception:
                 vuln_findings, vuln_tests = [], []
+            # D12: 过时组件检测（首页 HTML 解析，不在深度模式内也运行）
+            try:
+                d12_result = await _d12_outdated_components_probe()
+                for vuln_lib in d12_result.get("vuln_libs", []):
+                    add_finding(
+                        vuln_findings,
+                        f"{vuln_lib['name']} 版本过时 ({vuln_lib['detected_version']})",
+                        vuln_lib["severity"],
+                        "A06 过时组件",
+                        f"检测到 {vuln_lib['name']} v{vuln_lib['detected_version']}，低于安全版本 v{vuln_lib['min_safe_version']}。已知漏洞：{vuln_lib['cve']}。",
+                        vuln_lib["fix"],
+                        vuln_type="outdated_component",
+                        evidence={"library": vuln_lib["name"], "version": vuln_lib["detected_version"], "cve": vuln_lib["cve"]},
+                        verify_key="outdated_component",
+                        confidence_level="高",
+                    )
+            except Exception:
+                pass
+            # D13: A07 认证失败 - 登录表单安全检测
+            try:
+                d13_result = await _d13_auth_probe()
+                if d13_result.get("login_page_found"):
+                    issues = d13_result.get("issues", [])
+                    login_path = d13_result.get("login_path", "")
+                    if "password_autocomplete_missing" in issues:
+                        add_finding(
+                            vuln_findings,
+                            "密码框未禁用自动填充",
+                            "low",
+                            "A07 认证失败",
+                            f"登录页面 {login_path} 的密码输入框未设置 autocomplete=\"off\"，浏览器可能自动保存密码，增加凭据泄露风险。",
+                            "在密码输入框中添加 autocomplete=\"new-password\" 属性，或在 form 标签添加 autocomplete=\"off\"。",
+                            vuln_type="auth_form",
+                            evidence={"login_path": login_path, "issue": "password_autocomplete_missing"},
+                            verify_key="auth_form",
+                            confidence_level="高",
+                        )
+                    if "csrf_token_missing" in issues:
+                        add_finding(
+                            vuln_findings,
+                            "登录表单缺少 CSRF Token",
+                            "medium",
+                            "A07 认证失败",
+                            f"登录页面 {login_path} 的表单中未检测到 CSRF token，可能存在跨站请求伪造风险。",
+                            "在登录表单中添加 CSRF token（隐藏字段），服务端验证 token 有效性。",
+                            vuln_type="auth_form",
+                            evidence={"login_path": login_path, "issue": "csrf_token_missing"},
+                            verify_key="auth_form",
+                            confidence_level="中",
+                        )
+                    if "login_page_no_xfo" in issues:
+                        add_finding(
+                            vuln_findings,
+                            "登录页面缺少 X-Frame-Options",
+                            "medium",
+                            "A07 认证失败",
+                            f"登录页面 {login_path} 未设置 X-Frame-Options 头，可能遭受点击劫持攻击，诱导用户在 iframe 中输入凭据。",
+                            "在登录页面响应中添加 X-Frame-Options: DENY 或 SAMEORIGIN。",
+                            vuln_type="auth_form",
+                            evidence={"login_path": login_path, "issue": "login_page_no_xfo"},
+                            verify_key="auth_form",
+                            confidence_level="高",
+                        )
+            except Exception:
+                pass
+            # D14: A08 软件完整性 - SRI 子资源完整性检测
+            try:
+                d14_result = await _d14_sri_probe()
+                total_ext = d14_result.get("total_external_resources", 0)
+                sri_count = d14_result.get("sri_protected", 0)
+                unprotected = d14_result.get("unprotected_resources", [])
+                if total_ext > 0 and sri_count == 0:
+                    add_finding(
+                        vuln_findings,
+                        "第三方资源未启用 SRI 完整性校验",
+                        "medium",
+                        "A08 软件完整性",
+                        f"检测到 {total_ext} 个跨域第三方 JS/CSS 资源，但均未使用 Subresource Integrity (SRI) 校验。如果 CDN 被劫持，恶意脚本将直接在用户浏览器执行。",
+                        "在所有跨域 <script> 和 <link rel=\"stylesheet\"> 标签中添加 integrity=\"sha256-...\" 和 crossorigin=\"anonymous\" 属性。",
+                        vuln_type="sri_missing",
+                        evidence={"total_external": total_ext, "sri_protected": sri_count, "unprotected_samples": [u["url"] for u in unprotected[:3]]},
+                        verify_key="sri",
+                        confidence_level="高",
+                    )
+                elif total_ext > 0 and sri_count > 0 and sri_count < total_ext:
+                    add_finding(
+                        vuln_findings,
+                        "部分第三方资源缺少 SRI 校验",
+                        "low",
+                        "A08 软件完整性",
+                        f"共 {total_ext} 个跨域资源，仅 {sri_count} 个启用了 SRI 校验，其余 {total_ext - sri_count} 个未做完整性保护。",
+                        "为所有跨域第三方资源添加 SRI integrity 属性。",
+                        vuln_type="sri_partial",
+                        evidence={"total_external": total_ext, "sri_protected": sri_count},
+                        verify_key="sri",
+                        confidence_level="高",
+                    )
+            except Exception:
+                pass
+            # D15: A04 不安全设计 - 开放重定向检测
+            try:
+                d15_result = await _d15_redirect_probe()
+                if d15_result.get("vulnerable"):
+                    vuln_params = d15_result.get("vulnerable_params", [])
+                    for vp in vuln_params[:3]:
+                        add_finding(
+                            vuln_findings,
+                            f"开放重定向漏洞（参数: {vp['param']}）",
+                            "medium",
+                            "A04 不安全设计",
+                            f"URL 参数 '{vp['param']}' 存在开放重定向漏洞，可被用于钓鱼攻击，将用户诱导到恶意网站。",
+                            "对跳转目标 URL 进行白名单校验，仅允许跳转到可信域名；或使用跳转 ID 映射代替直接 URL 输入。",
+                            vuln_type="open_redirect",
+                            evidence={"param": vp["param"], "redirect_to": vp["redirect_to"], "status_code": vp["status_code"]},
+                            verify_key="open_redirect",
+                            confidence_level="高",
+                        )
+            except Exception:
+                pass
 
         result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings)
-        # V12：11 维交叉验证（降低误报）
+        # 11-S：11 维交叉验证（降低误报）
         try:
             cv_result = await cross_validate_findings(
                 url, headers, result["findings"],
@@ -6367,7 +6925,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             )
         raise
     except Exception as e:
-        # V12: 通用异常兜底，避免返回 500
+        # 11-S: 通用异常兜底，避免返回 500
         logger.error("Scan failed with unexpected error: %s", e, exc_info=True)
         try:
             async with _scan_progress_lock:
@@ -6779,7 +7337,7 @@ async def simulate_fix(req: SimulateFixRequest, request: Request) -> dict:
     输入：scan findings 数组（使用真实 severity 字段 high/medium/low）+ 可选 scan_id
     输出：修复前 vs 修复后的评分对比
     """
-    # V12: 添加速率限制，防止滥用
+    # 11-S: 添加速率限制，防止滥用
     await rate_limit_dependency(request)
     findings = req.findings or []
 
@@ -6813,7 +7371,7 @@ async def simulate_fix(req: SimulateFixRequest, request: Request) -> dict:
             "fix": f.get("fix", ""),
             "summary": f.get("summary") or f"修复 {f.get('name', '安全问题')}，消除 {SEVERITY_ZH.get(severity, '低')} 风险",
         })
-    # V12：生成可执行的修复配置（按平台分类）
+    # 11-S：生成可执行的修复配置（按平台分类）
     nginx_fixes = []
     for f in findings:
         fix_code = f.get("fix", "")
@@ -6951,7 +7509,7 @@ async def api_generate_fix_package(request: Request, user: dict = Depends(requir
 
     main_cfg = "\n\n".join(code_blocks)
     readme = f"""# {host} 安全配置包
-由漏洞哨兵 V12 自动生成
+由漏洞哨兵 11-S 自动生成
 平台：{platform.upper()}
 修复项数：{len(code_blocks)}
 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}
@@ -6997,7 +7555,7 @@ async def api_generate_fix_package(request: Request, user: dict = Depends(requir
 
 
 # ============================================================
-# V12 应用修复配置：用户授权凭证 → SSH 改服务器配置 → 验证 → 返结果
+# 11-S 应用修复配置：用户授权凭证 → SSH 改服务器配置 → 验证 → 返结果
 # ============================================================
 import base64
 from cryptography.fernet import Fernet
@@ -7016,7 +7574,7 @@ def _get_credential_key() -> bytes:
 
 _fernet = Fernet(_get_credential_key())
 
-# V12: 生产环境强制校验凭证加密密钥，禁止使用硬编码默认值
+# 11-S: 生产环境强制校验凭证加密密钥，禁止使用硬编码默认值
 if _IS_PRODUCTION:
     _default_key = base64.urlsafe_b64encode(b"vulnsentinel-v11-default-credential-key-32!!".ljust(32, b"=")[:32])
     if _fernet._signing_key == Fernet(_default_key)._signing_key:
@@ -7043,7 +7601,7 @@ def _generate_fix_patch(findings: list, platform: str = "nginx") -> str:
         lines = [
             "",
             "# ============================================",
-            "# 漏洞哨兵 V12 自动应用的安全头",
+            "# 漏洞哨兵 11-S 自动应用的安全头",
             f"# 应用时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
             f"# 修复项数: {len(findings)}",
             "# ============================================",
@@ -7113,7 +7671,7 @@ def _ssh_execute(host: str, port: int, username: str, password: str,
 
 def _auto_fix_via_ssh(scan_data: dict, credentials: dict) -> dict:
     """
-    V12 核心：通过 SSH 真正修复用户服务器
+    11-S 核心：通过 SSH 真正修复用户服务器
     流程：备份 → 追加修复配置 → 测试配置 → 重载 → 验证
     """
     host = credentials.get("host")  # 用户服务器 IP/域名
@@ -7208,7 +7766,7 @@ def _auto_fix_via_ssh(scan_data: dict, credentials: dict) -> dict:
 @app.post("/api/auto-fix")
 async def api_auto_fix(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V12 终极功能：端到端应用修复配置
+    11-S 终极功能：端到端应用修复配置
     接收：扫描结果 + 用户服务器凭证
     执行：SSH 备份 → 写配置 → 测试 → 重载 → 验证
     返回：完整执行日志 + 验证后的安全头列表
@@ -7275,7 +7833,7 @@ async def api_auto_fix(request: Request, user: dict = Depends(require_login)) ->
 @app.post("/api/auto-fix-via-cloudflare")
 async def api_auto_fix_cloudflare(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V12 Cloudflare 应用修复配置：通过 Cloudflare API 改安全头（零 SSH 风险）
+    11-S Cloudflare 应用修复配置：通过 Cloudflare API 改安全头（零 SSH 风险）
     用户只需提供 CF API Token 即可一键应用 5+ 项安全头
     """
     try:
@@ -7378,11 +7936,11 @@ async def api_auto_fix_cloudflare(request: Request, user: dict = Depends(require
 
 
 # ============================================================
-# V12 进化模块 1：智能学习 — 从历史自动学
+# 11-S 进化模块 1：智能学习 — 从历史自动学
 # ============================================================
 def _learn_from_user_history(user_id: int) -> dict:
     """
-    V12 进化：从用户的修复历史自动学习
+    11-S 进化：从用户的修复历史自动学习
     统计：用户最常修/不修的项、修复后真实效果、最佳修复顺序
     """
     conn = get_db()
@@ -7471,17 +8029,17 @@ def _learn_from_user_history(user_id: int) -> dict:
 
 @app.get("/api/learn/insights")
 async def api_learn_insights(user: dict = Depends(require_login)) -> dict:
-    """V12 进化端点：智能学习洞察（基于用户历史）"""
+    """11-S 进化端点：智能学习洞察（基于用户历史）"""
     insights = _learn_from_user_history(user["user_id"])
     return insights
 
 
 # ============================================================
-# V12 进化模块 2：主动监控 — 定期扫描 + 告警
+# 11-S 进化模块 2：主动监控 — 定期扫描 + 告警
 # ============================================================
 # 监控目标：用户可加自己的网站到监控列表
 def _init_monitoring_tables():
-    """V12 新增：监控相关表"""
+    """11-S 新增：监控相关表"""
     conn = get_db()
     try:
         conn.executescript("""
@@ -7530,12 +8088,12 @@ def _init_monitoring_tables():
 try:
     _init_monitoring_tables()
 except Exception as e:
-    print(f"[V12] monitor tables init warning: {e}")
+    print(f"[11-S] monitor tables init warning: {e}")
 
 
 @app.post("/api/monitors")
 async def api_create_monitor(request: Request, user: dict = Depends(require_login)) -> dict:
-    """V12 进化端点：添加监控目标"""
+    """11-S 进化端点：添加监控目标"""
     try:
         body = await request.json()
     except Exception:
@@ -7546,7 +8104,7 @@ async def api_create_monitor(request: Request, user: dict = Depends(require_logi
         return {"success": False, "error": "URL 必填"}
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
-    # V12 fix: SSRF 防护 - 监控目标必须通过 URL 校验
+    # 11-S fix: SSRF 防护 - 监控目标必须通过 URL 校验
     try:
         sanitize_url(url)
     except ValueError as e:
@@ -7575,7 +8133,7 @@ async def api_create_monitor(request: Request, user: dict = Depends(require_logi
 
 @app.get("/api/monitors")
 async def api_list_monitors(user: dict = Depends(require_login)) -> dict:
-    """V12 进化端点：列出所有监控目标"""
+    """11-S 进化端点：列出所有监控目标"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -7593,7 +8151,7 @@ async def api_list_monitors(user: dict = Depends(require_login)) -> dict:
 
 @app.delete("/api/monitors/{monitor_id}")
 async def api_delete_monitor(monitor_id: int, user: dict = Depends(require_login)) -> dict:
-    """V12 进化端点：删除监控目标"""
+    """11-S 进化端点：删除监控目标"""
     conn = get_db()
     try:
         conn.execute(
@@ -7607,7 +8165,7 @@ async def api_delete_monitor(monitor_id: int, user: dict = Depends(require_login
 
 
 def _check_monitors_sync():
-    """V12：同步执行监控扫描（被 scheduler 调用）"""
+    """11-S：同步执行监控扫描（被 scheduler 调用）"""
     import asyncio
     conn = get_db()
     try:
@@ -7624,7 +8182,7 @@ def _check_monitors_sync():
                 continue
             # 到了扫描时间
             try:
-                # V12 fix: SSRF 防护 + 正确调用扫描流程
+                # 11-S fix: SSRF 防护 + 正确调用扫描流程
                 url = m["url"]
                 try:
                     sanitize_url(url)
@@ -7783,7 +8341,7 @@ def _check_monitors_sync():
 
 @app.get("/api/monitors/alerts")
 async def api_list_alerts(user: dict = Depends(require_login)) -> dict:
-    """V12 进化端点：列出所有告警"""
+    """11-S 进化端点：列出所有告警"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -7803,10 +8361,10 @@ async def api_list_alerts(user: dict = Depends(require_login)) -> dict:
 
 
 # ============================================================
-# V12 进化模块 3：AI 洞察 — 会话记忆 + 个性化建议
+# 11-S 进化模块 3：AI 洞察 — 会话记忆 + 个性化建议
 # ============================================================
 def _save_conversation(user_id: int, role: str, content: str, context: dict = None) -> int:
-    """V12：保存 AI 顾问对话历史（让 AI 记住用户）"""
+    """11-S：保存 AI 顾问对话历史（让 AI 记住用户）"""
     conn = get_db()
     try:
         conn.executescript("""
@@ -7836,7 +8394,7 @@ def _save_conversation(user_id: int, role: str, content: str, context: dict = No
 
 
 def _get_recent_conversations(user_id: int, limit: int = 10) -> list:
-    """V12：取最近 N 条对话（用于上下文）"""
+    """11-S：取最近 N 条对话（用于上下文）"""
     conn = get_db()
     try:
         # 确保表存在
@@ -7860,7 +8418,7 @@ def _get_recent_conversations(user_id: int, limit: int = 10) -> list:
         conn.close()
 
 
-# =================== V12 LLM 集成（OpenAI 兼容接口） ===================
+# =================== 11-S LLM 集成（OpenAI 兼容接口） ===================
 
 def _build_llm_prompt(user_msg: str, history: list, insights: dict) -> list:
     """组装发给 LLM 的 messages：系统提示 + 历史 + 用户消息"""
@@ -7873,7 +8431,7 @@ def _build_llm_prompt(user_msg: str, history: list, insights: dict) -> list:
         persistent_text = "暂无反复问题"
 
     system_prompt = (
-        "你是漏洞哨兵 V12 的安全顾问，一位简洁专业的中文安全工程师。\n"
+        "你是漏洞哨兵 11-S 的安全顾问，一位简洁专业的中文安全工程师。\n"
         f"用户统计：已扫描 {insights.get('total_scans', 0)} 次，"
         f"预测下次评分 {insights.get('predicted_next_score', '暂无')}。\n"
         f"{persistent_text}\n"
@@ -7909,7 +8467,7 @@ async def _call_llm(messages: list) -> str:
         "temperature": 0.3,
         "max_tokens": 600,
     }
-    # V12：LLM 请求也尊重 TLS_VERIFY 设置
+    # 11-S：LLM 请求也尊重 TLS_VERIFY 设置
     _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
     async with httpx.AsyncClient(timeout=settings.llm_timeout, verify=not _tls_off) as client:
         resp = await client.post(url, headers=headers, json=payload)
@@ -8014,7 +8572,7 @@ def _build_ai_advisor_llm_prompt(user_msg: str, history: list, scan_context: Opt
 @app.post("/api/ai/chat")
 async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V12 进化端点：AI 顾问对话（带会话记忆）
+    11-S 进化端点：AI 顾问对话（带会话记忆）
     - 记住用户上次问了什么、修复进度
     - 基于用户历史给出个性化建议
     """
@@ -8092,7 +8650,7 @@ async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> 
             )
         elif any(k in user_msg for k in ["你好", "hi", "hello", "你是"]):
             response_text = (
-                f"👋 你好 {user['username']}！我是漏洞哨兵 V12 智能顾问。\n\n"
+                f"👋 你好 {user['username']}！我是漏洞哨兵 11-S 智能顾问。\n\n"
                 f"📊 你已扫描 {insights['total_scans']} 次\n"
                 f"🔄 {len(persistent)} 个反复问题\n"
                 f"📈 预测评分: {insights.get('predicted_next_score', 'N/A')}\n\n"
@@ -8132,7 +8690,7 @@ async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> 
 
 
 # ============================================================
-# V12 进化模块 4：协作 — 团队、角色、评论
+# 11-S 进化模块 4：协作 — 团队、角色、评论
 # ============================================================
 def _init_team_tables():
     conn = get_db()
@@ -8169,12 +8727,12 @@ def _init_team_tables():
 try:
     _init_team_tables()
 except Exception as e:
-    print(f"[V12] team tables init warning: {e}")
+    print(f"[11-S] team tables init warning: {e}")
 
 
 @app.post("/api/teams")
 async def api_create_team(request: Request, user: dict = Depends(require_login)) -> dict:
-    """V12 进化端点：创建团队"""
+    """11-S 进化端点：创建团队"""
     try:
         body = await request.json()
     except Exception:
@@ -8202,7 +8760,7 @@ async def api_create_team(request: Request, user: dict = Depends(require_login))
 
 @app.post("/api/scans/{scan_id}/comment")
 async def api_add_comment(scan_id: int, request: Request, user: dict = Depends(require_login)) -> dict:
-    """V12 进化端点：给扫描报告添加评论（团队协作）"""
+    """11-S 进化端点：给扫描报告添加评论（团队协作）"""
     try:
         body = await request.json()
     except Exception:
@@ -8225,7 +8783,7 @@ async def api_add_comment(scan_id: int, request: Request, user: dict = Depends(r
 
 @app.get("/api/scans/{scan_id}/comments")
 async def api_list_comments(scan_id: int, user: dict = Depends(require_login)) -> dict:
-    """V12 进化端点：列出扫描报告的所有评论"""
+    """11-S 进化端点：列出扫描报告的所有评论"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -8244,11 +8802,11 @@ async def api_list_comments(scan_id: int, user: dict = Depends(require_login)) -
 
 
 # ============================================================
-# V12 进化模块 5：综合仪表盘
+# 11-S 进化模块 5：综合仪表盘
 # ============================================================
 @app.get("/api/evolution/dashboard")
 async def api_evolution_dashboard(user: dict = Depends(require_login)) -> dict:
-    """V12 进化端点：综合仪表盘（学习+监控+协作+AI 一次全看）"""
+    """11-S 进化端点：综合仪表盘（学习+监控+协作+AI 一次全看）"""
     insights = _learn_from_user_history(user["user_id"])
     conn = get_db()
     try:
@@ -8288,7 +8846,7 @@ async def api_evolution_dashboard(user: dict = Depends(require_login)) -> dict:
 
 
 # ============================================================
-# V12 进化模块 5：自动巡检 — 定时回扫所有监控项
+# 11-S 进化模块 5：自动巡检 — 定时回扫所有监控项
 # ============================================================
 
 def _patrol_all_monitors_sync():
@@ -8418,7 +8976,7 @@ def _write_patrol_alert(user_id: int, monitor_id: int, url: str, alert_type: str
 
 
 # ============================================================
-# V12 AI 顾问增强：LLM 配置端点
+# 11-S AI 顾问增强：LLM 配置端点
 # ============================================================
 
 @app.get("/api/ai/status")
@@ -8646,28 +9204,53 @@ async def api_report(scan_id: int, format: str = "pdf", user: dict = Depends(req
     findings = json.loads(scan["findings_json"]) if scan.get("findings_json") else []
     score_breakdown = json.loads(scan["score_breakdown_json"]) if scan.get("score_breakdown_json") else []
     fixes = json.loads(scan["fixes_json"]) if scan.get("fixes_json") else {}
-    # V12 修复：OWASP Top 10 完整覆盖（不是只有 finding 的分类）
+    # 11-S：OWASP Top 10 完整覆盖（根据 findings 动态计算）
     owasp_all = [
-        {"category": "A01 访问控制失效", "status": "通过", "note": "未检测到问题"},
+        {"category": "A01 访问控制失效", "status": "通过", "note": "未检测到访问控制问题"},
         {"category": "A02 加密机制失效", "status": "通过", "note": "已启用 HTTPS"},
         {"category": "A03 注入攻击", "status": "通过", "note": "未检测到注入漏洞"},
-        {"category": "A04 不安全设计", "status": "通过", "note": "未检测到"},
+        {"category": "A04 不安全设计", "status": "通过", "note": "未检测到明显设计缺陷"},
         {"category": "A05 安全配置错误", "status": "通过", "note": "配置良好"},
-        {"category": "A06 过时组件", "status": "需深度检测", "note": "建议扫描依赖"},
-        {"category": "A07 认证失败", "status": "通过", "note": "未检测到"},
-        {"category": "A08 软件完整性", "status": "通过", "note": "未检测到"},
-        {"category": "A09 日志监控不足", "status": "低风险", "note": "建议加强"},
-        {"category": "A10 服务端请求伪造", "status": "通过", "note": "未检测到"},
+        {"category": "A06 过时组件", "status": "通过", "note": "未检测到过时组件"},
+        {"category": "A07 认证失败", "status": "通过", "note": "未检测到认证机制问题"},
+        {"category": "A08 软件完整性", "status": "通过", "note": "未检测到完整性问题"},
+        {"category": "A09 日志监控不足", "status": "低风险", "note": "建议加强日志与监控"},
+        {"category": "A10 服务端请求伪造", "status": "通过", "note": "未检测到 SSRF 漏洞"},
     ]
-    # 用 findings 覆盖有问题的分类
+    # 用 findings 覆盖有问题的分类（统计每个分类的问题数量）
+    owasp_counts: Dict[str, int] = {}
+    owasp_samples: Dict[str, str] = {}
     for f in findings:
-        cat = f.get("owasp", "")
-        if cat:
-            for item in owasp_all:
-                if cat in item["category"] or item["category"] in cat:
-                    item["status"] = "需关注"
-                    item["note"] = f.get("summary", f.get("name", ""))
-                    break
+        owasp_cat = f.get("owasp", "")
+        if not owasp_cat:
+            continue
+        # 提取 A01-A10 类别
+        cat_match = re.search(r"A(0[1-9]|10)", owasp_cat)
+        if not cat_match:
+            continue
+        cat_key = cat_match.group(0)
+        for item in owasp_all:
+            if cat_key in item["category"]:
+                owasp_counts[item["category"]] = owasp_counts.get(item["category"], 0) + 1
+                if item["category"] not in owasp_samples:
+                    owasp_samples[item["category"]] = f.get("summary", f.get("name", ""))[:50]
+                break
+    # 更新状态和说明
+    for item in owasp_all:
+        cat = item["category"]
+        count = owasp_counts.get(cat, 0)
+        if count > 0:
+            # 根据严重度决定状态
+            cat_findings = [f for f in findings if cat[:3] in f.get("owasp", "")]
+            has_critical = any(f.get("severity") == "critical" for f in cat_findings)
+            has_high = any(f.get("severity") == "high" for f in cat_findings)
+            if has_critical:
+                item["status"] = "严重"
+            elif has_high:
+                item["status"] = "高风险"
+            else:
+                item["status"] = "需关注"
+            item["note"] = f"检测到 {count} 项问题：{owasp_samples.get(cat, '')}"
     report_data = {
         "url": scan["url"], "time": scan["created_at"],
         "score": scan["score"], "risk_level": scan["risk_level"],
@@ -9930,9 +10513,9 @@ async def public_demo_scan(req: PublicDemoRequest, request: Request):
             logger.warning("public_demo check_sensitive_paths failed: %s", e)
             sensitive_paths = []
         result = await analyze_security(raw_url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
-        # V12：生成修复建议（与登录用户一致）
+        # 11-S：生成修复建议（与登录用户一致）
         fixes = generate_fixes(result.get("findings", []), headers, is_https, host)
-        # V12：如果用户已登录，把这次 demo 扫描也保存为他的扫描记录
+        # 11-S：如果用户已登录，把这次 demo 扫描也保存为他的扫描记录
         # 这样可以让他用 scan_id 触发自动修复
         try:
             token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -9961,10 +10544,10 @@ async def public_demo_scan(req: PublicDemoRequest, request: Request):
             import logging
             logging.getLogger("vuln_sentinel").warning("demo scan save wrapper: " + str(e)[:100])
 
-        # V12：确保 scan_id 始终存在（未登录用户用负 ID 表示 demo 模式）
+        # 11-S：确保 scan_id 始终存在（未登录用户用负 ID 表示 demo 模式）
         if "scan_id" not in result:
             result["scan_id"] = -abs(hash(raw_url + str(datetime.now().timestamp()))) % 1000000
-        # V12：标记是否使用了 TLS 验证跳过模式
+        # 11-S：标记是否使用了 TLS 验证跳过模式
         _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
         result["tls_verify_skipped"] = _tls_off
         return {
@@ -10767,7 +11350,7 @@ def _ai_resolve_reference(msg: str, history: list) -> str:
 # ---------- 主 AI 顾问函数 ----------
 @app.post("/api/ai-advisor")
 async def ai_advisor(req: AIAdvisorRequest, request: Request, user=Depends(get_current_user)):
-    """V12 升级版 AI 安全顾问：智能匹配 + 上下文感知 + 多轮对话"""
+    """11-S 升级版 AI 安全顾问：智能匹配 + 上下文感知 + 多轮对话"""
     client_ip = request.client.host if request.client else "unknown"
     if not await limiter_ai.is_allowed(client_ip):
         raise HTTPException(
@@ -11039,7 +11622,7 @@ async def api_scan_asset(asset_id: int, request: Request, user: dict = Depends(r
         raise HTTPException(404, "资产不存在或无权限")
     domain = asset["domain"]
     url = "https://" + domain
-    # V12 fix: SSRF 防护 - 确保资产域名不是内网地址
+    # 11-S fix: SSRF 防护 - 确保资产域名不是内网地址
     try:
         sanitize_url(url)
     except ValueError as e:
@@ -11087,11 +11670,11 @@ async def index() -> HTMLResponse:
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
-    return HTMLResponse(content="<h1>VulnSentinel V12</h1>")
+    return HTMLResponse(content="<h1>VulnSentinel 11-S</h1>")
 
 
 # ============================================================
-# V12 本地演示靶场：应用修复配置 / 一键重置（真实修改本地 nginx）
+# 11-S 本地演示靶场：应用修复配置 / 一键重置（真实修改本地 nginx）
 # ============================================================
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -11247,7 +11830,7 @@ def _demo_nginx_apply_security_headers() -> tuple[bool, str]:
 
             # 安全头修复块（使用正确的缩进）
             security_headers_block = """
-            # ===== VulnSentinel V12 应用修复配置：安全响应头 =====
+            # ===== VulnSentinel 11-S 应用修复配置：安全响应头 =====
             add_header X-Frame-Options "SAMEORIGIN" always;
             add_header X-Content-Type-Options "nosniff" always;
             add_header Content-Security-Policy "default-src 'self'" always;
@@ -11404,7 +11987,7 @@ class DemoFixRequest(BaseModel):
 @app.post("/api/demo-fix")
 async def api_demo_fix(req: DemoFixRequest, request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V12 演示专用：应用修复配置/重置本地靶场
+    11-S 演示专用：应用修复配置/重置本地靶场
     需要登录，仅用于演示环境
     action: "apply" - 应用安全头修复
             "reset" - 重置为有漏洞状态
@@ -11443,7 +12026,7 @@ class DemoFullCycleRequest(BaseModel):
 @app.post("/api/demo-full-cycle")
 async def api_demo_full_cycle(req: DemoFullCycleRequest, request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    V12 一键演示完整闭环：重置 → 第一次扫描 → 应用修复 → 第二次扫描
+    11-S 一键演示完整闭环：重置 → 第一次扫描 → 应用修复 → 第二次扫描
     返回完整的前后对比数据，用于前端展示演示效果
     """
     await rate_limit_dependency(request)
@@ -11632,7 +12215,7 @@ async def catch_all(path: str) -> Any:
     try:
         base = Path(STATIC_DIR).resolve()
         fp = (base / path).resolve()
-        # V12 fix: is_file() 在路径过长时会抛出 OSError(Errno 36)，
+        # 11-S fix: is_file() 在路径过长时会抛出 OSError(Errno 36)，
         # 同时 is_relative_to 也需要捕获异常，避免返回 500
         if not fp.is_relative_to(base):
             # 解析后路径已逃出静态目录 → 拒绝

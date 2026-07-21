@@ -1,4 +1,4 @@
-# 漏洞哨兵 V12 - Python 依赖
+# 漏洞哨兵 11-S - Python 依赖
 # 安装：pip install -r requirements.txt
 
 # Web 框架

@@ -1,4 +1,4 @@
-# 漏洞哨兵 V12
+# 漏洞哨兵 11-S
 
 [![Tests](https://img.shields.io/badge/tests-186%20passed-brightgreen)](tests/)
 [![Coverage](docs/coverage-badge.svg)](docs/coverage_html/)
@@ -7,7 +7,7 @@
 
 > AI 驱动的 Web 安全配置扫描与修复建议平台 · 让中小团队不用安全专家也能发现并修复基础 Web 安全问题
 
-**在线演示**: https://vuln-sentinel-v12.onrender.com
+**在线演示**: https://vuln-sentinel-v11-s.onrender.com
 
 ---
 
@@ -119,8 +119,8 @@ python3 main.py
 ## Docker 部署
 
 ```bash
-docker build -t vulnsentinel:v12 .
-docker run -p 8000:8000 vulnsentinel:v12
+docker build -t vulnsentinel:v11-s .
+docker run -p 8000:8000 vulnsentinel:v11-s
 ```
 
 ---
@@ -226,7 +226,7 @@ MIT License
 
 ## 已验证 Demo 路径
 
-以下路径已在 `main.py` 测试套件和 `https://vuln-sentinel-v12.onrender.com` 在线环境跑通：
+以下路径已在 `main.py` 测试套件和 `https://vuln-sentinel-v11-s.onrender.com` 在线环境跑通：
 
 1. 登录 `demo / demo123`
 2. 输入 `https://example.com` 完成授权并扫描
@@ -261,10 +261,10 @@ MIT License
 
 ## 版本
 
-V12 · 2026-06-28
+11-S · 2026-06-28
 
-**V12 主要更新**：
-- 版本升级至 V12，全局版本号统一
+**11-S 主要更新**：
+- 版本升级至 11-S，全局版本号统一
 - 演示靶场环境自愈：自动生成 HTTPS 证书、配置路径自动修正
 - nginx 重载兼容增强（PID 文件失效、进程残留等测试环境）
 - 文案可信度优化：弱化绝对化表达（误报率、自动登录）
@@ -275,4 +275,4 @@ V12 · 2026-06-28
 ## 联系方式
 
 - GitHub: https://github.com/tomjoy248-crypto/vuln-sentinel
-- 在线演示: https://vuln-sentinel-v12.onrender.com
+- 在线演示: https://vuln-sentinel-v11-s.onrender.com

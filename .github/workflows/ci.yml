@@ -70,7 +70,7 @@ jobs:
             const score = result.score || 'N/A';
             const scanId = result.scan_id || 'N/A';
             const findings = (result.findings || []).length;
-            const body = `## 🛡️ 漏洞哨兵 V12 CI 扫描结果
+            const body = `## 🛡️ 漏洞哨兵 11-S CI 扫描结果
 
 | 指标 | 值 |
 |---|---|
