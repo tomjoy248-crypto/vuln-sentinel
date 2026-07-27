@@ -7,7 +7,7 @@
 
 > AI 驱动的 Web 安全配置扫描与修复建议平台 · 让中小团队不用安全专家也能发现并修复基础 Web 安全问题
 
-**在线演示**: https://vuln-sentinel-v11-s.onrender.com
+**在线环境**: https://vuln-sentinel-v11-s.onrender.com
 
 ---
 
@@ -25,7 +25,7 @@
 | **批量扫描** | 一次最多 5 个 URL，asyncio 并发 |
 | **账户隔离** | JWT + bcrypt + SQLite，每个用户独立历史 |
 | **可分享** | 每次扫描生成唯一 share_id，支持只读分享 |
-| **离线可用** | 纯前端单文件 HTML，无后端也能演示 |
+| **离线可用** | 纯前端单文件 HTML，无后端也能运行 |
 
 ---
 
@@ -100,19 +100,11 @@ python3 main.py
 
 浏览器打开 http://localhost:8000
 
-### 方式 C：离线演示（无需 Python）
+### 方式 C：离线运行（无需 Python）
 
-双击 `static/index.html`，输入账号 `demo / demo123`
+双击 `static/index.html`，注册后即可使用
 
-> 离线模式使用 localStorage 模拟数据库，登录后即可使用所有功能（不包含真实网络扫描）
-
----
-
-## 测试账号
-
-| 用户名 | 密码 |
-|---|---|
-| demo | demo123 |
+> 离线模式使用 localStorage 模拟数据库，注册并登录后即可使用所有功能（不包含真实网络扫描）
 
 ---
 
@@ -224,11 +216,11 @@ MIT License
 
 ---
 
-## 已验证 Demo 路径
+## 已验证使用路径
 
 以下路径已在 `main.py` 测试套件和 `https://vuln-sentinel-v11-s.onrender.com` 在线环境跑通：
 
-1. 登录 `demo / demo123`
+1. 注册或登录账号
 2. 输入 `https://example.com` 完成授权并扫描
 3. 查看报告：评分、风险等级、漏洞证据、修复建议
 4. 生成修复配置（Nginx / Apache / Node.js / Python / Java / Cloudflare）
@@ -236,9 +228,7 @@ MIT License
 6. 验证修复效果：重新扫描并输出差异
 7. 导出 PDF 报告（7 页）
 
-本地 demo-target 靶场实测：修复前 **30 分/11 漏洞/高风险**，应用修复配置后 **80 分/1 漏洞/低风险**。
-
-## 功能边界（已实现 vs 演示模式）
+## 功能边界（已实现 vs 规则引擎）
 
 | 功能 | 状态 | 说明 |
 |---|---|---|
@@ -255,7 +245,7 @@ MIT License
 | SSH 应用修复配置 | 🟡 可选 | 需安装 paramiko，配置服务器凭证 |
 | 离线模式 | ✅ 已实现 | 纯前端可用，部分功能降级 |
 
-> **演示说明**：在线演示（render.com）使用规则引擎版 AI 顾问。配置 `OPENAI_API_KEY` 环境变量后可接入 GPT-4 等真实大模型。
+> **使用说明**：在线环境（render.com）使用规则引擎版 AI 顾问。配置 `OPENAI_API_KEY` 环境变量后可接入 GPT-4 等真实大模型。
 
 ---
 
@@ -274,4 +264,4 @@ MIT License
 ## 联系方式
 
 - GitHub: https://github.com/tomjoy248-crypto/vuln-sentinel
-- 在线演示: https://vuln-sentinel-v11-s.onrender.com
+- 在线环境: https://vuln-sentinel-v11-s.onrender.com

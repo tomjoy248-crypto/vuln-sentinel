@@ -84,7 +84,7 @@
 - 修复闭环真打通(`/api/verify-fix` 输出 fixed/new/diff)
 - 批量扫描并发(`asyncio.gather`)
 - 11 维交叉验证降低误报
-- 双击 HTML 即可演示(无需启动后端)
+- 双击 HTML 即可离线运行(无需启动后端)
 
 ## [V11.3] 及更早
 

@@ -214,46 +214,19 @@ class TestLocalhostScanning:
 
 
 class TestDemoTargetNginxConfig:
-    """测试演示靶场 nginx 配置操作"""
+    """演示靶场 nginx 配置测试（产品化后靶场已移除，整组跳过）"""
 
     def test_nginx_config_exists(self):
-        """测试演示靶场配置文件存在"""
-        conf_path = os.path.join(os.path.dirname(__file__), "..", "demo-target", "conf", "nginx.conf")
-        assert os.path.exists(conf_path), "演示靶场 nginx 配置文件不存在"
+        """产品化改造后本地靶场已移除，跳过"""
+        pytest.skip("产品化改造后本地靶场已移除")
 
     def test_nginx_config_has_vulnerabilities(self):
-        """测试初始配置包含预期的漏洞"""
-        # 读取备份文件（原始漏洞配置）
-        backup_path = os.path.join(os.path.dirname(__file__), "..", "demo-target", "conf", "nginx.conf.vulnerable")
-        if not os.path.exists(backup_path):
-            pytest.skip("备份文件不存在，跳过此测试")
-
-        with open(backup_path, "r") as f:
-            content = f.read()
-
-        # 检查漏洞配置
-        assert "server_tokens on" in content, "缺少 server_tokens on（版本泄露）"
-        assert "autoindex on" in content, "缺少 autoindex on（目录遍历）"
-        assert 'Access-Control-Allow-Origin "*"' in content, "缺少 CORS 通配符配置"
-        # 11-S: 检查缺少安全头（通过注释标记验证）
-        assert "缺少所有安全响应头" in content, "配置应标记缺少安全响应头"
+        """产品化改造后本地靶场已移除，跳过"""
+        pytest.skip("产品化改造后本地靶场已移除")
 
     def test_security_headers_not_in_original_config(self):
-        """测试原始配置不包含实际的安全头配置"""
-        backup_path = os.path.join(os.path.dirname(__file__), "..", "demo-target", "conf", "nginx.conf.vulnerable")
-        if not os.path.exists(backup_path):
-            pytest.skip("备份文件不存在，跳过此测试")
-
-        with open(backup_path, "r") as f:
-            lines = f.readlines()
-
-        # 原始配置不应该有实际的 add_header 安全头配置（排除注释行）
-        code_lines = [l for l in lines if not l.strip().startswith('#')]
-        content = '\n'.join(code_lines)
-
-        assert "X-Frame-Options" not in content, "原始配置不应包含 X-Frame-Options 配置"
-        assert "X-Content-Type-Options" not in content, "原始配置不应包含 X-Content-Type-Options 配置"
-        assert "Content-Security-Policy" not in content, "原始配置不应包含 CSP 配置"
+        """产品化改造后本地靶场已移除，跳过"""
+        pytest.skip("产品化改造后本地靶场已移除")
 
 
 if __name__ == "__main__":

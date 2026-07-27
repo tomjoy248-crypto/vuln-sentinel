@@ -1,7 +1,7 @@
 """漏洞哨兵 11-S - FastAPI 安全扫描后端
 
 11-S 核心改进：
-1. 本地演示靶场：一键扫描→修复→复测完整闭环（nginx 真实配置修改）
+1. 本地靶场：一键扫描→修复→复测完整闭环（nginx 真实配置修改）
 2. 置信度系统：每个 finding 标注高/中/低置信度，区分确定项与推测项
 3. 评分逻辑纠正：WAF 只加分不抵消真实缺失，Trusted Domains 白名单移除
 4. TLS 验证默认开启：生产环境默认验证证书，诊断模式可临时关闭
@@ -99,8 +99,8 @@ class Settings(BaseSettings):
     # Cache
     ssl_cache_ttl_seconds: int = 300
 
-    # Public demo whitelist
-    public_demo_enabled: bool = True
+    # 免费试用白名单开关
+    free_trial_enabled: bool = True
 
     # LLM (AI 顾问可调用真实 LLM，未配置时降级到关键字匹配)
     llm_enabled: bool = False
@@ -221,16 +221,15 @@ BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"}
 
 # 内部白名单：环境变量配置后允许扫描的内网靶场
 # 格式：逗号分隔，如 "192.168.1.100,10.0.0.5,pikachu.local"
-# 11-S: 可通过 ALLOW_LOCALHOST=1 快速启用本地演示靶场
+# 可通过 ALLOW_LOCALHOST=1 快速启用本地/内网靶场扫描
 ALLOWED_INTERNAL_HOSTS = {
     h.strip().lower() for h in os.environ.get("ALLOWED_INTERNAL_HOSTS", "").split(",")
     if h.strip()
 }
-# 本地演示靶场快捷开关
+# 本地/内网靶场快捷开关
 if os.environ.get("ALLOW_LOCALHOST", "").lower() in ("1", "true", "yes"):
     ALLOWED_INTERNAL_HOSTS.add("localhost")
     ALLOWED_INTERNAL_HOSTS.add("127.0.0.1")
-    ALLOWED_INTERNAL_HOSTS.add("demo-target.local")
 db_base = settings.db_dir if os.path.isdir(settings.db_dir) else os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(db_base, settings.db_name)
 
@@ -539,7 +538,7 @@ class ApplyFixRequest(BaseModel):
         return sanitize_url(v)
 
 
-class PublicDemoRequest(BaseModel):
+class FreeTrialRequest(BaseModel):
     url: str
 
     @field_validator("url")
@@ -818,7 +817,7 @@ limiter_register = RateLimiter(5, 60, disabled=_TEST_MODE)
 limiter_login = RateLimiter(10, 60, disabled=_TEST_MODE)
 limiter_ai = RateLimiter(20, 60, disabled=_TEST_MODE)
 limiter_batch = RateLimiter(3, 60, disabled=_TEST_MODE)
-limiter_demo = RateLimiter(10, 60, disabled=_TEST_MODE)
+limiter_free_trial = RateLimiter(10, 60, disabled=_TEST_MODE)
 
 
 async def rate_limit_dependency(request: Request) -> None:
@@ -1047,32 +1046,15 @@ def init_db() -> None:
     except Exception as e:
         logger.warning("Failed to add summary_json column to scans: %s", e)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_scans_share_id ON scans(share_id)")
-    try:
-        existing = conn.execute("SELECT id FROM users WHERE username=?", ("demo",)).fetchone()
-        if not existing:
-            conn.execute(
-                "INSERT INTO users (username, password, email, created_at) VALUES (?,?,?,?)",
-                ("demo", hash_password("demo123"), "demo@vulnsentinel.com", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-            )
-            logger.info("Pre-created test account ready")
-    except Exception as e:
-        logger.warning("Failed to pre-create demo account: %s", e)
     # 迁移旧 SHA256 密码到 bcrypt（自动检测非 bcrypt 哈希并重新哈希）
     try:
         old_users = conn.execute("SELECT id, username, password FROM users").fetchall()
         for uid, uname, pwd_hash in old_users:
             if not pwd_hash.startswith("$2b$") and not pwd_hash.startswith("$2a$"):
-                # 旧 SHA256 哈希，无法直接迁移密码值
-                # 对 demo 账号重置为已知密码，其他账号标记需要重置
-                if uname == "demo":
-                    new_hash = hash_password("demo123")
-                    conn.execute("UPDATE users SET password=? WHERE id=?", (new_hash, uid))
-                    logger.info("Migrated demo account to bcrypt")
-                else:
-                    # 其他旧账号：设置一个随机 bcrypt 哈希（用户需要重置密码）
-                    new_hash = hash_password("reset_" + secrets.token_hex(8))
-                    conn.execute("UPDATE users SET password=? WHERE id=?", (new_hash, uid))
-                    logger.info("Migrated user %s to bcrypt (password reset required)", uname)
+                # 旧 SHA256 哈希，无法直接迁移密码值，统一重置为随机哈希（用户需要走重置流程）
+                new_hash = hash_password("reset_" + secrets.token_hex(8))
+                conn.execute("UPDATE users SET password=? WHERE id=?", (new_hash, uid))
+                logger.info("Migrated user %s to bcrypt (password reset required)", uname)
     except Exception as e:
         logger.warning("Password migration failed: %s", e)
     conn.commit()
@@ -6291,17 +6273,14 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         )
 
     # 扫描结果缓存：30 秒内同 URL 直接返回（防重复点击）
-    # 11-S: localhost 演示靶场不使用缓存，确保修复后立即可见效果
     parsed = urlparse(url)
     host = parsed.hostname or ""
-    is_demo_target = host in ("localhost", "127.0.0.1", "demo-target.local")
-    
+
     cache_key = f"{user['user_id']}:{url}"
-    if not is_demo_target:
-        async with _scan_cache_lock:
-            cached = _SCAN_RESULT_CACHE.get(cache_key)
-        if cached and (time.time() - cached[1]) < _SCAN_CACHE_TTL:
-            return {**cached[0], "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    async with _scan_cache_lock:
+        cached = _SCAN_RESULT_CACHE.get(cache_key)
+    if cached and (time.time() - cached[1]) < _SCAN_CACHE_TTL:
+        return {**cached[0], "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
     user_id = user["user_id"]
 
@@ -9418,9 +9397,9 @@ async def api_health() -> dict:
     }
 
 
-# ===== 公共演示端点（无需登录） =====
+# ===== 免费试用端点（无需登录） =====
 
-_PUBLIC_DEMO_HOSTS = {
+_FREE_TRIAL_HOSTS = {
     "example.com", "example.org", "www.example.com",
     "iana.org", "www.iana.org", "httpbin.org", "testphp.vulnweb.com",
 }
@@ -9432,8 +9411,8 @@ _SCAN_CACHE_MAX_SIZE = 200  # 最大缓存条数硬上限
 _scan_cache_lock = asyncio.Lock()  # 缓存并发读写锁，防止竞态条件
 
 
-# 公开演示兜底缓存：网络异常时返回预置数据，确保演示 100% 可用
-_PUBLIC_DEMO_CACHE = {
+# 免费试用兜底缓存：网络异常时返回预置数据，确保试用体验稳定可用
+_FREE_TRIAL_CACHE = {
     "example.com": {
     "success": True,
     "scan_type": "real",
@@ -10467,8 +10446,8 @@ _PUBLIC_DEMO_CACHE = {
 }
 
 
-def _is_public_demo_host(host: str) -> bool:
-    return (host or "").lower() in _PUBLIC_DEMO_HOSTS
+def _is_free_trial_host(host: str) -> bool:
+    return (host or "").lower() in _FREE_TRIAL_HOSTS
 
 
 @app.get("/api/scan-progress/{scan_token}")
@@ -10502,46 +10481,47 @@ async def api_scan_progress(scan_token: str, user: dict = Depends(require_login)
 
 
 @app.post("/api/public-demo-scan", response_model=None)
-async def public_demo_scan(req: PublicDemoRequest, request: Request):
+async def free_trial_scan(req: FreeTrialRequest, request: Request):
+    """免费试用扫描：允许未登录用户扫描白名单站点，体验产品能力。"""
     client_ip = request.client.host if request.client else "unknown"
-    if not await limiter_demo.is_allowed(client_ip):
+    if not await limiter_free_trial.is_allowed(client_ip):
         raise HTTPException(
             status_code=429,
-            detail="公开演示请求过于频繁，请稍后再试",
+            detail="免费试用请求过于频繁，请稍后再试",
             headers={"Retry-After": "60"},
         )
-    if not settings.public_demo_enabled:
-        raise HTTPException(403, "公开演示已关闭")
+    if not settings.free_trial_enabled:
+        raise HTTPException(403, "免费试用已关闭")
     raw_url = req.url.strip()
     if not raw_url.startswith(("http://", "https://")):
         raw_url = "https://" + raw_url
     parsed = urlparse(raw_url)
     host = (parsed.hostname or "").lower()
-    if not _is_public_demo_host(host):
-        raise HTTPException(403, "公开演示仅限白名单站点（example.com / httpbin.org / iana.org / testphp.vulnweb.com）。")
+    if not _is_free_trial_host(host):
+        raise HTTPException(403, "免费试用仅限白名单站点（example.com / httpbin.org / iana.org / testphp.vulnweb.com）。")
     try:
         headers, is_https, final_url, error = await fetch_headers(raw_url)
         if error:
             # 实时扫描失败，尝试返回缓存数据
-            cached = _PUBLIC_DEMO_CACHE.get(host)
+            cached = _FREE_TRIAL_CACHE.get(host)
             if cached:
-                return {**cached, "url": raw_url, "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "cache_reason": "实时扫描失败", "note": "当前是缓存演示数据，不代表实时状态。"}
+                return {**cached, "url": raw_url, "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "cache_reason": "实时扫描失败", "note": "当前是缓存数据，不代表实时状态。"}
             return {"success": False, "url": raw_url, "error": error}
         try:
             ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
         except Exception as e:
-            logger.warning("public_demo get_ssl_info failed: %s", e)
+            logger.warning("free_trial get_ssl_info failed: %s", e)
             ssl_info = {"has_cert": False}
         waf_list = detect_waf(headers)
         try:
             sensitive_paths = await check_sensitive_paths(host, is_https)
         except Exception as e:
-            logger.warning("public_demo check_sensitive_paths failed: %s", e)
+            logger.warning("free_trial check_sensitive_paths failed: %s", e)
             sensitive_paths = []
         result = await analyze_security(raw_url, headers, is_https, ssl_info, waf_list, sensitive_paths, [])
-        # 11-S：生成修复建议（与登录用户一致）
+        # 生成修复建议（与登录用户一致）
         fixes = generate_fixes(result.get("findings", []), headers, is_https, host)
-        # 11-S：如果用户已登录，把这次 demo 扫描也保存为他的扫描记录
+        # 如果用户已登录，把这次试用扫描也保存为他的扫描记录
         # 这样可以让他用 scan_id 触发自动修复
         try:
             token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -10565,15 +10545,15 @@ async def public_demo_scan(req: PublicDemoRequest, request: Request):
                                 result["scan_id"] = saved_id
                         except Exception as e:
                             import logging
-                            logging.getLogger("vuln_sentinel").warning("demo scan save failed: " + str(e)[:100])
+                            logging.getLogger("vuln_sentinel").warning("free trial scan save failed: " + str(e)[:100])
         except Exception as e:
             import logging
-            logging.getLogger("vuln_sentinel").warning("demo scan save wrapper: " + str(e)[:100])
+            logging.getLogger("vuln_sentinel").warning("free trial scan save wrapper: " + str(e)[:100])
 
-        # 11-S：确保 scan_id 始终存在（未登录用户用负 ID 表示 demo 模式）
+        # 确保 scan_id 始终存在（未登录用户用负 ID 表示试用模式）
         if "scan_id" not in result:
             result["scan_id"] = -abs(hash(raw_url + str(datetime.now().timestamp()))) % 1000000
-        # 11-S：标记是否使用了 TLS 验证跳过模式
+        # 标记是否使用了 TLS 验证跳过模式
         _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in ("0", "false", "no", "off")
         result["tls_verify_skipped"] = _tls_off
         return {
@@ -10584,10 +10564,10 @@ async def public_demo_scan(req: PublicDemoRequest, request: Request):
             **result,
         }
     except Exception as e:
-        logger.warning("public_demo_scan failed for %s: %s", raw_url, e)
-        cached = _PUBLIC_DEMO_CACHE.get(host)
+        logger.warning("free_trial_scan failed for %s: %s", raw_url, e)
+        cached = _FREE_TRIAL_CACHE.get(host)
         if cached:
-            return {**cached, "url": raw_url, "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "cache_reason": "实时扫描失败", "note": "当前是缓存演示数据，不代表实时状态。"}
+            return {**cached, "url": raw_url, "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "cache_reason": "实时扫描失败", "note": "当前是缓存数据，不代表实时状态。"}
         return {"success": False, "url": raw_url, "error": str(e)[:300]}
 
 
@@ -11700,7 +11680,7 @@ async def index() -> HTMLResponse:
 
 
 # ============================================================
-# 11-S 本地演示靶场：应用修复配置 / 一键重置（真实修改本地 nginx）
+# 本地靶场：应用修复配置 / 一键重置（真实修改本地 nginx）
 # ============================================================
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -11709,71 +11689,12 @@ DEMO_NGINX_BACKUP = os.path.join(_BASE_DIR, "demo-target/conf/nginx.conf.vulnera
 DEMO_NGINX_CMD = "nginx -c " + DEMO_NGINX_CONF
 DEMO_CERT_CRT = os.path.join(_BASE_DIR, "demo-target/conf/server.crt")
 DEMO_CERT_KEY = os.path.join(_BASE_DIR, "demo-target/conf/server.key")
-# 演示靶场 nginx 配置文件读写锁，防止并发写入损坏
+# 本地靶场 nginx 配置文件读写锁，防止并发写入损坏
 _demo_nginx_lock = threading.RLock()
 
 
-def _ensure_demo_target_ready() -> tuple[bool, str]:
-    """确保演示靶场配置文件路径、证书文件与环境一致（项目被移动后仍能自检修复）"""
-    try:
-        expected_base = _BASE_DIR
-
-        # 1. 确保日志目录存在
-        logs_dir = os.path.join(expected_base, "demo-target/logs")
-        os.makedirs(logs_dir, exist_ok=True)
-
-        # 2. 确保自签名证书存在（8443 HTTPS 演示需要）
-        if not os.path.exists(DEMO_CERT_CRT) or not os.path.exists(DEMO_CERT_KEY):
-            if not shutil.which("openssl"):
-                return False, "缺少自签名证书且未安装 openssl，无法启动 HTTPS 演示"
-            subprocess.run(
-                [
-                    "openssl", "req", "-x509", "-nodes", "-days", "365",
-                    "-newkey", "rsa:2048",
-                    "-keyout", DEMO_CERT_KEY,
-                    "-out", DEMO_CERT_CRT,
-                    "-subj", "/C=CN/ST=Demo/L=Demo/O=VulnSentinel/CN=localhost",
-                    "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1",
-                ],
-                capture_output=True, text=True, timeout=30, check=True,
-            )
-
-        # 3. 修正配置文件中的绝对路径（兼容项目被解压到不同目录）
-        def _rewrite_paths(path: str) -> bool:
-            if not os.path.exists(path):
-                return False
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read()
-            original = content
-            # 替换任何 /.../v11.X-vuln-sentinel/demo-target/... 路径为当前实际路径
-            content = re.sub(
-                r"/[^\s\n\"']*/v11\.\d+(-vuln-sentinel)?/demo-target/([a-zA-Z0-9_./-]+)",
-                lambda m: os.path.join(expected_base, "demo-target", m.group(2)).replace("\\", "/"),
-                content,
-            )
-            # 额外兜底：替换直接写死的旧 workspace 路径前缀
-            content = re.sub(
-                r"/workspace/v11\.\d+(-vuln-sentinel)?/demo-target/([a-zA-Z0-9_./-]+)",
-                lambda m: os.path.join(expected_base, "demo-target", m.group(2)).replace("\\", "/"),
-                content,
-            )
-            if content != original:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(content)
-                return True
-            return False
-
-        _rewrite_paths(DEMO_NGINX_CONF)
-        _rewrite_paths(DEMO_NGINX_BACKUP)
-        return True, "演示靶场环境已就绪"
-    except subprocess.CalledProcessError as e:
-        return False, f"环境准备失败: {e.stderr[:500]}"
-    except Exception as e:
-        return False, f"环境准备失败: {str(e)}"
-
-
 def _demo_nginx_reload() -> tuple[bool, str]:
-    """重新加载本地演示靶场 nginx 配置（兼容 PID 文件失效、旧进程残留等测试环境）"""
+    """重新加载本地靶场 nginx 配置（兼容 PID 文件失效、旧进程残留等测试环境）"""
     with _demo_nginx_lock:
         try:
             # 测试配置
@@ -11830,17 +11751,12 @@ def _demo_nginx_reload() -> tuple[bool, str]:
 
 
 def _demo_nginx_apply_security_headers() -> tuple[bool, str]:
-    """为本地演示靶场应用安全头修复（真实修改 nginx.conf）"""
+    """为本地靶场应用安全头修复（真实修改 nginx.conf）"""
     import re
     with _demo_nginx_lock:
         try:
-            # 自检：证书、路径一致性
-            ok, msg = _ensure_demo_target_ready()
-            if not ok:
-                return False, msg
-
             if not os.path.exists(DEMO_NGINX_CONF):
-                return False, "演示靶场配置文件不存在"
+                return False, "靶场配置文件不存在"
 
             # 备份原始漏洞配置（只备份一次）
             if not os.path.exists(DEMO_NGINX_BACKUP):
@@ -11968,14 +11884,9 @@ def _demo_nginx_apply_security_headers() -> tuple[bool, str]:
 
 
 def _demo_nginx_reset() -> tuple[bool, str]:
-    """重置本地演示靶场为有漏洞状态"""
+    """重置本地靶场为有漏洞状态"""
     with _demo_nginx_lock:
         try:
-            # 自检：证书、路径一致性
-            ok, msg = _ensure_demo_target_ready()
-            if not ok:
-                return False, msg
-
             if not os.path.exists(DEMO_NGINX_BACKUP):
                 return False, "没有备份文件，无法重置（请先应用一次修复）"
 
@@ -11986,7 +11897,7 @@ def _demo_nginx_reset() -> tuple[bool, str]:
             if not ok:
                 return False, f"配置恢复成功但重载失败: {msg}"
 
-            return True, "演示靶场已重置为初始漏洞状态"
+            return True, "靶场已重置为初始漏洞状态"
         except Exception as e:
             return False, f"重置失败: {str(e)}"
 
@@ -12013,8 +11924,8 @@ class DemoFixRequest(BaseModel):
 @app.post("/api/demo-fix")
 async def api_demo_fix(req: DemoFixRequest, request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    11-S 演示专用：应用修复配置/重置本地靶场
-    需要登录，仅用于演示环境
+    应用修复配置/重置本地靶场
+    需要登录
     action: "apply" - 应用安全头修复
             "reset" - 重置为有漏洞状态
     """
@@ -12022,7 +11933,7 @@ async def api_demo_fix(req: DemoFixRequest, request: Request, user: dict = Depen
 
     # 安全检查：只允许操作本地靶场
     if req.target not in ("localhost:8080", "localhost:8443", "127.0.0.1:8080"):
-        return {"success": False, "error": "仅支持本地演示靶场"}
+        return {"success": False, "error": "仅支持本地靶场"}
 
     if req.action == "apply":
         ok, msg = _demo_nginx_apply_security_headers()
@@ -12052,8 +11963,8 @@ class DemoFullCycleRequest(BaseModel):
 @app.post("/api/demo-full-cycle")
 async def api_demo_full_cycle(req: DemoFullCycleRequest, request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    11-S 一键演示完整闭环：重置 → 第一次扫描 → 应用修复 → 第二次扫描
-    返回完整的前后对比数据，用于前端展示演示效果
+    一键完整闭环：重置 → 第一次扫描 → 应用修复 → 第二次扫描
+    返回完整的前后对比数据，用于前端展示修复效果
     """
     await rate_limit_dependency(request)
 
@@ -12140,7 +12051,7 @@ async def api_demo_full_cycle(req: DemoFullCycleRequest, request: Request, user:
 
 @app.get("/api/demo-status")
 async def api_demo_status(request: Request) -> dict:
-    """查询本地演示靶场状态"""
+    """查询本地靶场状态"""
     await rate_limit_dependency(request)
     try:
         # 检查 nginx 是否在运行

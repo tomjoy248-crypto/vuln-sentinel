@@ -1,2 +1,0 @@
-This is a test file for the VulnSentinel demo target.
-If you can read this, directory listing is probably enabled.

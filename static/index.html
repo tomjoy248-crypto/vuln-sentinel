@@ -353,7 +353,7 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   margin: 0 auto;
 }
 
-/* 一分钟体验 CTA */
+/* 快速开始 CTA */
 .one-minute-cta {
   display: inline-block;
   margin: 0 auto 4px;
@@ -1625,13 +1625,13 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
   .nav-item { padding: 4px 6px; font-size: 12px; }
 }
 
-/* ===== Mobile Responsive: 新增的雷达图/趋势图/快速演示卡 ===== */
+/* ===== Mobile Responsive: 新增的雷达图/趋势图/快速扫描卡 ===== */
 @media (max-width: 768px) {
   /* 雷达图缩小 */
   #radar-chart-container svg { width: 260px !important; height: 260px !important; }
   /* 趋势图 X 轴标签省略 */
   #trend-chart svg { font-size: 9px; }
-  /* 一键演示目标：1 列 */
+  /* 三列网格响应式：1 列 */
   .card > div[style*="grid-template-columns:repeat(3"] { grid-template-columns: 1fr !important; }
   /* 攻击模拟按钮：2 列 */
   .card > div[style*="grid-template-columns:repeat(3,1fr);gap:10px"] { grid-template-columns: repeat(2, 1fr) !important; }
@@ -2431,45 +2431,6 @@ img[loading="lazy"] { background: var(--border-light); }
 <body>
 <a href="#page-home" class="skip-link">跳转到主内容</a>
 
-<!-- 离线模式提示 banner（双击 HTML 时显示） -->
-<div id="offline-banner" style="display:none;background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e;padding:10px 16px;text-align:center;font-size:13px;border-bottom:2px solid #f59e0b;position:sticky;top:0;z-index:9999">
-  <span style="font-weight:600">⚡ 离线演示模式</span> · 直接双击 HTML 文件即可使用，数据保存在浏览器本地。
-  <span style="margin-left:8px;opacity:0.85">使用 <code style="background:#fff3;padding:2px 6px;border-radius:4px">demo / demo123</code> 即可体验</span>
-  <a href="http://localhost:8000" style="margin-left:12px;background:#92400e;color:#fff;padding:4px 10px;border-radius:6px;text-decoration:none;font-size:12px">启动后端 → http://localhost:8000</a>
-  <span onclick="this.parentNode.style.display='none'" style="margin-left:8px;cursor:pointer;opacity:0.6;font-weight:bold">×</span>
-</div>
-
-<script>
-(function() {
-  // 离线模式触发条件（任一即可）：
-  // 1. file:// 协议（双击 HTML 文件）
-  // 2. URL 带 ?offline 参数
-  // 3. URL 带 ?demo 参数（也走离线，更方便测试）
-  // 4. hostname 为 localhost 但端口不是 8000（说明是用户另外开的服务）
-  var isFile = window.location.protocol === 'file:';
-  var query = window.location.search;
-  var hasOfflineParam = /[?&](offline|demo)=/.test(query);
-  var isOtherLocal = window.location.hostname === 'localhost' && window.location.port && window.location.port !== '8000';
-  if (isFile || hasOfflineParam || isOtherLocal) {
-    window.__FORCE_OFFLINE__ = true;
-    var banner = document.getElementById('offline-banner');
-    if (banner) banner.style.display = 'block';
-    try {
-      // 自动注入 demo 账号的 token
-      var users = JSON.parse(localStorage.getItem('vuln_sentinel_offline_users') || '{}');
-      if (!users['demo']) {
-        users['demo'] = { username: 'demo', password: 'demo123', email: 'demo@vulnsentinel.com' };
-        localStorage.setItem('vuln_sentinel_offline_users', JSON.stringify(users));
-      }
-      // 设置 token
-      if (!localStorage.getItem('vs_token')) {
-        localStorage.setItem('vs_token', 'offline_' + btoa('demo:' + Date.now()));
-      }
-    } catch (e) {}
-  }
-})();
-</script>
-
 <!-- Skeleton Loading Screen -->
 <div id="skeleton-screen" class="skeleton-screen">
   <div class="skeleton-topbar">
@@ -2511,7 +2472,7 @@ img[loading="lazy"] { background: var(--border-light); }
       <div class="ai-avatar">🤖</div>
       <div>
         <div style="font-size:14px">安全顾问</div>
-        <div style="font-size:11px;opacity:0.85">在线 · 离线也能用</div>
+        <div style="font-size:11px;opacity:0.85">在线服务中</div>
       </div>
     </div>
     <button class="ai-chat-close" onclick="toggleAIChat()" aria-label="关闭">×</button>
@@ -2561,12 +2522,12 @@ img[loading="lazy"] { background: var(--border-light); }
       <span style="background:linear-gradient(135deg,rgba(99,102,241,0.25),rgba(139,92,246,0.25));color:#a78bfa;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(139,92,246,0.3)">&#x1F50D; 安全闭环</span>
       <span style="background:linear-gradient(135deg,rgba(34,197,94,0.2),rgba(16,185,129,0.2));color:#4ade80;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(34,197,94,0.3)">&#x1F527; 修复配置生成</span>
       <span style="background:linear-gradient(135deg,rgba(245,158,11,0.2),rgba(251,191,36,0.2));color:#fbbf24;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(245,158,11,0.3)">&#x1F504; 复测验证</span>
-      <span style="background:linear-gradient(135deg,rgba(236,72,153,0.2),rgba(244,114,182,0.2));color:#f472b6;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(236,72,153,0.3)">&#x26A1; 一键体验</span>
+      <span style="background:linear-gradient(135deg,rgba(236,72,153,0.2),rgba(244,114,182,0.2));color:#f472b6;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(236,72,153,0.3)">&#x26A1; 快速开始</span>
     </div>
-    <!-- 一分钟体验 CTA -->
+    <!-- 快速开始 CTA -->
     <div style="margin-top:24px;text-align:center">
-      <button class="one-minute-cta" onclick="startOneMinuteDemo()">&#x26A1; 一分钟体验完整闭环</button>
-      <p style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">一键登录 → 扫描 → 查看修复配置 → 复测验证，全程无需手动操作</p>
+      <button class="one-minute-cta" onclick="navigateTo('home');setTimeout(function(){var el=document.getElementById('demo-report');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});}},100);">&#x1F680; 开始使用</button>
+      <p style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">无需注册即可免费试用扫描，查看示例报告与修复配置</p>
     </div>
   </div>
 
@@ -2596,7 +2557,7 @@ img[loading="lazy"] { background: var(--border-light); }
     </div>
   </div>
 
-  <!-- 11-S: 技术亮点 + 本地演示靶场（最醒目的位置） -->
+  <!-- 11-S: 技术亮点（最醒目的位置） -->
   <div class="card fade-in-up" style="margin-top:18px;background:linear-gradient(135deg,rgba(139,92,246,0.08),rgba(236,72,153,0.08));border:1px solid rgba(139,92,246,0.25);border-radius:14px;overflow:hidden">
     <!-- 顶部标题栏 -->
     <div style="padding:16px 16px 12px;background:linear-gradient(135deg,rgba(139,92,246,0.12),rgba(236,72,153,0.12));border-bottom:1px solid rgba(139,92,246,0.15)">
@@ -2627,104 +2588,7 @@ img[loading="lazy"] { background: var(--border-light); }
         <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">扫描→风险定位→修复配置→复测→报告<br>30 秒见证效果</div>
       </div>
     </div>
-    <!-- 本地演示靶场入口（登录后显示） -->
-    <div id="local-demo-section" style="display:none;padding:14px 16px 16px;border-top:1px solid rgba(139,92,246,0.15)">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-        <span style="font-size:16px">&#x1F9EA;</span>
-        <strong style="font-size:13px;color:var(--text-primary)">本地演示靶场</strong>
-        <span style="font-size:11px;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;padding:2px 8px;border-radius:10px;font-weight:600">LIVE</span>
-        <span style="font-size:11px;color:var(--text-secondary);margin-left:auto">真实 nginx 环境</span>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <button onclick="runLocalDemoFullCycle()" id="btn-demo-fullcycle" style="padding:16px 14px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;border:none;border-radius:12px;cursor:pointer;text-align:left;transition:all 0.2s;font-weight:600;box-shadow:0 4px 15px rgba(139,92,246,0.3)" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 25px rgba(139,92,246,0.4)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 15px rgba(139,92,246,0.3)'">
-          <div style="font-size:15px;margin-bottom:6px;display:flex;align-items:center;gap:6px">&#9889; 一键完整演示</div>
-          <div style="font-size:12px;opacity:0.9;font-weight:400;line-height:1.5">扫描 → 风险定位 → 修复配置 → 复测 → 报告<br>30秒看评分提升效果</div>
-        </button>
-        <button onclick="resetLocalDemoTarget()" id="btn-demo-reset" style="padding:16px 14px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--text-primary);border-radius:12px;cursor:pointer;text-align:left;transition:all 0.2s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 15px rgba(239,68,68,0.2)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none'">
-          <div style="font-size:15px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px">&#x1F504; 重置靶场</div>
-          <div style="font-size:12px;color:var(--text-secondary);font-weight:400;line-height:1.5">恢复初始漏洞状态<br>可重复演示</div>
-        </button>
-      </div>
-      <div id="demo-progress" style="display:none;margin-top:14px;padding:14px;background:var(--bg-card);border-radius:10px;border:1px solid var(--border-light)">
-        <div style="font-size:13px;font-weight:600;margin-bottom:10px" id="demo-progress-title">演示进行中...</div>
-        <div style="display:flex;flex-direction:column;gap:8px" id="demo-steps">
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 一键演示目标 -->
-  <div class="card fade-in-up" style="margin-top:18px;background:linear-gradient(135deg,rgba(99,102,241,0.06),rgba(168,85,247,0.06));border:1px dashed rgba(99,102,241,0.3)">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-      <span style="font-size:18px">&#x1F3AF;</span>
-      <strong style="font-size:14px;color:var(--text-primary)">一键演示目标</strong>
-      <span style="font-size:12px;color:var(--text-secondary);margin-left:auto">点击直接体验真实扫描</span>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-      <button onclick="quickDemo('https://example.com')" style="padding:12px 8px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);border-radius:8px;cursor:pointer;text-align:left;transition:all 0.2s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(99,102,241,0.2)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none'">
-        <div style="font-size:13px;font-weight:600;color:#4f46e5">example.com</div>
-        <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">中风险 · 8 个发现</div>
-      </button>
-      <button onclick="quickDemo('https://www.iana.org')" style="padding:12px 8px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:8px;cursor:pointer;text-align:left;transition:all 0.2s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(34,197,94,0.2)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none'">
-        <div style="font-size:13px;font-weight:600;color:#16a34a">iana.org</div>
-        <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">低风险 · 4 个发现</div>
-      </button>
-      <button onclick="quickDemo('https://httpbin.org')" style="padding:12px 8px;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.2);border-radius:8px;cursor:pointer;text-align:left;transition:all 0.2s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(249,115,22,0.2)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none'">
-        <div style="font-size:13px;font-weight:600;color:#ea580c">httpbin.org</div>
-        <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">中风险 · 10 个发现</div>
-      </button>
-    </div>
-  </div>
-
-  <!-- 演示案例 -->
-  <div class="card fade-in-up" style="margin-top:18px;background:linear-gradient(135deg,rgba(99,102,241,0.04),rgba(168,85,247,0.04));border:1px solid rgba(99,102,241,0.15)">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-      <span style="font-size:18px">&#x1F4BC;</span>
-      <strong style="font-size:14px;color:var(--text-primary)">演示案例</strong>
-      <span style="font-size:12px;color:var(--text-secondary);margin-left:auto">离线演示数据，无需网络</span>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
-      <!-- 案例 A：普通站点（配置优化） -->
-      <div style="background:var(--bg-card);border:1px solid var(--border-light);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:22px">&#x1F512;</span>
-          <div>
-            <div style="font-size:14px;font-weight:700;color:var(--text)">企业站 - WAF 保护演示</div>
-              <div style="font-size:12px;color:var(--text-secondary)">展示 WAF 保护下响应头缺失的合理评分</div>
-          </div>
-        </div>
-        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">
-          <div>扫描目标：<code style="background:var(--bg-secondary);padding:2px 6px;border-radius:4px;font-size:12px">https://example.com</code></div>
-          <div style="margin-top:4px">预期结果：评分 <strong style="color:var(--success)">100</strong>，发现 <strong>0</strong> 个高危问题（受 Cloudflare WAF 保护，响应头缺失已由 WAF 覆盖）</div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:auto">
-          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,0.12);color:#16a34a;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">评分 100</span>
-          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,0.12);color:#16a34a;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">WAF 保护</span>
-          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,0.12);color:#16a34a;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">0 漏洞</span>
-        </div>
-        <button onclick="loadDemoCaseA()" style="margin-top:4px;padding:10px 14px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all 0.2s" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='var(--shadow-md)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none'">查看演示结果</button>
-      </div>
-      <!-- 案例 B：受限站点（WAF/登录页识别） -->
-      <div style="background:var(--bg-card);border:1px solid var(--border-light);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:22px">&#x1F6E1;</span>
-          <div>
-            <div style="font-size:14px;font-weight:700;color:var(--text)">大型登录站 - WAF 识别演示</div>
-            <div style="font-size:12px;color:var(--text-secondary)">展示如何正确识别 WAF/反爬限制，避免误报</div>
-          </div>
-        </div>
-        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">
-          <div>扫描目标：<code style="background:var(--bg-secondary);padding:2px 6px;border-radius:4px;font-size:12px">https://login.taobao.com</code></div>
-          <div style="margin-top:4px">预期结果：<strong style="color:var(--warning)">restricted=true</strong>，suspect 路径标记，无 exposed 路径</div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:auto">
-          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(245,158,11,0.12);color:#d97706;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">受限扫描</span>
-          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(59,130,246,0.12);color:#2563eb;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">WAF 识别</span>
-          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,0.12);color:#16a34a;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600">多维验证降误报</span>
-        </div>
-        <button onclick="loadDemoCaseB()" style="margin-top:4px;padding:10px 14px;background:linear-gradient(135deg,var(--warning),var(--warning-dark));color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all 0.2s" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(245,158,11,0.3)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none'">查看演示结果</button>
-      </div>
-    </div>
+    <!-- 本地扫描入口（登录后显示） -->
   </div>
 
   <!-- 风险趋势图 -->
@@ -2790,7 +2654,7 @@ img[loading="lazy"] { background: var(--border-light); }
       <button class="scan-btn" id="scan-btn-step1" onclick="startScanDirect()" disabled>开始安全扫描</button>
       <div style="text-align:center;margin-top:10px">
         <button onclick="goVerifyStep2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">🔐 域名归属验证（可选）</button>
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">快速跳过验证仅适用于演示站或自有测试环境</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">快速跳过验证仅适用于自有测试环境</div>
       </div>
       <div style="text-align:center;margin-top:8px">
         <button onclick="showBatchScanModal()" style="background:none;border:1px dashed var(--border);color:var(--text-secondary);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;width:100%">📦 批量扫描（一次最多 5 个 URL）</button>
@@ -2894,11 +2758,11 @@ img[loading="lazy"] { background: var(--border-light); }
     </div>
   </div>
 
-  <!-- 真实演示报告（打开即看，无需登录） -->
+  <!-- 免费试用扫描（打开即看，无需登录） -->
   <div class="card demo-report-card" id="demo-report" style="margin-top:18px">
     <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <div>
-        <span style="font-size:18px">🛰 真实演示报告</span>
+        <span style="font-size:18px">🔍 免费试用扫描</span>
         <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">实时扫描公开测试站点</span>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -3003,8 +2867,8 @@ img[loading="lazy"] { background: var(--border-light); }
             <td style="padding:10px;text-align:center;color:var(--text-lighter)">&#10008; CLI</td>
           </tr>
           <tr style="border-bottom:1px solid var(--border);background:var(--border-light)">
-            <td style="padding:10px">离线可用</td>
-            <td style="padding:10px;text-align:center;color:var(--success)">&#10004; 单文件 HTML</td>
+            <td style="padding:10px">零部署</td>
+            <td style="padding:10px;text-align:center;color:var(--success)">&#10004; 前端单页</td>
             <td style="padding:10px;text-align:center;color:var(--text-lighter)">&#10008; 需安装</td>
             <td style="padding:10px;text-align:center;color:var(--text-lighter)">&#10008; 需安装</td>
           </tr>
@@ -3172,10 +3036,6 @@ img[loading="lazy"] { background: var(--border-light); }
     <div id="auth-guest" style="display:none">
       <div class="card auth-form">
         <h3>&#x1F511; 账号登录</h3>
-        <div style="background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(99,102,241,0.05));border:1px solid rgba(99,102,241,0.25);border-radius:10px;padding:10px 14px;margin-bottom:14px;text-align:center">
-          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px">&#x1F3AF; 测试账号（一键登录）</div>
-          <button onclick="document.getElementById('login-username').value='demo';document.getElementById('login-password').value='demo123'" style="background:var(--primary);color:#fff;border:none;padding:6px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">使用测试账号</button>
-        </div>
         <div class="auth-form-error" id="login-error"></div>
         <div class="auth-form-row">
           <input type="text" id="login-username" placeholder="用户名" aria-label="用户名" />
@@ -3751,7 +3611,7 @@ function renderRadarChart(data) {
   container.innerHTML = svg;
 }
 
-// ============== 攻击模拟演示 ==============
+// ============== 攻击模拟展示 ==============
 function simulateCSRF(target) {
   var out = document.getElementById('attack-demo-result');
   if (!out) return;
@@ -3913,386 +3773,6 @@ var historyPageSize = 5;
 
 // ========== Auth & Token Management ==========
 
-// ============== 离线演示模式（双击 HTML 即可用） ==============
-// 当用户直接双击打开 HTML（file:// 协议）时启用：用 localStorage 模拟后端
-// 不需要启动 python main.py，裁判 / 客户直接看演示
-
-var OFFLINE_MODE = window.location.protocol === 'file:' || !!window.__FORCE_OFFLINE__;
-
-// 预置的真实扫描数据（与漏洞哨兵 11-S 后端在 example.com 上跑出来的结果完全一致）
-var OFFLINE_DEMO_SCANS = {
-  "https://example.com": {
-    success: true, scan_type: "real", url: "https://example.com", is_https: true,
-    final_url: "https://example.com",
-    raw_headers: {
-      "date": "Mon, 22 Jun 2026 12:43:48 GMT",
-      "content-type": "text/html; charset=UTF-8",
-      "content-length": "648",
-      "connection": "keep-alive",
-      "server": "cloudflare",
-      "last-modified": "Sat, 20 Jun 2026 20:45:06 GMT",
-      "allow": "GET, HEAD",
-      "age": "2",
-      "cf-cache-status": "HIT",
-      "accept-ranges": "bytes"
-    },
-    waf: [{ "name": "cloudflare", "signature": "server", "value": "cloudflare" }],
-    waf_detected: true,
-    ssl_info: { "has_cert": true, "version": "TLSv1.3", "cipher": "TLS_AES_128_GCM_SHA256", "expired": false, "days_left": 78 },
-    sensitive_paths: [
-      { "path": "/.env", "status": 403, "exposed": false, "protected": true },
-      { "path": "/.git/config", "status": 403, "exposed": false, "protected": true },
-      { "path": "/admin", "status": 404, "exposed": false },
-      { "path": "/robots.txt", "status": 404, "exposed": false }
-    ],
-    header_details: [
-      { "name": "HSTS", "key": "strict-transport-security", "value": null, "status": "missing", "category": "传输安全", "severity": "high" },
-      { "name": "CSP", "key": "content-security-policy", "value": null, "status": "missing", "category": "XSS 防护", "severity": "high" },
-      { "name": "X-Frame-Options", "key": "x-frame-options", "value": null, "status": "missing", "category": "点击劫持", "severity": "medium" },
-      { "name": "X-Content-Type-Options", "key": "x-content-type-options", "value": null, "status": "missing", "category": "MIME 嗅探", "severity": "medium" },
-      { "name": "Referrer-Policy", "key": "referrer-policy", "value": null, "status": "missing", "category": "隐私", "severity": "low" },
-      { "name": "Permissions-Policy", "key": "permissions-policy", "value": null, "status": "missing", "category": "隐私", "severity": "low" }
-    ],
-    info_leaks: [{ "name": "Server", "value": "cloudflare" }],
-    score: 100, risk_level: "低风险",
-    summary: { "high": 0, "medium": 0, "low": 0, "critical": 0, "total": 0 },
-    findings: [],
-    owasp_coverage: [
-      { "category": "A01 访问控制失效", "status": "通过", "note": "敏感路径未暴露" },
-      { "category": "A02 加密机制失效", "status": "通过", "note": "已启用 HTTPS / TLS 1.3" },
-      { "category": "A03 注入攻击", "status": "通过", "note": "未检测到注入漏洞" },
-      { "category": "A04 不安全设计", "status": "通过", "note": "未在常见入口检测到开放重定向" },
-      { "category": "A05 安全配置错误", "status": "通过", "note": "受 Cloudflare WAF 保护，6 个响应头已由 WAF 覆盖" },
-      { "category": "A06 过时组件", "status": "通过", "note": "未检测到过时组件" },
-      { "category": "A07 认证失败", "status": "通过", "note": "未在登录页检测到明显认证配置问题" },
-      { "category": "A08 软件完整性", "status": "通过", "note": "首页第三方资源完整性校验正常" },
-      { "category": "A09 日志监控不足", "status": "低风险", "note": "建议加强" },
-      { "category": "A10 服务端请求伪造", "status": "通过", "note": "未检测到" }
-    ]
-  }
-};
-
-// 预置的 iana.org 演示（与后端真实跑出的一致）
-OFFLINE_DEMO_SCANS["https://iana.org"] = {
-  success: true, scan_type: "real", url: "https://iana.org", is_https: true,
-  final_url: "https://iana.org",
-  raw_headers: {
-    "server": "nginx/1.27.5", "date": "Mon, 22 Jun 2026 12:44:15 GMT",
-    "content-type": "text/html; charset=UTF-8", "content-length": "1646",
-    "connection": "keep-alive", "x-content-type-options": "nosniff, nosniff",
-    "vary": "Accept-Encoding", "last-modified": "Thu, 29 May 2025 18:00:55 GMT"
-  },
-  waf: [], waf_detected: false,
-  ssl_info: { "has_cert": true, "version": "TLSv1.3", "expired": false, "days_left": 120 },
-  sensitive_paths: [
-    { "path": "/.env", "status": 404, "exposed": false },
-    { "path": "/.git/config", "status": 404, "exposed": false },
-    { "path": "/robots.txt", "status": 200, "exposed": false, "info": true, "size": 24, "protected": false }
-  ],
-  header_details: [
-    { "name": "HSTS", "key": "strict-transport-security", "value": null, "status": "missing", "severity": "high" },
-    { "name": "CSP", "key": "content-security-policy", "value": null, "status": "missing", "severity": "high" },
-    { "name": "X-Frame-Options", "key": "x-frame-options", "value": null, "status": "missing", "severity": "medium" },
-    { "name": "X-Content-Type-Options", "key": "x-content-type-options", "value": "nosniff", "status": "present", "severity": "medium" },
-    { "name": "Referrer-Policy", "key": "referrer-policy", "value": null, "status": "missing", "severity": "low" },
-    { "name": "Permissions-Policy", "key": "permissions-policy", "value": null, "status": "missing", "severity": "low" }
-  ],
-  info_leaks: [{ "name": "Server", "value": "nginx/1.27.5" }],
-  score: 96, risk_level: "低风险",
-  summary: { "high": 0, "medium": 0, "low": 2, "critical": 0, "total": 2 },
-  findings: [
-    { "name": "缺少 Permissions-Policy", "severity": "low", "level": "低风险", "level_zh": "低风险", "owasp": "A05 安全配置错误", "fix": "add_header Permissions-Policy \"camera=()\" always;", "type": "config" },
-    { "name": "Server 信息泄露", "severity": "low", "level": "低风险", "level_zh": "低风险", "owasp": "A05 安全配置错误", "summary": "暴露服务器信息: nginx/1.27.5", "fix": "server_tokens off;", "type": "config" }
-  ],
-  owasp_coverage: [
-    { "category": "A02 加密机制失效", "status": "通过", "note": "TLS 1.3" },
-    { "category": "A05 安全配置错误", "status": "需关注", "note": "Server 泄露" }
-  ]
-};
-
-// 离线模式：localStorage 当简易 DB
-var OfflineDB = {
-  KEY_USERS: "vuln_sentinel_offline_users",
-  KEY_TOKEN: "vuln_sentinel_offline_token",
-  KEY_HISTORY: "vuln_sentinel_offline_history",
-  getUsers: function() {
-    try { return JSON.parse(localStorage.getItem(this.KEY_USERS) || "{}"); } catch (e) { return {}; }
-  },
-  saveUsers: function(u) { localStorage.setItem(this.KEY_USERS, JSON.stringify(u)); },
-  ensureDemo: function() {
-    var u = this.getUsers();
-    if (!u["demo"]) {
-      u["demo"] = { username: "demo", password: "demo123", email: "demo@vulnsentinel.com", created_at: new Date().toLocaleString("zh-CN") };
-      this.saveUsers(u);
-    }
-  },
-  getHistory: function() {
-    try { return JSON.parse(localStorage.getItem(this.KEY_HISTORY) || "[]"); } catch (e) { return []; }
-  },
-  saveHistory: function(h) { localStorage.setItem(this.KEY_HISTORY, JSON.stringify(h)); }
-};
-
-if (OFFLINE_MODE) {
-  OfflineDB.ensureDemo();
-}
-
-// 离线 API 路由表
-function offlineApiHandle(method, urlPath, body) {
-  try {
-  // 防御性兜底：确保 body 是对象
-  body = body || {};
-  // /api/login
-  if (urlPath === "/api/login" && method === "POST") {
-    var users = OfflineDB.getUsers();
-    var u = users[body.username];
-    if (!u || u.password !== body.password) {
-      return { status: 401, body: { success: false, error: "用户名或密码错误" } };
-    }
-    var token = "offline_" + btoa(body.username + ":" + Date.now());
-    return { status: 200, body: { success: true, token: token, username: u.username, user_id: 1 } };
-  }
-  // /api/register
-  if (urlPath === "/api/register" && method === "POST") {
-    var users = OfflineDB.getUsers();
-    if (users[body.username]) {
-      return { status: 400, body: { success: false, error: "用户名已存在" } };
-    }
-    users[body.username] = { username: body.username, password: body.password, email: body.email || "", created_at: new Date().toLocaleString("zh-CN") };
-    OfflineDB.saveUsers(users);
-    var token2 = "offline_" + btoa(body.username + ":" + Date.now());
-    return { status: 200, body: { success: true, token: token2, username: body.username, user_id: 1 } };
-  }
-  // /api/me
-  if (urlPath === "/api/me" && method === "GET") {
-    return { status: 200, body: { username: "demo", user_id: 1 } };
-  }
-  // /api/history GET
-  if (urlPath.indexOf("/api/history") === 0 && method === "GET") {
-    var hist = OfflineDB.getHistory();
-    var fixed = 0;
-    var byUrl = {};
-    hist.forEach(function(h) { (byUrl[h.url] = byUrl[h.url] || []).push(h); });
-    Object.keys(byUrl).forEach(function(u) {
-      var scans = byUrl[u];
-      for (var i = 0; i < scans.length - 1; i++) {
-        var n1 = (scans[i].findings || []).map(function(f){ return f.name; });
-        var n2 = (scans[i+1].findings || []).map(function(f){ return f.name; });
-        n1.forEach(function(n) { if (n2.indexOf(n) < 0) fixed++; });
-      }
-    });
-    return { status: 200, body: { history: hist, stats: { scan_count: hist.length, fixed_count: fixed } } };
-  }
-  // /api/history DELETE
-  if (urlPath === "/api/history" && method === "DELETE") {
-    OfflineDB.saveHistory([]);
-    return { status: 200, body: { success: true, deleted: OfflineDB.getHistory().length } };
-  }
-  // /api/public-demo-scan POST
-  if (urlPath === "/api/public-demo-scan" && method === "POST") {
-    var u2 = (body && body.url) || "";
-    if (!/^https?:\/\//i.test(u2)) u2 = "https://" + u2;
-    var data = OFFLINE_DEMO_SCANS[u2];
-    if (!data) {
-      return { status: 200, body: { success: false, error: "无法访问目标网站：" + u2 } };
-    }
-    return { status: 200, body: data };
-  }
-  // /api/simulate-fix POST
-  if (urlPath === "/api/simulate-fix" && method === "POST") {
-    var findings = (body && body.findings) || [];
-    var SEV = { "critical": 25, "high": 15, "medium": 8, "low": 3 };
-    // V11.4 fix: 使用实际扫描分数作为 before_score
-    var actualScore = (window._lastScanResult && window._lastScanResult.score) || null;
-    var before;
-    if (actualScore !== null && typeof actualScore === 'number') {
-      before = actualScore;
-    } else {
-      var ded = findings.reduce(function(s, f) { return s + (SEV[f.severity] || 3); }, 0);
-      before = Math.max(0, 100 - ded);
-    }
-    var ded2 = findings.reduce(function(s, f) { return s + (SEV[f.severity] || 3); }, 0);
-    var after = Math.min(100, before + ded2 + 12);
-    var items = findings.map(function(f) {
-      var sv = f.severity || 'low';
-      return {
-        name: f.name || '未知漏洞',
-        severity: sv,
-        level_zh: { critical: "高风险", high: "高风险", medium: "中风险", low: "低风险" }[sv] || "低风险",
-        owasp: f.owasp || "",
-        fix: f.fix || "",
-        summary: f.summary || "修复 " + (f.name || '安全问题') + "，消除 " + ({ high: "高", medium: "中", low: "低" }[sv] || "低") + " 风险"
-      };
-    });
-    return {
-      status: 200,
-      body: {
-        before_score: before,
-        after_score: after,
-        delta: after - before,
-        fixed_count: items.length,
-        fixed_items: items,
-        nginx_config: "",
-        summary: "应用 " + items.length + " 项修复后，评分预计从 " + before + " 提升到 " + after + "（+" + (after - before) + " 分）"
-      }
-    };
-  }
-  // /api/ai-advisor POST
-  if (urlPath === "/api/ai-advisor" && method === "POST") {
-    var msg = (body && body.message || "").toLowerCase();
-    // 离线模式下模拟 LLM：如果传了 api_key 且启用了 LLM，返回模拟的 LLM 回复
-    var useLLMOffline = body && body.api_key && body.use_llm !== false;
-    var reply = "我没找到相关知识 😢。试试问我：HSTS、CSP、敏感文件、点击劫持、OWASP Top 10。";
-    if (useLLMOffline) {
-      reply = "🤖 [离线模拟 LLM]\n\n结论：你问的是 Web 安全相关问题。\n\n详细解释：离线模式下无法连接真实 LLM，此处为前端模拟回复。\n\n操作步骤：\n1. 启动后端服务 `python main.py`\n2. 在「个人中心 → AI 顾问配置」中填写真实 API Key\n3. 重新发送消息即可调用真实大模型";
-    } else if (msg.indexOf("hsts") >= 0 || msg.indexOf("https") >= 0 || msg.indexOf("证书") >= 0) {
-      reply = "**HSTS** 强制浏览器始终用 HTTPS。\n\nNginx 修复：\n```\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n```";
-    } else if (msg.indexOf("csp") >= 0 || msg.indexOf("xss") >= 0) {
-      reply = "**CSP** 限制页面能加载哪些资源。\n\nNginx 推荐：\n```\nadd_header Content-Security-Policy \"default-src 'self'\" always;\n```";
-    } else if (msg.indexOf("敏感") >= 0 || msg.indexOf(".env") >= 0 || msg.indexOf("git") >= 0) {
-      reply = "**敏感文件暴露** 攻击者能直接拿到你的源码。\n\nNginx 拦截：\n```nginx\nlocation ~ /\\.(env|git|svn|sql|bak)$ { deny all; return 403; }\n```";
-    } else if (msg.indexOf("iframe") >= 0 || msg.indexOf("frame") >= 0) {
-      reply = "**点击劫持** 防御（Nginx）：\n```\nadd_header X-Frame-Options \"DENY\" always;\n```";
-    } else if (msg.indexOf("评分") >= 0 || msg.indexOf("分数") >= 0 || msg.indexOf("怎么算") >= 0) {
-      reply = "**11-S 评分公式**：基础 100 分 − critical×25 − high×15 − medium×8 − low×3 + 修复加成 +12。";
-    } else if (msg.indexOf("你好") >= 0 || msg.indexOf("hi") >= 0 || msg.indexOf("hello") >= 0) {
-      reply = "你好！我是漏洞哨兵 11-S 安全顾问 🛡 试试问我：HSTS 是什么？如何修复 CSP？怎么提分？";
-    } else if (msg.indexOf("v11") >= 0 || msg.indexOf("更新") >= 0 || msg.indexOf("新版本") >= 0) {
-      reply = "**11-S 主要改进**：\n1. AI 安全顾问（规则引擎 + 可选 OpenAI LLM）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
-    } else if (msg.indexOf("怎么用") >= 0 || msg.indexOf("上手") >= 0) {
-      reply = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 离线模式下可直接使用 demo / demo123 体验\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
-    }
-    var source = useLLMOffline ? "llm" : "rule_engine";
-    return { status: 200, body: { reply: reply, source: source } };
-  }
-  // /api/ai/chat POST
-  if (urlPath === "/api/ai/chat" && method === "POST") {
-    var msg2 = (body && body.message || "").toLowerCase();
-    var reply2 = "我没找到相关知识 😢。试试问我：HSTS、CSP、敏感文件、点击劫持、OWASP Top 10。";
-    var type2 = "explanation";
-    if (msg2.indexOf("hsts") >= 0 || msg2.indexOf("https") >= 0 || msg2.indexOf("证书") >= 0) {
-      reply2 = "**HSTS** 强制浏览器始终用 HTTPS。\n\nNginx 修复：\n```\nadd_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n```";
-      type2 = "fix";
-    } else if (msg2.indexOf("csp") >= 0 || msg2.indexOf("xss") >= 0) {
-      reply2 = "**CSP** 限制页面能加载哪些资源。\n\nNginx 推荐：\n```\nadd_header Content-Security-Policy \"default-src 'self'\" always;\n```";
-      type2 = "fix";
-    } else if (msg2.indexOf("敏感") >= 0 || msg2.indexOf(".env") >= 0 || msg2.indexOf("git") >= 0) {
-      reply2 = "**敏感文件暴露** 攻击者能直接拿到你的源码。\n\nNginx 拦截：\n```nginx\nlocation ~ /\\.(env|git|svn|sql|bak)$ { deny all; return 403; }\n```";
-      type2 = "fix";
-    } else if (msg2.indexOf("iframe") >= 0 || msg2.indexOf("frame") >= 0) {
-      reply2 = "**点击劫持** 防御（Nginx）：\n```\nadd_header X-Frame-Options \"DENY\" always;\n```";
-      type2 = "fix";
-    } else if (msg2.indexOf("评分") >= 0 || msg2.indexOf("分数") >= 0 || msg2.indexOf("怎么算") >= 0) {
-      reply2 = "**11-S 评分公式**：基础 100 分 − critical×25 − high×15 − medium×8 − low×3 + 修复加成 +12。";
-      type2 = "explanation";
-    } else if (msg2.indexOf("你好") >= 0 || msg2.indexOf("hi") >= 0 || msg2.indexOf("hello") >= 0) {
-      reply2 = "你好！我是漏洞哨兵 11-S 安全顾问 🛡 试试问我：HSTS 是什么？如何修复 CSP？怎么提分？";
-      type2 = "greeting";
-    } else if (msg2.indexOf("v11") >= 0 || msg2.indexOf("更新") >= 0 || msg2.indexOf("新版本") >= 0) {
-      reply2 = "**11-S 主要改进**：\n1. AI 安全顾问（规则引擎 + 可选 OpenAI LLM）\n2. 自动巡检（APScheduler）+ 评分回退告警\n3. Trusted Domains 白名单（30+ 大站降低误报）\n4. AI 顾问手机端全屏优化，告别透明\n5. 扫描深度档位修复（之前点不动）\n6. WQY MicroHei 字体打包，跨平台中文显示一致";
-      type2 = "explanation";
-    } else if (msg2.indexOf("怎么用") >= 0 || msg2.indexOf("上手") >= 0) {
-      reply2 = "**30 秒上手**：\n1. 当前已是离线演示模式（无需启动后端）\n2. 离线模式下可直接使用 demo / demo123 体验\n3. 看真实演示报告（已自动跑 example.com）\n4. 点「生成修复配置」看修复前后对比\n5. 用 AI 顾问聊天";
-      type2 = "explanation";
-    }
-    return { status: 200, body: { response: reply2, reply: reply2, confidence: "high", type: type2, source: "offline_kb" } };
-  }
-  // /api/reset-password POST
-  if (urlPath === "/api/reset-password" && method === "POST") {
-    var users2 = OfflineDB.getUsers();
-    var current = localStorage.getItem(OfflineDB.KEY_TOKEN);
-    if (current) {
-      try {
-        var uname = atob(current.replace("offline_", "").split(":")[0]);
-        if (users2[uname]) {
-          users2[uname].password = body.new_password;
-          OfflineDB.saveUsers(users2);
-          return { status: 200, body: { success: true, message: "密码已重置" } };
-        }
-      } catch (e) { /* token 格式无效，忽略 */ }
-    }
-    return { status: 200, body: { success: true, message: "密码已重置（离线模式）" } };
-  }
-  // /api/scan POST (离线版：有真实数据才返回，没有就报错)
-  if (urlPath === "/api/scan" && method === "POST") {
-    var scanUrl = body.url || "";
-    // 没协议默认补 https://
-    if (!/^https?:\/\//i.test(scanUrl)) scanUrl = "https://" + scanUrl;
-    // 不是白名单域名就报错（离线模式只有预置数据，不能随便出结果）
-    if (!OFFLINE_DEMO_SCANS[scanUrl]) {
-      return { status: 200, body: { success: false, error: "当前是离线演示模式，只支持预置演示站点。请启动后端后扫描真实网站。", url: scanUrl } };
-    }
-    var scanData = JSON.parse(JSON.stringify(OFFLINE_DEMO_SCANS[scanUrl]));
-    var newScan = JSON.parse(JSON.stringify(scanData));
-    newScan.scan_id = Date.now();
-    newScan.time = new Date().toLocaleString("zh-CN");
-    newScan.created_at = newScan.time;
-    var hist2 = OfflineDB.getHistory();
-    hist2.unshift(newScan);
-    OfflineDB.saveHistory(hist2);
-    return { status: 200, body: newScan };
-  }
-  // /api/fix POST
-  if (urlPath === "/api/fix" && method === "POST") {
-    var scanUrl2 = body.url || "";
-    if (!/^https?:\/\//i.test(scanUrl2)) scanUrl2 = "https://" + scanUrl2;
-    var data2 = OFFLINE_DEMO_SCANS[scanUrl2];
-    if (!data2) {
-      return { status: 200, body: { success: false, error: "无法访问目标网站", url: scanUrl2, fixes: {} } };
-    }
-    var nginx = [];
-    data2.findings.forEach(function(f) {
-      if (f.fix && nginx.indexOf(f.fix) < 0) nginx.push(f.fix);
-    });
-    return { status: 200, body: { success: true, url: scanUrl2, fixes: { nginx: nginx, apache: [], python: [], nodejs: [] }, score: data2.score, summary: data2.summary } };
-  }
-  // /api/verify-fix POST
-  if (urlPath === "/api/verify-fix" && method === "POST") {
-    var url3 = body.url || "";
-    if (!/^https?:\/\//i.test(url3)) url3 = "https://" + url3;
-    var prev = (body.previous_scan_id) ? OfflineDB.getHistory().find(function(h){ return h.scan_id == body.previous_scan_id; }) : null;
-    var d3 = OFFLINE_DEMO_SCANS[url3];
-    if (!d3) {
-      return { status: 200, body: { success: false, error: "无法访问目标网站", url: url3 } };
-    }
-    d3 = JSON.parse(JSON.stringify(d3));
-    d3.scan_id = Date.now();
-    d3.delta = prev ? d3.score - (prev.score || 0) : 0;
-    var prevNames = prev ? (prev.findings || []).map(function(f){return f.name;}) : [];
-    var newNames = (d3.findings || []).map(function(f){return f.name;});
-    d3.fixed = prevNames.filter(function(n){ return newNames.indexOf(n) < 0; });
-    d3.new_issues = newNames.filter(function(n){ return prevNames.indexOf(n) < 0; });
-    return { status: 200, body: { success: true, scan_id: d3.scan_id, url: url3, new_score: d3.score, new_risk_level: d3.risk_level, previous_scan_id: prev ? prev.scan_id : null, previous_score: prev ? prev.score : 0, delta: d3.delta, fixed: d3.fixed, new_issues: d3.new_issues, new_findings: d3.findings, summary: d3.summary, improvements: [] } };
-  }
-  // /api/batch-scan POST
-  if (urlPath === "/api/batch-scan" && method === "POST") {
-    var urls = body.urls || [];
-    if (urls.length === 0) return { status: 400, body: { error: "请提供 URL 列表" } };
-    if (urls.length > 5) return { status: 400, body: { error: "单次最多扫描 5 个 URL" } };
-    var results = urls.map(function(u) {
-      if (!/^https?:\/\//i.test(u)) u = "https://" + u;
-      var d4 = OFFLINE_DEMO_SCANS[u];
-      if (!d4) {
-        return { url: u, ok: false, error: "当前是离线演示模式，只支持预置演示站点。请启动后端后扫描真实网站。" };
-      }
-      return { url: u, ok: true, score: d4.score, risk_level: d4.risk_level, high: d4.summary.high, medium: d4.summary.medium, low: d4.summary.low, critical: 0, scan_id: Date.now() + Math.random(), findings_count: d4.findings.length };
-    });
-    return { status: 200, body: { success: true, results: results, count: results.length } };
-  }
-  // /api/health GET
-  if (urlPath === "/api/health" && method === "GET") {
-    return { status: 200, body: { status: "ok", version: "12-offline" } };
-  }
-  // /api/version GET
-  if (urlPath === "/api/version" && method === "GET") {
-    return { status: 200, body: { version: "11-S", title: "漏洞哨兵 11-S (离线演示模式)", build_time: "2026-06-28" } };
-  }
-  return { status: 404, body: { success: false, error: "离线模式未实现该端点: " + method + " " + urlPath } };
-  } catch (e) {
-    console.error('offlineApiHandle error:', e);
-    return { status: 500, body: { success: false, error: "离线模式内部错误: " + (e.message || String(e)) } };
-  }
-}
-
 // authFetch: 自动附加 Authorization header 的 fetch 封装
 var API_BASE = (window.location.protocol === 'file:') ? 'offline' : '';
 
@@ -4307,23 +3787,6 @@ function authFetch(url, options) {
   var token = getToken();
   if (token) options.headers['Authorization'] = 'Bearer ' + token;
   if (!options.headers['Content-Type'] && options.body) options.headers['Content-Type'] = 'application/json';
-  // file:// 协议下走离线 API（用 localStorage 模拟后端）
-  if (OFFLINE_MODE) {
-    var u = url;
-    var method = (options.method || 'GET').toUpperCase();
-    var path = u.split('?')[0];
-    var body = null;
-    try { body = options.body ? JSON.parse(options.body) : null; } catch (e) { body = options.body; }
-    var resp = offlineApiHandle(method, path, body);
-    return new Promise(function(resolve) {
-      resolve({
-        status: resp.status,
-        ok: resp.status >= 200 && resp.status < 300,
-        json: function() { return Promise.resolve(resp.body); },
-        text: function() { return Promise.resolve(JSON.stringify(resp.body)); }
-      });
-    });
-  }
   // 线上模式：自动补全 base URL（防 file:// 被混用）
   var fullUrl = (url.indexOf('http') === 0) ? url : (API_BASE + url);
   return fetch(fullUrl, options).then(function(resp) {
@@ -4955,7 +4418,7 @@ function renderAssets(assets) {
 function loadEvolution() {
   if (!isLoggedIn()) {
     var c = document.getElementById('evolution-content');
-    if (c) c.innerHTML = '<div class="ticket-empty"><div class="ticket-empty-icon">&#x1F510;</div><p>请先登录</p><p class="ticket-empty-hint">登录后体验智能学习、主动监控、团队协作与 AI 顾问</p></div>';
+    if (c) c.innerHTML = '<div class="ticket-empty"><div class="ticket-empty-icon">&#x1F510;</div><p>请先登录</p><p class="ticket-empty-hint">登录后使用智能学习、主动监控、团队协作与 AI 顾问</p></div>';
     return;
   }
   var c = document.getElementById('evolution-content');
@@ -5994,7 +5457,7 @@ async function sendAIMessage() {
   }
 }
 
-// ===== 真实演示报告（打开即看） =====
+// ===== 免费试用扫描（打开即看） =====
 async function loadPublicDemo() {
   var select = document.getElementById('demo-host');
   var btn = document.getElementById('demo-refresh');
@@ -6011,7 +5474,7 @@ async function loadPublicDemo() {
     var data = await r.json();
     if (r.ok && data.success) {
       window._lastScanId = data.scan_id || data.scanId || null;  // 11-S: 保存 scan_id 供自动修复用
-      window._lastScanResult = data;  // V11.4 fix: 保存扫描结果供离线模拟修复使用
+      window._lastScanResult = data;  // V11.4 fix: 保存扫描结果供自动修复使用
       renderDemoReport(data);
     } else {
       if (c) c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ ' + escapeHtml(friendlyError(extractError(data))) + '</div>';
@@ -6068,7 +5531,7 @@ function renderDemoReport(d) {
   html += '</div>';
   // 缓存数据标注
   if (d.is_cached) {
-    html += '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:#92400e">⚠ ' + escapeHtml(d.note || '当前展示缓存演示数据') + '</div>';
+    html += '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:#92400e">⚠ ' + escapeHtml(d.note || '当前展示缓存扫描数据') + '</div>';
   }
 
   // 风险统计
@@ -6194,9 +5657,9 @@ function renderDemoReport(d) {
   // 操作按钮
   html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
   html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 用 AI 修复器生成补丁</button>';
-  if (isLoggedIn() && !OFFLINE_MODE) {
+  if (isLoggedIn()) {
     html += '<button onclick="doPublicDemoFix()" style="background:var(--primary-dark,#4f46e5);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">📋 生成修复配置并预览</button>';
-  } else if (!OFFLINE_MODE) {
+  } else {
     html += '<button onclick="navigateTo(\'profile\')" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px">🔑 登录后获取修复配置</button>';
   }
   html += '</div>';
@@ -6228,7 +5691,7 @@ async function doPublicDemoFix() {
   // 从当前显示的报告里提取 findings
   var c = document.getElementById('demo-content');
   if (!c) return;
-  // 把当前 demo 报告里所有 finding 名称都传给后端模拟修复
+  // 把当前试用扫描报告里所有 finding 名称都传给后端模拟修复
   var findings = [];
   c.querySelectorAll('[data-finding-name]').forEach(function(el) {
     findings.push({
@@ -6243,12 +5706,12 @@ async function doPublicDemoFix() {
     showToast('没有发现需要修复的问题');
     return;
   }
-  // 11-S：先调用后端把 demo 扫描保存为用户的扫描记录
+  // 11-S：先调用后端把试用扫描保存为用户的扫描记录
   try {
     if (isLoggedIn() && window._lastScanId) {
       // 已经有 scan_id，不需要重新保存
     } else if (isLoggedIn()) {
-      // 调用 /api/scan 把当前 demo 报告保存为正式扫描记录
+      // 调用 /api/scan 把当前试用扫描报告保存为正式扫描记录
       var url = document.getElementById('demo-host') ? document.getElementById('demo-host').value : 'https://example.com';
       var sr = await authFetch('/api/scan', {
         method: 'POST',
@@ -6335,9 +5798,7 @@ function renderFixComparison(d) {
   if (isLoggedIn()) {
     html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 进入修复器获取完整补丁</button>';
     // 11-S 新增：自动修复按钮
-    if (!OFFLINE_MODE) {
-      html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 应用到演示环境</button>';
-    }
+    html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 应用修复</button>';
   } else {
     html += '<button onclick="navigateTo(\'profile\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🔑 登录后获取完整补丁代码</button>';
   }
@@ -6732,7 +6193,7 @@ function copyFixCode(textareaId) {
   }
 }
 
-// ============== 一键演示目标 ==============
+// ============== 快速扫描入口 ==============
 
 // 友好错误提示工具
 function friendlyError(err) {
@@ -6766,439 +6227,11 @@ function friendlyError(err) {
 }
 window.friendlyError = friendlyError;
 
-// 案例 A：普通企业站 - 配置优化演示（example.com）
-// 改为调用后端公共演示 API，保证演示数据与真实扫描 100% 一致
-function loadDemoCaseA() {
-  var c = document.getElementById('result-content') || document.body;
-  c.innerHTML = '<div style="padding:20px;text-align:center"><div class="spinner"></div><div style="margin-top:12px;color:var(--text-secondary);font-size:13px">正在加载演示数据（真实扫描）...</div></div>';
-  fetch('/api/public-demo-scan', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: 'https://example.com' })
-  })
-    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-    .then(function(res) {
-      if (res.ok && res.data.success) {
-        renderDemoReport(res.data);
-      } else {
-        c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ 演示数据加载失败：' + escapeHtml(friendlyError(res.data)) + '<br><span style="font-size:12px;color:var(--text-secondary)">请使用离线预置数据</span></div>';
-      }
-    })
-    .catch(function(e) {
-      c.innerHTML = '<div style="padding:14px;color:#ef4444;font-size:13px">❌ ' + escapeHtml(friendlyError(e)) + '</div>';
-    });
-}
-// 保留旧版本作为 fallback
-function _loadDemoCaseAFallback() {
-  var data = {
-    url: 'https://example.com',
-    time: new Date().toLocaleString('zh-CN'),
-    score: 72,
-    risk_level: '中风险',
-    restricted: false,
-    findings: [
-      {
-        name: '缺少 Strict-Transport-Security (HSTS)',
-        level: '中风险',
-        severity: 'medium',
-        type: 'config',
-        owasp: 'A05 安全配置错误',
-        summary: '未配置 HSTS 响应头，浏览器不会强制使用 HTTPS，存在协议降级攻击风险。',
-        ai_advice: 'HSTS 是防止 SSL 剥离攻击的关键响应头。建议配置 max-age=31536000，并包含 includeSubDomains。',
-        fix: 'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;',
-        evidence: { header: 'Strict-Transport-Security', detected: true, reason: '响应头中未找到 HSTS', method: 'HTTP 响应头检测' },
-        fixes: {
-          nginx: ['add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;'],
-          apache: ['Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"'],
-          express: ['// helmet.hsts({ maxAge: 31536000, includeSubDomains: true })'],
-          flask: ["# @app.after_request\ndef add_hsts(resp):\n    resp.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'\n    return resp"],
-          spring_boot: ["# http.headers().httpStrictTransportSecurity().includeSubDomains(true).maxAgeInSeconds(31536000);"],
-          cloudflare: ["# Cloudflare: SSL/TLS > Edge Certificates > Always Use HTTPS + HSTS"]
-        }
-      },
-      {
-        name: '缺少 Content-Security-Policy (CSP)',
-        level: '中风险',
-        severity: 'medium',
-        type: 'config',
-        owasp: 'A05 安全配置错误',
-        summary: '未配置 CSP 响应头，无法有效限制页面可加载的资源来源，增加 XSS 攻击面。',
-        ai_advice: 'CSP 是防御 XSS 和数据注入的核心机制。建议从 default-src \'self\' 开始，逐步收紧策略。',
-        fix: "add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'\" always;",
-        evidence: { header: 'Content-Security-Policy', detected: true, reason: '响应头中未找到 CSP', method: 'HTTP 响应头检测' },
-        fixes: {
-          nginx: ["add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'\" always;"],
-          apache: ["Header set Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'\""],
-          express: ["// helmet.contentSecurityPolicy({ directives: { defaultSrc: [\"'self'\"], scriptSrc: [\"'self'\"], styleSrc: [\"'self'\", \"'unsafe-inline'\"], imgSrc: [\"'self'\", 'data:'], fontSrc: [\"'self'\"], connectSrc: [\"'self'\"], frameAncestors: [\"'none'\"] } })"],
-          flask: ["# @app.after_request\ndef add_csp(resp):\n    resp.headers['Content-Security-Policy'] = \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'\"\n    return resp"],
-          spring_boot: ["# http.headers().contentSecurityPolicy(\"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'\");"],
-          cloudflare: ["# Cloudflare: Transform Rules > Modify Response Header > Content-Security-Policy"]
-        }
-      },
-      {
-        name: '缺少 X-Frame-Options',
-        level: '低风险',
-        severity: 'low',
-        type: 'config',
-        owasp: 'A05 安全配置错误',
-        summary: '未配置 X-Frame-Options 响应头，页面可能被嵌入到恶意 iframe 中，导致点击劫持攻击。',
-        ai_advice: '设置 X-Frame-Options: DENY 或 SAMEORIGIN，防止页面被第三方框架嵌套。',
-        fix: 'add_header X-Frame-Options "DENY" always;',
-        evidence: { header: 'X-Frame-Options', detected: true, reason: '响应头中未找到 X-Frame-Options', method: 'HTTP 响应头检测' },
-        fixes: {
-          nginx: ['add_header X-Frame-Options "DENY" always;'],
-          apache: ['Header set X-Frame-Options "DENY"'],
-          express: ["// helmet.frameguard({ action: 'deny' })"],
-          flask: ["# @app.after_request\ndef add_xfo(resp):\n    resp.headers['X-Frame-Options'] = 'DENY'\n    return resp"],
-          spring_boot: ["# http.headers().frameOptions().deny();"],
-          cloudflare: ["# Cloudflare: Transform Rules > Modify Response Header > X-Frame-Options = DENY"]
-        }
-      }
-    ],
-    owasp_coverage: [
-      { category: 'A01 访问控制失效', status: '通过', note: '未发现目录遍历或权限绕过' },
-      { category: 'A02 加密机制失效', status: '低风险', note: 'HTTPS 已启用，但缺少 HSTS' },
-      { category: 'A03 注入攻击', status: '通过', note: '未发现 SQLi/XSS 注入点' },
-      { category: 'A04 不安全设计', status: '通过', note: '未在常见入口检测到开放重定向' },
-      { category: 'A05 安全配置错误', status: '高风险', note: '缺少 HSTS、CSP、X-Frame-Options' },
-      { category: 'A06 过时组件', status: '通过', note: '未检测到已知漏洞组件' },
-      { category: 'A07 认证失败', status: '通过', note: '未在登录页检测到明显认证配置问题' },
-      { category: 'A08 软件完整性', status: '通过', note: '首页第三方资源完整性校验正常' },
-      { category: 'A09 日志监控不足', status: '低风险', note: '建议加强日志与监控' },
-      { category: 'A10 服务端请求伪造', status: '通过', note: '未检测到 SSRF 漏洞' }
-    ],
-    ai_report: {
-      summary: 'example.com 是一个典型的普通企业站点，HTTPS 已启用但缺少多项关键安全响应头。当前评分 72 分，主要扣分项为 HSTS、CSP 和 X-Frame-Options 缺失。这些问题属于配置类漏洞，修复成本低、收益高，建议优先处理。',
-      priority: '先补 HSTS（防止 SSL 剥离），再加 CSP（防 XSS），最后 X-Frame-Options（防点击劫持）。预计修复后评分可提升至 95 分以上。'
-    },
-    header_details: [
-      { name: 'Strict-Transport-Security', status: 'missing', value: '' },
-      { name: 'Content-Security-Policy', status: 'missing', value: '' },
-      { name: 'X-Frame-Options', status: 'missing', value: '' },
-      { name: 'X-Content-Type-Options', status: 'present', value: 'nosniff' },
-      { name: 'Referrer-Policy', status: 'present', value: 'strict-origin-when-cross-origin' }
-    ],
-    raw_headers: { server: 'nginx/1.18.0', 'content-type': 'text/html; charset=utf-8' },
-    ssl_info: { has_cert: true, subject: 'example.com', issuer: 'DigiCert Inc', version: 'TLSv1.3', cipher: 'ECDHE-RSA-AES128-GCM-SHA256', days_left: 120, not_after: '2025-10-15', expired: false, weak: false },
-    sensitive_paths: [],
-    waf_detected: false,
-    waf: [],
-    fixes: {
-      nginx: [
-        { code: 'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;', risk_note: '' },
-        { code: "add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'\" always;", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' },
-        { code: 'add_header X-Frame-Options "DENY" always;', risk_note: '' }
-      ],
-      apache: [
-        { code: 'Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"', risk_note: '' },
-        { code: "Header set Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'\"", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' },
-        { code: 'Header set X-Frame-Options "DENY"', risk_note: '' }
-      ],
-      express: [
-        { code: '// helmet.hsts({ maxAge: 31536000, includeSubDomains: true })', risk_note: '' },
-        { code: "// helmet.contentSecurityPolicy({ directives: { defaultSrc: [\"'self'\"], scriptSrc: [\"'self'\"], styleSrc: [\"'self'\", \"'unsafe-inline'\"], imgSrc: [\"'self'\", 'data:'], fontSrc: [\"'self'\"], connectSrc: [\"'self'\"], frameAncestors: [\"'none'\"] } })", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' },
-        { code: "// helmet.frameguard({ action: 'deny' })", risk_note: '' }
-      ],
-      flask: [
-        { code: "# @app.after_request\ndef add_hsts(resp):\n    resp.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'\n    return resp", risk_note: '' },
-        { code: "# @app.after_request\ndef add_csp(resp):\n    resp.headers['Content-Security-Policy'] = \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'\"\n    return resp", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' },
-        { code: "# @app.after_request\ndef add_xfo(resp):\n    resp.headers['X-Frame-Options'] = 'DENY'\n    return resp", risk_note: '' }
-      ],
-      spring_boot: [
-        { code: "# http.headers().httpStrictTransportSecurity().includeSubDomains(true).maxAgeInSeconds(31536000);", risk_note: '' },
-        { code: "# http.headers().contentSecurityPolicy(\"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'\");", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' },
-        { code: "# http.headers().frameOptions().deny();", risk_note: '' }
-      ],
-      cloudflare: [
-        { code: "# Cloudflare: SSL/TLS > Edge Certificates > Always Use HTTPS + HSTS", risk_note: '' },
-        { code: "# Cloudflare: Transform Rules > Modify Response Header > Content-Security-Policy", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' },
-        { code: "# Cloudflare: Transform Rules > Modify Response Header > X-Frame-Options = DENY", risk_note: '' }
-      ]
-    },
-    score_breakdown: [
-      { item: '缺少 HSTS', deduction: 8, severity: 'medium' },
-      { item: '缺少 CSP', deduction: 10, severity: 'medium' },
-      { item: '缺少 X-Frame-Options', deduction: 5, severity: 'low' },
-      { item: 'Server 版本泄露', deduction: 5, severity: 'low' }
-    ]
-  };
-  lastScanResult = data;
-  renderResult(data);
-  navigateTo('result');
-  showToast('已加载 example.com 演示数据');
-}
-
-// 案例 B：大型登录站 - WAF 识别演示（login.taobao.com）
-function loadDemoCaseB() {
-  var data = {
-    url: 'https://login.taobao.com',
-    time: new Date().toLocaleString('zh-CN'),
-    score: 55,
-    risk_level: '中风险',
-    restricted: true,
-    restricted_code: 403,
-    restricted_reason: '目标返回 HTTP 403，疑似 WAF/反爬/登录页拦截。部分路径被限制访问，本次扫描为受限模式。',
-    findings: [
-      {
-        name: 'WAF/反爬限制检测',
-        level: '中风险',
-        severity: 'medium',
-        type: 'config',
-        owasp: 'A05 安全配置错误',
-        summary: '目标站点部署了 WAF 或反爬机制，对自动化扫描工具进行了拦截。',
-        ai_advice: '这是正常的安全防护措施，不是漏洞。建议通过人工审核或白名单方式完成深度扫描。',
-        fix: '联系站点管理员，将扫描 IP 加入白名单，或使用官方 API 进行安全检测。',
-        evidence: { header: 'AliyunWAF', detected: true, reason: '响应头包含 AliyunWAF 标记；多个敏感路径返回 403 而非 404', method: 'WAF 指纹 + 状态码分析' }
-      },
-      {
-        name: '缺少 Content-Security-Policy (CSP)',
-        level: '中风险',
-        severity: 'medium',
-        type: 'config',
-        owasp: 'A05 安全配置错误',
-        summary: '登录页未配置 CSP，存在 XSS 攻击面。',
-        ai_advice: '登录页是 XSS 攻击的高价值目标，建议配置严格的 CSP 策略。',
-        fix: "add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'\" always;",
-        evidence: { header: 'Content-Security-Policy', detected: true, reason: '响应头中未找到 CSP', method: 'HTTP 响应头检测' }
-      }
-    ],
-    owasp_coverage: [
-      { category: 'A01 访问控制失效', status: '通过', note: '登录页正常要求认证' },
-      { category: 'A02 加密机制失效', status: '通过', note: 'HTTPS + HSTS 已启用' },
-      { category: 'A03 注入攻击', status: '未知', note: 'WAF 拦截，无法完整测试' },
-      { category: 'A04 不安全设计', status: '通过', note: '未在常见入口检测到开放重定向' },
-      { category: 'A05 安全配置错误', status: '中风险', note: '缺少 CSP，但 WAF 已部署' },
-      { category: 'A06 过时组件', status: '未知', note: 'WAF 拦截，无法识别组件版本' },
-      { category: 'A07 认证失败', status: '通过', note: '未在登录页检测到明显认证配置问题' },
-      { category: 'A08 软件完整性', status: '通过', note: '首页第三方资源完整性校验正常' },
-      { category: 'A09 日志监控不足', status: '低风险', note: '建议加强日志与监控' },
-      { category: 'A10 服务端请求伪造', status: '通过', note: '未检测到 SSRF 漏洞' }
-    ],
-    ai_report: {
-      summary: 'login.taobao.com 是一个大型电商登录站点，部署了阿里云 WAF 和多层反爬机制。扫描被正确识别为受限模式，未产生误报。站点 HTTPS 和 HSTS 配置完善，但登录页缺少 CSP。建议通过白名单方式完成深度扫描。',
-      priority: '1) 为登录页配置 CSP 策略；2) 将安全扫描 IP 加入 WAF 白名单；3) 定期审查 WAF 拦截日志，确保不误拦正常用户。'
-    },
-    header_details: [
-      { name: 'Strict-Transport-Security', status: 'present', value: 'max-age=31536000; includeSubDomains' },
-      { name: 'Content-Security-Policy', status: 'missing', value: '' },
-      { name: 'X-Frame-Options', status: 'present', value: 'SAMEORIGIN' },
-      { name: 'X-Content-Type-Options', status: 'present', value: 'nosniff' },
-      { name: 'Referrer-Policy', status: 'present', value: 'strict-origin-when-cross-origin' }
-    ],
-    raw_headers: { server: 'Tengine', 'content-type': 'text/html; charset=utf-8', 'ali-swift-global-savetime': '1' },
-    ssl_info: { has_cert: true, subject: '*.taobao.com', issuer: 'GlobalSign', version: 'TLSv1.3', cipher: 'ECDHE-RSA-AES128-GCM-SHA256', days_left: 180, not_after: '2026-01-01', expired: false, weak: false },
-    sensitive_paths: [
-      { path: '/.env', status: 403, exposed: false, suspect: true, reason: '返回 403，疑似 WAF 拦截（正常应 404）', info: false, protected: false },
-      { path: '/.git/config', status: 403, exposed: false, suspect: true, reason: '返回 403，疑似 WAF 拦截', info: false, protected: false },
-      { path: '/robots.txt', status: 200, exposed: false, suspect: false, info: true, reason: '公开协议文件', protected: false }
-    ],
-    waf_detected: true,
-    waf: [{ name: 'Aliyun WAF' }, { name: 'Tengine (阿里)' }],
-    fixes: {
-      nginx: [
-        { code: "add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'\" always;", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' }
-      ],
-      apache: [
-        { code: "Header set Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'\"", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' }
-      ],
-      express: [
-        { code: "// helmet.contentSecurityPolicy({ directives: { defaultSrc: [\"'self'\"], scriptSrc: [\"'self'\"], styleSrc: [\"'self'\", \"'unsafe-inline'\"], frameAncestors: [\"'none'\"] } })", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' }
-      ],
-      flask: [
-        { code: "# @app.after_request\ndef add_csp(resp):\n    resp.headers['Content-Security-Policy'] = \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'\"\n    return resp", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' }
-      ],
-      spring_boot: [
-        { code: "# http.headers().contentSecurityPolicy(\"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'\");", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' }
-      ],
-      cloudflare: [
-        { code: "# Cloudflare: Transform Rules > Modify Response Header > Content-Security-Policy", risk_note: '上线前请在测试环境验证，CSP 策略过严可能导致前端资源加载失败' }
-      ]
-    },
-    score_breakdown: [
-      { item: 'WAF/反爬限制', deduction: 15, severity: 'medium' },
-      { item: '缺少 CSP', deduction: 10, severity: 'medium' },
-      { item: '受限扫描模式', deduction: 20, severity: 'high' }
-    ]
-  };
-  lastScanResult = data;
-  renderResult(data);
-  navigateTo('result');
-  showToast('已加载 login.taobao.com 演示数据');
-}
-
-// ============== 风险趋势图 ==============
-function loadTrendChart(days) {
-  days = days || 30;
-  var container = document.getElementById('trend-chart');
-  if (!container) return;
-  if (!isLoggedIn()) {
-    // 11-S 修复：未登录时也显示演示趋势图
-    renderTrendChart({
-      days: days,
-      data: [
-        { date: '06-19', avg_score: 78, scan_count: 2 },
-        { date: '06-20', avg_score: 82, scan_count: 3 },
-        { date: '06-21', avg_score: 88, scan_count: 1 },
-        { date: '06-22', avg_score: 91, scan_count: 4 },
-        { date: '06-23', avg_score: 95, scan_count: 2 },
-        { date: '06-24', avg_score: 96, scan_count: 3 },
-        { date: '06-25', avg_score: 98, scan_count: 5 }
-      ],
-      demo: true
-    });
-    return;
-  }
-  container.innerHTML = '<div style="font-size:12px;color:var(--text-secondary)">加载中...</div>';
-  authFetch('/api/stats/history?days=' + days).then(function(r) {
-    if (!r.ok) { container.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);padding:20px;text-align:center">📊 暂无数据<br><span style="font-size:12px;color:var(--text-lighter)">先扫描一个网站吧</span></div>'; return; }
-    return r.json();
-  }).then(function(data) {
-    renderTrendChart(data);
-    // 高亮选中范围按钮
-    document.querySelectorAll('.trend-range').forEach(function(b) {
-      if (parseInt(b.getAttribute('data-days')) === days) {
-        b.style.background = 'rgba(99,102,241,0.15)';
-        b.style.color = '#4f46e5';
-        b.style.borderColor = 'rgba(99,102,241,0.4)';
-      } else {
-        b.style.background = 'var(--bg-secondary)';
-        b.style.color = 'var(--text-secondary)';
-        b.style.borderColor = 'var(--border)';
-      }
-    });
-  }).catch(function() {
-    container.innerHTML = '<div style="font-size:12px;color:var(--text-secondary)">加载失败</div>';
-  });
-}
-
-function renderTrendChart(data) {
-  var container = document.getElementById('trend-chart');
-  if (!container) return;
-  var points = data.points || [];
-  if (points.length === 0) {
-    // 无数据时显示 demo 折线图（虚线 + 半透明）+ 操作提示
-    var demoData = [
-      { url: 'example.com', data: [{t: 0, s: 45}, {t: 1, s: 50}, {t: 2, s: 65}, {t: 3, s: 80}, {t: 4, s: 95}], color: '#6366f1' },
-      { url: 'httpbin.org', data: [{t: 0, s: 30}, {t: 1, s: 35}, {t: 2, s: 42}, {t: 3, s: 48}, {t: 4, s: 55}], color: '#f97316' }
-    ];
-    var W = Math.max(300, container.offsetWidth || 600);
-    var H = 130;
-    var padL = 30, padR = 12, padT = 16, padB = 24;
-    var innerW = W - padL - padR, innerH = H - padT - padB;
-    var xScale = function(t) { return padL + (t / 4) * innerW; };
-    var yScale = function(s) { return padT + (1 - s / 100) * innerH; };
-    var svg = '<svg width="100%" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" opacity="0.45" style="display:block">';
-    [0, 25, 50, 75, 100].forEach(function(s) {
-      svg += '<line x1="' + padL + '" y1="' + yScale(s) + '" x2="' + (W - padR) + '" y2="' + yScale(s) + '" stroke="rgba(99,102,241,0.08)" stroke-width="1" stroke-dasharray="2 4"/>';
-      svg += '<text x="' + (padL - 6) + '" y="' + (yScale(s) + 3) + '" text-anchor="end" font-size="10" fill="var(--text-secondary)">' + s + '</text>';
-    });
-    demoData.forEach(function(s) {
-      var d = s.data.map(function(p) { return xScale(p.t) + ',' + yScale(p.s); }).join(' ');
-      svg += '<polyline points="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-dasharray="4 4" opacity="0.5"/>';
-      s.data.forEach(function(p) {
-        svg += '<circle cx="' + xScale(p.t) + '" cy="' + yScale(p.s) + '" r="3" fill="#fff" stroke="' + s.color + '" stroke-width="2"/>';
-      });
-    });
-    svg += '</svg>';
-    container.innerHTML = '<div style="position:relative">' + svg + '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;background:rgba(255,255,255,0.85);padding:8px 16px;border-radius:8px;backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,0.06)">' +
-      '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">📈 这是一个趋势图示例</div>' +
-      '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">扫描目标后，会展示你所有域名的分数变化</div>' +
-      '</div></div>';
-    return;
-  }
-  var W = Math.max(300, container.offsetWidth || 600);
-  var H = 180;
-  var padL = 30, padR = 12, padT = 16, padB = 28;
-  var innerW = W - padL - padR;
-  var innerH = H - padT - padB;
-
-  // 计算时间范围
-  var times = points.map(function(p) { return new Date((p.time || '').replace(' ', 'T')).getTime(); });
-  // 过滤掉 NaN 值
-  times = times.filter(function(t) { return !isNaN(t); });
-  if (times.length === 0) times = [Date.now()];
-  var tMin = Math.min.apply(null, times);
-  var tMax = Math.max.apply(null, times);
-  if (tMax === tMin) tMax = tMin + 86400000; // 单点时拉伸 1 天
-  var xScale = function(t) { return padL + ((t - tMin) / (tMax - tMin)) * innerW; };
-  var yScale = function(s) { return padT + (1 - s / 100) * innerH; };
-
-  var svg = '<svg width="100%" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="display:block">';
-  // 网格线（每 25 分一条）
-  [0, 25, 50, 75, 100].forEach(function(s) {
-    var y = yScale(s);
-    var color = s >= 75 ? 'rgba(34,197,94,0.08)' : s >= 50 ? 'rgba(251,191,36,0.08)' : 'rgba(239,68,68,0.08)';
-    svg += '<line x1="' + padL + '" y1="' + y + '" x2="' + (W - padR) + '" y2="' + y + '" stroke="' + color + '" stroke-width="1"/>';
-    svg += '<text x="' + (padL - 6) + '" y="' + (y + 3) + '" text-anchor="end" font-size="10" fill="var(--text-secondary)">' + s + '</text>';
-  });
-  // X 轴时间
-  var labelTimes = [];
-  if (times.length <= 1) {
-    labelTimes = [tMin];
-  } else {
-    var step = Math.max(1, Math.floor(times.length / 4));
-    for (var i = 0; i < times.length; i += step) labelTimes.push(times[i]);
-    if (labelTimes[labelTimes.length - 1] !== times[times.length - 1]) labelTimes.push(times[times.length - 1]);
-  }
-  labelTimes.forEach(function(t) {
-    var x = xScale(t);
-    var d = new Date(t);
-    var label = (d.getMonth() + 1) + '/' + d.getDate();
-    svg += '<line x1="' + x + '" y1="' + padT + '" x2="' + x + '" y2="' + (H - padB) + '" stroke="rgba(0,0,0,0.04)" stroke-width="1"/>';
-    svg += '<text x="' + x + '" y="' + (H - padB + 14) + '" text-anchor="middle" font-size="10" fill="var(--text-secondary)">' + label + '</text>';
-  });
-  // 折线（按 URL 分组，每组一条线）
-  var palette = ['#6366f1', '#22c55e', '#f97316', '#a855f7', '#06b6d4', '#ec4899'];
-  var series = data.series || [];
-  series.forEach(function(s, si) {
-    var color = palette[si % palette.length];
-    var d = s.data.map(function(pt) {
-      return xScale(new Date((pt.time || '').replace(' ', 'T')).getTime()) + ',' + yScale(pt.score);
-    }).join(' ');
-    svg += '<polyline points="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" style="filter:drop-shadow(0 1px 2px ' + color + '44)"/>';
-    s.data.forEach(function(pt) {
-      var cx = xScale(new Date((pt.time || '').replace(' ', 'T')).getTime());
-      var cy = yScale(pt.score);
-      svg += '<circle cx="' + cx + '" cy="' + cy + '" r="4" fill="#fff" stroke="' + color + '" stroke-width="2"><title>' + escapeHtml(s.url) + ' · ' + pt.score + '分</title></circle>';
-    });
-  });
-  // 图例
-  var legendY = H - 8;
-  var legendX = padL;
-  series.forEach(function(s, si) {
-    var color = palette[si % palette.length];
-    svg += '<rect x="' + legendX + '" y="' + (legendY - 7) + '" width="10" height="3" fill="' + color + '"/>';
-    svg += '<text x="' + (legendX + 14) + '" y="' + (legendY - 3) + '" font-size="9" fill="var(--text-secondary)">' + escapeHtml(s.url) + '</text>';
-    legendX += 14 + s.url.length * 5.5 + 10;
-  });
-  svg += '</svg>';
-
-  // 汇总卡片
-  var sum = data.summary || {};
-  var trendIcon = sum.trend_delta > 0 ? '↗ +' : sum.trend_delta < 0 ? '↘ ' : '→ ';
-  var trendColor = sum.trend_delta > 0 ? '#22c55e' : sum.trend_delta < 0 ? '#ef4444' : 'var(--text-secondary)';
-  var summary = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px;text-align:center">' +
-    '<div><div style="font-size:16px;font-weight:700;color:var(--text-primary)">' + sum.scan_count + '</div><div style="font-size:11px;color:var(--text-secondary)">扫描次数</div></div>' +
-    '<div><div style="font-size:16px;font-weight:700;color:var(--text-primary)">' + sum.avg_score + '</div><div style="font-size:11px;color:var(--text-secondary)">平均分</div></div>' +
-    '<div><div style="font-size:16px;font-weight:700;color:var(--text-primary)">' + sum.latest_score + '</div><div style="font-size:11px;color:var(--text-secondary)">最新分</div></div>' +
-    '<div><div style="font-size:16px;font-weight:700;color:' + trendColor + '">' + trendIcon + sum.trend_delta + '</div><div style="font-size:11px;color:var(--text-secondary)">总趋势</div></div>' +
-    '</div>';
-  container.innerHTML = svg + summary;
-  // 动画：折线渐入
-  var poly = container.querySelector('polyline');
-  if (poly) {
-    var len = poly.getTotalLength();
-    poly.style.strokeDasharray = len;
-    poly.style.strokeDashoffset = len;
-    poly.style.transition = 'stroke-dashoffset 1.2s ease-out';
-    requestAnimationFrame(function() { poly.style.strokeDashoffset = 0; });
-  }
-}
 
 function quickDemo(url) {
   try {
   if (!isLoggedIn()) {
-    showToast('请先登录后再体验');
+    showToast('请先登录后再使用');
     navigateTo('profile');
     return;
   }
@@ -7223,370 +6256,18 @@ function quickDemo(url) {
   startScanDirect();
   } catch (e) {
     console.error('quickDemo error:', e);
-    showToast('启动演示失败：' + (e.message || String(e)), 'error');
+    showToast('启动扫描失败：' + (e.message || String(e)), 'error');
   }
 }
 
-// ============== 11-S 本地演示靶场 ==============
-var _demoTargetAvailable = false;
-
-// 页面加载时检查本地靶场是否可用
+// 页面加载时刷新告警红点
 document.addEventListener('DOMContentLoaded', function() {
-  checkLocalDemoTarget();
   updateAlertBadge();
   // 每 60 秒刷新一次未读告警红点
   setInterval(updateAlertBadge, 60000);
 });
 
-function checkLocalDemoTarget() {
-  // 离线模式下直接跳过，不尝试网络请求
-  if (OFFLINE_MODE) return;
-  try {
-  authFetch('/api/demo-status')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data && data.success && data.running) {
-        _demoTargetAvailable = true;
-        var section = document.getElementById('local-demo-section');
-        if (section) section.style.display = 'block';
-      }
-    })
-    .catch(function() {});
-  } catch(e) {}
-}
 
-function updateDemoStep(stepIndex, label, status) {
-  var stepsEl = document.getElementById('demo-steps');
-  if (!stepsEl) return;
-  var stepEl = document.getElementById('demo-step-' + stepIndex);
-  if (!stepEl) {
-    stepEl = document.createElement('div');
-    stepEl.id = 'demo-step-' + stepIndex;
-    stepEl.style.display = 'flex';
-    stepEl.style.alignItems = 'center';
-    stepEl.style.gap = '8px';
-    stepEl.style.fontSize = '12px';
-    stepsEl.appendChild(stepEl);
-  }
-  var icon = status === 'done' ? '&#x2705;' : 
-               status === 'running' ? '&#x23F3;' : 
-               status === 'fail' ? '&#x274C;' : '&#x25CB;';
-  var color = status === 'done' ? 'var(--success)' : 
-                status === 'running' ? 'var(--primary)' : 
-                status === 'fail' ? 'var(--danger)' : 'var(--text-secondary)';
-  stepEl.innerHTML = '<span style="color:' + color + '">' + icon + '</span>' +
-    '<span style="color:var(--text-primary)">' + label + '</span>';
-}
-
-function runLocalDemoFullCycle() {
-  if (!isLoggedIn()) {
-    showToast('请先登录后再体验');
-    navigateTo('profile');
-    return;
-  }
-
-  var btn = document.getElementById('btn-demo-fullcycle');
-  var progressEl = document.getElementById('demo-progress');
-  var stepsEl = document.getElementById('demo-steps');
-  
-  if (btn) {
-    btn.disabled = true;
-    btn.style.opacity = '0.6';
-    btn.style.cursor = 'not-allowed';
-  }
-  if (progressEl) {
-    progressEl.style.display = 'block';
-    stepsEl.innerHTML = '';
-  }
-
-  var steps = [
-    '重置靶场为初始漏洞状态',
-    '第一次扫描（修复前）',
-    '应用安全头修复配置',
-    '第二次扫描（修复后）',
-    '生成前后对比报告',
-  ];
-
-  for (var i = 0; i < steps.length; i++) {
-    updateDemoStep(i, steps[i], 'pending');
-  }
-
-  // 第1步：重置
-  updateDemoStep(0, steps[0], 'running');
-  authFetch('/api/demo-fix', {
-    method: 'POST',
-    body: JSON.stringify({ action: 'reset', target: 'localhost:8080' })
-  })
-  .then(function() {
-    updateDemoStep(0, steps[0], 'done');
-    
-    // 第2步：第一次扫描
-    updateDemoStep(1, steps[1], 'running');
-    return authFetch('/api/scan', {
-      method: 'POST',
-      body: JSON.stringify({ url: 'http://localhost:8080', authorized: true })
-    });
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(scan1) {
-    updateDemoStep(1, steps[1], 'done');
-    
-    // 第3步：应用修复
-    updateDemoStep(2, steps[2], 'running');
-    return authFetch('/api/demo-fix', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'apply', target: 'localhost:8080' })
-    }).then(function() { return scan1; });
-  })
-  .then(function(scan1) {
-    updateDemoStep(2, steps[2], 'done');
-    
-    // 第4步：第二次扫描
-    updateDemoStep(3, steps[3], 'running');
-    return authFetch('/api/scan', {
-      method: 'POST',
-      body: JSON.stringify({ url: 'http://localhost:8080', authorized: true })
-    }).then(function(r) { return r.json(); }).then(function(scan2) {
-      return { before: scan1, after: scan2 };
-    });
-  })
-  .then(function(result) {
-    updateDemoStep(3, steps[3], 'done');
-    updateDemoStep(4, steps[4], 'done');
-    
-    document.getElementById('demo-progress-title').innerHTML = 
-      '&#x2705; 演示完成！评分 +' + (result.after.score - result.before.score) + ' 分';
-    
-    // 显示结果
-    setTimeout(function() {
-      // 存储对比数据，跳转到结果页
-      window._demoCompareResult = result;
-      renderDemoCompareResult(result);
-      navigateTo('result');
-    }, 800);
-  })
-  .catch(function(err) {
-    showToast('演示失败: ' + (err.message || '未知错误'));
-    updateDemoStep(4, '演示失败', 'fail');
-  })
-  .finally(function() {
-    if (btn) {
-      btn.disabled = false;
-      btn.style.opacity = '1';
-      btn.style.cursor = 'pointer';
-    }
-  });
-}
-
-function resetLocalDemoTarget() {
-  var btn = document.getElementById('btn-demo-reset');
-  if (btn) {
-    btn.disabled = true;
-    btn.style.opacity = '0.6';
-  }
-  
-  authFetch('/api/demo-fix', {
-    method: 'POST',
-    body: JSON.stringify({ action: 'reset', target: 'localhost:8080' })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data && data.success) {
-      showToast('靶场已重置为初始漏洞状态', 'success');
-    } else {
-      showToast('重置失败: ' + (data.message || '未知错误'));
-    }
-  })
-  .catch(function(err) {
-    showToast('重置失败: ' + (err.message || '未知错误'));
-  })
-  .finally(function() {
-    if (btn) {
-      btn.disabled = false;
-      btn.style.opacity = '1';
-    }
-  });
-}
-
-function renderDemoCompareResult(result) {
-  var before = result.before;
-  var after = result.after;
-  
-  // 保存到全局供结果页使用
-  window._lastScanResult = after;
-  window._beforeScanResult = before;
-  window._isDemoCompare = true;
-  
-  // 等待结果页渲染后更新
-  setTimeout(function() {
-    var resultContent = document.getElementById('result-content');
-    if (!resultContent) return;
-    
-    var delta = after.score - before.score;
-    var deltaColor = delta > 0 ? '#16a34a' : '#ef4444';
-    var findingsFixed = before.findings.length - after.findings.length;
-    
-    // 生成对比页面
-    var html = '';
-    
-    // ===== 顶部英雄区：评分大对比
-    html += '<div class="fade-in-up" style="background:linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.08));border:1px solid rgba(99,102,241,0.2);border-radius:16px;padding:24px;margin-bottom:20px">';
-    html += '<div style="text-align:center;margin-bottom:20px">';
-    html += '<div style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:6px">&#x2728; 修复效果对比</div>';
-    html += '<div style="font-size:13px;color:var(--text-secondary)">生成修复配置后复测验证，见证评分提升效果</div>';
-    html += '</div>';
-    
-    // 评分大数字对比
-    html += '<div style="display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:center">';
-    // 修复前
-    html += '<div style="text-align:center">';
-    html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600">修复前</div>';
-    html += '<div style="font-size:48px;font-weight:800;color:var(--text-primary)">' + before.score + '</div>';
-    html += '<div style="font-size:12px;color:' + getRiskColor(before.risk_level) + ';font-weight:600">' + before.risk_level + '</div>';
-    html += '<div style="font-size:12px;color:var(--text-lighter);margin-top:4px">' + before.findings.length + ' 个漏洞</div>';
-    html += '</div>';
-    // 中间箭头
-    html += '<div style="text-align:center">';
-    html += '<div style="font-size:32px;margin-bottom:4px">&#x27A1;</div>';
-    html += '<div style="font-size:20px;font-weight:800;color:' + deltaColor + '">+' + delta + '</div>';
-    html += '<div style="font-size:11px;color:var(--text-lighter)">评分提升</div>';
-    html += '</div>';
-    // 修复后
-    html += '<div style="text-align:center">';
-    html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600">修复后</div>';
-    html += '<div style="font-size:48px;font-weight:800;color:#16a34a">' + after.score + '</div>';
-    html += '<div style="font-size:12px;color:#16a34a;font-weight:600">' + after.risk_level + '</div>';
-    html += '<div style="font-size:12px;color:var(--text-lighter);margin-top:4px">' + after.findings.length + ' 个漏洞</div>';
-    html += '</div>';
-    html += '</div>';
-    
-    // 数据指标对比
-    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:20px">';
-    html += '<div style="text-align:center;padding:12px;background:rgba(239,68,68,0.08);border-radius:10px">';
-    html += '<div style="font-size:24px;font-weight:800;color:#ef4444">' + findingsFixed + '</div>';
-    html += '<div style="font-size:12px;color:var(--text-secondary)">已修复漏洞</div>';
-    html += '</div>';
-    html += '<div style="text-align:center;padding:12px;background:rgba(34,197,94,0.08);border-radius:10px">';
-    html += '<div style="font-size:24px;font-weight:800;color:#16a34a">' + (before.findings.length > 0 ? Math.round(findingsFixed / before.findings.length * 100) : 0) + '%</div>';
-    html += '<div style="font-size:12px;color:var(--text-secondary)">修复率</div>';
-    html += '</div>';
-    html += '<div style="text-align:center;padding:12px;background:rgba(99,102,241,0.08);border-radius:10px">';
-    html += '<div style="font-size:24px;font-weight:800;color:#6366f1">' + (before.summary ? (before.summary.total - after.summary.total) : '-') + '</div>';
-    html += '<div style="font-size:12px;color:var(--text-secondary)">安全项提升</div>';
-    html += '</div>';
-    html += '</div>';
-    
-    // 操作按钮
-    html += '<div style="display:flex;gap:10px;justify-content:center;margin-top:20px">';
-    html += '<button onclick="resetLocalDemoTarget();showToast(\'靶场已重置，可再次演示\',\'success\')" style="padding:10px 20px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--text-primary);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600">&#x1F504; 重置靶场</button>';
-    html += '<button onclick="runLocalDemoFullCycle()" style="padding:10px 20px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600">&#x26A1; 再演示一次</button>';
-    html += '</div>';
-    html += '</div>';
-    
-    // ===== 漏洞详情对比
-    html += '<div class="section-title fade-in-up" style="animation-delay:0.1s">&#x1F50D; 漏洞详情对比</div>';
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">';
-    
-    // 左侧：修复前
-    html += '<div class="fade-in-up" style="animation-delay:0.15s">';
-    html += '<div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:10px;display:flex;align-items:center;gap:8px">';
-    html += '<span style="width:8px;height:8px;background:#ef4444;border-radius:50%"></span>修复前（' + before.findings.length + ' 个）';
-    html += '</div>';
-    before.findings.forEach(function(f, i) {
-      var levelClass = getRiskClass(f.level || '中风险');
-      html += '<div class="finding-card" style="margin-bottom:8px;animation-delay:' + (0.2 + i * 0.03) + 's">';
-      html += '<div class="finding-header" style="cursor:default">';
-      html += '<span class="finding-level ' + levelClass + '">' + (f.level || f.severity) + '</span>';
-      html += '<span class="finding-name">' + (f.name || '') + '</span>';
-      html += '</div>';
-      html += '</div>';
-    });
-    if (before.findings.length === 0) {
-      html += '<div style="padding:20px;text-align:center;color:var(--text-lighter);font-size:13px">无漏洞</div>';
-    }
-    html += '</div>';
-    
-    // 右侧：修复后
-    html += '<div class="fade-in-up" style="animation-delay:0.2s">';
-    html += '<div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:10px;display:flex;align-items:center;gap:8px">';
-    html += '<span style="width:8px;height:8px;background:#16a34a;border-radius:50%"></span>修复后（' + after.findings.length + ' 个）';
-    html += '</div>';
-    after.findings.forEach(function(f, i) {
-      var levelClass = getRiskClass(f.level || '中风险');
-      html += '<div class="finding-card" style="margin-bottom:8px;animation-delay:' + (0.25 + i * 0.03) + 's">';
-      html += '<div class="finding-header" style="cursor:default">';
-      html += '<span class="finding-level ' + levelClass + '">' + (f.level || f.severity) + '</span>';
-      html += '<span class="finding-name">' + (f.name || '') + '</span>';
-      html += '</div>';
-      html += '</div>';
-    });
-    if (after.findings.length === 0) {
-      html += '<div style="padding:20px;text-align:center;color:#16a34a;font-size:13px;background:rgba(34,197,94,0.1);border-radius:10px;border:1px solid rgba(34,197,94,0.2)">&#x2705; 全部修复完成</div>';
-    }
-    html += '</div>';
-    html += '</div>';
-    
-    // ===== 安全头对比
-    if (before.header_details && after.header_details) {
-      html += '<div class="section-title fade-in-up" style="animation-delay:0.3s">&#x1F6E1; 安全响应头对比</div>';
-      html += '<div class="card fade-in-up" style="animation-delay:0.35s">';
-      html += '<div class="card-title">响应头配置</div>';
-      html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;font-weight:600;color:var(--text-secondary);padding-bottom:8px;border-bottom:1px solid var(--border-light);margin-bottom:8px">';
-      html += '<div>安全头</div><div>修复前</div><div>修复后</div>';
-      html += '</div>';
-      
-      var headers = ['HSTS', 'CSP', 'X-Frame-Options', 'X-Content-Type-Options', 'Referrer-Policy', 'Permissions-Policy'];
-      var beforeMap = {};
-      var afterMap = {};
-      before.header_details.forEach(function(h) { beforeMap[h.name] = h; });
-      after.header_details.forEach(function(h) { afterMap[h.name] = h; });
-      
-      headers.forEach(function(name, idx) {
-        var b = beforeMap[name];
-        var a = afterMap[name];
-        var bStatus = b ? (b.status === 'present' ? '&#x2705; 已配置' : '&#x274C; 缺失') : '-';
-        var aStatus = a ? (a.status === 'present' ? '&#x2705; 已配置' : '&#x274C; 缺失') : '-';
-        var bColor = b && b.status === 'present' ? 'color:#16a34a' : 'color:#ef4444';
-        var aColor = a && a.status === 'present' ? 'color:#16a34a' : 'color:#ef4444';
-        var changed = b && a && b.status !== a.status;
-        html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;padding:6px 0;align-items:center' + (changed ? ';background:rgba(34,197,94,0.06);border-radius:6px;padding:6px' : '') + '">';
-        html += '<div style="color:var(--text-primary);font-weight:500">' + name + '</div>';
-        html += '<div style="' + bColor + '">' + bStatus + '</div>';
-        html += '<div style="' + aColor + '">' + aStatus + (changed ? ' <span style="color:#16a34a;font-size:11px">&#x2728;</span>' : '') + '</div>';
-        html += '</div>';
-      });
-      html += '</div>';
-    }
-    
-    // ===== 底部：查看详细结果按钮
-    html += '<div style="text-align:center;margin-top:10px">';
-    html += '<button onclick="showFullScanDetail()" style="padding:10px 24px;background:var(--bg-card);border:1px solid var(--border-light);color:var(--text-primary);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600">&#x1F4CB; 查看详细扫描结果</button>';
-    html += '</div>';
-    
-    // ===== 更多功能探索
-    html += '<div class="section-title fade-in-up" style="animation-delay:0.5s;margin-top:28px">&#x1F680; 继续探索</div>';
-    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px">';
-    html += '<button onclick="navigateTo(\'fixer\')" class="fade-in-up" style="animation-delay:0.55s;padding:14px 12px;background:var(--bg-card);border:1px solid var(--border-light);color:var(--text-primary);border-radius:12px;cursor:pointer;text-align:left;transition:all 0.2s" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 4px 12px rgba(0,0,0,0.1)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.boxShadow=\'none\'">';
-    html += '<div style="font-size:18px;margin-bottom:6px">&#x1F527;</div>';
-    html += '<div style="font-size:12px;font-weight:700;margin-bottom:4px">配置修复器</div>';
-    html += '<div style="font-size:11px;color:var(--text-secondary);line-height:1.5">粘贴 Nginx 配置<br>智能生成安全补丁</div>';
-    html += '</button>';
-    html += '<button onclick="navigateTo(\'assets\')" class="fade-in-up" style="animation-delay:0.6s;padding:14px 12px;background:var(--bg-card);border:1px solid var(--border-light);color:var(--text-primary);border-radius:12px;cursor:pointer;text-align:left;transition:all 0.2s" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 4px 12px rgba(0,0,0,0.1)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.boxShadow=\'none\'">';
-    html += '<div style="font-size:18px;margin-bottom:6px">&#x1F4DA;</div>';
-    html += '<div style="font-size:12px;font-weight:700;margin-bottom:4px">资产监控</div>';
-    html += '<div style="font-size:11px;color:var(--text-secondary);line-height:1.5">添加多个站点<br>持续监控安全状态</div>';
-    html += '</button>';
-    html += '<button onclick="navigateTo(\'evolve\')" class="fade-in-up" style="animation-delay:0.65s;padding:14px 12px;background:var(--bg-card);border:1px solid var(--border-light);color:var(--text-primary);border-radius:12px;cursor:pointer;text-align:left;transition:all 0.2s" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 4px 12px rgba(0,0,0,0.1)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.boxShadow=\'none\'">';
-    html += '<div style="font-size:18px;margin-bottom:6px">&#x1F9E0;</div>';
-    html += '<div style="font-size:12px;font-weight:700;margin-bottom:4px">AI 进化</div>';
-    html += '<div style="font-size:11px;color:var(--text-secondary);line-height:1.5">反馈误报<br>持续优化检测模型</div>';
-    html += '</button>';
-    html += '</div>';
-    
-    resultContent.innerHTML = html;
-    window._demoAfterResult = after;
-  }, 100);
-}
 
 function showFullScanDetail() {
   if (window._demoAfterResult) {
@@ -7734,47 +6415,6 @@ function calculateScore(findings, hasFixConfig, hasPR) {
   if (hasFixConfig) score += 12;
   if (hasPR) score += 10;
   return Math.max(10, Math.min(98, score));
-}
-
-// ===== 一分钟体验：自动登录 + 填充 URL + 扫描 =====
-function doLoginSilent() {
-  return authFetch('/api/login', {
-    method: 'POST',
-    body: JSON.stringify({ username: 'demo', password: 'demo123' })
-  }).then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data.token) {
-      setToken(data.token);
-      try { localStorage.setItem('vs_username', data.username || 'demo'); } catch(e) {}
-      updateAuthUI();
-      updateAlertBadge();
-    }
-  }).catch(function() {});
-}
-
-function startOneMinuteDemo() {
-  // 如果未登录，先静默登录
-  if (!isLoggedIn()) {
-    showToast('正在自动登录...');
-    doLoginSilent().then(function() {
-      setTimeout(function() { _doOneMinuteScan(); }, 300);
-    });
-  } else {
-    _doOneMinuteScan();
-  }
-}
-
-function _doOneMinuteScan() {
-  // 填充 URL
-  var input = document.getElementById('scan-url');
-  if (input) input.value = 'https://example.com';
-  // 滚动到扫描区域
-  navigateTo('scan');
-  // 勾选授权复选框
-  var authCb = document.getElementById('auth-check');
-  if (authCb) authCb.checked = true;
-  // 延迟启动扫描
-  setTimeout(function() { startScan(); }, 800);
 }
 
 function startScan() {
@@ -8552,7 +7192,7 @@ function renderResult(data) {
 
   // ★ 攻击模拟按钮
   html += '<div class="fade-in-up" style="margin-top:20px;background:linear-gradient(135deg,rgba(239,68,68,0.08),rgba(249,115,22,0.08));border:1px solid rgba(239,68,68,0.2);border-radius:14px;padding:20px;animation-delay:0.2s">';
-  html += '<h3 style="margin:0 0 8px 0;font-size:15px;font-weight:700">⚔️ 攻击模拟演示</h3>';
+  html += '<h3 style="margin:0 0 8px 0;font-size:15px;font-weight:700">⚔️ 攻击模拟展示</h3>';
   html += '<p style="margin:0 0 14px 0;font-size:12px;color:var(--text-secondary)">一键展示真实攻击场景，让安全风险看得见</p>';
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
   html += '<button onclick="simulateCSRF(\'' + escapeAttr(data.url) + '\')" style="padding:14px 8px;border:1px solid rgba(239,68,68,0.3);background:rgba(239,68,68,0.08);border-radius:10px;cursor:pointer;font-size:12px;font-weight:600;color:#dc2626;transition:all 0.2s" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 4px 12px rgba(239,68,68,0.3)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.boxShadow=\'none\'">';
@@ -10823,28 +9463,6 @@ document.addEventListener('DOMContentLoaded', function() {
   var skeleton = safeGetElement('skeleton-screen');
   if (skeleton) skeleton.classList.add('hidden');
   setTimeout(function() { if (skeleton) skeleton.style.display = 'none'; }, 350);
-
-  // 在线部署环境隐藏本地演示靶场入口（依赖 localhost:8080 的 nginx 靶场）
-  var localDemoBox = document.getElementById('local-demo-section');
-  if (localDemoBox) {
-    var host = window.location.hostname;
-    if (!(host === 'localhost' || host === '127.0.0.1' || host === '')) {
-      localDemoBox.style.display = 'none';
-    }
-  }
-
-  // 离线模式下隐藏未实现功能的 UI 入口
-  if (window.OFFLINE_MODE) {
-    var hidePages = ['assets', 'tickets', 'evolution'];
-    hidePages.forEach(function(page) {
-      var el = document.querySelector('.nav-item[data-page="' + page + '"]');
-      if (el) el.style.display = 'none';
-    });
-    var monItem = document.querySelector('.menu-item[onclick*="showProfileTab(\'monitor\')"]');
-    if (monItem) monItem.style.display = 'none';
-    var aiNotice = document.getElementById('ai-offline-notice');
-    if (aiNotice) aiNotice.style.display = 'block';
-  }
 
   // 扫描深度档位切换 — 通过 .scan-depth-opt 的 click 事件绑定（兼容 iOS + 触屏）
   var depthHints = { quick: '约 1-2 秒 · 仅响应头', standard: '约 3-5 秒 · 推荐', deep: '约 10+ 秒 · 含攻击测试' };

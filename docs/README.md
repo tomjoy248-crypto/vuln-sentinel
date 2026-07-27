@@ -31,7 +31,7 @@ docs/
    pip3 install -r requirements.txt --break-system-packages
    python3 main.py
    ```
-2. 浏览器打开 `http://localhost:8000`，账号 `demo / demo123`。
+2. 浏览器打开 `http://localhost:8000`，注册账号或登录后使用。
 3. 截取首页、扫描报告页、修复包下载页三张图。
 4. 将图片分别保存为 `docs/screenshots/home.png`、`docs/screenshots/report.png`、`docs/screenshots/fix.png`。
 5. 提交 PR 后，README 顶部的截图占位就会自动渲染。
