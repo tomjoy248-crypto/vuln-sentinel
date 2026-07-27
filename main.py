@@ -2241,6 +2241,8 @@ async def detect_sqli(url: str, params: List[str]) -> List[dict]:
                             "type": "sqli",
                             "evidence": {"param": param, "payload": payload[:60], "pattern": pattern, "url": test_url[:200]},
                             "confidence_level": "高",
+                            "location": {"type": "url_parameter", "target": param, "detail": "参数存在SQL注入"},
+                            "ai_advice": f"**漏洞**：SQL注入\n**优先级**：立即修复（可被直接利用，可能导致数据泄露或服务器沦陷）\n**影响**：参数 '{param}' 存在SQL注入\n**修复**：使用参数化查询",
                         })
                         break
                 else:
@@ -2261,6 +2263,8 @@ async def detect_sqli(url: str, params: List[str]) -> List[dict]:
                             "type": "sqli",
                             "evidence": {"param": param, "payload": payload[:60], "elapsed": round(elapsed, 2), "url": test_url[:200]},
                             "confidence_level": "中",
+                            "location": {"type": "url_parameter", "target": param, "detail": "参数存在SQL注入"},
+                            "ai_advice": f"**漏洞**：SQL注入\n**优先级**：立即修复（可被直接利用，可能导致数据泄露或服务器沦陷）\n**影响**：参数 '{param}' 存在SQL注入\n**修复**：使用参数化查询",
                         })
                     # 3. 布尔盲注
                     elif _response_differs_significantly(baseline_body.lower(), body):
@@ -2279,6 +2283,8 @@ async def detect_sqli(url: str, params: List[str]) -> List[dict]:
                             "type": "sqli",
                             "evidence": {"param": param, "payload": payload[:60], "baseline_len": len(baseline_body), "current_len": len(body), "url": test_url[:200]},
                             "confidence_level": "中",
+                            "location": {"type": "url_parameter", "target": param, "detail": "参数存在SQL注入"},
+                            "ai_advice": f"**漏洞**：SQL注入\n**优先级**：立即修复（可被直接利用，可能导致数据泄露或服务器沦陷）\n**影响**：参数 '{param}' 存在SQL注入\n**修复**：使用参数化查询",
                         })
             except Exception as e:
                 logger.warning("SQLi detection error on %s: %s", test_url[:120], e)
@@ -2326,6 +2332,8 @@ async def detect_reflected_xss(url: str, params: List[str]) -> List[dict]:
                         "type": "xss",
                         "evidence": {"param": param, "payload": payload[:60], "dangerous_context": dangerous, "url": test_url[:200]},
                         "confidence_level": "高" if dangerous else "中",
+                        "location": {"type": "url_parameter", "target": param, "detail": "参数存在XSS注入"},
+                        "ai_advice": f"**漏洞**：XSS注入\n**优先级**：尽快修复（存在明确利用路径，风险较高）\n**影响**：参数 '{param}' 存在XSS注入\n**修复**：对用户输入进行HTML转义",
                     })
             except Exception as e:
                 logger.warning("XSS detection error on %s: %s", test_url[:120], e)
@@ -2372,6 +2380,8 @@ async def detect_command_injection(url: str, params: List[str]) -> List[dict]:
                         "type": "cmdi",
                         "evidence": {"param": param, "payload": payload[:60], "signature": matched_sig, "url": test_url[:200]},
                         "confidence_level": "高",
+                        "location": {"type": "url_parameter", "target": param, "detail": "参数存在命令注入"},
+                        "ai_advice": f"**漏洞**：命令注入\n**优先级**：立即修复（可被直接利用，可能导致服务器沦陷）\n**影响**：参数 '{param}' 存在命令注入\n**修复**：禁止将用户输入拼接到系统命令中，使用参数化API",
                     })
                 elif elapsed > 8:
                     # 响应极慢，可能是耗时命令（如 sleep）
@@ -2391,6 +2401,8 @@ async def detect_command_injection(url: str, params: List[str]) -> List[dict]:
                         "type": "cmdi",
                         "evidence": {"param": param, "payload": payload[:60], "elapsed": round(elapsed, 2), "url": test_url[:200]},
                         "confidence_level": "低",
+                        "location": {"type": "url_parameter", "target": param, "detail": "参数疑似存在命令注入"},
+                        "ai_advice": f"**漏洞**：命令注入\n**优先级**：建议修复（存在一定风险）\n**影响**：参数 '{param}' 疑似存在命令注入\n**修复**：禁止将用户输入拼接到系统命令中，使用参数化API",
                     })
             except Exception as e:
                 logger.warning("Command injection detection error on %s: %s", test_url[:120], e)
@@ -2439,6 +2451,8 @@ async def detect_directory_traversal(url: str, params: List[str]) -> List[dict]:
                             "url": test_url[:200],
                         },
                         "confidence_level": "高",
+                        "location": {"type": "url_parameter", "target": param, "detail": "参数存在目录遍历"},
+                        "ai_advice": f"**漏洞**：目录遍历\n**优先级**：尽快修复（存在明确利用路径，风险较高）\n**影响**：参数 '{param}' 存在目录遍历\n**修复**：对用户输入的路径进行严格校验，使用白名单",
                     })
                 elif resp.status_code == 200 and len(body) > 100 and ("<html" not in body.lower()):
                     # 返回了非 HTML 的 200 响应，可能是文件内容
@@ -2458,6 +2472,8 @@ async def detect_directory_traversal(url: str, params: List[str]) -> List[dict]:
                         "type": "traversal",
                         "evidence": {"param": param, "payload": payload[:60], "status_code": 200, "url": test_url[:200]},
                         "confidence_level": "低",
+                        "location": {"type": "url_parameter", "target": param, "detail": "参数疑似存在目录遍历"},
+                        "ai_advice": f"**漏洞**：目录遍历\n**优先级**：建议修复（存在一定风险）\n**影响**：参数 '{param}' 疑似存在目录遍历\n**修复**：对用户输入的路径进行严格校验，使用白名单",
                     })
             except Exception as e:
                 logger.warning("Directory traversal detection error on %s: %s", test_url[:120], e)
@@ -2489,6 +2505,8 @@ async def detect_insecure_deserialization(headers: dict, url: str) -> List[dict]
                     "type": "deserialization",
                     "evidence": {"header": key, "signature": sig, "value": value[:100]},
                     "confidence_level": "中",
+                    "location": {"type": "response_header", "target": key, "detail": "响应头中存在不安全的反序列化特征"},
+                    "ai_advice": f"**漏洞**：不安全的反序列化\n**优先级**：尽快修复（存在明确利用路径，风险较高）\n**影响**：响应头 '{key}' 中发现可能的序列化对象特征\n**修复**：避免在HTTP头中传输序列化对象，使用JSON+签名",
                 })
                 break
 
@@ -2513,6 +2531,8 @@ async def detect_insecure_deserialization(headers: dict, url: str) -> List[dict]
                     "type": "deserialization",
                     "evidence": {"header": "Set-Cookie", "signature": sig, "value": set_cookie[:100]},
                     "confidence_level": "中",
+                    "location": {"type": "cookie", "target": "Set-Cookie", "detail": "Cookie中存在不安全的反序列化特征"},
+                    "ai_advice": f"**漏洞**：不安全的反序列化\n**优先级**：尽快修复（存在明确利用路径，风险较高）\n**影响**：Cookie中发现可能的序列化对象特征\n**修复**：Cookie中禁止存放序列化对象，改用JWT或加密token",
                 })
                 break
 
@@ -2588,6 +2608,8 @@ async def detect_ssrf_enhanced(url: str, params: List[str]) -> List[dict]:
                             "type": "ssrf",
                             "evidence": {"param": param, "payload": payload[:60], "body_hint": body[:80], "url": test_url[:200]},
                             "confidence_level": "高",
+                            "location": {"type": "url_parameter", "target": param, "detail": "参数存在SSRF漏洞"},
+                            "ai_advice": f"**漏洞**：SSRF\n**优先级**：立即修复（可被直接利用，可能导致服务器沦陷）\n**影响**：参数 '{param}' 存在SSRF漏洞，可访问云元数据服务\n**修复**：禁止用户输入直接作为后端请求目标，使用URL白名单+DNS解析校验",
                         })
                     else:
                         findings.append({
@@ -2606,6 +2628,8 @@ async def detect_ssrf_enhanced(url: str, params: List[str]) -> List[dict]:
                             "type": "ssrf",
                             "evidence": {"param": param, "payload": payload[:60], "status_code": 200, "url": test_url[:200]},
                             "confidence_level": "中",
+                            "location": {"type": "url_parameter", "target": param, "detail": "参数疑似存在SSRF漏洞"},
+                            "ai_advice": f"**漏洞**：SSRF\n**优先级**：尽快修复（存在明确利用路径，风险较高）\n**影响**：参数 '{param}' 疑似存在SSRF漏洞，可访问内网资源\n**修复**：禁止用户输入直接作为后端请求目标，使用URL白名单+DNS解析校验",
                         })
             except Exception as e:
                 logger.warning("SSRF detection error on %s: %s", test_url[:120], e)
@@ -4512,11 +4536,30 @@ def add_finding(
     confidence_level: Optional[str] = None,
     cv_reason: Optional[str] = None,
 ) -> None:
+    # 生成智能分析（ai_advice）
+    sev_zh = SEVERITY_ZH.get(severity, "低风险")
+    if severity == "critical":
+        priority, prio_reason = "立即修复", "可被直接利用，可能导致数据泄露或服务器沦陷"
+    elif severity == "high":
+        priority, prio_reason = "尽快修复", "存在明确利用路径，风险较高"
+    elif severity == "medium":
+        priority, prio_reason = "建议修复", "一定条件下可被利用，建议尽早处理"
+    else:
+        priority, prio_reason = "可选修复", "风险较低，可在常规维护中处理"
+
+    ai_parts = [f"**漏洞**：{name}", f"**优先级**：{priority}（{prio_reason}）"]
+    if summary:
+        ai_parts.append(f"**影响**：{summary}")
+    if fix:
+        fix_sum = fix.split("。")[0] if "。" in fix else fix[:80]
+        ai_parts.append(f"**修复**：{fix_sum}")
+    ai_advice = "\n".join(ai_parts)
+
     finding: Dict[str, Any] = {
         "name": name,
-        "severity": severity,         # 真实字段：英文
-        "level": SEVERITY_ZH.get(severity, "低风险"),  # 给前端展示的中文
-        "level_zh": SEVERITY_ZH.get(severity, "低风险"),
+        "severity": severity,
+        "level": sev_zh,
+        "level_zh": sev_zh,
         "owasp": owasp,
         "summary": summary,
         "fix": fix,
@@ -4524,6 +4567,7 @@ def add_finding(
         "evidence": evidence or {},
         "verify_method": get_verify_method_text(verify_key),
         "verify_steps": get_verify_steps(verify_key),
+        "ai_advice": ai_advice,
     }
     # 11-S：置信度（高/中/低）
     if confidence_level is not None:
@@ -4532,7 +4576,7 @@ def add_finding(
         finding["confidence_level"] = _confidence_level_from_int(confidence)
         finding["confidence"] = confidence
     else:
-        finding["confidence_level"] = "高"  # 默认高置信度
+        finding["confidence_level"] = "高"
     if confidence is not None and "confidence" not in finding:
         finding["confidence"] = confidence
     # 11-S：交叉验证字段（可选）

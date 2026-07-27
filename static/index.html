@@ -2531,7 +2531,7 @@ img[loading="lazy"] { background: var(--border-light); }
     </div>
   </div>
 
-  <!-- 核心数据条（评审第一眼看到） -->
+  <!-- 核心数据总览 -->
   <div class="card fade-in-up" style="margin-top:14px;padding:14px;background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff">
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
       <div>
@@ -3527,6 +3527,115 @@ function escapeHtml(str) {
 
 function escapeAttr(str) {
   return String(str == null ? '' : str).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+}
+
+// ============== evidence 通用渲染器 ==============
+// 完整的 evidence 渲染器，支持所有字段（含注入类/敏感路径/过时组件/Cookie/SSL 等定位信息）
+// 渲染规则：
+//  1. 遍历 evidence 对象的所有 key，对每个 key 用中文标签展示
+//  2. payload 字段用红色高亮（攻击向量）
+//  3. path/url 字段用代码字体显示
+//  4. cve 字段如包含 CVE-ID，显示为醒目红色标签
+//  5. missing_flags 是数组，用逗号分隔展示
+//  6. evidence 为空时返回空字符串（由调用方提示“无额外技术细节”）
+var EVIDENCE_LABELS = {
+  header:           '相关响应头',
+  detected:         '检测结果',
+  reason:           '判断依据',
+  impact:           '影响说明',
+  value:            '当前值',
+  check_scope:      '检测范围',
+  limitation:       '检测局限',
+  param:            '问题参数',
+  payload:          '测试 Payload',
+  url:              '问题 URL',
+  path:             '暴露路径',
+  status:           '响应状态',
+  snippet:          '内容片段',
+  library:          '组件名称',
+  version:          '当前版本',
+  detected_version: '当前版本',
+  min_safe_version: '安全版本',
+  cve:              '关联 CVE',
+  missing_flags:    '缺失安全标志',
+  redirect_to:      '重定向目标',
+  os:               '操作系统',
+  body_hint:        '响应特征',
+  days_left:        '证书剩余天数',
+  method:           '检测方法'
+};
+// 字段渲染顺序（命中字段按此顺序展示，未列出的字段追加到末尾，保证可读性）
+var EVIDENCE_ORDER = [
+  'detected', 'header', 'reason', 'impact', 'value', 'check_scope', 'limitation',
+  'param', 'payload', 'url', 'path', 'status', 'snippet',
+  'library', 'version', 'detected_version', 'min_safe_version', 'cve',
+  'missing_flags', 'redirect_to', 'os', 'body_hint', 'days_left', 'method'
+];
+function renderEvidence(evi) {
+  if (!evi || typeof evi !== 'object') return '';
+  var keys = Object.keys(evi).filter(function(k) { return evi[k] !== undefined && evi[k] !== null && evi[k] !== ''; });
+  if (keys.length === 0) return '';
+  // 按 EVIDENCE_ORDER 排序，未列出的字段保留原顺序追加在后面
+  var ordered = [];
+  EVIDENCE_ORDER.forEach(function(k) { if (keys.indexOf(k) >= 0) ordered.push(k); });
+  keys.forEach(function(k) { if (ordered.indexOf(k) < 0) ordered.push(k); });
+
+  var rows = ordered.map(function(k) {
+    var label = EVIDENCE_LABELS[k] || k;
+    var raw = evi[k];
+    var valHtml = '';
+
+    if (k === 'detected') {
+      // 布尔值：检测结果以颜色文本展示
+      var detColor = raw ? '#ef4444' : '#22c55e';
+      var detText = raw ? '⚠️ 已检测到' : '✓ 未检测到';
+      valHtml = '<span style="color:' + detColor + ';font-weight:600;font-size:12px">' + detText + '</span>';
+    } else if (k === 'payload') {
+      // payload 攻击向量：红色高亮 + 深色代码块
+      valHtml = '<code style="background:#3b0d0d;color:#fecaca;padding:2px 8px;border-radius:4px;font-size:12px;word-break:break-all;border:1px solid rgba(239,68,68,0.35)">' + escapeHtml(raw) + '</code>';
+    } else if (k === 'url' || k === 'path') {
+      // path/url 用代码字体显示
+      valHtml = '<code style="background:#f1f5f9;padding:2px 8px;border-radius:4px;font-size:12px;word-break:break-all">' + escapeHtml(raw) + '</code>';
+    } else if (k === 'cve') {
+      // cve 字段：包含 CVE-ID 显示为醒目红色标签
+      var cveText = String(raw);
+      var cveMatches = cveText.match(/CVE-\d{4}-\d{4,7}/gi) || [];
+      if (cveMatches.length > 0) {
+        valHtml = cveMatches.map(function(id) {
+          return '<span style="display:inline-block;background:#ef4444;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:0.3px">' + escapeHtml(id) + '</span>';
+        }).join(' ');
+        // 若原文除 CVE-ID 外还有其他内容，附加显示
+        var extra = cveText.replace(/CVE-\d{4}-\d{4,7}/gi, '').replace(/[,\s、，；;]+/g, ' ').trim();
+        if (extra) valHtml += ' <span style="font-size:12px;color:var(--text-secondary)">' + escapeHtml(extra) + '</span>';
+      } else {
+        // 未匹配到标准 CVE-ID，按普通文本渲染但仍用红色标签样式突出
+        valHtml = '<span style="display:inline-block;background:#ef4444;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">' + escapeHtml(cveText) + '</span>';
+      }
+    } else if (k === 'missing_flags') {
+      // 数组：用逗号分隔展示
+      var arr = Array.isArray(raw) ? raw : [raw];
+      valHtml = arr.map(function(item) {
+        return '<code style="background:#fff7ed;color:#c2410c;padding:2px 8px;border-radius:4px;font-size:12px">' + escapeHtml(item) + '</code>';
+      }).join(' ');
+    } else if (k === 'status' || k === 'days_left') {
+      // 数值/状态：突出显示
+      valHtml = '<span style="font-weight:600;color:var(--text-primary);font-size:12px">' + escapeHtml(raw) + '</span>';
+    } else if (k === 'snippet') {
+      // 内容片段：代码块深色背景
+      valHtml = '<code style="background:#1e293b;color:#e2e8f0;padding:6px 8px;border-radius:4px;font-size:11px;word-break:break-all;display:block;white-space:pre-wrap;max-height:160px;overflow:auto">' + escapeHtml(raw) + '</code>';
+    } else if (k === 'limitation') {
+      // 检测局限：黄色警示
+      valHtml = '<span style="color:#f59e0b;font-size:12px">&#x26A0; ' + escapeHtml(raw) + '</span>';
+    } else {
+      // 默认：纯文本展示
+      valHtml = '<span style="font-size:12px;color:var(--text-primary)">' + escapeHtml(raw) + '</span>';
+    }
+    return '<div style="display:flex;gap:8px;padding:4px 0;align-items:flex-start">' +
+           '<span style="color:var(--text-secondary);min-width:78px;flex-shrink:0;font-size:12px">' + label + '</span>' +
+           '<span style="flex:1;min-width:0">' + valHtml + '</span>' +
+           '</div>';
+  });
+  return rows.join('');
 }
 
 // ============== 雷达图 ==============
@@ -6882,7 +6991,7 @@ function updateStage(stageId, status) {
   }
 }
 
-// 依次激活每个阶段（带 700ms 间隔，给评委看的动画）
+// 依次激活每个阶段（带 700ms 间隔，阶段动画展示）
 var _stageTimer = null;
 function animateStages() {
   var stages = ['dns', 'connect', 'headers', 'ssl', 'sensitive', 'waf', 'report'];
@@ -7290,7 +7399,7 @@ function renderResult(data) {
     html += '</div>';
   }
 
-  // ★ 修复前后价值对比（让评委一眼看到"不是检测玩具，是能提升结果的工具"）
+  // ★ 修复前后价值对比
   var _valBeforeScore = data.score || 0;
   var _valAfterScore  = Math.min(98, _valBeforeScore + 25);
   var _valBeforeRisk  = highCount + medCount;
@@ -7529,7 +7638,17 @@ function renderResult(data) {
     html += '<div class="finding-body">';
     html += '<div class="finding-section"><h4>问题摘要</h4><p>' + escapeHtml(f.summary) + '</p></div>';
     html += '<div class="finding-section"><h4>OWASP 分类</h4><p>' + escapeHtml(f.owasp) + '</p></div>';
-    html += '<div class="finding-section"><h4>智能分析</h4><p>' + escapeHtml(f.ai_advice) + '</p></div>';
+    // 漏洞定位信息
+    if (f.location && f.location.target) {
+      html += '<div class="finding-section" style="background:linear-gradient(135deg,rgba(59,130,246,0.05),rgba(147,51,234,0.03));border:1px solid rgba(59,130,246,0.15);"><h4 style="color:#2563eb">&#128205; 漏洞定位</h4>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">';
+      html += '<span style="background:rgba(59,130,246,0.1);color:#1d4ed8;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600">' + escapeHtml(f.location.target) + '</span>';
+      if (f.location.detail) {
+        html += '<span style="background:rgba(147,51,234,0.08);color:#7c3aed;padding:4px 10px;border-radius:6px;font-size:12px">' + escapeHtml(f.location.detail) + '</span>';
+      }
+      html += '</div></div>';
+    }
+    html += '<div class="finding-section"><h4>智能分析</h4><p>' + escapeHtml(f.ai_advice).replace(/\n/g, '<br>') + '</p></div>';
     html += '<div class="finding-section"><h4>修复建议</h4><p>' + escapeHtml(f.fix) + '</p></div>';
     // 判断依据 evidence
     var evidenceText = '';
@@ -7547,20 +7666,13 @@ function renderResult(data) {
     if (evidenceText) {
       html += '<div style="margin-top:6px;font-size:12px;color:var(--text-lighter);border-top:1px dashed var(--border);padding-top:6px">&#x1F4DD; 判断依据：' + escapeHtml(evidenceText) + '</div>';
     }
-    // 技术细节（evidence）- 让评委能验证真伪
+    // 技术验证细节（evidence）
     if (f.evidence) {
-      var evi = f.evidence;
-      var eviHtml = '';
-      if (evi.header) eviHtml += '<div style="display:flex;gap:8px;padding:4px 0"><span style="color:var(--text-secondary);min-width:60px">响应头</span><code style="background:#f1f5f9;padding:2px 8px;border-radius:4px;font-size:12px">' + escapeHtml(evi.header) + '</code></div>';
-      if (evi.detected !== undefined) {
-        var detColor = evi.detected ? '#ef4444' : '#22c55e';
-        var detText = evi.detected ? '⚠️ 已检测到缺失' : '✓ 未检测到';
-        eviHtml += '<div style="display:flex;gap:8px;padding:4px 0"><span style="color:var(--text-secondary);min-width:60px">检测结果</span><span style="color:' + detColor + ';font-weight:600;font-size:12px">' + detText + '</span></div>';
-      }
-      if (evi.value) eviHtml += '<div style="display:flex;gap:8px;padding:4px 0"><span style="color:var(--text-secondary);min-width:60px">实际值</span><code style="background:#1e293b;color:#e2e8f0;padding:2px 8px;border-radius:4px;font-size:12px;word-break:break-all">' + escapeHtml(evi.value) + '</code></div>';
-      if (evi.method) eviHtml += '<div style="display:flex;gap:8px;padding:4px 0"><span style="color:var(--text-secondary);min-width:60px">检测方法</span><span style="font-size:12px">' + escapeHtml(evi.method) + '</span></div>';
+      var eviHtml = renderEvidence(f.evidence);
       if (eviHtml) {
-        html += '<details class="finding-section" style="cursor:pointer"><summary style="font-weight:600;font-size:13px;color:var(--text-primary);padding:6px 0;list-style:none">🔍 展开技术细节（评委验证用）</summary><div style="background:rgba(0,0,0,0.02);padding:10px;border-radius:6px;margin-top:6px">' + eviHtml + '</div></details>';
+        html += '<details class="finding-section" style="cursor:pointer"><summary style="font-weight:600;font-size:13px;color:var(--text-primary);padding:6px 0;list-style:none">🔍 展开技术细节</summary><div style="background:rgba(0,0,0,0.02);padding:10px;border-radius:6px;margin-top:6px">' + eviHtml + '</div></details>';
+      } else {
+        html += '<details class="finding-section" style="cursor:pointer"><summary style="font-weight:600;font-size:13px;color:var(--text-primary);padding:6px 0;list-style:none">🔍 展开技术细节</summary><div style="background:rgba(0,0,0,0.02);padding:10px;border-radius:6px;margin-top:6px;font-size:12px;color:var(--text-lighter)">无额外技术细节</div></details>';
       }
     }
     // 多平台修复建议 Tab
@@ -7659,26 +7771,11 @@ function renderResult(data) {
     if (f.evidence && Object.keys(f.evidence).length > 0) {
       html += '<div style="margin-top:8px;padding:10px;background:var(--bg-secondary);border-radius:8px;font-size:12px">';
       html += '<div style="font-weight:600;margin-bottom:4px;color:var(--primary)">证据详情</div>';
-      if (f.evidence.detected !== undefined) {
-        html += '<div>检测状态: ' + (f.evidence.detected ? '已检测到' : '未检测到') + '</div>';
-      }
-      if (f.evidence.header) {
-        html += '<div>相关响应头: ' + escapeHtml(f.evidence.header) + '</div>';
-      }
-      if (f.evidence.reason) {
-        html += '<div>判定原因: ' + escapeHtml(f.evidence.reason) + '</div>';
-      }
-      if (f.evidence.impact) {
-        html += '<div>潜在影响: ' + escapeHtml(f.evidence.impact) + '</div>';
-      }
-      if (f.evidence.value) {
-        html += '<div>检测值: ' + escapeHtml(f.evidence.value) + '</div>';
-      }
-      if (f.evidence.check_scope) {
-        html += '<div>检测范围: ' + escapeHtml(f.evidence.check_scope) + '</div>';
-      }
-      if (f.evidence.limitation) {
-        html += '<div style="color:#f59e0b">&#x26A0; 局限性: ' + escapeHtml(f.evidence.limitation) + '</div>';
+      var _eviDetailHtml = renderEvidence(f.evidence);
+      if (_eviDetailHtml) {
+        html += _eviDetailHtml;
+      } else {
+        html += '<div style="color:var(--text-lighter)">无额外技术细节</div>';
       }
       html += '</div>';
     }
