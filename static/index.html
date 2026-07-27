@@ -845,17 +845,28 @@ input:focus, textarea:focus, select:focus { transition: border-color 0.2s ease, 
 }
 .pay-banner h3 { font-size: 15px; font-weight: 700; color: var(--pay-color); margin-bottom: 6px; }
 .pay-banner p { font-size: 13px; color: var(--text-secondary); margin-bottom: 14px; }
+.pay-banner .pay-price {
+  font-size: 22px; font-weight: 800; color: var(--pay-color); margin: 8px 0 14px;
+}
+.pay-banner .pay-actions {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; max-width: 520px; margin: 0 auto;
+}
 .pay-btn {
-  display: inline-block;
-  padding: 12px 32px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 12px 16px;
   background: linear-gradient(135deg, var(--warning), var(--warning-dark));
   color: #fff;
   border-radius: var(--radius-sm);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   transition: all 0.2s;
+  border: none; cursor: pointer;
 }
 .pay-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+.pay-btn.secondary {
+  background: var(--bg-card); color: var(--pay-color); border: 1px solid rgba(245,158,11,0.4);
+}
+.pay-btn.secondary:hover { background: rgba(245,158,11,0.08); }
 
 /* OWASP */
 .owasp-item {
@@ -3908,7 +3919,7 @@ var historyPageSize = 5;
 
 var OFFLINE_MODE = window.location.protocol === 'file:' || !!window.__FORCE_OFFLINE__;
 
-// 预置的真实扫描数据（与 v12 后端在 example.com 上跑出来的结果完全一致）
+// 预置的真实扫描数据（与漏洞哨兵 11-S 后端在 example.com 上跑出来的结果完全一致）
 var OFFLINE_DEMO_SCANS = {
   "https://example.com": {
     success: true, scan_type: "real", url: "https://example.com", is_https: true,
@@ -3950,11 +3961,11 @@ var OFFLINE_DEMO_SCANS = {
       { "category": "A01 访问控制失效", "status": "通过", "note": "敏感路径未暴露" },
       { "category": "A02 加密机制失效", "status": "通过", "note": "已启用 HTTPS / TLS 1.3" },
       { "category": "A03 注入攻击", "status": "通过", "note": "未检测到注入漏洞" },
-      { "category": "A04 不安全设计", "status": "通过", "note": "未检测到" },
+      { "category": "A04 不安全设计", "status": "通过", "note": "未在常见入口检测到开放重定向" },
       { "category": "A05 安全配置错误", "status": "通过", "note": "受 Cloudflare WAF 保护，6 个响应头已由 WAF 覆盖" },
       { "category": "A06 过时组件", "status": "通过", "note": "未检测到过时组件" },
-      { "category": "A07 认证失败", "status": "通过", "note": "未检测到" },
-      { "category": "A08 软件完整性", "status": "通过", "note": "未检测到" },
+      { "category": "A07 认证失败", "status": "通过", "note": "未在登录页检测到明显认证配置问题" },
+      { "category": "A08 软件完整性", "status": "通过", "note": "首页第三方资源完整性校验正常" },
       { "category": "A09 日志监控不足", "status": "低风险", "note": "建议加强" },
       { "category": "A10 服务端请求伪造", "status": "通过", "note": "未检测到" }
     ]
@@ -4570,56 +4581,74 @@ function renderMonitorTargets() {
 // ========== Report Download (PDF + HTML) ==========
 function downloadReport(fmt) {
   if (!lastScanResult) { showToast('暂无扫描结果'); return; }
-  var scanId = lastScanResult.scan_id || lastScanResult.url;
   var format = fmt || 'pdf';
   var formatName = format === 'html' ? 'HTML' : 'PDF';
   showToast('正在生成 ' + formatName + ' 报告...');
 
-  var url = '/api/report/' + encodeURIComponent(scanId) + '?format=' + format;
+  function doDownload(scanId) {
+    var url = '/api/report/' + encodeURIComponent(scanId) + '?format=' + format;
+    if (format === 'html') {
+      authFetch(url)
+        .then(function(resp) {
+          if (!resp.ok) throw new Error('报告生成失败 (' + resp.status + ')');
+          return resp.text();
+        })
+        .then(function(html) {
+          var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+          var blobUrl = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = 'security-report-' + getHost(lastScanResult.url) + '.html';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+          showToast('HTML 报告已下载');
+        })
+        .catch(function(e) {
+          showToast('报告下载失败: ' + e.message);
+        });
+    } else {
+      authFetch(url)
+        .then(function(resp) {
+          if (!resp.ok) throw new Error('PDF 生成失败 (' + resp.status + ')');
+          return resp.blob();
+        })
+        .then(function(blob) {
+          var blobUrl = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = 'security-report-' + getHost(lastScanResult.url) + '.pdf';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+          showToast('PDF 报告已下载');
+        })
+        .catch(function(e) {
+          showToast('PDF 下载失败: ' + e.message);
+        });
+    }
+  }
 
-  if (format === 'html') {
-    // HTML 格式：新窗口打开
-    authFetch(url)
-      .then(function(resp) {
-        if (!resp.ok) throw new Error('报告生成失败 (' + resp.status + ')');
-        return resp.text();
-      })
-      .then(function(html) {
-        var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-        var blobUrl = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = 'security-report-' + getHost(lastScanResult.url) + '.html';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
-        showToast('HTML 报告已下载');
+  var scanId = lastScanResult.scan_id;
+  // 如果 scan_id 不存在或不是数字，尝试从扫描历史取最新一条
+  if (!scanId || isNaN(Number(scanId))) {
+    authFetch('/api/history?limit=1')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var item = (data.history || [])[0];
+        if (item && item.id) {
+          doDownload(item.id);
+        } else {
+          showToast('当前结果暂不支持下载');
+        }
       })
       .catch(function(e) {
-        showToast('报告下载失败: ' + e.message);
+        showToast('获取扫描记录失败: ' + e.message);
       });
   } else {
-    // PDF 格式
-    authFetch(url)
-      .then(function(resp) {
-        if (!resp.ok) throw new Error('PDF 生成失败 (' + resp.status + ')');
-        return resp.blob();
-      })
-      .then(function(blob) {
-        var blobUrl = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = 'security-report-' + getHost(lastScanResult.url) + '.pdf';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
-        showToast('PDF 报告已下载');
-      })
-      .catch(function(e) {
-        showToast('PDF 下载失败: ' + e.message);
-      });
+    doDownload(scanId);
   }
 }
 
@@ -6830,13 +6859,13 @@ function _loadDemoCaseAFallback() {
       { category: 'A01 访问控制失效', status: '通过', note: '未发现目录遍历或权限绕过' },
       { category: 'A02 加密机制失效', status: '低风险', note: 'HTTPS 已启用，但缺少 HSTS' },
       { category: 'A03 注入攻击', status: '通过', note: '未发现 SQLi/XSS 注入点' },
-      { category: 'A04 不安全设计', status: '通过', note: '未发现明显设计缺陷' },
+      { category: 'A04 不安全设计', status: '通过', note: '未在常见入口检测到开放重定向' },
       { category: 'A05 安全配置错误', status: '高风险', note: '缺少 HSTS、CSP、X-Frame-Options' },
-      { category: 'A06 脆弱组件', status: '通过', note: '未识别出已知漏洞组件' },
-      { category: 'A07 身份识别', status: '通过', note: '不涉及登录功能' },
-      { category: 'A08 数据完整性', status: '通过', note: '未发现序列化漏洞' },
-      { category: 'A09 日志审计', status: '未知', note: '无法从外部检测' },
-      { category: 'A10 SSRF', status: '通过', note: '未发现 SSRF 漏洞' }
+      { category: 'A06 过时组件', status: '通过', note: '未检测到已知漏洞组件' },
+      { category: 'A07 认证失败', status: '通过', note: '未在登录页检测到明显认证配置问题' },
+      { category: 'A08 软件完整性', status: '通过', note: '首页第三方资源完整性校验正常' },
+      { category: 'A09 日志监控不足', status: '低风险', note: '建议加强日志与监控' },
+      { category: 'A10 服务端请求伪造', status: '通过', note: '未检测到 SSRF 漏洞' }
     ],
     ai_report: {
       summary: 'example.com 是一个典型的普通企业站点，HTTPS 已启用但缺少多项关键安全响应头。当前评分 72 分，主要扣分项为 HSTS、CSP 和 X-Frame-Options 缺失。这些问题属于配置类漏洞，修复成本低、收益高，建议优先处理。',
@@ -6937,13 +6966,13 @@ function loadDemoCaseB() {
       { category: 'A01 访问控制失效', status: '通过', note: '登录页正常要求认证' },
       { category: 'A02 加密机制失效', status: '通过', note: 'HTTPS + HSTS 已启用' },
       { category: 'A03 注入攻击', status: '未知', note: 'WAF 拦截，无法完整测试' },
-      { category: 'A04 不安全设计', status: '通过', note: '未发现明显设计缺陷' },
+      { category: 'A04 不安全设计', status: '通过', note: '未在常见入口检测到开放重定向' },
       { category: 'A05 安全配置错误', status: '中风险', note: '缺少 CSP，但 WAF 已部署' },
-      { category: 'A06 脆弱组件', status: '未知', note: 'WAF 拦截，无法识别组件版本' },
-      { category: 'A07 身份识别', status: '通过', note: '登录功能正常' },
-      { category: 'A08 数据完整性', status: '通过', note: '未发现序列化漏洞' },
-      { category: 'A09 日志审计', status: '未知', note: '无法从外部检测' },
-      { category: 'A10 SSRF', status: '通过', note: '未发现 SSRF 漏洞' }
+      { category: 'A06 过时组件', status: '未知', note: 'WAF 拦截，无法识别组件版本' },
+      { category: 'A07 认证失败', status: '通过', note: '未在登录页检测到明显认证配置问题' },
+      { category: 'A08 软件完整性', status: '通过', note: '首页第三方资源完整性校验正常' },
+      { category: 'A09 日志监控不足', status: '低风险', note: '建议加强日志与监控' },
+      { category: 'A10 服务端请求伪造', status: '通过', note: '未检测到 SSRF 漏洞' }
     ],
     ai_report: {
       summary: 'login.taobao.com 是一个大型电商登录站点，部署了阿里云 WAF 和多层反爬机制。扫描被正确识别为受限模式，未产生误报。站点 HTTPS 和 HSTS 配置完善，但登录页缺少 CSP。建议通过白名单方式完成深度扫描。',
@@ -8699,11 +8728,17 @@ function renderResult(data) {
   html += '<div class="priority">&#x26A0; 优先处理：' + escapeHtml(data.ai_report.priority) + '</div>';
   html += '</div></div>';
 
-  // Pay Banner
+  // Pay Banner - 按次付费转化入口
   html += '<div class="pay-banner fade-in-up" style="animation-delay:0.2s">';
   html += '<h3>&#x1F514; 发现 ' + data.findings.length + ' 个安全问题</h3>';
-  html += '<p>升级专业版获取深度扫描、应用修复配置和持续监控</p>';
-  html += '<button class="pay-btn" onclick="showToast(\'专业版即将上线，敬请期待\')">升级专业版</button>';
+  html += '<p>本次扫描已完成，可立即导出专业报告与修复配置</p>';
+  html += '<div class="pay-price">¥9.9 / 次</div>';
+  html += '<div class="pay-actions">';
+  html += '<button class="pay-btn" onclick="downloadReport(\'pdf\')">&#x1F4C4; 下载 PDF 报告</button>';
+  html += '<button class="pay-btn secondary" onclick="downloadAllFixes()">&#x1F527; 导出修复配置包</button>';
+  html += '<button class="pay-btn secondary" onclick="showToast(\'人工复核服务即将上线，可联系客服预约\')">&#x1F9D1;&#x200D;&#x1F4BB; 人工复核</button>';
+  html += '</div>';
+  html += '<p style="font-size:11px;color:var(--text-lighter);margin-top:12px;margin-bottom:0">&#x2139; 按次计费，无需订阅；报告与配置基于本次真实扫描结果生成</p>';
   html += '</div>';
 
   // OWASP
@@ -8999,6 +9034,12 @@ function renderResult(data) {
       if (f.evidence.value) {
         html += '<div>检测值: ' + escapeHtml(f.evidence.value) + '</div>';
       }
+      if (f.evidence.check_scope) {
+        html += '<div>检测范围: ' + escapeHtml(f.evidence.check_scope) + '</div>';
+      }
+      if (f.evidence.limitation) {
+        html += '<div style="color:#f59e0b">&#x26A0; 局限性: ' + escapeHtml(f.evidence.limitation) + '</div>';
+      }
       html += '</div>';
     }
     // 11-S 置信度（高/中/低）+ 误报反馈行
@@ -9279,7 +9320,7 @@ function renderResult(data) {
   html += '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">';
   html += '<button class="btn btn-primary" onclick="verifyFix()">&#x1F504; 验证修复效果</button>';
   html += '<button class="btn btn-secondary" onclick="shareResult()">&#x1F517; 分享报告</button>';
-  html += '<button class="btn btn-secondary" onclick="downloadReport()">&#x1F4C4; 下载 PDF</button>';
+  html += '<button class="btn btn-secondary" onclick="downloadReport(\'pdf\')">&#x1F4C4; 下载 PDF</button>';
   html += '</div>';
   html += '</div>';
 
@@ -9294,7 +9335,7 @@ function renderResult(data) {
   html += '<div>&#x2705; <strong>评分变化</strong>：如有历史记录，展示分数变化趋势</div>';
   html += '</div>';
   html += '<div style="margin-top:10px;text-align:center">';
-  html += '<button class="btn btn-primary" onclick="downloadReport()">&#x1F4C4; 下载 PDF 报告</button>';
+  html += '<button class="btn btn-primary" onclick="downloadReport(\'pdf\')">&#x1F4C4; 下载 PDF 报告</button>';
   html += '</div>';
   html += '</div>';
 
@@ -9511,34 +9552,6 @@ function shareResult() {
   });
 }
 
-function downloadReport() {
-  if (!lastScanResult || !lastScanResult.scan_id) { showToast('当前结果暂不支持下载'); return; }
-  authFetch('/api/history?limit=1').then(function(r){return r.json();}).then(function(data){
-    var item = (data.history || [])[0];
-    if (!item) return;
-    var url = '/api/report/' + encodeURIComponent(item.id) + '?format=pdf';
-    authFetch(url, { method: 'GET' })
-      .then(function(res) {
-        if (!res.ok) throw new Error('下载失败');
-        return res.blob();
-      })
-      .then(function(blob) {
-        var downloadUrl = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = 'report-' + item.id + '.pdf';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(downloadUrl);
-        showToast('PDF 报告下载已开始');
-      })
-      .catch(function(err) {
-        showToast('下载失败：' + err.message);
-      });
-  });
-}
-
 // PDF 下载提示（含报告内容说明）
 function showPdfDownloadTip() {
   var html = '<div class="card fade-in-up" style="background:linear-gradient(135deg,rgba(99,102,241,0.08),rgba(168,85,247,0.04));border:1px solid rgba(99,102,241,0.2);text-align:center">';
@@ -9552,7 +9565,7 @@ function showPdfDownloadTip() {
   html += '&#x2705; 复测结果（上次 vs 本次分数对比、新增 / 已修复问题）<br>';
   html += '&#x2705; 评分变化趋势（如有历史记录）';
   html += '</div>';
-  html += '<button class="btn btn-primary" onclick="downloadReport()">&#x1F4C4; 立即下载 PDF</button>';
+  html += '<button class="btn btn-primary" onclick="downloadReport(\'pdf\')">&#x1F4C4; 立即下载 PDF</button>';
   html += '</div>';
   var rc = document.getElementById('result-content');
   if (rc) rc.insertAdjacentHTML('afterbegin', html);
@@ -9839,6 +9852,38 @@ function downloadFixCode(lang) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   showToast('已下载 ' + filename);
+}
+
+// 一键导出所有平台修复配置包
+function downloadAllFixes() {
+  if (!lastScanResult) { showToast('请先完成扫描'); return; }
+  // 优先使用已生成的 lastFixResult；若不存在则本地生成
+  var fixes = lastFixResult || generateLocalFixes(lastScanResult.findings);
+  if (!fixes) { showToast('暂无可导出的修复配置'); return; }
+  var platformNames = { nginx: 'Nginx', apache: 'Apache', express: 'Express', flask: 'Flask/FastAPI', spring_boot: 'Spring Boot', cloudflare: 'Cloudflare' };
+  var platformOrder = ['nginx', 'apache', 'express', 'flask', 'spring_boot', 'cloudflare'];
+  var lines = ['# 漏洞哨兵 11-S 修复配置包', '# 目标: ' + (lastScanResult.url || ''), '# 生成时间: ' + new Date().toLocaleString(), ''];
+  platformOrder.forEach(function(p) {
+    var arr = fixes[p] || [];
+    if (arr.length === 0) return;
+    lines.push('## ' + (platformNames[p] || p));
+    lines.push(_fixesToText(arr));
+    lines.push('');
+  });
+  if (lines.length <= 4) {
+    showToast('暂无可导出的修复配置');
+    return;
+  }
+  var blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'security-fixes-package-' + getHost(lastScanResult.url) + '.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('修复配置包已下载');
 }
 
 function verifyFix() {

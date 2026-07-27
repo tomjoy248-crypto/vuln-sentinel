@@ -3872,37 +3872,36 @@ async def cross_validate_findings(
                             result["login_path"] = path
                             # 检查表单安全
                             issues = []
-                            # 1. autocomplete 检查
                             form_match = re.search(
                                 r'<form[^>]*>.*?</form>',
                                 body, re.IGNORECASE | re.DOTALL,
                             )
                             if form_match:
                                 form_html = form_match.group(0)
-                                pwd_input = re.search(
-                                    r'<input[^>]*type=["\']password["\'][^>]*>',
-                                    form_html, re.IGNORECASE,
-                                )
-                                if pwd_input:
-                                    pwd_html = pwd_input.group(0)
-                                    if 'autocomplete' not in pwd_html.lower():
-                                        form_tag = re.search(r'<form[^>]*>', form_html, re.IGNORECASE)
-                                        form_has_autocomplete = form_tag and 'autocomplete="off"' in (form_tag.group(0).lower() if form_tag else "")
-                                        if not form_has_autocomplete:
-                                            issues.append("password_autocomplete_missing")
-                                    # 检查 CSRF token
-                                    csrf_found = bool(re.search(
-                                        r'name=["\'].*?(?:csrf|token|nonce).*?["\']',
-                                        form_html, re.IGNORECASE,
-                                    ))
-                                    if not csrf_found:
-                                        issues.append("csrf_token_missing")
-                            # 2. 检查登录页安全头
+                                # 检查 CSRF token：必须是隐藏字段，且 name 包含 csrf/token/nonce，同时具有非空 value
+                                # 逐个解析 <input> 标签，避免属性顺序导致的漏报
+                                csrf_found = False
+                                input_pattern = re.compile(r'<input[^>]*>', re.IGNORECASE)
+                                for input_tag in input_pattern.findall(form_html):
+                                    tag_lower = input_tag.lower()
+                                    if 'type="hidden"' not in tag_lower and "type='hidden'" not in tag_lower:
+                                        continue
+                                    name_match = re.search(r'\bname=["\']([^"\']*)["\']', input_tag, re.IGNORECASE)
+                                    if not name_match:
+                                        continue
+                                    name = name_match.group(1).lower()
+                                    if not any(h in name for h in ("csrf", "token", "nonce")):
+                                        continue
+                                    value_match = re.search(r'\bvalue=["\']([^"\']*)["\']', input_tag, re.IGNORECASE)
+                                    if value_match and value_match.group(1).strip():
+                                        csrf_found = True
+                                        break
+                                if not csrf_found:
+                                    issues.append("csrf_token_missing")
+                            # 检查登录页安全头
                             login_headers = {k.lower(): v for k, v in resp.headers.items()}
                             if "x-frame-options" not in login_headers:
                                 issues.append("login_page_no_xfo")
-                            if "content-security-policy" not in login_headers:
-                                issues.append("login_page_no_csp")
                             result["issues"] = issues
                             break
                 except Exception:
@@ -3994,41 +3993,50 @@ async def cross_validate_findings(
     async def _d15_redirect_probe() -> Dict[str, Any]:
         """D15: 检测常见的开放重定向漏洞参数。
 
-        检测方式：向常见的 redirect/url 参数注入外部 URL，
-        观察是否发生 302/301 跳转到注入的域名。
+        检测方式：在首页、登录页、授权回调等常见入口的 redirect/url 参数
+        注入外部 URL，观察是否发生 302/301 跳转到注入的域名。
+
+        注意：本检测属于黑盒探测，只能覆盖常见的开放重定向参数和入口，
+        不能穷尽所有业务跳转点。未命中不代表完全不存在开放重定向。
         """
         result: Dict[str, Any] = {
             "vulnerable": False,
             "vulnerable_params": [],
             "tested_params": [],
+            "tested_paths": [],
         }
-        REDIRECT_PARAMS = ["redirect", "url", "next", "go", "return", "return_url", "redirect_url", "target"]
+        REDIRECT_PARAMS = ["redirect", "url", "next", "go", "return", "return_url", "redirect_url", "target", "callback", "continue"]
         EXTERNAL_URL = "https://example.com/redirect-test"
+        # 常见可能存在跳转功能的入口路径
+        REDIRECT_PATHS = ["/", "/login", "/signin", "/auth", "/oauth", "/logout", "/sso"]
         try:
             client = get_httpx_client()
             protocol = "https" if is_https else "http"
-            base_url = f"{protocol}://{host}/"
-            for param in REDIRECT_PARAMS:
-                test_url = f"{base_url}?{param}={EXTERNAL_URL}"
-                try:
-                    resp = await asyncio.wait_for(
-                        client.get(test_url,
-                                   headers={"User-Agent": "Mozilla/5.0"},
-                                   follow_redirects=False),
-                        timeout=5.0,
-                    )
-                    result["tested_params"].append(param)
-                    if resp.status_code in (301, 302, 303, 307, 308):
-                        location = resp.headers.get("location", "")
-                        if location.startswith(EXTERNAL_URL) or "example.com" in location:
-                            result["vulnerable"] = True
-                            result["vulnerable_params"].append({
-                                "param": param,
-                                "redirect_to": location[:120],
-                                "status_code": resp.status_code,
-                            })
-                except Exception:
-                    continue
+            for path in REDIRECT_PATHS:
+                for param in REDIRECT_PARAMS:
+                    test_url = f"{protocol}://{host}{path}?{param}={EXTERNAL_URL}"
+                    try:
+                        resp = await asyncio.wait_for(
+                            client.get(test_url,
+                                       headers={"User-Agent": "Mozilla/5.0"},
+                                       follow_redirects=False),
+                            timeout=3.5,
+                        )
+                        result["tested_params"].append(param)
+                        if resp.status_code in (301, 302, 303, 307, 308):
+                            location = resp.headers.get("location", "")
+                            if location.startswith(EXTERNAL_URL) or "example.com" in location:
+                                result["vulnerable"] = True
+                                result["vulnerable_params"].append({
+                                    "param": param,
+                                    "path": path,
+                                    "redirect_to": location[:120],
+                                    "status_code": resp.status_code,
+                                })
+                                if path not in result["tested_paths"]:
+                                    result["tested_paths"].append(path)
+                    except Exception:
+                        continue
         except Exception as e:
             result["evidence"] = f"D15: 异常 {str(e)[:80]}"
         return result
@@ -4868,7 +4876,7 @@ async def analyze_security(
          "检测到 XSS/SQLi" if (has_xss or has_sqli) else "未检测到注入漏洞"),
         ("A04 不安全设计",
          "需关注" if has_a04 else "通过",
-         f"检测到 {sum(1 for f in findings if 'A04' in f.get('owasp', ''))} 项设计缺陷" if has_a04 else "未检测到明显设计缺陷"),
+         f"检测到 {sum(1 for f in findings if 'A04' in f.get('owasp', ''))} 项设计缺陷" if has_a04 else "未在常见入口检测到开放重定向"),
         ("A05 安全配置错误",
          "需关注" if any(f["owasp"] == "A05 安全配置错误" for f in findings) else "通过",
          "部分配置可优化"),
@@ -4877,10 +4885,10 @@ async def analyze_security(
          f"检测到 {a06_count} 个存在已知漏洞的组件" if has_a06 else "未检测到过时组件"),
         ("A07 认证失败",
          "需关注" if has_a07 else "通过",
-         f"检测到 {a07_count} 项认证相关问题" if has_a07 else "未检测到认证机制问题"),
+         f"检测到 {a07_count} 项认证相关问题" if has_a07 else "未在登录页检测到明显认证配置问题"),
         ("A08 软件完整性",
          "需关注" if has_a08 else "通过",
-         f"检测到 {a08_count} 项完整性风险" if has_a08 else "未检测到完整性问题"),
+         f"检测到 {a08_count} 项完整性风险" if has_a08 else "首页第三方资源完整性校验正常"),
         ("A09 日志监控不足", "低风险", "建议加强日志与监控"),
         ("A10 服务端请求伪造",
          "高风险" if has_a10 else "通过",
@@ -6495,37 +6503,25 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 if d13_result.get("login_page_found"):
                     issues = d13_result.get("issues", [])
                     login_path = d13_result.get("login_path", "")
-                    if "password_autocomplete_missing" in issues:
-                        add_finding(
-                            vuln_findings,
-                            "密码框未禁用自动填充",
-                            "low",
-                            "A07 认证失败",
-                            f"登录页面 {login_path} 的密码输入框未设置 autocomplete=\"off\"，浏览器可能自动保存密码，增加凭据泄露风险。",
-                            "在密码输入框中添加 autocomplete=\"new-password\" 属性，或在 form 标签添加 autocomplete=\"off\"。",
-                            vuln_type="auth_form",
-                            evidence={"login_path": login_path, "issue": "password_autocomplete_missing"},
-                            verify_key="auth_form",
-                            confidence_level="高",
-                        )
                     if "csrf_token_missing" in issues:
                         add_finding(
                             vuln_findings,
                             "登录表单缺少 CSRF Token",
                             "medium",
                             "A07 认证失败",
-                            f"登录页面 {login_path} 的表单中未检测到 CSRF token，可能存在跨站请求伪造风险。",
-                            "在登录表单中添加 CSRF token（隐藏字段），服务端验证 token 有效性。",
+                            f"登录页面 {login_path} 的表单中未检测到符合规范的 CSRF token（要求为 hidden 类型且同时具有 name/value）。",
+                            "在登录表单中添加 CSRF token（例如 <input type=\"hidden\" name=\"csrf_token\" value=\"...\">），服务端验证 token 有效性。",
                             vuln_type="auth_form",
-                            evidence={"login_path": login_path, "issue": "csrf_token_missing"},
+                            evidence={"login_path": login_path, "issue": "csrf_token_missing", "check_scope": "仅检测登录表单第一个 <form>"},
                             verify_key="auth_form",
                             confidence_level="中",
+                            cv_reason="基于页面静态结构推断，未执行实际 CSRF 攻击测试",
                         )
                     if "login_page_no_xfo" in issues:
                         add_finding(
                             vuln_findings,
                             "登录页面缺少 X-Frame-Options",
-                            "medium",
+                            "low",
                             "A07 认证失败",
                             f"登录页面 {login_path} 未设置 X-Frame-Options 头，可能遭受点击劫持攻击，诱导用户在 iframe 中输入凭据。",
                             "在登录页面响应中添加 X-Frame-Options: DENY 或 SAMEORIGIN。",
@@ -6533,6 +6529,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                             evidence={"login_path": login_path, "issue": "login_page_no_xfo"},
                             verify_key="auth_form",
                             confidence_level="高",
+                            cv_reason="响应头确定性检测",
                         )
             except Exception:
                 pass
@@ -6548,12 +6545,18 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                         "第三方资源未启用 SRI 完整性校验",
                         "medium",
                         "A08 软件完整性",
-                        f"检测到 {total_ext} 个跨域第三方 JS/CSS 资源，但均未使用 Subresource Integrity (SRI) 校验。如果 CDN 被劫持，恶意脚本将直接在用户浏览器执行。",
+                        f"首页检测到 {total_ext} 个跨域第三方 JS/CSS 资源，但均未使用 Subresource Integrity (SRI) 校验。如果 CDN 被劫持，恶意脚本将直接在用户浏览器执行。",
                         "在所有跨域 <script> 和 <link rel=\"stylesheet\"> 标签中添加 integrity=\"sha256-...\" 和 crossorigin=\"anonymous\" 属性。",
                         vuln_type="sri_missing",
-                        evidence={"total_external": total_ext, "sri_protected": sri_count, "unprotected_samples": [u["url"] for u in unprotected[:3]]},
+                        evidence={
+                            "total_external": total_ext,
+                            "sri_protected": sri_count,
+                            "unprotected_samples": [u["url"] for u in unprotected[:3]],
+                            "check_scope": "仅检测首页跨域资源",
+                        },
                         verify_key="sri",
                         confidence_level="高",
+                        cv_reason="首页静态资源标签匹配",
                     )
                 elif total_ext > 0 and sri_count > 0 and sri_count < total_ext:
                     add_finding(
@@ -6561,12 +6564,17 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                         "部分第三方资源缺少 SRI 校验",
                         "low",
                         "A08 软件完整性",
-                        f"共 {total_ext} 个跨域资源，仅 {sri_count} 个启用了 SRI 校验，其余 {total_ext - sri_count} 个未做完整性保护。",
+                        f"首页共 {total_ext} 个跨域资源，仅 {sri_count} 个启用了 SRI 校验，其余 {total_ext - sri_count} 个未做完整性保护。",
                         "为所有跨域第三方资源添加 SRI integrity 属性。",
                         vuln_type="sri_partial",
-                        evidence={"total_external": total_ext, "sri_protected": sri_count},
+                        evidence={
+                            "total_external": total_ext,
+                            "sri_protected": sri_count,
+                            "check_scope": "仅检测首页跨域资源",
+                        },
                         verify_key="sri",
                         confidence_level="高",
+                        cv_reason="首页静态资源标签匹配",
                     )
             except Exception:
                 pass
@@ -6575,18 +6583,27 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 d15_result = await _d15_redirect_probe()
                 if d15_result.get("vulnerable"):
                     vuln_params = d15_result.get("vulnerable_params", [])
+                    tested_paths = d15_result.get("tested_paths", [])
                     for vp in vuln_params[:3]:  # 最多报 3 个
                         add_finding(
                             vuln_findings,
                             f"开放重定向漏洞（参数: {vp['param']}）",
                             "medium",
                             "A04 不安全设计",
-                            f"URL 参数 '{vp['param']}' 存在开放重定向漏洞，可被用于钓鱼攻击，将用户诱导到恶意网站。",
+                            f"路径 {vp.get('path', '/')} 的参数 '{vp['param']}' 存在开放重定向漏洞，可被用于钓鱼攻击，将用户诱导到恶意网站。",
                             "对跳转目标 URL 进行白名单校验，仅允许跳转到可信域名；或使用跳转 ID 映射代替直接 URL 输入。",
                             vuln_type="open_redirect",
-                            evidence={"param": vp["param"], "redirect_to": vp["redirect_to"], "status_code": vp["status_code"]},
+                            evidence={
+                                "param": vp["param"],
+                                "path": vp.get("path", "/"),
+                                "redirect_to": vp["redirect_to"],
+                                "status_code": vp["status_code"],
+                                "check_scope": f"已探测常见跳转入口 {len(tested_paths)} 个",
+                                "limitation": "黑盒探测无法覆盖所有业务跳转点，未命中不代表完全安全",
+                            },
                             verify_key="open_redirect",
                             confidence_level="高",
+                            cv_reason="通过实际 302/301 跳转验证",
                         )
             except Exception:
                 pass
@@ -6645,37 +6662,25 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 if d13_result.get("login_page_found"):
                     issues = d13_result.get("issues", [])
                     login_path = d13_result.get("login_path", "")
-                    if "password_autocomplete_missing" in issues:
-                        add_finding(
-                            vuln_findings,
-                            "密码框未禁用自动填充",
-                            "low",
-                            "A07 认证失败",
-                            f"登录页面 {login_path} 的密码输入框未设置 autocomplete=\"off\"，浏览器可能自动保存密码，增加凭据泄露风险。",
-                            "在密码输入框中添加 autocomplete=\"new-password\" 属性，或在 form 标签添加 autocomplete=\"off\"。",
-                            vuln_type="auth_form",
-                            evidence={"login_path": login_path, "issue": "password_autocomplete_missing"},
-                            verify_key="auth_form",
-                            confidence_level="高",
-                        )
                     if "csrf_token_missing" in issues:
                         add_finding(
                             vuln_findings,
                             "登录表单缺少 CSRF Token",
                             "medium",
                             "A07 认证失败",
-                            f"登录页面 {login_path} 的表单中未检测到 CSRF token，可能存在跨站请求伪造风险。",
-                            "在登录表单中添加 CSRF token（隐藏字段），服务端验证 token 有效性。",
+                            f"登录页面 {login_path} 的表单中未检测到符合规范的 CSRF token（要求为 hidden 类型且同时具有 name/value）。",
+                            "在登录表单中添加 CSRF token（例如 <input type=\"hidden\" name=\"csrf_token\" value=\"...\">），服务端验证 token 有效性。",
                             vuln_type="auth_form",
-                            evidence={"login_path": login_path, "issue": "csrf_token_missing"},
+                            evidence={"login_path": login_path, "issue": "csrf_token_missing", "check_scope": "仅检测登录表单第一个 <form>"},
                             verify_key="auth_form",
                             confidence_level="中",
+                            cv_reason="基于页面静态结构推断，未执行实际 CSRF 攻击测试",
                         )
                     if "login_page_no_xfo" in issues:
                         add_finding(
                             vuln_findings,
                             "登录页面缺少 X-Frame-Options",
-                            "medium",
+                            "low",
                             "A07 认证失败",
                             f"登录页面 {login_path} 未设置 X-Frame-Options 头，可能遭受点击劫持攻击，诱导用户在 iframe 中输入凭据。",
                             "在登录页面响应中添加 X-Frame-Options: DENY 或 SAMEORIGIN。",
@@ -6683,6 +6688,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                             evidence={"login_path": login_path, "issue": "login_page_no_xfo"},
                             verify_key="auth_form",
                             confidence_level="高",
+                            cv_reason="响应头确定性检测",
                         )
             except Exception:
                 pass
@@ -6698,12 +6704,18 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                         "第三方资源未启用 SRI 完整性校验",
                         "medium",
                         "A08 软件完整性",
-                        f"检测到 {total_ext} 个跨域第三方 JS/CSS 资源，但均未使用 Subresource Integrity (SRI) 校验。如果 CDN 被劫持，恶意脚本将直接在用户浏览器执行。",
+                        f"首页检测到 {total_ext} 个跨域第三方 JS/CSS 资源，但均未使用 Subresource Integrity (SRI) 校验。如果 CDN 被劫持，恶意脚本将直接在用户浏览器执行。",
                         "在所有跨域 <script> 和 <link rel=\"stylesheet\"> 标签中添加 integrity=\"sha256-...\" 和 crossorigin=\"anonymous\" 属性。",
                         vuln_type="sri_missing",
-                        evidence={"total_external": total_ext, "sri_protected": sri_count, "unprotected_samples": [u["url"] for u in unprotected[:3]]},
+                        evidence={
+                            "total_external": total_ext,
+                            "sri_protected": sri_count,
+                            "unprotected_samples": [u["url"] for u in unprotected[:3]],
+                            "check_scope": "仅检测首页跨域资源",
+                        },
                         verify_key="sri",
                         confidence_level="高",
+                        cv_reason="首页静态资源标签匹配",
                     )
                 elif total_ext > 0 and sri_count > 0 and sri_count < total_ext:
                     add_finding(
@@ -6711,12 +6723,17 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                         "部分第三方资源缺少 SRI 校验",
                         "low",
                         "A08 软件完整性",
-                        f"共 {total_ext} 个跨域资源，仅 {sri_count} 个启用了 SRI 校验，其余 {total_ext - sri_count} 个未做完整性保护。",
+                        f"首页共 {total_ext} 个跨域资源，仅 {sri_count} 个启用了 SRI 校验，其余 {total_ext - sri_count} 个未做完整性保护。",
                         "为所有跨域第三方资源添加 SRI integrity 属性。",
                         vuln_type="sri_partial",
-                        evidence={"total_external": total_ext, "sri_protected": sri_count},
+                        evidence={
+                            "total_external": total_ext,
+                            "sri_protected": sri_count,
+                            "check_scope": "仅检测首页跨域资源",
+                        },
                         verify_key="sri",
                         confidence_level="高",
+                        cv_reason="首页静态资源标签匹配",
                     )
             except Exception:
                 pass
@@ -6725,18 +6742,27 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 d15_result = await _d15_redirect_probe()
                 if d15_result.get("vulnerable"):
                     vuln_params = d15_result.get("vulnerable_params", [])
+                    tested_paths = d15_result.get("tested_paths", [])
                     for vp in vuln_params[:3]:
                         add_finding(
                             vuln_findings,
                             f"开放重定向漏洞（参数: {vp['param']}）",
                             "medium",
                             "A04 不安全设计",
-                            f"URL 参数 '{vp['param']}' 存在开放重定向漏洞，可被用于钓鱼攻击，将用户诱导到恶意网站。",
+                            f"路径 {vp.get('path', '/')} 的参数 '{vp['param']}' 存在开放重定向漏洞，可被用于钓鱼攻击，将用户诱导到恶意网站。",
                             "对跳转目标 URL 进行白名单校验，仅允许跳转到可信域名；或使用跳转 ID 映射代替直接 URL 输入。",
                             vuln_type="open_redirect",
-                            evidence={"param": vp["param"], "redirect_to": vp["redirect_to"], "status_code": vp["status_code"]},
+                            evidence={
+                                "param": vp["param"],
+                                "path": vp.get("path", "/"),
+                                "redirect_to": vp["redirect_to"],
+                                "status_code": vp["status_code"],
+                                "check_scope": f"已探测常见跳转入口 {len(tested_paths)} 个",
+                                "limitation": "黑盒探测无法覆盖所有业务跳转点，未命中不代表完全安全",
+                            },
                             verify_key="open_redirect",
                             confidence_level="高",
+                            cv_reason="通过实际 302/301 跳转验证",
                         )
             except Exception:
                 pass
@@ -9209,11 +9235,11 @@ async def api_report(scan_id: int, format: str = "pdf", user: dict = Depends(req
         {"category": "A01 访问控制失效", "status": "通过", "note": "未检测到访问控制问题"},
         {"category": "A02 加密机制失效", "status": "通过", "note": "已启用 HTTPS"},
         {"category": "A03 注入攻击", "status": "通过", "note": "未检测到注入漏洞"},
-        {"category": "A04 不安全设计", "status": "通过", "note": "未检测到明显设计缺陷"},
+        {"category": "A04 不安全设计", "status": "通过", "note": "未在常见入口检测到开放重定向"},
         {"category": "A05 安全配置错误", "status": "通过", "note": "配置良好"},
         {"category": "A06 过时组件", "status": "通过", "note": "未检测到过时组件"},
-        {"category": "A07 认证失败", "status": "通过", "note": "未检测到认证机制问题"},
-        {"category": "A08 软件完整性", "status": "通过", "note": "未检测到完整性问题"},
+        {"category": "A07 认证失败", "status": "通过", "note": "未在登录页检测到明显认证配置问题"},
+        {"category": "A08 软件完整性", "status": "通过", "note": "首页第三方资源完整性校验正常"},
         {"category": "A09 日志监控不足", "status": "低风险", "note": "建议加强日志与监控"},
         {"category": "A10 服务端请求伪造", "status": "通过", "note": "未检测到 SSRF 漏洞"},
     ]
