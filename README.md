@@ -5,9 +5,20 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
-> AI 驱动的 Web 安全配置扫描与修复建议平台 · 让中小团队不用安全专家也能发现并修复基础 Web 安全问题
+> AI 驱动的 Web 安全扫描与修复平台 · 让中小团队不用安全专家也能发现并修复基础 Web 安全问题
 
 **在线环境**: https://vuln-sentinel-v11-s.onrender.com
+
+---
+
+## 产品定位
+
+漏洞哨兵是一个面向中小企业和开发者的 **Web 安全扫描修复工具**。输入网站地址，3 秒出结果，基于 OWASP Top 10 标准，15 个检测维度，多维交叉验证降低误报率。从扫描、生成修复配置、复测验证到导出报告，全链路闭环。
+
+**适合谁用**：
+- 没有专职安全团队的中小企业
+- 上线前想快速自检的开发者
+- 需要安全合规报告的乙方团队
 
 ---
 
@@ -15,7 +26,7 @@
 
 | 能力 | 说明 |
 |---|---|
-| **真实扫描** | HTTP 响应头、SSL/TLS 证书、敏感路径、Cookie 安全、CORS、SSRF 防护 |
+| **安全扫描** | HTTP 响应头、SSL/TLS 证书、敏感路径、Cookie 安全、CORS、SSRF 防护、过时组件检测 |
 | **WAF 智能识别** | 7 大 WAF 厂商识别（Cloudflare / AWS / Baidu bfe / 阿里云 / 腾讯云 / Imperva / Akamai）|
 | **智能评分** | 100 分制 + WAF 加权（WAF 站点最高 100 分，无 WAF 最高 98 分）|
 | **OWASP Top 10** | 全 10 大类风险覆盖 + 交叉验证降低误报率 |
@@ -24,8 +35,8 @@
 | **PDF 报告** | 7 页专业报告（封面 + 总览 + 评分明细 + 证据列 + 修复建议）|
 | **批量扫描** | 一次最多 5 个 URL，asyncio 并发 |
 | **账户隔离** | JWT + bcrypt + SQLite，每个用户独立历史 |
-| **可分享** | 每次扫描生成唯一 share_id，支持只读分享 |
-| **离线可用** | 纯前端单文件 HTML，无后端也能运行 |
+| **结果分享** | 每次扫描生成唯一 share_id，支持只读分享 |
+| **免费试用** | 无需注册即可扫描白名单站点，体验完整报告 |
 
 ---
 
@@ -58,7 +69,7 @@
 vuln-sentinel/
 ├── main.py                  # FastAPI 后端主程序（150+ API）
 ├── static/
-│   └── index.html           # 单文件前端（含离线演示模式）
+│   └── index.html           # 单文件前端
 ├── tests/                   # pytest 测试套件（186 用例）
 │   └── test_main.py
 ├── docs/                    # 文档 + 截图 + 架构图
@@ -100,24 +111,14 @@ python3 main.py
 
 浏览器打开 http://localhost:8000
 
-### 方式 C：离线运行（无需 Python）
-
-双击 `static/index.html`，注册后即可使用
-
-> 离线模式使用 localStorage 模拟数据库，注册并登录后即可使用所有功能（不包含真实网络扫描）
-
----
-
-## Docker 部署
+### 方式 C：Docker 部署
 
 ```bash
 docker build -t vulnsentinel:v11-s .
 docker run -p 8000:8000 vulnsentinel:v11-s
 ```
 
----
-
-## Render 部署
+### 方式 D：Render 部署
 
 ```bash
 # render.yaml 已配置好
@@ -128,7 +129,19 @@ docker run -p 8000:8000 vulnsentinel:v11-s
 
 ---
 
-## 内网靶场扫描
+## 使用流程
+
+1. **注册账号** 或直接使用免费试用扫描白名单站点
+2. 输入目标 URL（如 `https://example.com`），勾选授权确认
+3. 查看扫描报告：评分、风险等级、漏洞证据、修复建议
+4. 生成修复配置（Nginx / Apache / Node.js / Python / Java / Cloudflare）
+5. 查看修复前后评分对比（预估效果）
+6. 验证修复效果：重新扫描并输出差异
+7. 导出 PDF 报告（7 页）
+
+---
+
+## 内网目标扫描
 
 ```bash
 ALLOWED_INTERNAL_HOSTS="192.168.1.100,10.0.0.5,pikachu.local" python3 main.py
@@ -156,7 +169,7 @@ python3 -m pytest tests/ -v
 | 层 | 技术 |
 |---|---|
 | 后端 | FastAPI + SQLite + httpx + dnspython |
-| 前端 | 原生 HTML + CSS + JS（无框架，离线可用）|
+| 前端 | 原生 HTML + CSS + JS（无框架）|
 | 认证 | JWT (PyJWT) + bcrypt |
 | PDF 报告 | reportlab |
 | 定时任务 | apscheduler |
@@ -188,6 +201,7 @@ python3 -m pytest tests/ -v
 | `/api/login` | POST | 用户登录 |
 | `/api/register` | POST | 用户注册 |
 | `/api/verify` | POST | 域名归属验证 |
+| `/api/public-demo-scan` | POST | 免费试用扫描（白名单站点）|
 | `/api/health` | GET | 健康检查 |
 
 完整 OpenAPI 文档：访问 `/docs` (Swagger UI)
@@ -204,6 +218,27 @@ python3 -m pytest tests/ -v
 
 ---
 
+## 功能边界
+
+| 功能 | 状态 | 说明 |
+|---|---|---|
+| 安全扫描（HTTP响应头/SSL/敏感路径） | ✅ 已实现 | 真实 HTTP 请求，结果入库 |
+| 修复建议生成（6种平台） | ✅ 已实现 | 基于 findings 真实计算 |
+| 修复前后对比（模拟评分） | ✅ 已实现 | 预估效果，非真实修改目标站 |
+| 验证修复（重新扫描） | ✅ 已实现 | 真实重新扫描并对比差异 |
+| PDF/HTML 报告导出 | ✅ 已实现 | reportlab 真实生成 |
+| 历史记录 & 分享 | ✅ 已实现 | SQLite 持久化 |
+| 批量扫描 | ✅ 已实现 | 最多 5 URL 并发 |
+| 工单系统 | ✅ 已实现 | 完整 CRUD |
+| 资产 & 监控 | ✅ 已实现 | 定时扫描 + 告警 |
+| AI 安全顾问 | 🟡 规则引擎 | 配置 LLM API Key 后接入真实大模型 |
+| SSH 应用修复配置 | 🟡 可选 | 需安装 paramiko，配置服务器凭证 |
+| 免费试用扫描 | ✅ 已实现 | 白名单站点无需注册 |
+
+> **使用说明**：在线环境（render.com）使用规则引擎版 AI 顾问。配置 `OPENAI_API_KEY` 环境变量后可接入 GPT-4 等真实大模型。
+
+---
+
 ## 贡献
 
 欢迎提交 Issue 和 PR！
@@ -216,47 +251,15 @@ MIT License
 
 ---
 
-## 已验证使用路径
-
-以下路径已在 `main.py` 测试套件和 `https://vuln-sentinel-v11-s.onrender.com` 在线环境跑通：
-
-1. 注册或登录账号
-2. 输入 `https://example.com` 完成授权并扫描
-3. 查看报告：评分、风险等级、漏洞证据、修复建议
-4. 生成修复配置（Nginx / Apache / Node.js / Python / Java / Cloudflare）
-5. 修复配置预览：修复前后评分对比
-6. 验证修复效果：重新扫描并输出差异
-7. 导出 PDF 报告（7 页）
-
-## 功能边界（已实现 vs 规则引擎）
-
-| 功能 | 状态 | 说明 |
-|---|---|---|
-| 安全扫描（HTTP响应头/SSL/敏感路径） | ✅ 已实现 | 真实 HTTP 请求，结果入库 |
-| 修复建议生成（6种平台） | ✅ 已实现 | 基于 findings 真实计算 |
-| 修复前后对比（模拟评分） | ✅ 已实现 | 预估效果，非真实修改目标站 |
-| 验证修复（重新扫描） | ✅ 已实现 | 真实重新扫描并对比差异 |
-| PDF/HTML 报告导出 | ✅ 已实现 | reportlab 真实生成 |
-| 历史记录 & 分享 | ✅ 已实现 | SQLite 持久化 |
-| 批量扫描 | ✅ 已实现 | 最多 5 URL 并发 |
-| 工单系统 | ✅ 已实现 | 完整 CRUD，在线模式可用 |
-| 资产 & 监控 | ✅ 已实现 | 在线模式可用 |
-| AI 安全顾问 | 🟡 规则引擎 | 配置 LLM API Key 后接入真实大模型 |
-| SSH 应用修复配置 | 🟡 可选 | 需安装 paramiko，配置服务器凭证 |
-| 离线模式 | ✅ 已实现 | 纯前端可用，部分功能降级 |
-
-> **使用说明**：在线环境（render.com）使用规则引擎版 AI 顾问。配置 `OPENAI_API_KEY` 环境变量后可接入 GPT-4 等真实大模型。
-
----
-
 ## 版本
 
-11-S · 2026-07-21
+11-S · 2026-07-27
 **11-S 主要更新**：
 - 版本升级至 11-S，全局版本号统一
-- 演示靶场环境自愈：自动生成 HTTPS 证书、配置路径自动修正
-- nginx 重载兼容增强（PID 文件失效、进程残留等测试环境）
-- 文案可信度优化：弱化绝对化表达（误报率、自动登录）
+- 产品化改造：移除演示专用代码，转型为商业产品
+- 移除离线演示模式、硬编码演示账号、本地靶机
+- 公开扫描端点重构为免费试用
+- OWASP Top 10 全 10 大类覆盖 + 交叉验证降低误报率
 - 186 个测试用例（0 failed, 3 skipped）
 
 ---
