@@ -53,6 +53,32 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+# ---------- 代码拆分模块导入 ----------
+from constants import (
+    BLOCKED_HOSTS, BLOCKED_NETWORKS, ALLOWED_INTERNAL_HOSTS,
+    CMDI_PAYLOADS, DESER_SIGNATURES, INFO_PATHS,
+    PASSWD_SIGNATURES, PATH_WHITELIST,
+    SCORE_DEDUCTION, SECURITY_HEADERS, SENSITIVE_PATHS,
+    SEVERITY_SCORE, SEVERITY_ZH,
+    SQLI_ERROR_PATTERNS, SQLI_PAYLOADS, SQLI_PAYLOADS_V2,
+    TRAVERSAL_PAYLOADS, WAF_SIGNATURES,
+    WINDOWS_HOSTS_SIGNATURES,
+    XSS_PAYLOADS, XSS_PAYLOADS_V2,
+)
+from utils import (
+    _html_escape, _is_private_ip, parse_cors_origins,
+    sanitize_email, sanitize_password, sanitize_url, sanitize_username,
+)
+from models import (
+    AddTargetRequest, AIAdvisorRequest, ApplyFixRequest,
+    AssetCreateRequest, AssetUpdateRequest,
+    BatchScanRequest, DemoFixRequest, DemoFullCycleRequest,
+    FindingFeedbackRequest, FixTicketCreate, FixTicketUpdate,
+    FreeTrialRequest, LoginRequest, PasswordResetRequest,
+    RegisterRequest, ScanRequest, ScanResponse,
+    SimulateFixRequest, VerifyFixRequest, VerifyRequest,
+)
+
 
 # ---------- Logging ----------
 
@@ -133,14 +159,7 @@ _IS_PRODUCTION = (
 
 # ---------- CORS 白名单解析与生产模式强制校验 ----------
 
-def _parse_cors_origins(raw: str) -> list[str]:
-    """解析逗号分隔的 CORS 白名单，去空白去空项。"""
-    if not raw:
-        return []
-    return [o.strip() for o in raw.split(",") if o.strip()]
-
-
-_cors_origins_list = _parse_cors_origins(settings.cors_origins)
+_cors_origins_list = parse_cors_origins(settings.cors_origins)
 
 # 生产模式强制：禁止通配符 * / 缺失配置
 if _IS_PRODUCTION:
@@ -201,515 +220,10 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "vuln-sentinel@example.com")
 SMTP_ENABLED = bool(SMTP_HOST and SMTP_USER and SMTP_PASSWORD)
 
-# ---------- Constants ----------
-
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
-# SSRF 防护：禁止访问的私有网络段
-BLOCKED_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fc00::/7"),
-]
-
-# 云元数据服务地址（额外拦截）
-BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"}
-
-# 内部白名单：环境变量配置后允许扫描的内网靶场
-# 格式：逗号分隔，如 "192.168.1.100,10.0.0.5,pikachu.local"
-# 可通过 ALLOW_LOCALHOST=1 快速启用本地/内网靶场扫描
-ALLOWED_INTERNAL_HOSTS = {
-    h.strip().lower() for h in os.environ.get("ALLOWED_INTERNAL_HOSTS", "").split(",")
-    if h.strip()
-}
-# 本地/内网靶场快捷开关
-if os.environ.get("ALLOW_LOCALHOST", "").lower() in ("1", "true", "yes"):
-    ALLOWED_INTERNAL_HOSTS.add("localhost")
-    ALLOWED_INTERNAL_HOSTS.add("127.0.0.1")
 db_base = settings.db_dir if os.path.isdir(settings.db_dir) else os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(db_base, settings.db_name)
-
-SECURITY_HEADERS: Dict[str, Dict[str, str]] = {
-    "strict-transport-security": {
-        "name": "HSTS", "category": "传输安全", "severity": "high",
-        "description": "强制浏览器只通过 HTTPS 访问",
-        "fix": 'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;',
-    },
-    "content-security-policy": {
-        "name": "CSP", "category": "XSS 防护", "severity": "high",
-        "description": "限制页面可加载的资源来源",
-        "fix": "add_header Content-Security-Policy \"default-src 'self'\" always;",
-    },
-    "x-frame-options": {
-        "name": "X-Frame-Options", "category": "点击劫持", "severity": "medium",
-        "description": "防止页面被嵌入 iframe",
-        "fix": 'add_header X-Frame-Options "DENY" always;',
-    },
-    "x-content-type-options": {
-        "name": "X-Content-Type-Options", "category": "MIME 嗅探", "severity": "medium",
-        "description": "禁止浏览器猜测 MIME 类型",
-        "fix": 'add_header X-Content-Type-Options "nosniff" always;',
-    },
-    "referrer-policy": {
-        "name": "Referrer-Policy", "category": "隐私", "severity": "low",
-        "description": "控制 Referer 头发送策略",
-        "fix": 'add_header Referrer-Policy "strict-origin-when-cross-origin" always;',
-    },
-    "permissions-policy": {
-        "name": "Permissions-Policy", "category": "隐私", "severity": "low",
-        "description": "控制浏览器 API 权限",
-        "fix": 'add_header Permissions-Policy "camera=(), microphone=()" always;',
-    },
-    # 11-S: 新增缓存控制头检测
-    "cache-control": {
-        "name": "Cache-Control", "category": "缓存安全", "severity": "low",
-        "description": "敏感页面应禁止缓存以防止信息泄露",
-        "fix": 'add_header Cache-Control "no-store, no-cache, must-revalidate" always;',
-    },
-    # 11-S: 新增 DNS 预取控制头检测
-    "x-dns-prefetch-control": {
-        "name": "X-DNS-Prefetch-Control", "category": "隐私", "severity": "low",
-        "description": "控制浏览器是否自动 DNS 预取，防止隐私泄露",
-        "fix": 'add_header X-DNS-Prefetch-Control "off" always;',
-    },
-}
-
-# severity -> 评分扣分（通用映射，analyze_security 中已按影响程度细分）
-SEVERITY_SCORE = {"critical": 25, "high": 15, "medium": 8, "low": 3}
-SEVERITY_ZH = {"critical": "高风险", "high": "高风险", "medium": "中风险", "low": "低风险"}
-
-# 按影响程度细分的评分扣分
-SCORE_DEDUCTION = {
-    "exposed_path": 15,          # 确认漏洞：敏感路径暴露
-    "high_config_missing": 8,    # 高危配置缺失：CSP、HSTS、X-Frame-Options
-    "normal_config_missing": 3,  # 普通配置缺失：X-Content-Type-Options、Referrer-Policy、Permissions-Policy
-    "info_leak": 1,              # 信息项：Server 信息泄露等
-    "suspect": 0,                # suspect 疑似项：不扣分
-}
-
-WAF_SIGNATURES: Dict[str, List[str]] = {
-    "cloudflare": ["CF-RAY", "__cfduid", "cf-browser-verification", "cloudflare"],
-    "aliyun": ["X-Alibaba-WAF", "X-Alibaba-WAF-Action", "aliyun"],
-    "aws": ["X-AMZ-CF-ID", "X-Cache", "awselb", "aws"],
-    "baidu": ["X-Bd-WAF", "X-Bd-Id", "bfe"],
-    "qcloud": ["X-Qcloud-Edge", "X-Tencent-Ua", "qcloud"],
-    "imperva": ["X-Iinfo", "incap_ses", "imperva"],
-    "akamai": ["X-Akamai-Request-BC", "Akamai-Origin-Hop", "akamai"],
-}
-
-SENSITIVE_PATHS: List[str] = [
-    "/.env", "/.git/config", "/.svn/entries", "/.htaccess",
-    "/admin", "/phpmyadmin",
-    "/.DS_Store", "/config.php", "/wp-config.php",
-    "/.env.local", "/backup.sql", "/dump.sql", "/.bak",
-    "/config/database.yml",
-    "/.git/HEAD", "/.git/COMMIT_EDITMSG",
-    "/debug.log", "/error.log", "/phpinfo.php",
-    "/server-status", "/server-info",
-    "/actuator", "/actuator/env", "/actuator/health",
-]
-
-# 以下路径返回 200 是正常行为，不作为安全发现报告
-PATH_WHITELIST: List[str] = [
-    "/sitemap.xml",   # 站点地图，公开文件
-    "/robots.txt",    # 爬虫协议，公开文件
-    "/api",           # API 入口，正常业务路径
-    "/swagger",       # API 文档，很多项目公开提供
-    "/login",         # 登录页，正常业务路径
-    "/health",        # 健康检查接口
-    "/favicon.ico",   # 网站图标
-    "/",              # 首页
-]
-
-# robots.txt 是公开文件，不算敏感路径暴露，只作为 info 提示
-INFO_PATHS: List[str] = ["/robots.txt"]
-
-XSS_PAYLOADS: List[str] = [
-    '<script>alert("XSS")</script>',
-    '"><img src=x onerror=alert(1)>',
-    "'-alert(1)-'",
-    "{{7*7}}",
-    '<svg onload=alert(1)>',
-    "javascript:alert(1)",
-]
-
-SQLI_PAYLOADS: List[str] = [
-    "' OR 1=1--", "1' OR '1'='1", "admin'--",
-    "' UNION SELECT NULL--", "1; DROP TABLE users--", "' OR 1=1 /*",
-]
-
-# Code-level vulnerability detection payloads (11-S)
-SQLI_PAYLOADS_V2: List[str] = [
-    "' OR '1'='1",
-    "'; DROP TABLE users; --",
-    "' UNION SELECT null,null--",
-    "' OR 1=1--",
-    "1' OR '1'='1",
-    "admin'--",
-]
-
-XSS_PAYLOADS_V2: List[str] = [
-    "<script>alert('XSS')</script>",
-    "<img src=x onerror=alert(1)>",
-    '" onmouseover=alert(1) "',
-    '"><svg onload=alert(1)>',
-    "javascript:alert(1)",
-]
-
-CMDI_PAYLOADS: List[str] = [
-    "; cat /etc/passwd",
-    "| whoami",
-    "`id`",
-    "$(id)",
-    "&& echo vuln_sentinel_cmdi",
-]
-
-TRAVERSAL_PAYLOADS: List[str] = [
-    "../../../etc/passwd",
-    "..\\..\\..\\windows\\system32\\drivers\\etc\\hosts",
-    "....//....//....//etc/passwd",
-    "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
-]
-
-# Detection signatures
-SQLI_ERROR_PATTERNS: List[str] = [
-    "sql syntax", "mysql", "postgresql", "sqlite", "oracle", "sql error",
-    "unclosed quotation", "query failed", "warning: mysql", "syntax error",
-    "sqlstate", "odbc", "microsoft sql", "mariadb", "pg_query", "pg_exec",
-    "you have an error in your sql", "quoted string not properly terminated",
-    "unterminated string", "pg_sql", "sqlite3",
-]
-
-PASSWD_SIGNATURES: List[str] = ["root:x:0:0", "bin:x:1:1", "daemon:x:2:2"]
-WINDOWS_HOSTS_SIGNATURES: List[str] = [
-    "# Copyright (c) 1993-2000 Microsoft Corp",
-    "localhost name resolution",
-]
-CMD_EXEC_SIGNATURES: List[str] = [
-    "uid=", "gid=", "groups=", "root:", "www-data", "vuln_sentinel_cmdi",
-]
-DESER_SIGNATURES: List[str] = ["rO0AB", "H4sIAAAAAAAA", "aced", "aced00", "ro0"]
-
-# ---------- Input Sanitization ----------
-
-_MAX_USERNAME_LEN = 32
-_MAX_URL_LEN = 2048
-_MAX_EMAIL_LEN = 128
-_MAX_PASSWORD_LEN = 128
-_ALLOWED_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-\u4e00-\u9fa5]+$")
-
-
-def sanitize_username(value: str) -> str:
-    value = value.strip()
-    if len(value) < 3 or len(value) > _MAX_USERNAME_LEN:
-        raise ValueError(f"用户名长度需在 3-{_MAX_USERNAME_LEN} 之间")
-    if not _ALLOWED_USERNAME_RE.match(value):
-        raise ValueError("用户名包含非法字符")
-    return value
-
-
-def _is_private_ip(hostname: str) -> bool:
-    """检查 hostname 解析后的 IP 是否落入私有网段。用于 SSRF 防护。"""
-    if hostname.lower() in BLOCKED_HOSTS:
-        return True
-    try:
-        infos = socket.getaddrinfo(hostname, None)
-        for info in infos:
-            ip_str = info[4][0]
-            try:
-                ip = ipaddress.ip_address(ip_str)
-                for network in BLOCKED_NETWORKS:
-                    if ip in network:
-                        return True
-            except ValueError:
-                continue
-    except socket.gaierror:
-        pass
-    return False
-
-
-def sanitize_url(value: str) -> str:
-    value = value.strip()
-    if not value:
-        raise ValueError("URL 不能为空")
-    if len(value) > _MAX_URL_LEN:
-        raise ValueError(f"URL 长度不能超过 {_MAX_URL_LEN}")
-    if not re.match(r"^https?://", value, re.I):
-        value = "https://" + value
-    parsed = urlparse(value)
-    if not parsed.hostname:
-        raise ValueError("URL 格式无效")
-    hostname = parsed.hostname.lower()
-    # 基本域名校验：必须包含点号
-    if "." not in hostname:
-        # 11-S: 仅当 ALLOW_LOCALHOST 启用时，localhost 才跳过域名格式校验
-        if hostname == "localhost" and "localhost" in ALLOWED_INTERNAL_HOSTS:
-            pass  # 放行，继续走 SSRF 白名单检查
-        else:
-            raise ValueError("URL 格式无效：域名必须包含点号（如 example.com）")
-    else:
-        # TLD 校验：字母 TLD 至少 2 字符；纯数字 IP 跳过
-        parts = hostname.rsplit(".", 1)
-        tld = parts[1] if len(parts) == 2 else ""
-        is_ip_like = all(c.isdigit() or c == "." for c in hostname)
-        if not is_ip_like and len(tld) < 2:
-            raise ValueError("URL 格式无效：域名后缀太短")
-    # SSRF 防护：拦截内网、本地、云元数据地址（白名单除外）
-    if _is_private_ip(hostname) and hostname not in ALLOWED_INTERNAL_HOSTS:
-        raise ValueError(
-            f"该地址属于内网或本地地址，禁止扫描。"
-            f"如需扫描内网靶场，请联系管理员将 {hostname} 加入环境变量 ALLOWED_INTERNAL_HOSTS"
-        )
-    return value
-
-
-def sanitize_email(value: str) -> str:
-    value = value.strip()
-    if not value:
-        return ""
-    if len(value) > _MAX_EMAIL_LEN:
-        raise ValueError(f"邮箱长度不能超过 {_MAX_EMAIL_LEN}")
-    if "@" not in value or "." not in value.split("@")[-1]:
-        raise ValueError("邮箱格式无效")
-    return value
-
-
-def sanitize_password(value: str) -> str:
-    if len(value) < 6 or len(value) > _MAX_PASSWORD_LEN:
-        raise ValueError(f"密码长度需在 6-{_MAX_PASSWORD_LEN} 之间")
-    return value
-
-
-# ---------- Models ----------
-
-class ScanRequest(BaseModel):
-    url: str
-    # 扫描深度: "quick" | "standard" | "deep"（默认 standard）
-    depth: str = "standard"
-    # 兼容旧 API
-    deep: bool = False
-    authorized: bool = False  # 用户是否确认有权扫描该目标
-
-    # 11-S fix: URL 验证移到 api_scan 中，避免 Pydantic 直接返回 422
-    # 让前端能收到 success: false 的友好错误提示
-
-    @field_validator("depth")
-    @classmethod
-    def validate_depth(cls, v: str) -> str:
-        if v not in ("quick", "standard", "deep"):
-            return "standard"
-        return v
-
-
-class VerifyFixRequest(BaseModel):
-    url: str
-    previous_scan_id: Optional[int] = None
-
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, v: str) -> str:
-        return sanitize_url(v)
-
-
-class SimulateFixRequest(BaseModel):
-    findings: List[dict] = Field(default_factory=list)
-    scan_id: Optional[int] = None
-
-    @field_validator("findings")
-    @classmethod
-    def validate_findings(cls, v: list) -> list:
-        # 11-S: 限制最大长度，防止滥用
-        if len(v) > 100:
-            raise ValueError("findings 数组最多 100 项")
-        return v
-
-
-class ApplyFixRequest(BaseModel):
-    url: str
-    previous_scan_id: Optional[int] = None
-
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, v: str) -> str:
-        return sanitize_url(v)
-
-
-class FreeTrialRequest(BaseModel):
-    url: str
-
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("URL 不能为空")
-        return sanitize_url(v)
-
-
-class AIAdvisorRequest(BaseModel):
-    message: Optional[str] = None
-    scan_id: Optional[int] = None
-    api_key: Optional[str] = Field(default=None, repr=False)
-    model: Optional[str] = None
-    provider: Optional[str] = None
-    use_llm: Optional[bool] = None
-
-
-class BatchScanRequest(BaseModel):
-    urls: List[str] = Field(default_factory=list)
-    deep: bool = False
-
-    @field_validator("urls")
-    @classmethod
-    def validate_urls(cls, v: List[str]) -> List[str]:
-        if not isinstance(v, list):
-            raise ValueError("urls 必须是数组")
-        if len(v) > 5:
-            raise ValueError("单次最多扫描 5 个 URL")
-        sanitized = []
-        for item in v:
-            if not isinstance(item, str):
-                raise ValueError("URL 必须是字符串")
-            sanitized.append(sanitize_url(item))
-        return sanitized
-
-
-class RegisterRequest(BaseModel):
-    username: str
-    password: str
-    email: str = ""
-
-    @field_validator("username")
-    @classmethod
-    def validate_username(cls, v: str) -> str:
-        return sanitize_username(v)
-
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        return sanitize_password(v)
-
-    @field_validator("email")
-    @classmethod
-    def validate_email(cls, v: str) -> str:
-        if not v:
-            return ""
-        return sanitize_email(v)
-
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-    @field_validator("username")
-    @classmethod
-    def validate_username(cls, v: str) -> str:
-        return sanitize_username(v)
-
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        return sanitize_password(v)
-
-
-class AddTargetRequest(BaseModel):
-    url: str
-    schedule: str = Field(default="daily", pattern="^(daily|weekly|never)$")
-
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, v: str) -> str:
-        return sanitize_url(v)
-
-
-class FixTicketCreate(BaseModel):
-    scan_id: Optional[int] = None
-    finding_name: str
-    severity: str = "low"
-    fix_code: Optional[str] = None
-    notes: Optional[str] = None
-
-
-class FixTicketUpdate(BaseModel):
-    status: Optional[str] = None
-    fix_code: Optional[str] = None
-    notes: Optional[str] = None
-
-
-class FindingFeedbackRequest(BaseModel):
-    """用户对 finding 的误报/确认反馈。
-
-    - is_false_positive=True: 用户认为这是误报
-    - is_confirmed=True: 用户确认这是真实问题（与 is_false_positive 互斥，但允许两个都 False 表示"中性"）
-    - finding_type: 找出的 OWASP 分类或漏洞类型，便于后续按类型聚合误报率
-    """
-    scan_id: int
-    finding_name: str
-    finding_type: Optional[str] = None
-    is_false_positive: bool = False
-    is_confirmed: bool = False
-    note: Optional[str] = None
-
-
-class AssetCreateRequest(BaseModel):
-    domain: str
-    owner: str = ""
-    description: str = ""
-
-    @field_validator("domain")
-    @classmethod
-    def validate_domain(cls, v: str) -> str:
-        v = v.strip().lower()
-        if not v:
-            raise ValueError("域名不能为空")
-        # 去掉协议前缀
-        if v.startswith(("http://", "https://")):
-            from urllib.parse import urlparse
-            v = urlparse(v).hostname or v
-        return v
-
-
-class AssetUpdateRequest(BaseModel):
-    owner: Optional[str] = None
-    description: Optional[str] = None
-
-
-class ScanResponse(BaseModel):
-    success: bool
-    scan_type: str
-    url: str
-    final_url: str
-    time: str
-    is_https: bool
-    score: int
-    risk_level: str
-    findings: List[dict]
-    summary: Dict[str, int] = Field(default_factory=lambda: {"high": 0, "medium": 0, "low": 0, "total": 0})
-    owasp_coverage: List[dict]
-    header_details: List[dict]
-    info_leaks: List[dict]
-    cors: Optional[dict]
-    cookie_issues: List[str]
-    ssl_info: dict
-    waf: List[dict]
-    sensitive_paths: List[dict]
-    waf_detected: bool
-    raw_headers: dict
-    crawled_pages: Optional[List[dict]] = None
-    vuln_tests: Optional[List[dict]] = None
-    scan_id: Optional[int] = None
-    score_breakdown: List[dict] = Field(default_factory=list)
-    fixes: Dict[str, list] = Field(default_factory=dict)
-    error: Optional[str] = None
-    restricted: bool = False
-    restricted_reason: str = ""
-    restricted_code: str = ""
-    redirected: bool = False
-    redirect_reason: str = ""
-
 
 # ---------- Auth ----------
 
@@ -812,9 +326,11 @@ _TEST_MODE = os.environ.get("DB_DIR", "").startswith("/tmp")
 _SERVICE_START_TIME = time.time()
 limiter_global = RateLimiter(settings.rate_limit_global_per_minute, 60, disabled=_TEST_MODE)
 limiter_scan = RateLimiter(settings.rate_limit_scan_per_minute, 60, disabled=_TEST_MODE)
+limiter_scan_standard = RateLimiter(10, 60, disabled=_TEST_MODE)  # 标准模式：10次/分
+limiter_scan_deep = RateLimiter(2, 60, disabled=_TEST_MODE)      # 深度模式：2次/分
 limiter_fix = RateLimiter(settings.rate_limit_fix_per_minute, 60, disabled=_TEST_MODE)
-limiter_register = RateLimiter(5, 60, disabled=_TEST_MODE)
-limiter_login = RateLimiter(10, 60, disabled=_TEST_MODE)
+limiter_register = RateLimiter(3, 60, disabled=_TEST_MODE)  # 注册：3次/分
+limiter_login = RateLimiter(5, 60, disabled=_TEST_MODE)     # 登录：5次/分
 limiter_ai = RateLimiter(20, 60, disabled=_TEST_MODE)
 limiter_batch = RateLimiter(3, 60, disabled=_TEST_MODE)
 limiter_free_trial = RateLimiter(10, 60, disabled=_TEST_MODE)
@@ -1802,6 +1318,19 @@ async def lifespan(app: FastAPI):
         logger.info("Scan progress cleanup task started")
     except Exception as e:
         logger.error("Scan progress cleanup task start failed: %s", e)
+    # 启动预热：预初始化 httpx 客户端和数据库连接，减少首次请求延迟
+    try:
+        _prewarm_client = get_httpx_client()
+        logger.info("httpx client pre-warmed (http2=%s)", _prewarm_client._transport is not None)
+    except Exception as e:
+        logger.warning("httpx client pre-warm failed: %s", e)
+    try:
+        _prewarm_conn = get_db()
+        _prewarm_conn.execute("SELECT 1")
+        _prewarm_conn.close()
+        logger.info("Database connection pool pre-warmed")
+    except Exception as e:
+        logger.warning("Database pre-warm failed: %s", e)
     logger.info("Application startup complete")
     yield
     # 关闭阶段：按顺序释放资源，每个步骤独立 try/except 确保全部执行
@@ -1871,6 +1400,18 @@ async def _cache_control_middleware(request, call_next):
     elif path == "/" or path.endswith(".html"):
         # 主页面：开发期间不长缓存，方便调试；上线可改 max-age=300
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
+
+
+# 安全响应头中间件：给所有响应添加安全头
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 
@@ -1968,11 +1509,12 @@ def _create_client() -> None:
         timeout=settings.scan_timeout,
         follow_redirects=True,
         headers={"User-Agent": "VulnSentinel/12"},
+        http2=True,
         event_hooks={"response": [_response_body_limit]},
         limits=httpx.Limits(
             max_connections=50,
-            max_keepalive_connections=10,
-            keepalive_expiry=15.0,
+            max_keepalive_connections=20,
+            keepalive_expiry=30.0,
         ),
     )
 
@@ -4750,11 +4292,15 @@ async def analyze_security(
                 pass
             elif has_version:
                 # 暴露了具体版本（nginx/1.18.0 等），扣分 + finding
+                # 11-S 优化：常见 Web 服务器 + 已检测到 WAF 时降级
+                _common_servers = ["nginx", "apache", "cloudflare", "aws"]
+                _is_common_server = any(s in value.lower() for s in _common_servers)
+                _info_conf = "中" if (_is_common_server and waf_protected) else "高"
                 deduct(key.title() + " 信息泄露", SCORE_DEDUCTION["info_leak"], "low", "暴露服务器信息: " + value[:50])
                 add_finding(findings, key.title() + " 信息泄露", "low", "A05 安全配置错误",
                             "暴露服务器信息: " + value[:50], "隐藏或修改 " + key.title() + " 头。",
-                            evidence={"header": key.title(), "value": value[:50], "reason": "暴露了服务器软件和版本信息", "impact": "攻击者可利用已知版本漏洞"},
-                            verify_key="server", confidence_level="高")
+                            evidence={"header": key.title(), "value": value[:50], "reason": "暴露了服务器软件和版本信息", "impact": "攻击者可利用已知版本漏洞", "check_scope": "仅检测 Server 和 X-Powered-By 响应头"},
+                            verify_key="server", confidence_level=_info_conf)
             else:
                 # 未暴露版本号（如 "Server: nginx"），不扣分但提示
                 info_leaks.append({"name": key.title() + " (无版本)", "value": value})
@@ -4809,6 +4355,22 @@ async def analyze_security(
             cors_details = {"value": cors, "risk": "低风险"}
 
     exposed = [p for p in sensitive_paths if p.get("exposed")]
+    # 11-S 优化：过滤软 404 误报（返回 200 但内容实际是 404 页面）
+    SOFT_404_PATTERNS = ["page not found", "not found", "404 not found", "file not found",
+                         "无法找到", "页面不存在", "找不到页面", "资源不存在"]
+    real_exposed = []
+    soft404_moved = []
+    for p in exposed:
+        snippet = (p.get("snippet", "") or "").lower()
+        if any(pat in snippet for pat in SOFT_404_PATTERNS):
+            # 软 404：标记为 suspect，不扣分
+            p["exposed"] = False
+            p["suspect"] = True
+            p["reason"] = p.get("reason", "") + "（疑似软404误报，响应内容为404页面）"
+            soft404_moved.append(p)
+        else:
+            real_exposed.append(p)
+    exposed = real_exposed
     if exposed:
         # 确认漏洞：敏感路径暴露，扣 15 分
         deduct("敏感路径暴露", SCORE_DEDUCTION["exposed_path"], "high", f"发现 {len(exposed)} 个敏感路径可访问")
@@ -4822,8 +4384,14 @@ async def analyze_security(
     # suspect 路径：前端展示警告，但不扣分
     suspect_paths = [p for p in sensitive_paths if p.get("suspect")]
     if suspect_paths:
-        # suspect 疑似项：不扣分，只作为信息提示
-        pass
+        # 11-S 优化：suspect 疑似项不扣分，但记录为信息提示
+        suspect_names = [p["path"] for p in suspect_paths[:5]]
+        add_finding(findings, "疑似敏感路径（需人工确认）", "low", "A01 访问控制失效",
+                    f"发现 {len(suspect_paths)} 个疑似敏感路径，因响应内容不匹配或疑似软404，需人工确认: {', '.join(suspect_names)}",
+                    "人工检查这些路径是否确实暴露了敏感信息，确认后限制访问。",
+                    vuln_type="info",
+                    evidence={"paths": suspect_names, "reason": "疑似项，响应内容特征不明确，需人工确认", "impact": "低风险，需人工确认是否真实暴露"},
+                    verify_key="info", confidence_level="低")
 
     # 11-S: 代码层漏洞动态检测（温和 fuzzing）
     parsed_url = urlparse(url)
@@ -4894,12 +4462,18 @@ async def analyze_security(
     a06_count = sum(1 for f in findings if "A06" in f.get("owasp", ""))
     a07_count = sum(1 for f in findings if "A07" in f.get("owasp", ""))
     a08_count = sum(1 for f in findings if "A08" in f.get("owasp", ""))
+    # 11-S 优化：如果某个类别只有 low 级别的 finding，降级为"需关注"
+    a01_all_low = has_a01 and all(f.get("severity") == "low" for f in findings if "A01" in f.get("owasp", ""))
+    a03_all_low = (has_xss or has_sqli) and all(f.get("severity") == "low" for f in findings if f.get("type") in ("XSS", "SQLi") or "A03" in f.get("owasp", ""))
+    a06_all_low = has_a06 and all(f.get("severity") == "low" for f in findings if "A06" in f.get("owasp", ""))
+    a10_all_low = has_a10 and all(f.get("severity") == "low" for f in findings if "A10" in f.get("owasp", ""))
     for cat, status, note in [
         ("A01 访问控制失效",
-         "高风险" if has_a01 else ("通过" if not exposed else "需关注"),
-         f"检测到 {sum(1 for f in findings if 'A01' in f.get('owasp', ''))} 项问题" if has_a01 else ("目录遍历等访问控制风险" if exposed else "未检测到访问控制问题")),
-        ("A03 注入攻击", "高风险" if (has_xss or has_sqli) else "通过",
-         "检测到 XSS/SQLi" if (has_xss or has_sqli) else "未检测到注入漏洞"),
+         "需关注" if (has_a01 and a01_all_low) else ("高风险" if has_a01 else ("通过" if not exposed else "需关注")),
+         f"检测到 {sum(1 for f in findings if 'A01' in f.get('owasp', ''))} 项问题" + ("（均为低风险）" if a01_all_low else "") if has_a01 else ("目录遍历等访问控制风险" if exposed else "未检测到访问控制问题")),
+        ("A03 注入攻击",
+         "需关注" if ((has_xss or has_sqli) and a03_all_low) else ("高风险" if (has_xss or has_sqli) else "通过"),
+         "检测到 XSS/SQLi" + ("（均为低风险）" if a03_all_low else "") if (has_xss or has_sqli) else "未检测到注入漏洞"),
         ("A04 不安全设计",
          "需关注" if has_a04 else "通过",
          f"检测到 {sum(1 for f in findings if 'A04' in f.get('owasp', ''))} 项设计缺陷" if has_a04 else "未在常见入口检测到开放重定向"),
@@ -4907,8 +4481,8 @@ async def analyze_security(
          "需关注" if any(f["owasp"] == "A05 安全配置错误" for f in findings) else "通过",
          "部分配置可优化"),
         ("A06 过时组件",
-         "高风险" if has_a06 else "通过",
-         f"检测到 {a06_count} 个存在已知漏洞的组件" if has_a06 else "未检测到过时组件"),
+         "需关注" if (has_a06 and a06_all_low) else ("高风险" if has_a06 else "通过"),
+         f"检测到 {a06_count} 个存在已知漏洞的组件" + ("（均为低风险）" if a06_all_low else "") if has_a06 else "未检测到过时组件"),
         ("A07 认证失败",
          "需关注" if has_a07 else "通过",
          f"检测到 {a07_count} 项认证相关问题" if has_a07 else "未在登录页检测到明显认证配置问题"),
@@ -4917,8 +4491,8 @@ async def analyze_security(
          f"检测到 {a08_count} 项完整性风险" if has_a08 else "首页第三方资源完整性校验正常"),
         ("A09 日志监控不足", "低风险", "建议加强日志与监控"),
         ("A10 服务端请求伪造",
-         "高风险" if has_a10 else "通过",
-         f"检测到 SSRF 风险" if has_a10 else "未检测到 SSRF 漏洞"),
+         "需关注" if (has_a10 and a10_all_low) else ("高风险" if has_a10 else "通过"),
+         f"检测到 SSRF 风险" + ("（均为低风险）" if a10_all_low else "") if has_a10 else "未检测到 SSRF 漏洞"),
     ]:
         if cat not in owasp_map:
             owasp.append({"category": cat, "status": status, "note": note})
@@ -4981,6 +4555,26 @@ async def analyze_security(
         for f in findings:
             f["confidence_level"] = "低"
             f["confidence"] = 40
+
+    # 11-S 优化：同一目标超过 15 个 findings 时，只展示前 15 个（按严重度排序）
+    _severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    if len(findings) > 15:
+        findings.sort(key=lambda f: _severity_order.get(f.get("severity", "low"), 99))
+        truncated = findings[15:]
+        findings = findings[:15]
+        # 记录被截断的发现数量，作为信息提示
+        findings.append({
+            "name": f"更多发现（{len(truncated)} 项）",
+            "severity": "low",
+            "level": "低风险",
+            "level_zh": "低风险",
+            "owasp": "A05 安全配置错误",
+            "summary": f"扫描发现超过 15 个问题，以上仅展示严重度最高的前 15 项。其余 {len(truncated)} 项被省略: {', '.join([t.get('name', '未知') for t in truncated[:5]])}{'...' if len(truncated) > 5 else ''}",
+            "fix": "建议优先修复高风险项，然后重新扫描以查看剩余发现。",
+            "type": "info",
+            "evidence": {"truncated_count": len(truncated), "truncated_names": [t.get("name") for t in truncated[:10]]},
+            "confidence_level": "高",
+        })
 
     return {
         "score": score,
@@ -5576,14 +5170,6 @@ def generate_html_report(scan_data: dict) -> str:
     return html
 
 
-def _html_escape(text: str) -> str:
-    """HTML 转义"""
-    if not text:
-        return ""
-    import html
-    return html.escape(str(text))
-
-
 # ---------- Fix Generator (按真实 severity/类型匹配) ----------
 
 def _detect_server_type(headers: dict) -> str:
@@ -5962,25 +5548,6 @@ async def api_team_set_role(target_user_id: int, req: dict, user: dict = Depends
 
 # ---------- Domain Verification ----------
 
-class VerifyRequest(BaseModel):
-    url: str
-    token: str
-    method: str = Field(pattern="^(dns|file)$")
-
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, v: str) -> str:
-        return sanitize_url(v)
-
-    @field_validator("token")
-    @classmethod
-    def validate_token(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not v or len(v) > 200:
-            raise ValueError("验证 token 无效")
-        return v
-
-
 def query_dns_txt(name: str) -> List[str]:
     records: List[str] = []
     try:
@@ -6301,7 +5868,24 @@ _scan_progress_cleanup_task: Optional[asyncio.Task] = None
 @app.post("/api/scan")
 async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(require_login)):
     """同步扫描。带阶段进度事件（写入响应头 X-Scan-Stage 预览）。"""
+    global _SCAN_CACHE_HITS, _SCAN_CACHE_MISSES
     await rate_limit_dependency(request)
+    # 深度模式额外速率限制：深度扫描资源消耗大，限制更严格
+    client_ip = request.client.host if request.client else "unknown"
+    if req.depth == "deep" or req.deep:
+        if not await limiter_scan_deep.is_allowed(client_ip):
+            raise HTTPException(
+                status_code=429,
+                detail="深度扫描请求过于频繁，每分钟最多 2 次，请稍后再试",
+                headers={"Retry-After": "60"},
+            )
+    elif req.depth == "standard":
+        if not await limiter_scan_standard.is_allowed(client_ip):
+            raise HTTPException(
+                status_code=429,
+                detail="扫描请求过于频繁，每分钟最多 10 次，请稍后再试",
+                headers={"Retry-After": "60"},
+            )
     try:
         url = sanitize_url(req.url)
     except ValueError as e:
@@ -6316,14 +5900,22 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             waf_detected=False, raw_headers={}, error=str(e),
         )
 
-    # 扫描结果缓存：30 秒内同 URL 直接返回（防重复点击）
+    # 扫描结果缓存：根据深度设置不同 TTL，同一 URL 同深度直接返回
     parsed = urlparse(url)
     host = parsed.hostname or ""
 
-    cache_key = f"{user['user_id']}:{url}"
+    # 确定缓存 TTL（基于请求深度）
+    cache_ttl = _get_cache_ttl(req.depth if req.depth else "standard")
+    cache_key = f"{user['user_id']}:{url}:{req.depth}"
     async with _scan_cache_lock:
         cached = _SCAN_RESULT_CACHE.get(cache_key)
-    if cached and (time.time() - cached[1]) < _SCAN_CACHE_TTL:
+    if cached and (time.time() - cached[1]) < cache_ttl:
+        _SCAN_CACHE_HITS += 1
+        if _SCAN_CACHE_HITS % 10 == 0:
+            total = _SCAN_CACHE_HITS + _SCAN_CACHE_MISSES
+            hit_rate = (_SCAN_CACHE_HITS / total * 100) if total > 0 else 0
+            logger.info("Scan cache stats: hits=%d misses=%d total=%d hit_rate=%.1f%%",
+                        _SCAN_CACHE_HITS, _SCAN_CACHE_MISSES, total, hit_rate)
         return {**cached[0], "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
     user_id = user["user_id"]
@@ -6530,14 +6122,14 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                         add_finding(
                             vuln_findings,
                             "登录表单缺少 CSRF Token",
-                            "medium",
+                            "low",
                             "A07 认证失败",
-                            f"登录页面 {login_path} 的表单中未检测到符合规范的 CSRF token（要求为 hidden 类型且同时具有 name/value）。",
+                            f"登录页面 {login_path} 的表单中未检测到符合规范的 CSRF token（要求为 hidden 类型且同时具有 name/value）。基于页面静态结构推断，未执行实际 CSRF 攻击测试，建议人工确认。",
                             "在登录表单中添加 CSRF token（例如 <input type=\"hidden\" name=\"csrf_token\" value=\"...\">），服务端验证 token 有效性。",
-                            vuln_type="auth_form",
+                            vuln_type="info",
                             evidence={"login_path": login_path, "issue": "csrf_token_missing", "check_scope": "仅检测登录表单第一个 <form>"},
                             verify_key="auth_form",
-                            confidence_level="中",
+                            confidence_level="低",
                             cv_reason="基于页面静态结构推断，未执行实际 CSRF 攻击测试",
                         )
                     if "login_page_no_xfo" in issues:
@@ -6689,14 +6281,14 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                         add_finding(
                             vuln_findings,
                             "登录表单缺少 CSRF Token",
-                            "medium",
+                            "low",
                             "A07 认证失败",
-                            f"登录页面 {login_path} 的表单中未检测到符合规范的 CSRF token（要求为 hidden 类型且同时具有 name/value）。",
+                            f"登录页面 {login_path} 的表单中未检测到符合规范的 CSRF token（要求为 hidden 类型且同时具有 name/value）。基于页面静态结构推断，未执行实际 CSRF 攻击测试，建议人工确认。",
                             "在登录表单中添加 CSRF token（例如 <input type=\"hidden\" name=\"csrf_token\" value=\"...\">），服务端验证 token 有效性。",
-                            vuln_type="auth_form",
+                            vuln_type="info",
                             evidence={"login_path": login_path, "issue": "csrf_token_missing", "check_scope": "仅检测登录表单第一个 <form>"},
                             verify_key="auth_form",
-                            confidence_level="中",
+                            confidence_level="低",
                             cv_reason="基于页面静态结构推断，未执行实际 CSRF 攻击测试",
                         )
                     if "login_page_no_xfo" in issues:
@@ -6919,10 +6511,12 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         async with _scan_progress_lock:
             _scan_progress.pop(scan_token, None)
         result_jsonable = jsonable(result)
-        # 写入扫描结果缓存（仅缓存成功结果，30 秒内同 URL 直接返回）
+        # 写入扫描结果缓存（成功结果按深度 TTL 缓存）
         if isinstance(result_jsonable, dict) and result_jsonable.get("success"):
             async with _scan_cache_lock:
-                _SCAN_RESULT_CACHE[cache_key] = (result_jsonable, time.time())
+                _SCAN_RESULT_CACHE[cache_key] = (result_jsonable, time.time(), cache_ttl)
+                # 记录缓存未命中（新写入 = 之前未命中）
+                _SCAN_CACHE_MISSES += 1
                 # 缓存淘汰：超过硬上限时按时间戳淘汰最旧的 20%
                 if len(_SCAN_RESULT_CACHE) > _SCAN_CACHE_MAX_SIZE:
                     sorted_items = sorted(_SCAN_RESULT_CACHE.items(), key=lambda x: x[1][1])
@@ -9354,15 +8948,6 @@ async def api_compare(a: int, b: int, user: dict = Depends(require_login)) -> di
     }
 
 
-class PasswordResetRequest(BaseModel):
-    new_password: str = Field(min_length=6, max_length=128)
-
-    @field_validator("new_password")
-    @classmethod
-    def validate_new_password(cls, v: str) -> str:
-        return v.strip()
-
-
 @app.post("/api/reset-password")
 async def api_reset_password(req: PasswordResetRequest, user: dict = Depends(require_login)) -> dict:
     user_id = user["user_id"]
@@ -9448,11 +9033,24 @@ _FREE_TRIAL_HOSTS = {
     "iana.org", "www.iana.org", "httpbin.org", "testphp.vulnweb.com",
 }
 
-# 登录用户扫描结果缓存：30 秒内同一 URL 直接返回（防重复点击 + 节省后端开销）
-_SCAN_RESULT_CACHE: Dict[str, Tuple[dict, float]] = {}
-_SCAN_CACHE_TTL = 30  # 秒
+# 登录用户扫描结果缓存：同一 URL 不同深度分别缓存（防重复点击 + 节省后端开销）
+_SCAN_RESULT_CACHE: Dict[str, Tuple[dict, float, int]] = {}  # (result, timestamp, depth_ttl)
 _SCAN_CACHE_MAX_SIZE = 200  # 最大缓存条数硬上限
 _scan_cache_lock = asyncio.Lock()  # 缓存并发读写锁，防止竞态条件
+
+# 缓存命中率统计
+_SCAN_CACHE_HITS = 0
+_SCAN_CACHE_MISSES = 0
+
+# 根据扫描深度返回缓存 TTL（秒）
+def _get_cache_ttl(depth: str) -> int:
+    """标准模式 60 秒，深度模式 300 秒，快速模式 30 秒。"""
+    if depth == "deep":
+        return 300
+    elif depth == "standard":
+        return 60
+    else:
+        return 30  # quick 或 fallback
 
 
 # 免费试用兜底缓存：网络异常时返回预置数据，确保试用体验稳定可用
@@ -11946,25 +11544,6 @@ def _demo_nginx_reset() -> tuple[bool, str]:
             return False, f"重置失败: {str(e)}"
 
 
-class DemoFixRequest(BaseModel):
-    action: str  # "apply" 或 "reset"
-    target: str = "localhost:8080"
-
-    @field_validator("action")
-    @classmethod
-    def validate_action(cls, v: str) -> str:
-        if v not in ("apply", "reset"):
-            raise ValueError("action 只能是 apply 或 reset")
-        return v
-
-    @field_validator("target")
-    @classmethod
-    def validate_target(cls, v: str) -> str:
-        if len(v) > 100:
-            raise ValueError("target 过长")
-        return v.strip()
-
-
 @app.post("/api/demo-fix")
 async def api_demo_fix(req: DemoFixRequest, request: Request, user: dict = Depends(require_login)) -> dict:
     """
@@ -11997,11 +11576,6 @@ async def api_demo_fix(req: DemoFixRequest, request: Request, user: dict = Depen
         }
     else:
         return {"success": False, "error": f"未知 action: {req.action}"}
-
-
-class DemoFullCycleRequest(BaseModel):
-    target: str = "localhost:8080"
-    reset_first: bool = True  # 是否先重置为有漏洞状态
 
 
 @app.post("/api/demo-full-cycle")
