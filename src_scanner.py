@@ -30,6 +30,49 @@ def _init_helpers() -> None:
         _safe_read_body = _main._safe_read_body
 
 
+# 证据存储（由插件化扫描入口注入）
+_evidence_store = None
+
+
+def set_evidence_store(store: Any) -> None:
+    """设置全局证据存储，供检测函数记录 HTTP 交互。"""
+    global _evidence_store
+    _evidence_store = store
+
+
+def clear_evidence_store() -> None:
+    """清除全局证据存储。"""
+    global _evidence_store
+    _evidence_store = None
+
+
+async def _recorded_request(method: str, url: str, **kwargs: Any) -> Any:
+    """执行 HTTP 请求并将请求/响应记录到证据存储。"""
+    _init_helpers()
+    client = _get_httpx_client()
+    payload = kwargs.pop("_payload", "")
+    func = getattr(client, method.lower())
+    resp = await func(url, **kwargs)
+
+    if _evidence_store is not None:
+        try:
+            headers = kwargs.get("headers") or {}
+            body = kwargs.get("content") or kwargs.get("data") or ""
+            request_text = _build_request_text(method.upper(), url, headers, body if isinstance(body, str) else "")
+            response_text = _build_response_text(resp, 800)
+            _evidence_store.record(
+                method=method.upper(),
+                url=url,
+                request_text=request_text,
+                response_text=response_text,
+                payload=payload,
+                meta={"status_code": resp.status_code},
+            )
+        except Exception:
+            pass
+    return resp
+
+
 # ---------- 常量 ----------
 
 SQLI_PAYLOADS: List[str] = [
@@ -597,6 +640,59 @@ public ResponseEntity<?> checkout(@RequestBody CheckoutReq req, @AuthenticationP
             "cloudflare": "# Cloudflare 无法识别业务逻辑，建议应用层修复并配合 Bot Management 降低自动化攻击。",
             "generic": "所有业务关键状态转换在服务端重新校验；不信任客户端传入的价格、状态、权限字段；实施幂等与并发控制。",
         },
+        "open_redirect": {
+            "nginx": "# Nginx 不处理业务重定向，在应用层校验跳转目标。",
+            "apache": "# Apache 不处理业务重定向，在应用层校验跳转目标。",
+            "express": """// Express：白名单校验重定向 URL
+const ALLOWED_REDIRECTS = ['/dashboard', '/profile', '/'];
+app.get('/redirect', (req, res) => {
+  const target = req.query.url;
+  if (!ALLOWED_REDIRECTS.includes(target)) {
+    return res.status(400).send('Invalid redirect');
+  }
+  res.redirect(target);
+});""",
+            "flask": """# Flask：白名单校验重定向 URL
+from flask import redirect, abort, request
+ALLOWED_REDIRECTS = {'/dashboard', '/profile', '/'}
+@app.route('/redirect')
+def safe_redirect():
+    target = request.args.get('url', '/')
+    if target not in ALLOWED_REDIRECTS:
+        abort(400)
+    return redirect(target)""",
+            "spring_boot": """// Spring Boot：白名单校验
+@GetMapping("/redirect")
+public ResponseEntity<Void> redirect(@RequestParam String url) {
+    if (!ALLOWED_REDIRECTS.contains(url)) {
+        return ResponseEntity.badRequest().build();
+    }
+    return ResponseEntity.status(302).header("Location", url).build();
+}""",
+            "cloudflare": "# Cloudflare WAF 规则可拦截含外部 URL 的重定向参数。",
+            "generic": "对用户提供的 URL 参数进行白名单校验；禁止重定向到外部域名；使用相对路径跳转。",
+        },
+        "xxe": {
+            "nginx": "# Nginx 不解析 XML，在应用层禁用 DTD。",
+            "apache": "# Apache 不解析 XML，在应用层禁用 DTD。",
+            "express": """// Node.js：使用 libxmljs2 并禁用 DTD
+const libxmljs2 = require('libxmljs2');
+const doc = libxmljs2.parseXml(xml, {
+  dtdload: false,
+  dtdattr: false,
+  noent: false,
+});""",
+            "flask": """# Python：使用 defusedxml 替代标准库
+from defusedxml import ElementTree
+tree = ElementTree.fromstring(xml_data)  # 自动禁用外部实体""",
+            "spring_boot": """// Java：禁用 DTD 和外部实体
+DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);""",
+            "cloudflare": "# Cloudflare WAF 可拦截包含 XML 实体定义的请求体。",
+            "generic": "禁用 XML DTD 处理和外部实体；使用安全的 XML 解析库（如 defusedxml）；对 XML 输入进行白名单校验。",
+        },
     }
     return templates.get(vuln_type, {k: None for k in ["nginx", "apache", "express", "flask", "spring_boot", "cloudflare", "generic"]})
 
@@ -650,6 +746,14 @@ def _references(vuln_type: str) -> List[str]:
             "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html",
             "https://owasp.org/Top10/A04_2021-Insecure_Design/",
         ],
+        "open_redirect": [
+            "https://owasp.org/www-community/attacks/Unvalidated_Redirects_and_Forwards_Cheat_Sheet",
+            "https://portswigger.net/kb/issues/00500100/unvalidated-redirection",
+        ],
+        "xxe": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html",
+            "https://portswigger.net/web-security/xxe",
+        ],
     }
     return refs.get(vuln_type, [])
 
@@ -671,6 +775,8 @@ def _owasp_category(vuln_type: str) -> str:
         "ssrf": "A10:2021 - Server-Side Request Forgery",
         "file_upload": "A04:2021 - Insecure Design",
         "logic_bypass": "A04:2021 - Insecure Design / A07 - Authentication Failures",
+        "open_redirect": "A01:2021 - Broken Access Control",
+        "xxe": "A05:2021 - Security Misconfiguration",
     }
     return mapping.get(vuln_type, "A05:2021 - Security Misconfiguration")
 
@@ -693,6 +799,8 @@ def _cwe_id(vuln_type: str) -> str:
         "ssrf": "CWE-918",
         "file_upload": "CWE-434",
         "logic_bypass": "CWE-287",
+        "open_redirect": "CWE-601",
+        "xxe": "CWE-611",
     }
     return mapping.get(vuln_type, "CWE-693")
 
@@ -848,7 +956,7 @@ async def detect_sqli_src(url: str) -> List[Dict[str, Any]]:
     baseline_body = ""
     baseline_time = 0.0
     try:
-        resp = await client.get(url, timeout=10.0, follow_redirects=True)
+        resp = await _recorded_request("get", url, timeout=10.0, follow_redirects=True)
         baseline_body = _safe_read_body(resp).lower()
         baseline_time = resp.elapsed.total_seconds() if resp.elapsed else 0.0
     except Exception:
@@ -859,7 +967,7 @@ async def detect_sqli_src(url: str) -> List[Dict[str, Any]]:
             test_url = _build_test_url(url, param, payload)
             try:
                 start = time.time()
-                resp = await client.get(test_url, timeout=12.0, follow_redirects=True)
+                resp = await _recorded_request("get", test_url, timeout=12.0, follow_redirects=True)
                 elapsed = time.time() - start
                 body = _safe_read_body(resp)
                 body_lower = body.lower()
@@ -972,7 +1080,7 @@ async def detect_xss_src(url: str) -> List[Dict[str, Any]]:
         for payload, tag in XSS_PAYLOADS:
             test_url = _build_test_url(url, param, payload)
             try:
-                resp = await client.get(test_url, timeout=10.0, follow_redirects=True)
+                resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=True)
                 body = _safe_read_body(resp)
 
                 if payload in body:
@@ -1022,7 +1130,7 @@ async def detect_info_leak_src(url: str, headers: Dict[str, str], body: Optional
 
     if body is None:
         try:
-            resp = await client.get(url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request("get", url, timeout=10.0, follow_redirects=True)
             body = _safe_read_body(resp)
         except Exception:
             body = ""
@@ -1107,7 +1215,7 @@ async def detect_csrf_src(url: str, headers: Dict[str, str], body: Optional[str]
 
     if body is None:
         try:
-            resp = await client.get(url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request("get", url, timeout=10.0, follow_redirects=True)
             body = _safe_read_body(resp)
         except Exception:
             body = ""
@@ -1186,7 +1294,7 @@ async def detect_sensitive_paths_src(base_url: str) -> List[Dict[str, Any]]:
     async def check(path: str, name: str, indicators: List[str]) -> None:
         test_url = origin + path
         try:
-            resp = await client.get(test_url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=True)
             if resp.status_code != 200:
                 return
             body = _safe_read_body(resp)
@@ -1236,7 +1344,7 @@ async def detect_outdated_components_src(url: str, headers: Dict[str, str], body
 
     if body is None:
         try:
-            resp = await client.get(url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request("get", url, timeout=10.0, follow_redirects=True)
             body = _safe_read_body(resp)
         except Exception:
             body = ""
@@ -1336,7 +1444,7 @@ async def detect_broken_access_control_src(base_url: str) -> List[Dict[str, Any]
     for path, name in ADMIN_PATHS:
         test_url = origin + path
         try:
-            resp = await client.get(test_url, timeout=10.0, follow_redirects=False)
+            resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=False)
             # 200 且无登录特征，判定为未授权访问
             if resp.status_code != 200:
                 continue
@@ -1385,7 +1493,7 @@ async def detect_ssrf_src(url: str) -> List[Dict[str, Any]]:
         for payload, target_name, indicator in SSRF_PAYLOADS:
             test_url = _build_test_url(url, param, payload)
             try:
-                resp = await client.get(test_url, timeout=8.0, follow_redirects=False)
+                resp = await _recorded_request("get", test_url, timeout=8.0, follow_redirects=False)
                 body = _safe_read_body(resp).lower()
                 elapsed = resp.elapsed.total_seconds() if resp.elapsed else 0.0
 
@@ -1447,7 +1555,7 @@ async def detect_idor_src(url: str) -> List[Dict[str, Any]]:
                 new_qs = {k: ([str(test_id)] if k == param else v) for k, v in qs.items()}
                 test_url = urlunparse(parsed._replace(query=urlencode(new_qs, doseq=True)))
                 try:
-                    resp = await client.get(test_url, timeout=10.0, follow_redirects=True)
+                    resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=True)
                     if resp.status_code != 200:
                         continue
                     body = _safe_read_body(resp)
@@ -1487,7 +1595,7 @@ async def detect_file_upload_src(url: str, body: Optional[str] = None) -> List[D
 
     if body is None:
         try:
-            resp = await client.get(url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request("get", url, timeout=10.0, follow_redirects=True)
             body = _safe_read_body(resp)
         except Exception:
             body = ""
@@ -1531,7 +1639,7 @@ async def detect_logic_bypass_src(url: str, headers: Dict[str, str], body: Optio
 
     if body is None:
         try:
-            resp = await client.get(url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request("get", url, timeout=10.0, follow_redirects=True)
             body = _safe_read_body(resp)
         except Exception:
             body = ""
@@ -1590,7 +1698,182 @@ async def detect_logic_bypass_src(url: str, headers: Dict[str, str], body: Optio
     return findings
 
 
-# ---------- 扫描编排 ----------
+# ---------- 开放重定向检测 ----------
+
+OPEN_REDIRECT_PARAM_NAMES = [
+    "url", "redirect", "redirect_url", "redirect_to", "return_url",
+    "returnurl", "next", "target", "to", "goto", "dest", "destination",
+    "continue", "callback_url", "rurl", "u", "link",
+]
+
+OPEN_REDIRECT_PAYLOADS = [
+    ("https://evil.example.com", "https://evil.example.com"),
+    ("//evil.example.com", "//evil.example.com"),
+    ("/\\evil.example.com", "evil.example.com"),
+    ("https:evil.example.com", "evil.example.com"),
+]
+
+
+async def detect_open_redirect_src(url: str) -> List[Dict[str, Any]]:
+    """检测开放重定向漏洞。
+
+    通过在重定向相关参数中注入外部 URL，检查 HTTP 响应的 Location 头
+    是否指向外部域名。
+    """
+    _init_helpers()
+    client = _get_httpx_client()
+    findings: List[Dict[str, Any]] = []
+
+    parsed = urlparse(url)
+    if not parsed.query:
+        return findings
+
+    params = [p.split("=")[0] for p in parsed.query.split("&") if "=" in p]
+    redirect_params = [
+        p for p in params
+        if p.lower() in OPEN_REDIRECT_PARAM_NAMES
+    ]
+
+    for param in redirect_params[:3]:
+        for payload, indicator in OPEN_REDIRECT_PAYLOADS:
+            test_url = _build_test_url(url, param, payload)
+            try:
+                resp = await _recorded_request("get", test_url, timeout=8.0, follow_redirects=False)
+
+                # 检查 3xx 重定向的 Location 头
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    location = resp.headers.get("location", "")
+                    if indicator in location:
+                        findings.append(build_finding(
+                            vuln_type="open_redirect",
+                            title="开放重定向漏洞",
+                            severity="medium",
+                            severity_score=6,
+                            url=test_url,
+                            parameter=param,
+                            location="URL 参数",
+                            description=f"参数 '{param}' 存在开放重定向漏洞，可将用户重定向到外部恶意站点（{indicator}）。",
+                            evidence_request=_build_request_text("GET", test_url),
+                            evidence_response=f"HTTP {resp.status_code}\\nLocation: {location}",
+                            impact="攻击者可利用此漏洞进行钓鱼攻击、恶意软件分发，或窃取用户凭证。",
+                            reproduce_steps=[
+                                f"访问: {test_url}",
+                                f"观察浏览器被重定向到: {location}",
+                            ],
+                            fix_suggestion="对重定向参数进行白名单校验，仅允许站内相对路径。",
+                            confidence="high",
+                        ))
+                        break  # 一个参数命中即可
+            except Exception:
+                pass
+
+    return findings
+
+
+# ---------- XXE 检测 ----------
+
+XXE_CONTENT_TYPE_PATTERNS = [
+    re.compile(r"application/xml", re.I),
+    re.compile(r"text/xml", re.I),
+    re.compile(r"application/atom\+xml", re.I),
+    re.compile(r"application/rss\+xml", re.I),
+]
+
+XXE_BODY_INDICATORS = [
+    re.compile(r"<\?xml", re.I),
+    re.compile(r"<!DOCTYPE", re.I),
+    re.compile(r"<\w+.*xmlns=", re.I),
+]
+
+XXE_PAYLOAD = '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><foo>&xxe;</foo>'
+
+
+async def detect_xxe_src(url: str, headers: Dict[str, str], body: str = "") -> List[Dict[str, Any]]:
+    """检测 XML 外部实体（XXE）注入漏洞。
+
+    检测策略：
+    1. 检查响应头 Content-Type 是否为 XML 类型
+    2. 检查响应体是否包含 XML 声明或 DOCTYPE
+    3. 向疑似 XML 端点发送 XXE payload，检查是否泄露文件内容
+    """
+    _init_helpers()
+    client = _get_httpx_client()
+    findings: List[Dict[str, Any]] = []
+
+    # 1. 静态检测：响应头或响应体暗示 XML 处理
+    content_type = headers.get("content-type", headers.get("Content-Type", ""))
+    is_xml_endpoint = any(p.search(content_type) for p in XXE_CONTENT_TYPE_PATTERNS) if content_type else False
+
+    has_xml_body = False
+    if body:
+        has_xml_body = any(p.search(body[:2000]) for p in XXE_BODY_INDICATORS)
+
+    if not is_xml_endpoint and not has_xml_body:
+        # 检查 URL 是否暗示 XML 端点
+        if not any(kw in url.lower() for kw in ["/api/xml", "/xml", "/rss", "/atom", "/feed", "/soap"]):
+            return findings
+
+    # 2. 动态检测：发送 XXE payload
+    try:
+        resp = await _recorded_request("post", 
+            url,
+            content=XXE_PAYLOAD,
+            headers={"Content-Type": "application/xml"},
+            timeout=10.0,
+            follow_redirects=False,
+        )
+
+        if resp.status_code == 200:
+            resp_body = resp.text.lower()
+            # 检查是否泄露了 /etc/passwd 内容
+            if "root:" in resp_body and "/bin/" in resp_body:
+                findings.append(build_finding(
+                    vuln_type="xxe",
+                    title="XML 外部实体注入（XXE）",
+                    severity="critical",
+                    severity_score=10,
+                    url=url,
+                    parameter="XML Body",
+                    location="HTTP 请求体",
+                    description="目标端点在解析 XML 时未禁用外部实体，可读取服务器本地文件（已通过 file:// 协议读取 /etc/passwd）。",
+                    evidence_request=f"POST {url}\\nContent-Type: application/xml\\n\\n{XXE_PAYLOAD}",
+                    evidence_response=f"HTTP {resp.status_code}\\n{resp.text[:500]}",
+                    impact="攻击者可读取任意文件、执行 SSRF、导致拒绝服务，甚至在某些配置下实现远程代码执行。",
+                    reproduce_steps=[
+                        f"POST {url}",
+                        "Content-Type: application/xml",
+                        f"Body: {XXE_PAYLOAD}",
+                        "检查响应中是否包含文件内容",
+                    ],
+                    fix_suggestion="禁用 XML DTD 和外部实体处理；使用 defusedxml 等安全解析库。",
+                    confidence="high",
+                ))
+            elif resp.status_code == 200 and ("error" not in resp_body or "parse" in resp_body):
+                # 响应正常但未泄露文件，可能是端点接受 XML 但未泄露内容
+                if is_xml_endpoint or has_xml_body:
+                    findings.append(build_finding(
+                        vuln_type="xxe",
+                        title="潜在 XML 外部实体注入",
+                        severity="medium",
+                        severity_score=5,
+                        url=url,
+                        parameter="XML Body",
+                        location="HTTP 请求体",
+                        description="目标端点接受 XML 输入，但未验证是否禁用了外部实体处理。需人工确认是否可利用。",
+                        evidence_request=f"POST {url}\\nContent-Type: application/xml\\n\\n{XXE_PAYLOAD}",
+                        evidence_response=f"HTTP {resp.status_code} (响应长度: {len(resp.text)})",
+                        impact="如果 XML 解析器未禁用外部实体，攻击者可能读取文件或执行 SSRF。",
+                        reproduce_steps=[
+                            "发送包含外部实体定义的 XML 请求",
+                            "检查响应中是否泄露系统文件内容",
+                        ],
+                        fix_suggestion="确保 XML 解析器禁用 DTD 和外部实体；使用 defusedxml 库。",
+                        confidence="medium",
+                    ))
+    except Exception:
+        pass
+
+    return findings
 
 async def run_src_scan(
     url: str,
@@ -1617,10 +1900,12 @@ async def run_src_scan(
     idor_task = detect_idor_src(url)
     upload_task = detect_file_upload_src(url)
     logic_task = detect_logic_bypass_src(url, headers)
+    open_redirect_task = detect_open_redirect_src(url)
+    xxe_task = detect_xxe_src(url, headers, "")
 
     tasks = [
         sqli_task, xss_task, info_leak_task, csrf_task, paths_task, components_task,
-        bac_task, ssrf_task, idor_task, upload_task, logic_task,
+        bac_task, ssrf_task, idor_task, upload_task, logic_task, open_redirect_task, xxe_task,
     ]
     if deep:
         # 深度模式：暂不增加额外任务，保留扩展位

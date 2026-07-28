@@ -56,6 +56,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # ---------- 代码拆分模块导入 ----------
 import src_scanner
 from src_scanner import run_src_scan
+from app.services.scan_service import run_plugin_scan
 from constants import (
     BLOCKED_HOSTS, BLOCKED_NETWORKS, ALLOWED_INTERNAL_HOSTS,
     CMDI_PAYLOADS, DESER_SIGNATURES, INFO_PATHS,
@@ -6592,10 +6593,10 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             except Exception:
                 pass
 
-        # ---------- SRC 级扫描（新格式） ----------
+        # ---------- SRC 级扫描（插件化新引擎） ----------
         waf_name = waf_list[0].get("name") if waf_list else None
-        src_result = await run_src_scan(
-            url, headers, is_https, ssl_info, waf=waf_name, deep=(depth == "deep")
+        src_result = await run_plugin_scan(
+            url, headers, is_https, ssl_info, waf=waf_name, deep=(depth == "deep"), body=""
         )
 
         # 保留旧版元数据，用于兼容历史展示与旧前端字段

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from app.plugins import BaseVulnDetector, Finding, ScanContext
+from app.plugins import BaseVulnDetector, Evidence, Finding, ScanContext, VulnLocation
 
 
 class HeaderSecurityDetector(BaseVulnDetector):
@@ -62,7 +62,15 @@ class HeaderSecurityDetector(BaseVulnDetector):
                         severity=severity,
                         description=f"响应头中未找到 {header}，攻击者可能利用此缺失执行相关攻击。",
                         url=context.url,
-                        evidence={"missing_header": header, "present_headers": list(headers.keys())},
+                        location=VulnLocation(
+                            url=context.url,
+                            parameter=header,
+                            parameter_type="header",
+                            snippet="HTTP 响应头",
+                        ),
+                        evidence=Evidence(
+                            extra={"missing_header": header, "present_headers": list(headers.keys())},
+                        ),
                         fix_suggestion=fix,
                         confidence="high",
                         owasp_category=owasp,
@@ -93,6 +101,12 @@ class SSLInfoDetector(BaseVulnDetector):
                     severity="high",
                     description="站点未使用 HTTPS，传输数据可能被窃听或篡改。",
                     url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="",
+                        parameter_type="protocol",
+                        snippet="协议层",
+                    ),
                     fix_suggestion="配置 SSL/TLS 证书并强制 HTTPS 重定向。",
                     confidence="high",
                     owasp_category="A02 加密机制失效",
@@ -109,7 +123,15 @@ class SSLInfoDetector(BaseVulnDetector):
                     severity="high",
                     description=f"SSL 证书已过期（剩余天数: {ssl_info.get('days_left', 0)}）。",
                     url=context.url,
-                    evidence={"days_left": ssl_info.get("days_left")},
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="",
+                        parameter_type="protocol",
+                        snippet="TLS 证书",
+                    ),
+                    evidence=Evidence(
+                        extra={"days_left": ssl_info.get("days_left")},
+                    ),
                     fix_suggestion="立即续期 SSL 证书。",
                     confidence="high",
                     owasp_category="A02 加密机制失效",
@@ -125,6 +147,12 @@ class SSLInfoDetector(BaseVulnDetector):
                     severity="medium",
                     description="检测到弱加密套件或协议版本。",
                     url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="",
+                        parameter_type="protocol",
+                        snippet="TLS 配置",
+                    ),
                     fix_suggestion="禁用 TLS 1.0/1.1，仅允许 TLS 1.2+ 和强加密套件。",
                     confidence="medium",
                     owasp_category="A02 加密机制失效",
@@ -139,23 +167,33 @@ def register_builtin_detectors() -> None:
     """注册所有内置检测器。"""
     from app.plugins import DetectorRegistry
     from app.plugins.detectors import (
-        SQLiDetector,
+        BrokenAccessControlDetector,
+        CSRFDetector,
+        FileUploadDetector,
+        IDORDetector,
+        InfoLeakDetector,
+        LogicBypassDetector,
+        OpenRedirectDetector,
+        OutdatedComponentDetector,
         ReflectedXSSDetector,
-        CommandInjectionDetector,
-        DirectoryTraversalDetector,
+        SQLiDetector,
         SSRFDetector,
-        InsecureDeserializationDetector,
-        TimeBasedSQLiDetector,
         SensitivePathDetectorPlugin,
+        XXEDetector,
     )
 
     DetectorRegistry.register(HeaderSecurityDetector())
     DetectorRegistry.register(SSLInfoDetector())
     DetectorRegistry.register(SQLiDetector())
     DetectorRegistry.register(ReflectedXSSDetector())
-    DetectorRegistry.register(CommandInjectionDetector())
-    DetectorRegistry.register(DirectoryTraversalDetector())
-    DetectorRegistry.register(SSRFDetector())
-    DetectorRegistry.register(InsecureDeserializationDetector())
-    DetectorRegistry.register(TimeBasedSQLiDetector())
+    DetectorRegistry.register(InfoLeakDetector())
+    DetectorRegistry.register(CSRFDetector())
     DetectorRegistry.register(SensitivePathDetectorPlugin())
+    DetectorRegistry.register(OutdatedComponentDetector())
+    DetectorRegistry.register(BrokenAccessControlDetector())
+    DetectorRegistry.register(SSRFDetector())
+    DetectorRegistry.register(IDORDetector())
+    DetectorRegistry.register(FileUploadDetector())
+    DetectorRegistry.register(LogicBypassDetector())
+    DetectorRegistry.register(OpenRedirectDetector())
+    DetectorRegistry.register(XXEDetector())

@@ -125,16 +125,19 @@ function renderFindingList(findings, selectedIndex) {
       const active = i === selectedIndex ? 'active' : '';
       const param = f.parameter ? `<code class="src-list-param">${escapeHtml(f.parameter)}</code>` : '';
       const typeLabel = f.type ? `<span class="src-list-type">${escapeHtml(f.type.toUpperCase())}</span>` : '';
+      const host = f.url ? new URL(f.url, window.location.href).hostname : '';
+      const path = f.url ? new URL(f.url, window.location.href).pathname : '';
       html += `
         <div class="src-list-item ${active} ${cls}" data-index="${i}">
-          <div class="src-list-row">
-            <span class="src-sev-dot ${cls}"></span>
-            <span class="src-list-title">${escapeHtml(f.title || '未命名漏洞')}</span>
+          <div class="src-list-row top">
+            <span class="src-sev-badge ${cls}">${SEVERITY_LABEL[sev]}</span>
+            <span class="src-list-title" title="${escapeAttr(f.title || '')}">${escapeHtml(f.title || '未命名漏洞')}</span>
           </div>
           <div class="src-list-row meta">
             ${typeLabel}
             ${param}
-            <span class="src-list-confidence">置信度 ${escapeHtml(f.confidence || 'medium')}</span>
+            <span class="src-list-host" title="${escapeAttr(f.url || '')}">${escapeHtml(host)}${escapeHtml(path)}</span>
+            <span class="src-list-confidence">${escapeHtml(f.confidence || 'medium')}</span>
           </div>
         </div>
       `;
@@ -152,6 +155,9 @@ function renderFindingDetail(finding, index) {
   const cls = SEVERITY_ZH_CLASS[sev] || 'info';
   const label = SEVERITY_LABEL[sev] || '信息';
   const evidence = finding.evidence || {};
+  const locDetail = finding.location_detail || {};
+  const statusMap = { open: '待处理', confirmed: '已确认', false_positive: '误报', fixed: '已修复' };
+  const status = finding.status || 'open';
 
   let html = '<div class="src-detail-card fade-in-up">';
 
@@ -160,17 +166,28 @@ function renderFindingDetail(finding, index) {
     <div class="src-detail-title-row">
       <span class="src-detail-severity ${cls}">${label}</span>
       <h2 class="src-detail-title">${escapeHtml(finding.title || '未命名漏洞')}</h2>
+      <span class="src-detail-status ${status}">${statusMap[status] || status}</span>
     </div>
     <div class="src-detail-subtitle">
       <code class="src-detail-id">${escapeHtml(finding.id || '')}</code>
       <span class="src-detail-type">${escapeHtml(finding.type || '').toUpperCase()}</span>
-      <span class="src-detail-cwe" title="Common Weakness Enumeration">${escapeHtml(finding.cwe_id || '')}</span>
-      <span class="src-detail-owasp">${escapeHtml(finding.owasp_category || '')}</span>
-      <span class="src-detail-cvss" title="${escapeHtml(finding.cvss_vector || '')}">CVSS ${finding.cvss_score || '-'}</span>
-      <span class="src-detail-score">评分 ${finding.severity_score || '-'}/10</span>
+      ${finding.cwe_id ? `<span class="src-detail-cwe" title="Common Weakness Enumeration">${escapeHtml(finding.cwe_id)}</span>` : ''}
+      ${finding.owasp_category ? `<span class="src-detail-owasp">${escapeHtml(finding.owasp_category)}</span>` : ''}
+      ${finding.cvss_score ? `<span class="src-detail-cvss" title="${escapeHtml(finding.cvss_vector || '')}">CVSS ${finding.cvss_score}</span>` : ''}
+      ${finding.severity_score ? `<span class="src-detail-score">评分 ${finding.severity_score}/10</span>` : ''}
       <span class="src-detail-confidence">置信度 ${escapeHtml(finding.confidence || 'medium')}</span>
     </div>
   </div>`;
+
+  // Tab 导航
+  html += `<div class="src-detail-tabs">
+    <button class="src-detail-tab active" data-tab="overview">概览</button>
+    <button class="src-detail-tab" data-tab="evidence">请求 / 响应</button>
+    <button class="src-detail-tab" data-tab="fix">修复</button>
+  </div>`;
+
+  // 概览面板
+  html += `<div class="src-detail-panel active" data-panel="overview">`;
 
   // 描述
   html += `<div class="src-detail-section">
@@ -186,11 +203,15 @@ function renderFindingDetail(finding, index) {
 
   // 位置
   html += `<div class="src-detail-section">
-    <div class="src-section-title">漏洞位置</div>
+    <div class="src-section-title">精准位置</div>
     <div class="src-section-body">
-      <div class="src-kv"><span class="src-k">URL</span><code class="src-v">${escapeHtml(finding.url || '')}</code></div>
-      ${finding.parameter ? `<div class="src-kv"><span class="src-k">参数</span><code class="src-v">${escapeHtml(finding.parameter)}</code></div>` : ''}
-      ${finding.location ? `<div class="src-kv"><span class="src-k">位置</span><span class="src-v">${escapeHtml(finding.location)}</span></div>` : ''}
+      <div class="src-kv"><span class="src-k">URL</span><code class="src-v">${escapeHtml(locDetail.url || finding.url || '')}</code></div>
+      ${locDetail.method ? `<div class="src-kv"><span class="src-k">方法</span><code class="src-v">${escapeHtml(locDetail.method)}</code></div>` : ''}
+      ${(locDetail.parameter || finding.parameter) ? `<div class="src-kv"><span class="src-k">参数</span><code class="src-v">${escapeHtml(locDetail.parameter || finding.parameter)}</code></div>` : ''}
+      ${locDetail.parameter_type ? `<div class="src-kv"><span class="src-k">参数类型</span><code class="src-v">${escapeHtml(locDetail.parameter_type)}</code></div>` : ''}
+      ${locDetail.code_location ? `<div class="src-kv"><span class="src-k">代码位置</span><code class="src-v">${escapeHtml(locDetail.code_location)}</code></div>` : ''}
+      ${locDetail.snippet ? `<div class="src-kv"><span class="src-k">上下文</span><span class="src-v">${escapeHtml(locDetail.snippet)}</span></div>` : ''}
+      ${(!locDetail.url && finding.location) ? `<div class="src-kv"><span class="src-k">位置</span><span class="src-v">${escapeHtml(finding.location)}</span></div>` : ''}
     </div>
   </div>`;
 
@@ -205,17 +226,23 @@ function renderFindingDetail(finding, index) {
     html += `</ol></div>`;
   }
 
-  // 证据
+  html += `</div>`;
+
+  // 证据面板
+  html += `<div class="src-detail-panel" data-panel="evidence">`;
   html += renderEvidenceSection(evidence, finding);
+  html += `</div>`;
 
-  // 修复代码 tabs
-  html += renderFixCodeSection(finding.fix_code || {});
-
+  // 修复面板
+  html += `<div class="src-detail-panel" data-panel="fix">`;
   // 修复建议
   html += `<div class="src-detail-section">
     <div class="src-section-title">修复建议</div>
     <div class="src-section-body">${escapeHtml(finding.fix_suggestion || '暂无修复建议')}</div>
   </div>`;
+  // 修复代码 tabs
+  html += renderFixCodeSection(finding.fix_code || {});
+  html += `</div>`;
 
   // 参考链接
   if (Array.isArray(finding.references) && finding.references.length > 0) {
@@ -251,33 +278,58 @@ function renderEvidenceSection(evidence, finding) {
   const hasResponse = !!evidence.response;
   const hasPayload = !!evidence.payload;
   const hasScreenshot = !!evidence.screenshot;
+  const hasNotes = !!evidence.notes;
+  const hasSignature = !!evidence.matched_signature;
 
-  let html = `<div class="src-detail-section">
-    <div class="src-section-title">技术证据</div>
-    <div class="src-section-body">`;
+  let html = `<div class="src-detail-section">`;
 
-  if (hasPayload) {
-    html += `<div class="src-evidence-row">
-      <span class="src-evidence-label">Payload</span>
-      <code class="src-payload">${escapeHtml(evidence.payload)}</code>
-      <button class="src-copy-btn" data-copy="${escapeAttr(evidence.payload)}">复制</button>
-    </div>`;
+  if (hasPayload || hasSignature || hasNotes) {
+    html += `<div class="src-section-title">命中信息</div>
+    <div class="src-section-body src-evidence-meta">`;
+    if (hasPayload) {
+      html += `<div class="src-evidence-row">
+        <span class="src-evidence-label">Payload</span>
+        <code class="src-payload">${escapeHtml(evidence.payload)}</code>
+        <button class="src-copy-btn" data-copy="${escapeAttr(evidence.payload)}">复制</button>
+      </div>`;
+    }
+    if (hasSignature) {
+      html += `<div class="src-evidence-row">
+        <span class="src-evidence-label">命中签名</span>
+        <code class="src-signature">${escapeHtml(evidence.matched_signature)}</code>
+      </div>`;
+    }
+    if (hasNotes) {
+      html += `<div class="src-evidence-row">
+        <span class="src-evidence-label">备注</span>
+        <span>${escapeHtml(evidence.notes)}</span>
+      </div>`;
+    }
+    html += `</div>`;
   }
 
-  if (hasRequest) {
-    html += `<details class="src-code-block" open>
-      <summary>HTTP 请求</summary>
-      <pre><code>${escapeHtml(evidence.request)}</code></pre>
-      <button class="src-copy-btn" data-copy="${escapeAttr(evidence.request)}">复制</button>
-    </details>`;
-  }
-
-  if (hasResponse) {
-    html += `<details class="src-code-block">
-      <summary>响应片段</summary>
-      <pre><code>${escapeHtml(evidence.response)}</code></pre>
-      <button class="src-copy-btn" data-copy="${escapeAttr(evidence.response)}">复制</button>
-    </details>`;
+  if (hasRequest || hasResponse) {
+    html += `<div class="src-section-title">HTTP 流量</div>
+    <div class="src-traffic-viewer">`;
+    if (hasRequest) {
+      html += `<div class="src-traffic-panel">
+        <div class="src-traffic-header">
+          <span>请求</span>
+          <button class="src-copy-btn" data-copy="${escapeAttr(evidence.request)}">复制</button>
+        </div>
+        <pre><code>${escapeHtml(evidence.request)}</code></pre>
+      </div>`;
+    }
+    if (hasResponse) {
+      html += `<div class="src-traffic-panel">
+        <div class="src-traffic-header">
+          <span>响应</span>
+          <button class="src-copy-btn" data-copy="${escapeAttr(evidence.response)}">复制</button>
+        </div>
+        <pre><code>${escapeHtml(evidence.response)}</code></pre>
+      </div>`;
+    }
+    html += `</div>`;
   }
 
   if (hasScreenshot) {
@@ -287,11 +339,12 @@ function renderEvidenceSection(evidence, finding) {
     </div>`;
   }
 
-  if (!hasRequest && !hasResponse && !hasPayload && !hasScreenshot) {
-    html += `<div class="src-no-evidence">无详细技术证据</div>`;
+  if (!hasRequest && !hasResponse && !hasPayload && !hasScreenshot && !hasNotes && !hasSignature) {
+    html += `<div class="src-section-title">技术证据</div>
+    <div class="src-section-body"><div class="src-no-evidence">无详细技术证据</div></div>`;
   }
 
-  html += `</div></div>`;
+  html += `</div>`;
   return html;
 }
 
@@ -339,6 +392,19 @@ function bindFindingListEvents() {
     });
   });
 
+  document.querySelectorAll('.src-detail-tab').forEach((el) => {
+    el.addEventListener('click', function() {
+      const tab = this.dataset.tab;
+      const card = this.closest('.src-detail-card');
+      if (!card) return;
+      card.querySelectorAll('.src-detail-tab').forEach((t) => t.classList.remove('active'));
+      this.classList.add('active');
+      card.querySelectorAll('.src-detail-panel').forEach((p) => {
+        p.classList.toggle('active', p.dataset.panel === tab);
+      });
+    });
+  });
+
   document.querySelectorAll('.src-fix-tab').forEach((el) => {
     el.addEventListener('click', function() {
       _currentFixTab = this.dataset.tab;
@@ -352,7 +418,8 @@ function bindFindingListEvents() {
   });
 
   document.querySelectorAll('.src-copy-btn').forEach((btn) => {
-    btn.addEventListener('click', function() {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
       const text = this.dataset.copy || '';
       copyToClipboard(text).then(() => showToast('已复制到剪贴板'));
     });
@@ -475,54 +542,72 @@ export function injectSRCStyles() {
     .src-export-btn { background:var(--primary); color:#fff; border:none; padding:6px 14px; border-radius:var(--radius-xs); font-size:12px; cursor:pointer; }
     .src-export-btn:hover { background:var(--primary-light); }
 
-    .src-result-layout { display:grid; grid-template-columns:360px 1fr; gap:16px; }
+    .src-result-layout { display:grid; grid-template-columns:380px 1fr; gap:16px; }
     @media (max-width:900px) { .src-result-layout { grid-template-columns:1fr; } }
 
     .src-result-sidebar { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; max-height:calc(100vh - 220px); display:flex; flex-direction:column; }
     .src-list-header { padding:12px 14px; border-bottom:1px solid var(--border-light); font-weight:700; font-size:13px; display:flex; align-items:center; justify-content:space-between; }
     .src-list-count { background:var(--primary); color:#fff; font-size:11px; padding:2px 8px; border-radius:10px; }
-    .src-list-items { overflow-y:auto; flex:1; padding:8px; }
-    .src-list-item { padding:10px 12px; border-radius:var(--radius-sm); cursor:pointer; border-left:3px solid transparent; margin-bottom:6px; transition:background .15s; }
+    .src-list-items { overflow-y:auto; flex:1; padding:6px; }
+    .src-list-item { padding:10px 12px; border-radius:var(--radius-sm); cursor:pointer; border-left:3px solid transparent; margin-bottom:4px; transition:background .12s; }
     .src-list-item:hover { background:var(--bg-secondary); }
     .src-list-item.active { background:var(--verify-selected); border-left-color:var(--primary); }
+    .src-list-item.critical { border-left-color:#c75450; }
     .src-list-item.high { border-left-color:#c75450; }
     .src-list-item.medium { border-left-color:#f0a732; }
     .src-list-item.low { border-left-color:#73c990; }
     .src-list-item.info { border-left-color:#808080; }
     .src-list-row { display:flex; align-items:center; gap:8px; }
-    .src-list-row.meta { margin-top:4px; flex-wrap:wrap; }
-    .src-sev-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
-    .src-sev-dot.high { background:#c75450; }
-    .src-sev-dot.medium { background:#f0a732; }
-    .src-sev-dot.low { background:#73c990; }
-    .src-sev-dot.info { background:#808080; }
-    .src-list-title { font-size:13px; font-weight:600; color:var(--text-primary); flex:1; word-break:break-word; }
+    .src-list-row.top { align-items:flex-start; }
+    .src-list-row.meta { margin-top:6px; flex-wrap:wrap; font-size:11px; }
+    .src-sev-badge { font-size:10px; font-weight:700; padding:2px 7px; border-radius:var(--radius-xs); color:#fff; white-space:nowrap; flex:0 0 auto; }
+    .src-sev-badge.critical { background:#c75450; }
+    .src-sev-badge.high { background:#c75450; }
+    .src-sev-badge.medium { background:#f0a732; color:#000; }
+    .src-sev-badge.low { background:#73c990; color:#000; }
+    .src-sev-badge.info { background:#808080; }
+    .src-list-title { font-size:13px; font-weight:600; color:var(--text-primary); flex:1; word-break:break-word; line-height:1.4; }
     .src-list-type { font-size:10px; background:var(--token-bg); padding:2px 6px; border-radius:var(--radius-xs); color:var(--text-secondary); }
-    .src-list-param { font-size:11px; background:rgba(75,110,175,0.15); color:var(--primary-light); padding:2px 6px; border-radius:var(--radius-xs); }
-    .src-list-confidence { font-size:11px; color:var(--text-secondary); margin-left:auto; }
+    .src-list-param { font-size:10px; background:rgba(75,110,175,0.15); color:var(--primary-light); padding:2px 6px; border-radius:var(--radius-xs); }
+    .src-list-host { color:var(--text-secondary); font-family:var(--font); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; }
+    .src-list-confidence { font-size:11px; color:var(--text-secondary); margin-left:auto; text-transform:uppercase; }
 
     .src-result-detail { max-height:calc(100vh - 220px); overflow-y:auto; }
-    .src-detail-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:18px; }
-    .src-detail-header { border-bottom:1px solid var(--border-light); padding-bottom:14px; margin-bottom:16px; }
-    .src-detail-title-row { display:flex; align-items:flex-start; gap:10px; margin-bottom:8px; }
+    .src-detail-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:0; display:flex; flex-direction:column; }
+    .src-detail-header { border-bottom:1px solid var(--border-light); padding:16px 18px 14px; }
+    .src-detail-title-row { display:flex; align-items:flex-start; gap:10px; margin-bottom:10px; }
     .src-detail-severity { font-size:11px; font-weight:700; padding:3px 10px; border-radius:var(--radius-xs); color:#fff; white-space:nowrap; }
+    .src-detail-severity.critical { background:#c75450; }
     .src-detail-severity.high { background:#c75450; }
     .src-detail-severity.medium { background:#f0a732; color:#000; }
     .src-detail-severity.low { background:#73c990; color:#000; }
     .src-detail-severity.info { background:#808080; }
-    .src-detail-title { font-size:17px; font-weight:700; margin:0; color:var(--text-primary); flex:1; }
+    .src-detail-title { font-size:17px; font-weight:700; margin:0; color:var(--text-primary); flex:1; line-height:1.4; }
+    .src-detail-status { font-size:11px; padding:2px 8px; border-radius:var(--radius-xs); margin-left:auto; border:1px solid var(--border-light); }
+    .src-detail-status.open { background:rgba(240,167,50,0.12); color:#f0a732; border-color:rgba(240,167,50,0.3); }
+    .src-detail-status.confirmed { background:rgba(199,84,80,0.15); color:#c75450; border-color:rgba(199,84,80,0.3); }
+    .src-detail-status.false_positive { background:rgba(128,128,128,0.15); color:#808080; border-color:rgba(128,128,128,0.3); }
+    .src-detail-status.fixed { background:rgba(115,201,144,0.15); color:#73c990; border-color:rgba(115,201,144,0.3); }
     .src-detail-subtitle { display:flex; gap:10px; flex-wrap:wrap; align-items:center; font-size:12px; color:var(--text-secondary); }
     .src-detail-id { background:var(--token-bg); padding:2px 6px; border-radius:var(--radius-xs); }
     .src-detail-type { color:var(--primary-light); font-weight:600; }
     .src-detail-cwe { background:rgba(199,84,80,0.12); color:#e08e8a; padding:2px 8px; border-radius:var(--radius-xs); }
     .src-detail-owasp { background:rgba(75,110,175,0.12); color:var(--primary-light); padding:2px 8px; border-radius:var(--radius-xs); }
     .src-detail-cvss { background:rgba(240,167,50,0.12); color:#f0a732; padding:2px 8px; border-radius:var(--radius-xs); }
+    .src-detail-score { background:rgba(115,201,144,0.12); color:#73c990; padding:2px 8px; border-radius:var(--radius-xs); }
+
+    .src-detail-tabs { display:flex; border-bottom:1px solid var(--border-light); background:var(--bg-secondary); }
+    .src-detail-tab { background:transparent; border:none; border-bottom:2px solid transparent; color:var(--text-secondary); padding:10px 16px; font-size:12px; font-weight:600; cursor:pointer; }
+    .src-detail-tab:hover { color:var(--text-primary); }
+    .src-detail-tab.active { color:var(--primary-light); border-bottom-color:var(--primary); background:rgba(75,110,175,0.08); }
+    .src-detail-panel { display:none; padding:18px; }
+    .src-detail-panel.active { display:block; }
 
     .src-detail-section { margin-bottom:18px; }
-    .src-section-title { font-size:13px; font-weight:700; color:var(--text-primary); margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+    .src-section-title { font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:8px; display:flex; align-items:center; gap:6px; text-transform:uppercase; letter-spacing:0.3px; }
     .src-section-body { font-size:13px; color:var(--text); line-height:1.7; }
     .src-kv { display:flex; gap:10px; margin-bottom:6px; align-items:flex-start; }
-    .src-k { min-width:50px; color:var(--text-secondary); font-size:12px; }
+    .src-k { min-width:60px; color:var(--text-secondary); font-size:12px; }
     .src-v { flex:1; word-break:break-all; }
     .src-repro-steps { padding-left:18px; margin:0; }
     .src-repro-steps li { margin-bottom:6px; }
@@ -530,10 +615,14 @@ export function injectSRCStyles() {
     .src-evidence-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
     .src-evidence-label { font-size:12px; color:var(--text-secondary); min-width:60px; }
     .src-payload { background:#3b0d0d; color:#fecaca; padding:6px 10px; border-radius:var(--radius-xs); border:1px solid rgba(199,84,80,0.35); font-size:12px; word-break:break-all; flex:1; }
-    .src-code-block { background:var(--code-bg); border:1px solid var(--border-light); border-radius:var(--radius-sm); margin-bottom:10px; overflow:hidden; }
-    .src-code-block summary { padding:8px 12px; font-size:12px; font-weight:600; color:var(--text-secondary); cursor:pointer; background:var(--bg-secondary); }
-    .src-code-block pre { margin:0; padding:12px; overflow:auto; max-height:320px; }
-    .src-code-block code { font-family:var(--font); font-size:12px; color:var(--code-color); white-space:pre-wrap; word-break:break-all; }
+    .src-signature { background:#2b2b2b; color:#bbbbbb; padding:6px 10px; border-radius:var(--radius-xs); border:1px solid var(--border-light); font-size:12px; word-break:break-all; flex:1; font-family:var(--font); }
+    .src-traffic-viewer { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    @media (max-width:1100px) { .src-traffic-viewer { grid-template-columns:1fr; } }
+    .src-traffic-panel { background:var(--code-bg); border:1px solid var(--border-light); border-radius:var(--radius-sm); overflow:hidden; display:flex; flex-direction:column; min-height:180px; }
+    .src-traffic-header { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--bg-secondary); border-bottom:1px solid var(--border-light); font-size:12px; font-weight:600; color:var(--text-secondary); }
+    .src-traffic-header .src-copy-btn { margin:0; }
+    .src-traffic-panel pre { margin:0; padding:12px; overflow:auto; max-height:420px; flex:1; }
+    .src-traffic-panel code { font-family:var(--font); font-size:12px; color:var(--code-color); white-space:pre-wrap; word-break:break-all; }
     .src-screenshot-row img { max-width:100%; border:1px solid var(--border-light); border-radius:var(--radius-sm); margin-top:6px; }
     .src-no-evidence { color:var(--text-secondary); font-size:12px; }
 
@@ -545,17 +634,17 @@ export function injectSRCStyles() {
     .src-fix-panel pre { margin:0; overflow:auto; max-height:360px; }
     .src-fix-panel code { font-family:var(--font); font-size:12px; color:var(--code-color); white-space:pre-wrap; word-break:break-all; }
 
-    .src-copy-btn { background:rgba(75,110,175,0.15); border:1px solid rgba(75,110,175,0.3); color:var(--primary-light); padding:4px 10px; border-radius:var(--radius-xs); cursor:pointer; font-size:11px; margin-top:8px; }
+    .src-copy-btn { background:rgba(75,110,175,0.15); border:1px solid rgba(75,110,175,0.3); color:var(--primary-light); padding:4px 10px; border-radius:var(--radius-xs); cursor:pointer; font-size:11px; }
     .src-copy-btn:hover { background:var(--primary); color:#fff; }
     .src-references { padding-left:18px; margin:0; }
     .src-references li { margin-bottom:6px; word-break:break-all; }
-    .src-detail-actions { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
+    .src-detail-actions { display:flex; gap:10px; flex-wrap:wrap; padding:0 18px 18px; }
     .src-action-btn { background:var(--bg-secondary); border:1px solid var(--border-light); color:var(--text-secondary); padding:6px 14px; border-radius:var(--radius-xs); cursor:pointer; font-size:12px; }
     .src-action-btn:hover { border-color:var(--primary); color:var(--primary-light); }
     .src-action-btn.verify { background:rgba(75,110,175,0.12); color:var(--primary-light); border-color:rgba(75,110,175,0.3); }
     .src-action-btn.false-positive { background:rgba(115,201,144,0.12); color:#73c990; border-color:rgba(115,201,144,0.3); }
     .src-action-btn.confirm { background:rgba(199,84,80,0.12); color:#c75450; border-color:rgba(199,84,80,0.3); }
-    .src-detail-footer { font-size:12px; color:var(--text-secondary); border-top:1px solid var(--border-light); padding-top:12px; }
+    .src-detail-footer { font-size:12px; color:var(--text-secondary); border-top:1px solid var(--border-light); padding:12px 18px; }
     .src-empty { padding:30px; text-align:center; color:var(--text-secondary); }
     .src-empty-detail { padding:40px; text-align:center; color:var(--text-secondary); background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); }
   `;

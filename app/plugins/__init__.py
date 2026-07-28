@@ -21,39 +21,226 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("vuln_sentinel.plugins")
 
 
 @dataclass
+class VulnLocation:
+    """漏洞位置信息，支持精准定位。"""
+
+    url: str = ""
+    method: str = "GET"
+    parameter: str = ""  # 参数名
+    parameter_type: str = ""  # query / body / header / cookie / path
+    code_location: str = ""  # 文件名:行号（白盒场景）
+    snippet: str = ""  # 触发点上下文
+
+
+@dataclass
+class Evidence:
+    """漏洞证据，包含请求/响应片段。"""
+
+    request_raw: str = ""  # 原始请求文本
+    response_raw: str = ""  # 原始响应文本
+    matched_signature: str = ""  # 命中签名
+    payload: str = ""  # 测试 payload
+    notes: str = ""  # 备注
+    screenshot: Optional[str] = None  # 证据截图
+    extra: Dict[str, Any] = field(default_factory=dict)  # 扩展字段
+
+
+@dataclass
+class FixSuggestion:
+    """修复建议，按平台组织。"""
+
+    generic: str = ""  # 通用修复说明
+    by_platform: Dict[str, str] = field(default_factory=dict)  # nginx/apache/express/flask/spring_boot/cloudflare
+    risk_note: str = ""  # 风险提示
+
+
+@dataclass
 class ScanContext:
     """扫描上下文，传递给每个检测器。"""
+
     url: str
     headers: Dict[str, str] = field(default_factory=dict)
+    body: str = ""
     is_https: bool = False
     ssl_info: Optional[Dict[str, Any]] = None
     waf_list: List[Dict[str, Any]] = field(default_factory=list)
     depth: str = "standard"
-    # 可扩展：cookies, session, auth_token 等
+    # 证据链：检测器可从中获取最近的请求/响应片段
+    evidence_store: Optional["EvidenceStore"] = None
+
+
+@dataclass
+class EvidenceStore:
+    """轻量级证据存储，记录扫描过程中最近几次 HTTP 交互。"""
+
+    max_entries: int = 20
+    _entries: List[Dict[str, Any]] = field(default_factory=list)
+
+    def record(self, method: str, url: str, request_text: str, response_text: str, payload: str = "", meta: Optional[Dict[str, Any]] = None) -> None:
+        """记录一次 HTTP 交互。"""
+        self._entries.append({
+            "id": str(uuid.uuid4())[:8],
+            "method": method,
+            "url": url,
+            "request_raw": request_text,
+            "response_raw": response_text,
+            "payload": payload,
+            "meta": meta or {},
+        })
+        if len(self._entries) > self.max_entries:
+            self._entries.pop(0)
+
+    def get_by_url(self, url: str) -> Optional[Dict[str, Any]]:
+        """按 URL 查找最近的交互记录。"""
+        for entry in reversed(self._entries):
+            if entry["url"] == url:
+                return entry
+        return None
+
+    def latest(self) -> Optional[Dict[str, Any]]:
+        """返回最近一条记录。"""
+        return self._entries[-1] if self._entries else None
 
 
 @dataclass
 class Finding:
-    """插件检测结果。"""
+    """插件检测结果。
+
+    字段说明：
+    - id: 唯一标识
+    - title: 漏洞标题
+    - type: 漏洞类型
+    - severity: 严重度 critical/high/medium/low/info
+    - confidence: 置信度 high/medium/low
+    - cvss_score: CVSS v3.1 分数（可选）
+    - cwe_id: CWE 编号
+    - owasp_category: OWASP 分类
+    - description: 漏洞描述
+    - url: 漏洞 URL（兼容旧字段）
+    - parameter: 漏洞参数（兼容旧字段）
+    - location: 精准位置信息
+    - evidence: 证据对象
+    - raw_evidence: 原始证据字典（兼容旧数据）
+    - fix_suggestion: 修复建议文本（兼容旧字段）
+    - fix: 结构化修复建议
+    - status: 状态 open/confirmed/false_positive/fixed
+    """
+
+    # 基础信息
     title: str
     type: str
     severity: str  # critical / high / medium / low / info
+    id: str = field(default_factory=lambda: f"VS-{str(uuid.uuid4())[:8].upper()}")
+
+    # 分类与评分
+    confidence: str = "high"
+    cvss_score: Optional[float] = None
+    severity_score: Optional[int] = None
+    cvss_vector: str = ""
+    cwe_id: str = ""
+    owasp_category: str = ""
+
+    # 描述与影响
     description: str = ""
+    impact: str = ""
+
+    # 位置（兼容旧字段 + 新结构化字段）
     url: str = ""
     parameter: str = ""
-    evidence: Dict[str, Any] = field(default_factory=dict)
+    location: VulnLocation = field(default_factory=VulnLocation)
+
+    # 证据
+    evidence: Evidence = field(default_factory=Evidence)
+    raw_evidence: Dict[str, Any] = field(default_factory=dict)
+
+    # 修复建议
     fix_suggestion: str = ""
-    confidence: str = "high"
-    owasp_category: str = ""
-    cwe_id: str = ""
+    fix: FixSuggestion = field(default_factory=FixSuggestion)
+    fix_code: Dict[str, str] = field(default_factory=dict)
+
+    # 复现与参考
+    reproduce_steps: List[str] = field(default_factory=list)
+    references: List[str] = field(default_factory=list)
+
+    # 元信息
+    discovered_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    # 状态
+    status: str = "open"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为兼容旧系统的字典格式。"""
+        evidence = {
+            "request": self.evidence.request_raw,
+            "response": self.evidence.response_raw,
+            "request_raw": self.evidence.request_raw,
+            "response_raw": self.evidence.response_raw,
+            "matched_signature": self.evidence.matched_signature,
+            "payload": self.evidence.payload,
+            "notes": self.evidence.notes,
+            "screenshot": self.evidence.screenshot,
+            **self.raw_evidence,
+            **self.evidence.extra,
+        }
+        # 保持旧版 key 的别名兼容
+        if self.evidence.request_raw and "request" not in self.raw_evidence:
+            evidence["request"] = self.evidence.request_raw
+        if self.evidence.response_raw and "response" not in self.raw_evidence:
+            evidence["response"] = self.evidence.response_raw
+
+        result = {
+            "id": self.id,
+            "name": self.title,
+            "title": self.title,
+            "type": self.type,
+            "severity": self.severity,
+            "severity_score": self.severity_score,
+            "level": {"critical": "严重", "high": "高风险", "medium": "中风险", "low": "低风险", "info": "信息"}.get(self.severity, "中风险"),
+            "level_zh": {"critical": "严重", "high": "高风险", "medium": "中风险", "low": "低风险", "info": "信息"}.get(self.severity, "中风险"),
+            "confidence_level": self.confidence,
+            "confidence": self.confidence,
+            "cvss_score": self.cvss_score,
+            "cvss_vector": self.cvss_vector,
+            "cwe_id": self.cwe_id,
+            "owasp": self.owasp_category,
+            "owasp_category": self.owasp_category,
+            "summary": self.description,
+            "description": self.description,
+            "impact": self.impact or self.description,
+            "url": self.url or self.location.url,
+            "parameter": self.parameter or self.location.parameter,
+            "location": self.location.snippet or self.location.parameter or self.location.code_location or self.location.url or "",
+            "location_detail": {
+                "url": self.location.url or self.url,
+                "method": self.location.method,
+                "parameter": self.location.parameter or self.parameter,
+                "parameter_type": self.location.parameter_type,
+                "code_location": self.location.code_location,
+                "snippet": self.location.snippet,
+            },
+            "evidence": evidence,
+            "reproduce_steps": self.reproduce_steps,
+            "references": self.references,
+            "fix": self.fix_suggestion or self.fix.generic,
+            "fix_suggestion": self.fix_suggestion or self.fix.generic,
+            "fix_code": self.fix_code or self.fix.by_platform,
+            "fixes_by_platform": self.fix.by_platform or self.fix_code,
+            "risk_note": self.fix.risk_note,
+            "status": self.status,
+            "discovered_at": self.discovered_at,
+            "ai_advice": f"**漏洞**：{self.title}\n**影响**：{self.impact or self.description}\n**修复**：{self.fix_suggestion or self.fix.generic}",
+        }
+        return result
 
 
 class BaseVulnDetector(ABC):
