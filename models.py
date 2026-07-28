@@ -205,6 +205,21 @@ class FindingFeedbackRequest(BaseModel):
     note: Optional[str] = None
 
 
+class SRCReportExportRequest(BaseModel):
+    """导出 SRC 格式漏洞报告请求。"""
+    scan_id: int
+    format: str = Field(default="markdown", pattern="^(markdown|md|pdf)$")
+    finding_ids: Optional[List[str]] = Field(default=None, max_length=100)
+    template: str = "src"
+
+
+class VerifyReproduceRequest(BaseModel):
+    """对单个 finding 进行复现验证。"""
+    scan_id: int
+    finding_id: str
+    url: str
+
+
 # ---------- 扫描响应模型 ----------
 
 class ScanResponse(BaseModel):

@@ -105,6 +105,19 @@ export function markAlertRead(id) { return apiPost('/api/alerts/' + id + '/read'
 export function aiAdvisor(body) { return apiPost('/api/ai-advisor', body); }
 export function aiStatus() { return apiGet('/api/ai-status'); }
 
+// SRC 报告导出 / 验证复现 / 反馈
+export function exportSRCReport(body) {
+  return authFetch('/api/report/src-export', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+export function verifyReproduce(body) { return apiPost('/api/finding/verify-reproduce', body); }
+export function findingFeedback(body) { return apiPost('/api/finding/feedback', body); }
+export function listFindingFeedback(scanId) {
+  return apiGet('/api/finding/feedback?scan_id=' + encodeURIComponent(scanId));
+}
+
 // Team
 export function team() { return apiGet('/api/team'); }
 export function createTeam() { return apiPost('/api/team/create', {}); }

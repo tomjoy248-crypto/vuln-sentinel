@@ -2,6 +2,7 @@
 
 import { escapeHtml, getScoreColor, getScoreGradient, getRiskColor, getRiskClass, formatDate, copyToClipboard } from '../utils.js';
 import { showToast } from '../components/Toast.js';
+import { exportSRCReport, verifyReproduce, findingFeedback, isLoggedIn } from '../api.js';
 
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 const SEVERITY_LABEL = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' };
@@ -10,6 +11,8 @@ const SEVERITY_ZH_CLASS = { critical: 'high', high: 'high', medium: 'medium', lo
 let _currentFindings = [];
 let _selectedIndex = 0;
 let _currentFixTab = 'generic';
+let _currentScanId = null;
+let _currentUrl = '';
 
 /**
  * 判断数据是否符合 SRC 级报告格式
@@ -29,6 +32,8 @@ export function renderSRCResult(data) {
   _currentFindings = sortFindings(data.findings || []);
   _selectedIndex = 0;
   _currentFixTab = 'generic';
+  _currentScanId = data.scan_id || null;
+  _currentUrl = data.url || '';
 
   const score = typeof data.score === 'number' ? data.score : (parseInt(data.score, 10) || 0);
   const summary = data.summary || { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0 };
@@ -71,6 +76,9 @@ function renderHeader(score, riskLevel, summary, url, data) {
   const duration = data.duration_ms ? `<span class="meta-item">耗时 ${data.duration_ms}ms</span>` : '';
   const scanId = data.scan_id ? `<span class="meta-item">扫描 #${data.scan_id}</span>` : '';
   const reportId = data.report_share_id ? `<span class="meta-item">报告 ${escapeHtml(data.report_share_id)}</span>` : '';
+  const exportBtn = data.scan_id && isLoggedIn()
+    ? `<button class="src-export-btn" id="src-export-markdown" title="导出 SRC 格式 Markdown 报告">导出 SRC 报告</button>`
+    : '';
 
   return `
     <div class="src-report-header fade-in-up">
@@ -96,6 +104,9 @@ function renderHeader(score, riskLevel, summary, url, data) {
         <div class="src-report-submeta">
           ${scanId}${duration}${reportId}
           <span class="meta-item">发现于 ${formatDate(data.discovered_at || new Date().toISOString())}</span>
+        </div>
+        <div class="src-report-actions">
+          ${exportBtn}
         </div>
       </div>
     </div>
@@ -153,7 +164,9 @@ function renderFindingDetail(finding, index) {
     <div class="src-detail-subtitle">
       <code class="src-detail-id">${escapeHtml(finding.id || '')}</code>
       <span class="src-detail-type">${escapeHtml(finding.type || '').toUpperCase()}</span>
+      <span class="src-detail-cwe" title="Common Weakness Enumeration">${escapeHtml(finding.cwe_id || '')}</span>
       <span class="src-detail-owasp">${escapeHtml(finding.owasp_category || '')}</span>
+      <span class="src-detail-cvss" title="${escapeHtml(finding.cvss_vector || '')}">CVSS ${finding.cvss_score || '-'}</span>
       <span class="src-detail-score">评分 ${finding.severity_score || '-'}/10</span>
       <span class="src-detail-confidence">置信度 ${escapeHtml(finding.confidence || 'medium')}</span>
     </div>
@@ -213,6 +226,15 @@ function renderFindingDetail(finding, index) {
       html += `<li><a href="${escapeAttr(ref)}" target="_blank" rel="noopener">${escapeHtml(ref)}</a></li>`;
     });
     html += `</ul></div>`;
+  }
+
+  // 操作按钮
+  if (_currentScanId && isLoggedIn()) {
+    html += `<div class="src-detail-actions">
+      <button class="src-action-btn verify" data-action="verify" data-finding-id="${escapeAttr(finding.id || '')}">验证复现</button>
+      <button class="src-action-btn false-positive" data-action="fp" data-finding-id="${escapeAttr(finding.id || '')}">标记误报</button>
+      <button class="src-action-btn confirm" data-action="confirm" data-finding-id="${escapeAttr(finding.id || '')}">确认漏洞</button>
+    </div>`;
   }
 
   // 元信息
@@ -335,6 +357,78 @@ function bindFindingListEvents() {
       copyToClipboard(text).then(() => showToast('已复制到剪贴板'));
     });
   });
+
+  document.querySelectorAll('.src-export-btn').forEach((btn) => {
+    btn.addEventListener('click', onExportSRCReport);
+  });
+
+  document.querySelectorAll('.src-action-btn').forEach((btn) => {
+    btn.addEventListener('click', onFindingAction);
+  });
+}
+
+async function onExportSRCReport() {
+  if (!_currentScanId) return;
+  try {
+    const resp = await exportSRCReport({ scan_id: _currentScanId, format: 'markdown' });
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `src-report-${_currentScanId}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('SRC 报告已开始下载');
+  } catch (e) {
+    showToast('导出失败：' + (e && e.message ? e.message : '未知错误'));
+  }
+}
+
+async function onFindingAction(e) {
+  const btn = e.currentTarget;
+  const action = btn.dataset.action;
+  const findingId = btn.dataset.findingId;
+  const finding = _currentFindings.find((f) => f.id === findingId);
+  if (!_currentScanId || !finding) return;
+
+  if (action === 'verify') {
+    btn.textContent = '验证中...';
+    btn.disabled = true;
+    try {
+      const res = await verifyReproduce({ scan_id: _currentScanId, finding_id: findingId, url: finding.url || _currentUrl });
+      if (res && res.success) {
+        const status = res.reproducible === true ? '仍可复现' : (res.reproducible === false ? '已无法复现' : '需人工复核');
+        showToast(`验证结果：${status}`);
+      } else {
+        showToast('验证失败：' + (res && res.error ? res.error : '未知错误'));
+      }
+    } catch (e) {
+      showToast('验证请求失败');
+    } finally {
+      btn.textContent = '验证复现';
+      btn.disabled = false;
+    }
+    return;
+  }
+
+  try {
+    const res = await findingFeedback({
+      scan_id: _currentScanId,
+      finding_name: finding.title || findingId,
+      finding_type: finding.type || '',
+      is_false_positive: action === 'fp',
+      is_confirmed: action === 'confirm',
+    });
+    if (res && res.success) {
+      showToast(action === 'fp' ? '已标记为误报' : '已确认漏洞');
+    } else {
+      showToast('反馈提交失败：' + (res && res.error ? res.error : '未知错误'));
+    }
+  } catch (e) {
+    showToast('反馈请求失败');
+  }
 }
 
 function selectFinding(index) {
@@ -377,6 +471,9 @@ export function injectSRCStyles() {
     .src-stat.total .num { color:var(--primary-light); }
     .src-report-submeta { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--text-secondary); }
     .meta-item { background:var(--token-bg); padding:3px 8px; border-radius:var(--radius-xs); }
+    .src-report-actions { margin-top:12px; }
+    .src-export-btn { background:var(--primary); color:#fff; border:none; padding:6px 14px; border-radius:var(--radius-xs); font-size:12px; cursor:pointer; }
+    .src-export-btn:hover { background:var(--primary-light); }
 
     .src-result-layout { display:grid; grid-template-columns:360px 1fr; gap:16px; }
     @media (max-width:900px) { .src-result-layout { grid-template-columns:1fr; } }
@@ -417,7 +514,9 @@ export function injectSRCStyles() {
     .src-detail-subtitle { display:flex; gap:10px; flex-wrap:wrap; align-items:center; font-size:12px; color:var(--text-secondary); }
     .src-detail-id { background:var(--token-bg); padding:2px 6px; border-radius:var(--radius-xs); }
     .src-detail-type { color:var(--primary-light); font-weight:600; }
+    .src-detail-cwe { background:rgba(199,84,80,0.12); color:#e08e8a; padding:2px 8px; border-radius:var(--radius-xs); }
     .src-detail-owasp { background:rgba(75,110,175,0.12); color:var(--primary-light); padding:2px 8px; border-radius:var(--radius-xs); }
+    .src-detail-cvss { background:rgba(240,167,50,0.12); color:#f0a732; padding:2px 8px; border-radius:var(--radius-xs); }
 
     .src-detail-section { margin-bottom:18px; }
     .src-section-title { font-size:13px; font-weight:700; color:var(--text-primary); margin-bottom:8px; display:flex; align-items:center; gap:6px; }
@@ -450,6 +549,12 @@ export function injectSRCStyles() {
     .src-copy-btn:hover { background:var(--primary); color:#fff; }
     .src-references { padding-left:18px; margin:0; }
     .src-references li { margin-bottom:6px; word-break:break-all; }
+    .src-detail-actions { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
+    .src-action-btn { background:var(--bg-secondary); border:1px solid var(--border-light); color:var(--text-secondary); padding:6px 14px; border-radius:var(--radius-xs); cursor:pointer; font-size:12px; }
+    .src-action-btn:hover { border-color:var(--primary); color:var(--primary-light); }
+    .src-action-btn.verify { background:rgba(75,110,175,0.12); color:var(--primary-light); border-color:rgba(75,110,175,0.3); }
+    .src-action-btn.false-positive { background:rgba(115,201,144,0.12); color:#73c990; border-color:rgba(115,201,144,0.3); }
+    .src-action-btn.confirm { background:rgba(199,84,80,0.12); color:#c75450; border-color:rgba(199,84,80,0.3); }
     .src-detail-footer { font-size:12px; color:var(--text-secondary); border-top:1px solid var(--border-light); padding-top:12px; }
     .src-empty { padding:30px; text-align:center; color:var(--text-secondary); }
     .src-empty-detail { padding:40px; text-align:center; color:var(--text-secondary); background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); }

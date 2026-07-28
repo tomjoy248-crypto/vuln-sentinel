@@ -428,8 +428,8 @@ add_header Referrer-Policy "strict-origin-when-cross-origin" always;""",
 Header always set Content-Security-Policy "default-src 'self'"
 Header always set X-Frame-Options "DENY"
 Header always set X-Content-Type-Options "nosniff"
-Header always set Referrer-Policy "strict-origin-when-cross-origin""",
-            "express": """// Express 安全头中间件
+Header always set Referrer-Policy "strict-origin-when-cross-origin" """,
+              "express": """// Express 安全头中间件
 const helmet = require('helmet');
 app.use(helmet());""",
             "flask": """# Flask-Talisman
@@ -444,6 +444,158 @@ http.headers(headers -> headers
             "cloudflare": """# Cloudflare 转换规则
 # 在规则 > 转换规则 > 修改响应头中添加所需安全头""",
             "generic": "配置所需安全响应头（HSTS、CSP、X-Frame-Options、X-Content-Type-Options、Referrer-Policy 等）。",
+        },
+        "broken_access_control": {
+            "nginx": """# Nginx 对管理接口加 IP 白名单
+location /admin {
+    allow 10.0.0.0/8;
+    deny all;
+    # 同时建议后端执行二次会话校验
+}""",
+            "apache": """<Location "/admin">
+    Require ip 10.0.0.0/8
+</Location>""",
+            "express": """// Express 路由级权限校验
+const isAuthenticated = require('./auth');
+app.use('/admin', isAuthenticated, require('./admin'));""",
+            "flask": """# Flask 装饰器校验
+from flask_login import login_required
+
+@app.route('/admin')
+@login_required
+def admin():
+    if not current_user.is_admin:
+        abort(403)
+    return render_template('admin.html')""",
+            "spring_boot": """// Spring Security 方法级授权
+@PreAuthorize("hasRole('ADMIN')")
+@GetMapping("/admin/users")
+public List<User> listUsers() { ... }""",
+            "cloudflare": "# 使用 Cloudflare Access / Zero Trust 对 /admin 等路径实施身份校验。",
+            "generic": "所有管理/敏感接口必须校验用户身份与权限；默认拒绝访问，明确授权放行。",
+        },
+        "idor": {
+            "nginx": "# IDOR 属于应用层逻辑漏洞，Nginx 无法直接修复，建议后端实施授权校验。",
+            "apache": "# IDOR 属于应用层逻辑漏洞，Apache 无法直接修复，建议后端实施授权校验。",
+            "express": """// 资源访问前校验所有权
+app.get('/api/orders/:id', async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order || order.userId !== req.user.id) return res.sendStatus(403);
+  res.json(order);
+});""",
+            "flask": """# 查询资源时加入用户 ID 过滤
+@app.route('/order/<int:order_id>')
+@login_required
+def order(order_id):
+    order = Order.query.filter_by(id=order_id, user_id=current_user.id).first_or_404()
+    return jsonify(order.to_dict())""",
+            "spring_boot": """// 方法级资源授权
+@PostAuthorize("returnObject.owner == authentication.name")
+@GetMapping("/orders/{id}")
+public Order getOrder(@PathVariable Long id) { ... }""",
+            "cloudflare": "# Cloudflare 无法识别业务 ID 归属，必须在应用层校验。",
+            "generic": "使用间接引用映射（UUID/令牌）替代连续数字 ID；每次访问资源时校验当前用户是否为资源所有者。",
+        },
+        "ssrf": {
+            "nginx": "# Nginx 可限制对内部地址的访问，但无法完全替代应用层校验。",
+            "apache": "# Apache 可配合 mod_security 拦截部分内网请求，但无法完全替代应用层校验。",
+            "express": """// Node.js SSRF 防护：校验与解析 URL
+const { URL } = require('url');
+function isPrivateIp(ip) { ... }
+
+app.post('/fetch', (req, res) => {
+  const u = new URL(req.body.url);
+  if (isPrivateIp(u.hostname)) return res.status(400).send('Forbidden target');
+  // 使用禁用重定向的受限 HTTP 客户端
+});""",
+            "flask": """# Python SSRF 防护
+import socket
+from urllib.parse import urlparse
+
+def is_internal(host):
+    try:
+        ip = socket.getaddrinfo(host, None)[0][4][0]
+        return ipaddress.ip_address(ip).is_private
+    except Exception:
+        return True
+
+@app.route('/fetch')
+def fetch():
+    url = request.args.get('url')
+    if is_internal(urlparse(url).hostname):
+        abort(400)
+    ...""",
+            "spring_boot": """// Java SSRF 防护：禁止重定向到私有地址
+HttpClient client = HttpClient.newBuilder()
+    .followRedirects(Redirect.NEVER).build();""",
+            "cloudflare": "# 使用 Cloudflare Gateway / WAF 规则限制出站目标。",
+            "generic": "校验用户提供的 URL：禁用重定向、解析并拒绝内网/元数据地址、使用白名单域名、最小化请求权限。",
+        },
+        "file_upload": {
+            "nginx": """# Nginx 禁止上传目录执行脚本
+location /uploads {
+    location ~* \\.(php|jsp|asp|aspx|sh|py)$ {
+        deny all;
+    }
+}""",
+            "apache": """<Directory /var/www/uploads>
+    <FilesMatch "\\.(php|jsp|asp|aspx|sh|py)$">
+        Require all denied
+    </FilesMatch>
+</Directory>""",
+            "express": """// Express：校验 MIME 类型与扩展名，重命名文件
+const multer = require('multer');
+const upload = multer({
+  fileFilter: (req, file, cb) => {
+    if (!['image/jpeg','image/png'].includes(file.mimetype)) return cb(new Error('Invalid type'));
+    cb(null, true);
+  }
+});""",
+            "flask": """# Flask：限制扩展名与 MIME
+from werkzeug.utils import secure_filename
+ALLOWED = {'png', 'jpg', 'pdf'}
+
+@app.route('/upload', methods=['POST'])
+def upload():
+    f = request.files['file']
+    ext = secure_filename(f.filename).rsplit('.', 1)[-1].lower()
+    if ext not in ALLOWED:
+        abort(400)
+    ...""",
+            "spring_boot": """// Spring Boot：校验扩展名与 Magic Number
+String ext = FilenameUtils.getExtension(file.getOriginalFilename());
+if (!Set.of("png","jpg","pdf").contains(ext)) throw new IllegalArgumentException();""",
+            "cloudflare": "# Cloudflare WAF 可拦截常见 WebShell 上传扩展名。",
+            "generic": "限制允许的文件类型（白名单扩展名 + MIME + Magic Number）；上传目录禁止脚本执行；文件重命名并隔离存储。",
+        },
+        "logic_bypass": {
+            "nginx": "# 业务逻辑绕过需在应用层修复，Nginx 仅能做速率限制等辅助防护。",
+            "apache": "# 业务逻辑绕过需在应用层修复，Apache 仅能做速率限制等辅助防护。",
+            "express": """// 服务端必须校验所有状态转换
+app.post('/checkout', authenticate, async (req, res) => {
+  const order = await Order.findById(req.body.orderId);
+  if (order.status !== 'pending') return res.status(400).send('Invalid status');
+  // 重新计算价格，不信任客户端传入
+});""",
+            "flask": """# 服务端重新校验业务状态与权限
+@app.route('/checkout', methods=['POST'])
+@login_required
+def checkout():
+    order = Order.query.get_or_404(request.json['order_id'])
+    if order.user_id != current_user.id or order.status != 'pending':
+        abort(403)
+    ...""",
+            "spring_boot": """// Spring Boot：服务端校验业务规则
+@PostMapping("/checkout")
+public ResponseEntity<?> checkout(@RequestBody CheckoutReq req, @AuthenticationPrincipal User user) {
+    Order order = orderRepo.findById(req.getOrderId()).orElseThrow();
+    if (!order.getUserId().equals(user.getId()) || !"pending".equals(order.getStatus())) {
+        return ResponseEntity.status(403).build();
+    }
+    ...
+}""",
+            "cloudflare": "# Cloudflare 无法识别业务逻辑，建议应用层修复并配合 Bot Management 降低自动化攻击。",
+            "generic": "所有业务关键状态转换在服务端重新校验；不信任客户端传入的价格、状态、权限字段；实施幂等与并发控制。",
         },
     }
     return templates.get(vuln_type, {k: None for k in ["nginx", "apache", "express", "flask", "spring_boot", "cloudflare", "generic"]})
@@ -478,6 +630,26 @@ def _references(vuln_type: str) -> List[str]:
             "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html",
             "https://owasp.org/www-project-secure-headers/",
         ],
+        "broken_access_control": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/Access_Control_Cheat_Sheet.html",
+            "https://owasp.org/Top10/A01_2021-Broken_Access_Control/",
+        ],
+        "idor": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html",
+            "https://portswigger.net/web-security/access-control/idor",
+        ],
+        "ssrf": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
+            "https://portswigger.net/web-security/ssrf",
+        ],
+        "file_upload": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html",
+            "https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload",
+        ],
+        "logic_bypass": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html",
+            "https://owasp.org/Top10/A04_2021-Insecure_Design/",
+        ],
     }
     return refs.get(vuln_type, [])
 
@@ -494,8 +666,109 @@ def _owasp_category(vuln_type: str) -> str:
         "ssl": "A02:2021 - Cryptographic Failures",
         "cors": "A01:2021 - Broken Access Control",
         "cookie": "A07:2021 - Identification and Authentication Failures",
+        "broken_access_control": "A01:2021 - Broken Access Control",
+        "idor": "A01:2021 - Broken Access Control",
+        "ssrf": "A10:2021 - Server-Side Request Forgery",
+        "file_upload": "A04:2021 - Insecure Design",
+        "logic_bypass": "A04:2021 - Insecure Design / A07 - Authentication Failures",
     }
     return mapping.get(vuln_type, "A05:2021 - Security Misconfiguration")
+
+
+def _cwe_id(vuln_type: str) -> str:
+    """返回漏洞类型对应的首选 CWE 编号。"""
+    mapping = {
+        "sqli": "CWE-89",
+        "xss": "CWE-79",
+        "info_leak": "CWE-200",
+        "csrf": "CWE-352",
+        "sensitive_path": "CWE-548",
+        "outdated_component": "CWE-1104",
+        "header_missing": "CWE-693",
+        "ssl": "CWE-319",
+        "cors": "CWE-942",
+        "cookie": "CWE-614",
+        "broken_access_control": "CWE-284",
+        "idor": "CWE-639",
+        "ssrf": "CWE-918",
+        "file_upload": "CWE-434",
+        "logic_bypass": "CWE-287",
+    }
+    return mapping.get(vuln_type, "CWE-693")
+
+
+def _cvss_vector(severity_score: int, vuln_type: str = "") -> str:
+    """根据严重度评分与漏洞类型生成近似的 CVSS v3.1 向量字符串。
+
+    这里采用简化映射，确保每条 finding 都有可读的 CVSS 向量；
+    真实 SRC 提交建议由安全工程师根据实际利用条件微调。
+    """
+    # 攻击向量：默认网络可达
+    av = "AV:N"
+    # 攻击复杂度
+    ac = "AC:L" if severity_score >= 6 else "AC:H"
+    # 权限要求
+    pr = "PR:N"
+    if vuln_type in ("idor", "broken_access_control"):
+        pr = "PR:L"
+    if vuln_type in ("sqli", "xss", "ssrf"):
+        pr = "PR:N"
+    # 用户交互
+    ui = "UI:N" if vuln_type in ("sqli", "ssrf", "idor", "info_leak", "sensitive_path", "outdated_component") else "UI:R"
+    # 作用范围
+    s = "S:U"
+    # 机密性 / 完整性 / 可用性
+    if severity_score >= 9:
+        c, i, a = "C:H", "I:H", "A:H"
+    elif severity_score >= 7:
+        c, i = "C:H", "I:H"
+        a = "A:L" if vuln_type in ("ssrf", "logic_bypass") else "A:N"
+    elif severity_score >= 4:
+        c, i, a = "C:L", "I:L", "A:N"
+    else:
+        c, i, a = "C:N", "I:N", "A:N"
+    # 部分类型微调
+    if vuln_type == "xss":
+        c, i, a = "C:L", "I:L", "A:N"
+    if vuln_type == "info_leak":
+        c = "C:H" if severity_score >= 8 else "C:L"
+        i, a = "I:N", "A:N"
+    if vuln_type == "header_missing":
+        c, i, a = "C:N", "I:N", "A:N"
+    return f"CVSS:3.1/{av}/{ac}/{pr}/{ui}/{s}/{c}/{i}/{a}"
+
+
+def _cvss_score_from_vector(vector: str) -> float:
+    """从 CVSS v3.1 向量计算近似的 Base Score（简化版，用于排序）。"""
+    # 简化公式：参考 CVSS v3.1 线性近似，保留一位小数
+    scores = {
+        "AV:N": 0.85, "AV:A": 0.62, "AV:L": 0.55, "AV:P": 0.2,
+        "AC:L": 0.77, "AC:H": 0.44,
+        "PR:N": 0.85, "PR:L": 0.62, "PR:H": 0.27,
+        "UI:N": 0.85, "UI:R": 0.62,
+        "S:U": 6.42, "S:C": 7.52,
+        "C:H": 0.56, "C:L": 0.22, "C:N": 0.0,
+        "I:H": 0.56, "I:L": 0.22, "I:N": 0.0,
+        "A:H": 0.56, "A:L": 0.22, "A:N": 0.0,
+    }
+    parts = [p.strip() for p in vector.replace("CVSS:3.1/", "").split("/")]
+    vals = {}
+    for p in parts:
+        if ":" in p:
+            k, v = p.split(":", 1)
+            vals[k + ":" + v] = scores.get(k + ":" + v, 0.0)
+    iss = 1 - ((1 - vals.get("C:H", vals.get("C:L", 0))) *
+               (1 - vals.get("I:H", vals.get("I:L", 0))) *
+               (1 - vals.get("A:H", vals.get("A:L", 0))))
+    impact = vals.get("S:U", 6.42) * iss
+    exploitability = (8.22 * vals.get("AV:N", 0.85) *
+                      vals.get("AC:L", 0.77) *
+                      vals.get("PR:N", 0.85) *
+                      vals.get("UI:N", 0.85))
+    if impact <= 0:
+        return 0.0
+    base = min(impact + exploitability, 10)
+    return round(base, 1)
 
 
 def build_finding(
@@ -518,6 +791,8 @@ def build_finding(
 ) -> Dict[str, Any]:
     """构建 SRC 标准 finding。"""
     fix_code = _fix_code_template(vuln_type)
+    cvss_vector = _cvss_vector(severity_score, vuln_type)
+    cvss_score = _cvss_score_from_vector(cvss_vector)
     return {
         "id": _generate_id(),
         "title": title,
@@ -536,11 +811,15 @@ def build_finding(
         },
         "impact": impact or description,
         "reproduce_steps": reproduce_steps or [],
+        "fix": fix_suggestion or _fix_code_template(vuln_type).get("generic", ""),
         "fix_suggestion": fix_suggestion or _fix_code_template(vuln_type).get("generic", ""),
         "fix_code": fix_code,
         "references": _references(vuln_type),
         "confidence": _confidence_text(confidence),
         "owasp_category": _owasp_category(vuln_type),
+        "cwe_id": _cwe_id(vuln_type),
+        "cvss_score": cvss_score,
+        "cvss_vector": cvss_vector,
         "discovered_at": _now_iso(),
     }
 
@@ -1011,6 +1290,306 @@ async def detect_outdated_components_src(url: str, headers: Dict[str, str], body
     return findings
 
 
+# ---------- SRC 扩展检测：越权、SSRF、IDOR、文件上传、逻辑绕过 ----------
+
+ADMIN_PATHS: List[Tuple[str, str]] = [
+    ("/admin", "管理后台入口"),
+    ("/api/admin", "API 管理接口"),
+    ("/manage", "管理后台"),
+    ("/dashboard/admin", "仪表盘管理"),
+    ("/console", "控制台"),
+]
+
+SSRF_PAYLOADS: List[Tuple[str, str, str]] = [
+    ("http://127.0.0.1", "本地回环", "127.0.0.1"),
+    ("http://169.254.169.254/latest/meta-data/", "AWS 元数据", "169.254.169.254"),
+    ("http://metadata.google.internal/", "GCP 元数据", "metadata.google.internal"),
+    ("http://192.168.1.1", "内网地址", "192.168.1.1"),
+    ("file:///etc/passwd", "文件协议", "file://"),
+]
+
+IDOR_ID_PATTERNS: List[Tuple[str, re.Pattern]] = [
+    ("id", re.compile(r"\b(id|user_id|order_id|pid|sid)=\d+", re.I)),
+    ("page", re.compile(r"\b(page|offset|limit)=\d+", re.I)),
+]
+
+FILE_UPLOAD_FORM_PATTERNS: List[re.Pattern] = [
+    re.compile(r"<input[^>]*type=[\"']file[\"']", re.I),
+    re.compile(r"<form[^>]*enctype=[\"']multipart/form-data[\"']", re.I),
+]
+
+LOGIN_BYPASS_PATTERNS: Dict[str, re.Pattern] = {
+    "no_csrf_login": re.compile(r"<form[^>]*>.*?<input[^>]*type=[\"']password[\"'].*?</form>", re.I | re.S),
+    "json_login": re.compile(r"['\"]/api/(login|auth|signin)['\"]", re.I),
+}
+
+
+async def detect_broken_access_control_src(base_url: str) -> List[Dict[str, Any]]:
+    """检测未授权访问管理接口（越权）。"""
+    _init_helpers()
+    client = _get_httpx_client()
+    findings: List[Dict[str, Any]] = []
+
+    parsed = urlparse(base_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+
+    for path, name in ADMIN_PATHS:
+        test_url = origin + path
+        try:
+            resp = await client.get(test_url, timeout=10.0, follow_redirects=False)
+            # 200 且无登录特征，判定为未授权访问
+            if resp.status_code != 200:
+                continue
+            body = _safe_read_body(resp).lower()
+            login_markers = ["login", "sign in", "登录", "用户名", "password", "密码", "otp", "mfa", "sso"]
+            if any(m in body for m in login_markers):
+                continue
+            findings.append(build_finding(
+                vuln_type="broken_access_control",
+                title=f"未授权访问：{name}",
+                severity="high",
+                severity_score=8,
+                url=test_url,
+                parameter="",
+                location=f"路径 {path}",
+                description=f"{name}（{path}）可直接访问，响应中未出现登录入口，疑似缺少身份认证。",
+                evidence_request=_build_request_text("GET", test_url),
+                evidence_response=_build_response_text(resp, 700),
+                impact="攻击者可能无需登录即可访问管理功能，导致数据泄露、权限滥用或系统被接管。",
+                reproduce_steps=[
+                    f"在无痕模式下访问 {test_url}",
+                    "确认未跳转至登录页",
+                    "尝试访问下级功能路径验证权限边界",
+                ],
+                fix_suggestion="对管理接口实施强制认证与授权；默认拒绝匿名访问；结合 IP 白名单与 MFA。",
+                confidence="medium",
+            ))
+        except Exception:
+            continue
+    return findings
+
+
+async def detect_ssrf_src(url: str) -> List[Dict[str, Any]]:
+    """检测 SSRF 入口点：URL 参数、表单 action 等可接受外部地址的位置。"""
+    _init_helpers()
+    client = _get_httpx_client()
+    findings: List[Dict[str, Any]] = []
+
+    parsed = urlparse(url)
+    params = list(parse_qs(parsed.query, keep_blank_values=True).keys()) if parsed.query else []
+
+    # 只检测名字像 URL 的参数
+    url_like_params = [p for p in params if any(k in p.lower() for k in ("url", "link", "path", "src", "redirect", "callback", "uri", "site"))]
+
+    for param in url_like_params[:4]:
+        for payload, target_name, indicator in SSRF_PAYLOADS:
+            test_url = _build_test_url(url, param, payload)
+            try:
+                resp = await client.get(test_url, timeout=8.0, follow_redirects=False)
+                body = _safe_read_body(resp).lower()
+                elapsed = resp.elapsed.total_seconds() if resp.elapsed else 0.0
+
+                # 判定：返回 200 且包含内网/元数据特征，或响应时间明显较快（说明本地可达）
+                detected = False
+                if resp.status_code == 200 and indicator in body:
+                    detected = True
+                elif resp.status_code in (301, 302, 307, 308) and indicator in (resp.headers.get("location") or "").lower():
+                    detected = True
+                elif elapsed < 0.5 and any(x in body for x in ["root:", "meta-data", "iam", "instance-id"]):
+                    detected = True
+
+                if detected:
+                    findings.append(build_finding(
+                        vuln_type="ssrf",
+                        title=f"服务端请求伪造（参数 {param}）",
+                        severity="critical" if "metadata" in target_name.lower() or "file://" in payload else "high",
+                        severity_score=9 if "metadata" in target_name.lower() or "file://" in payload else 8,
+                        url=test_url,
+                        parameter=param,
+                        location=f"URL 参数 {param}",
+                        description=f"参数 '{param}' 接受外部地址并可能由服务端发起请求，测试 payload 命中 {target_name}，存在 SSRF 风险。",
+                        evidence_request=_build_request_text("GET", test_url),
+                        evidence_response=_build_response_text(resp, 600),
+                        evidence_payload=payload,
+                        impact="攻击者可利用服务端访问内网、云服务元数据接口或本地文件，导致敏感信息泄露甚至云环境接管。",
+                        reproduce_steps=[
+                            f"访问 {test_url}",
+                            f"观察响应是否包含 {target_name} 内容或重定向到内部地址",
+                            "尝试访问 169.254.169.254 等元数据地址进一步验证",
+                        ],
+                        fix_suggestion="严格校验用户输入的 URL；禁用重定向；解析并拒绝私有 IP、元数据域名与 file:// 协议；使用白名单。",
+                        confidence="medium",
+                    ))
+                    break
+            except Exception:
+                continue
+    return findings
+
+
+async def detect_idor_src(url: str) -> List[Dict[str, Any]]:
+    """检测不安全的直接对象引用（IDOR）：尝试替换连续数字 ID。"""
+    _init_helpers()
+    client = _get_httpx_client()
+    findings: List[Dict[str, Any]] = []
+
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query, keep_blank_values=True)
+    if not qs:
+        return findings
+
+    for param, values in qs.items():
+        for value in values[:1]:
+            if not re.fullmatch(r"\d+", value):
+                continue
+            original_id = int(value)
+            test_ids = [original_id + 1, original_id - 1, original_id + 10]
+            for test_id in test_ids:
+                new_qs = {k: ([str(test_id)] if k == param else v) for k, v in qs.items()}
+                test_url = urlunparse(parsed._replace(query=urlencode(new_qs, doseq=True)))
+                try:
+                    resp = await client.get(test_url, timeout=10.0, follow_redirects=True)
+                    if resp.status_code != 200:
+                        continue
+                    body = _safe_read_body(resp)
+                    # 简单启发：响应长度相近且包含常见资源字段，认为存在 IDOR
+                    if any(k in body.lower() for k in ["email", "phone", "username", "order", "user", "amount", "balance"]):
+                        findings.append(build_finding(
+                            vuln_type="idor",
+                            title=f"不安全的直接对象引用（参数 {param}）",
+                            severity="high",
+                            severity_score=8,
+                            url=test_url,
+                            parameter=param,
+                            location=f"URL 参数 {param}",
+                            description=f"参数 '{param}' 为连续数字 ID，通过将其从 {original_id} 改为 {test_id} 仍可访问资源，说明未校验资源归属。",
+                            evidence_request=_build_request_text("GET", test_url),
+                            evidence_response=_build_response_text(resp, 700),
+                            impact="攻击者可通过遍历 ID 访问其他用户的订单、资料、账单等敏感数据。",
+                            reproduce_steps=[
+                                f"访问原始链接：{url}",
+                                f"将参数 {param} 依次替换为相邻 ID（如 {test_ids}）",
+                                "观察是否返回其他用户数据",
+                            ],
+                            fix_suggestion="使用 UUID/间接引用；每次访问资源时校验当前用户是否为资源所有者；限制批量遍历。",
+                            confidence="medium",
+                        ))
+                        return findings
+                except Exception:
+                    continue
+    return findings
+
+
+async def detect_file_upload_src(url: str, body: Optional[str] = None) -> List[Dict[str, Any]]:
+    """检测页面中是否存在文件上传入口。"""
+    _init_helpers()
+    client = _get_httpx_client()
+    findings: List[Dict[str, Any]] = []
+
+    if body is None:
+        try:
+            resp = await client.get(url, timeout=10.0, follow_redirects=True)
+            body = _safe_read_body(resp)
+        except Exception:
+            body = ""
+
+    for pattern in FILE_UPLOAD_FORM_PATTERNS:
+        matches = list(pattern.finditer(body))
+        if matches:
+            first = matches[0].group(0)
+            action_match = re.search(r'<form[^>]*action=["\']([^"\']*)["\']', body, re.I)
+            action = action_match.group(1) if action_match else ""
+            findings.append(build_finding(
+                vuln_type="file_upload",
+                title="发现文件上传入口",
+                severity="medium",
+                severity_score=6,
+                url=url,
+                parameter="",
+                location=f"页面表单（action={action}）",
+                description="页面中存在文件上传表单，若后端未对文件类型、内容、扩展名进行严格校验，可能被上传 WebShell 或恶意文件。",
+                evidence_request=_build_request_text("GET", url),
+                evidence_response=first[:500],
+                impact="攻击者可能上传并执行服务器端脚本，导致服务器被控制、数据泄露或横向移动。",
+                reproduce_steps=[
+                    f"访问 {url}",
+                    "定位文件上传表单",
+                    "尝试上传带有脚本扩展名的文件（如 .php/.jsp/.aspx）",
+                    "确认是否被拦截或可直接访问执行",
+                ],
+                fix_suggestion="使用白名单扩展名与 MIME 类型；校验文件 Magic Number；上传目录禁止脚本执行；重命名并隔离存储。",
+                confidence="low",
+            ))
+            break
+    return findings
+
+
+async def detect_logic_bypass_src(url: str, headers: Dict[str, str], body: Optional[str] = None) -> List[Dict[str, Any]]:
+    """检测登录/认证相关页面的逻辑绕过风险点。"""
+    _init_helpers()
+    client = _get_httpx_client()
+    findings: List[Dict[str, Any]] = []
+
+    if body is None:
+        try:
+            resp = await client.get(url, timeout=10.0, follow_redirects=True)
+            body = _safe_read_body(resp)
+        except Exception:
+            body = ""
+
+    body_lower = body.lower()
+
+    # 登录表单缺少 CSRF 与验证码
+    if LOGIN_BYPASS_PATTERNS["no_csrf_login"].search(body):
+        has_csrf = bool(re.search(r"csrf|xsrf|captcha|recaptcha", body_lower))
+        if not has_csrf:
+            findings.append(build_finding(
+                vuln_type="logic_bypass",
+                title="登录接口缺少 CSRF / 验证码保护",
+                severity="medium",
+                severity_score=5,
+                url=url,
+                parameter="",
+                location="登录表单",
+                description="登录表单未包含 CSRF Token 或验证码，攻击者可构造自动化的凭证喷洒、暴力破解或钓鱼登录请求。",
+                evidence_request=_build_request_text("GET", url),
+                evidence_response=LOGIN_BYPASS_PATTERNS["no_csrf_login"].search(body).group(0)[:500],
+                impact="弱口令与自动化撞库攻击风险提升；钓鱼页面可跨站提交登录请求。",
+                reproduce_steps=[
+                    f"访问 {url}",
+                    "查看登录表单源码",
+                    "确认是否缺少 csrf_token / captcha",
+                    "使用 Burp Intruder 测试登录接口对高频请求的拦截策略",
+                ],
+                fix_suggestion="登录接口添加 CSRF Token；实施速率限制、账户锁定与验证码（推荐行为验证码）；监控异常登录。",
+                confidence="medium",
+            ))
+
+    # API 登录端点暴露
+    if LOGIN_BYPASS_PATTERNS["json_login"].search(body):
+        findings.append(build_finding(
+            vuln_type="logic_bypass",
+            title="前端暴露 API 登录端点",
+            severity="low",
+            severity_score=3,
+            url=url,
+            parameter="",
+            location="前端 JS/HTML",
+            description="前端代码中可直接定位到登录 API 端点，便于攻击者进行自动化认证测试。",
+            evidence_request=_build_request_text("GET", url),
+            evidence_response="匹配内容：" + LOGIN_BYPASS_PATTERNS["json_login"].search(body).group(0),
+            impact="攻击者可绕过前端限制，直接调用登录 API 进行暴力破解。",
+            reproduce_steps=[
+                f"查看 {url} 前端源码",
+                "搜索 /api/login、/api/auth 等端点",
+                "使用脚本直接 POST 测试",
+            ],
+            fix_suggestion="服务端实施统一认证策略、速率限制、设备指纹与异常检测；不要依赖前端隐藏端点。",
+            confidence="low",
+        ))
+
+    return findings
+
+
 # ---------- 扫描编排 ----------
 
 async def run_src_scan(
@@ -1033,11 +1612,21 @@ async def run_src_scan(
     csrf_task = detect_csrf_src(url, headers)
     paths_task = detect_sensitive_paths_src(url)
     components_task = detect_outdated_components_src(url, headers)
+    bac_task = detect_broken_access_control_src(url)
+    ssrf_task = detect_ssrf_src(url)
+    idor_task = detect_idor_src(url)
+    upload_task = detect_file_upload_src(url)
+    logic_task = detect_logic_bypass_src(url, headers)
 
-    results = await asyncio.gather(
+    tasks = [
         sqli_task, xss_task, info_leak_task, csrf_task, paths_task, components_task,
-        return_exceptions=True,
-    )
+        bac_task, ssrf_task, idor_task, upload_task, logic_task,
+    ]
+    if deep:
+        # 深度模式：暂不增加额外任务，保留扩展位
+        pass
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
     for res in results:
         if isinstance(res, list):
             findings.extend(res)

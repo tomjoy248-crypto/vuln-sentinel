@@ -54,6 +54,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 # ---------- 代码拆分模块导入 ----------
+import src_scanner
 from src_scanner import run_src_scan
 from constants import (
     BLOCKED_HOSTS, BLOCKED_NETWORKS, ALLOWED_INTERNAL_HOSTS,
@@ -77,7 +78,8 @@ from models import (
     FindingFeedbackRequest, FixTicketCreate, FixTicketUpdate,
     FreeTrialRequest, LoginRequest, PasswordResetRequest,
     RegisterRequest, ScanRequest, ScanResponse,
-    SimulateFixRequest, VerifyFixRequest, VerifyRequest,
+    SimulateFixRequest, SRCReportExportRequest, VerifyFixRequest,
+    VerifyReproduceRequest, VerifyRequest,
 )
 
 
@@ -4394,7 +4396,7 @@ async def analyze_security(
     suspect_paths = [p for p in sensitive_paths if p.get("suspect")]
     if suspect_paths:
         # 11-S 优化：suspect 疑似项不扣分，但记录为信息提示
-        suspect_names = [p["path"] for p in suspect_paths[:5]]
+        suspect_names = [p.get("path", "") for p in suspect_paths[:5]]
         add_finding(findings, "疑似敏感路径（需人工确认）", "low", "A01 访问控制失效",
                     f"发现 {len(suspect_paths)} 个疑似敏感路径，因响应内容不匹配或疑似软404，需人工确认: {', '.join(suspect_names)}",
                     "人工检查这些路径是否确实暴露了敏感信息，确认后限制访问。",
@@ -4853,6 +4855,90 @@ def generate_pdf_report(scan_data: dict) -> bytes:
 
     doc.build(elements)
     return buf.getvalue()
+
+
+def generate_src_markdown_report(scan_data: dict, finding_ids: Optional[List[str]] = None) -> str:
+    """生成适合 SRC 平台提交的 Markdown 格式漏洞报告。"""
+    url = scan_data.get("url", "")
+    findings = scan_data.get("findings", []) or []
+    if finding_ids:
+        findings = [f for f in findings if f.get("id") in finding_ids]
+
+    lines = [
+        f"# {url} 安全漏洞报告",
+        "",
+        f"- **扫描时间**: {scan_data.get('time', '')}",
+        f"- **安全评分**: {scan_data.get('score', 0)} / 100（{scan_data.get('risk_level', '')}）",
+        f"- **漏洞总数**: {len(findings)} 个",
+        "",
+        "## 漏洞汇总",
+        "",
+        "| 序号 | 漏洞名称 | 严重度 | CWE | OWASP | CVSS |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for i, f in enumerate(findings, 1):
+        lines.append(
+            f"| {i} | {f.get('title', '')} | {f.get('severity', '')} | "
+            f"{f.get('cwe_id', '')} | {f.get('owasp_category', '')} | "
+            f"{f.get('cvss_score', '-')} ({f.get('cvss_vector', '')}) |"
+        )
+    lines.append("")
+
+    for i, f in enumerate(findings, 1):
+        ev = f.get("evidence", {})
+        lines.extend([
+            f"## {i}. {f.get('title', '')}",
+            "",
+            f"- **漏洞类型**: {f.get('type', '')}",
+            f"- **严重度**: {f.get('severity', '')}（{f.get('severity_score', '-')}/10）",
+            f"- **CWE**: {f.get('cwe_id', '')}",
+            f"- **OWASP**: {f.get('owasp_category', '')}",
+            f"- **CVSS v3.1**: {f.get('cvss_score', '-')} `{f.get('cvss_vector', '')}`",
+            f"- **置信度**: {f.get('confidence', '')}",
+            f"- **漏洞 URL**: {f.get('url', '')}",
+            f"- **参数/位置**: {f.get('parameter', '') or f.get('location', '')}",
+            "",
+            "### 漏洞描述",
+            "",
+            f.get("description", ""),
+            "",
+            "### 实际影响",
+            "",
+            f.get("impact", ""),
+            "",
+        ])
+        steps = f.get("reproduce_steps", [])
+        if steps:
+            lines.extend(["### 复现步骤", ""])
+            for idx, step in enumerate(steps, 1):
+                lines.append(f"{idx}. {step}")
+            lines.append("")
+        if ev.get("payload"):
+            lines.extend(["### Payload", "", f"```text\n{ev['payload']}\n```", ""])
+        if ev.get("request"):
+            lines.extend(["### HTTP 请求", "", f"```http\n{ev['request']}\n```", ""])
+        if ev.get("response"):
+            lines.extend(["### 响应片段", "", f"```http\n{ev['response']}\n```", ""])
+        lines.extend([
+            "### 修复建议",
+            "",
+            f.get("fix_suggestion", ""),
+            "",
+        ])
+        refs = f.get("references", [])
+        if refs:
+            lines.extend(["### 参考链接", ""])
+            for ref in refs:
+                lines.append(f"- {ref}")
+            lines.append("")
+
+    lines.extend([
+        "---",
+        "",
+        "> 本报告由漏洞哨兵自动生成，SRC 提交前建议人工复核证据与 CVSS 评分。",
+        "",
+    ])
+    return "\n".join(lines)
 
 
 def generate_html_report(scan_data: dict) -> str:
@@ -6847,6 +6933,69 @@ async def api_list_finding_feedback(
         }
     except Exception as e:
         return {"success": False, "error": str(e), "feedbacks": []}
+
+
+@app.post("/api/finding/verify-reproduce")
+async def api_verify_reproduce(req: VerifyReproduceRequest, user: dict = Depends(require_login)) -> dict:
+    """对单个 SRC finding 重新执行复现检测，返回是否仍可复现。"""
+    try:
+        scan = get_scan_by_id(req.scan_id, user["user_id"])
+        if not scan:
+            raise HTTPException(404, "扫描记录不存在")
+        findings = json.loads(scan["findings_json"]) if scan.get("findings_json") else []
+        target = next((f for f in findings if f.get("id") == req.finding_id), None)
+        if not target:
+            raise HTTPException(404, "Finding 不存在")
+
+        vuln_type = target.get("type", "")
+        test_url = req.url or target.get("url", scan["url"])
+        headers = json.loads(scan["headers_json"]) if scan.get("headers_json") else {}
+        is_https = test_url.startswith("https://")
+
+        # 针对部分类型直接复用 src_scanner 的检测函数
+        detector_map = {
+            "sqli": src_scanner.detect_sqli_src,
+            "xss": src_scanner.detect_xss_src,
+            "ssrf": src_scanner.detect_ssrf_src,
+            "idor": src_scanner.detect_idor_src,
+            "broken_access_control": src_scanner.detect_broken_access_control_src,
+            "sensitive_path": src_scanner.detect_sensitive_paths_src,
+        }
+        detector = detector_map.get(vuln_type)
+        if not detector:
+            return {
+                "success": True,
+                "reproducible": None,
+                "note": "该类型暂不支持自动复现，请人工验证",
+                "finding": target,
+            }
+
+        if vuln_type in ("info_leak", "csrf", "outdated_component", "header_missing"):
+            # 这些类型依赖原始 headers/body，使用通用复现：重新跑完整扫描并比对
+            result = await src_scanner.run_src_scan(test_url, headers, is_https, {})
+            matched = [f for f in result.get("findings", []) if f.get("type") == vuln_type]
+            reproducible = len(matched) > 0
+            return {
+                "success": True,
+                "reproducible": reproducible,
+                "matched_count": len(matched),
+                "note": "已重新执行扫描并比对同类型结果",
+            }
+
+        reproduced = await detector(test_url)
+        # 判断是否复现：URL 与类型匹配即认为存在
+        reproducible = any(r.get("type") == vuln_type for r in reproduced)
+        return {
+            "success": True,
+            "reproducible": reproducible,
+            "new_findings": reproduced[:3],
+            "note": "复现检测完成",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("verify-reproduce failed: %s", e)
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/api/stats/history")
@@ -8950,6 +9099,37 @@ async def api_report(scan_id: int, format: str = "pdf", user: dict = Depends(req
         # PDF 格式（默认）
         pdf_bytes = generate_pdf_report(report_data)
         headers = {"Content-Disposition": f"attachment; filename=scan-report-{scan_id}.pdf"}
+        return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)
+
+
+@app.post("/api/report/src-export")
+async def api_src_report_export(req: SRCReportExportRequest, user: dict = Depends(require_login)):
+    """导出 SRC 平台格式的漏洞报告（Markdown 或 PDF）。"""
+    scan = get_scan_by_id(req.scan_id, user["user_id"])
+    if not scan:
+        raise HTTPException(404, "扫描记录不存在")
+    findings = json.loads(scan["findings_json"]) if scan.get("findings_json") else []
+    report_data = {
+        "url": scan["url"],
+        "time": scan["created_at"],
+        "score": scan["score"],
+        "risk_level": scan["risk_level"],
+        "findings": findings,
+    }
+    fmt = (req.format or "markdown").lower()
+    if fmt in ("markdown", "md"):
+        md_content = generate_src_markdown_report(report_data, req.finding_ids)
+        headers = {"Content-Disposition": f"attachment; filename=src-report-{req.scan_id}.md"}
+        return Response(content=md_content, media_type="text/markdown; charset=utf-8", headers=headers)
+    else:
+        # PDF 版本：先转 Markdown，再简单包装（保持中文可读）
+        md_content = generate_src_markdown_report(report_data, req.finding_ids)
+        pdf_bytes = generate_pdf_report({
+            **report_data,
+            "findings": findings,
+            "summary": {"total": len(findings), "critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0},
+        })
+        headers = {"Content-Disposition": f"attachment; filename=src-report-{req.scan_id}.pdf"}
         return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)
 
 
@@ -11594,7 +11774,7 @@ async def api_demo_fix(req: DemoFixRequest, request: Request, user: dict = Depen
 
     # 安全检查：只允许操作本地靶场
     if req.target not in ("localhost:8080", "localhost:8443", "127.0.0.1:8080"):
-        return {"success": False, "error": "仅支持本地靶场"}
+        return {"success": False, "error": "仅支持本地演示靶场"}
 
     if req.action == "apply":
         ok, msg = _demo_nginx_apply_security_headers()
