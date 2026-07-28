@@ -1,6 +1,6 @@
 """漏洞哨兵 11-S - 数据模型模块"""
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -208,37 +208,45 @@ class FindingFeedbackRequest(BaseModel):
 # ---------- 扫描响应模型 ----------
 
 class ScanResponse(BaseModel):
+    # SRC 级扫描核心字段
     success: bool
-    scan_type: str
+    scan_id: int
     url: str
-    final_url: str
-    time: str
-    is_https: bool
     score: int
     risk_level: str
+    summary: Dict[str, int] = Field(default_factory=lambda: {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0})
     findings: List[dict]
-    summary: Dict[str, int] = Field(default_factory=lambda: {"high": 0, "medium": 0, "low": 0, "total": 0})
-    owasp_coverage: List[dict]
-    header_details: List[dict]
-    info_leaks: List[dict]
-    cors: Optional[dict]
-    cookie_issues: List[str]
-    ssl_info: dict
-    waf: List[dict]
-    sensitive_paths: List[dict]
-    waf_detected: bool
-    raw_headers: dict
+    headers: Dict[str, Any] = Field(default_factory=dict)
+    waf: Optional[str] = None
+    ssl: Dict[str, Any] = Field(default_factory=dict)
+    duration_ms: int = 0
+    report_share_id: Optional[str] = None
+
+    # 保留旧字段兼容（历史记录/旧前端可继续读取）
+    scan_type: Optional[str] = "real"
+    final_url: Optional[str] = ""
+    time: Optional[str] = ""
+    is_https: Optional[bool] = False
+    raw_headers: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    owasp_coverage: Optional[List[dict]] = Field(default_factory=list)
+    header_details: Optional[List[dict]] = Field(default_factory=list)
+    info_leaks: Optional[List[dict]] = Field(default_factory=list)
+    cors: Optional[dict] = None
+    cookie_issues: Optional[List[str]] = Field(default_factory=list)
+    ssl_info: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    waf_list: Optional[List[dict]] = Field(default_factory=list)
+    sensitive_paths: Optional[List[dict]] = Field(default_factory=list)
+    waf_detected: Optional[bool] = False
     crawled_pages: Optional[List[dict]] = None
     vuln_tests: Optional[List[dict]] = None
-    scan_id: Optional[int] = None
-    score_breakdown: List[dict] = Field(default_factory=list)
-    fixes: Dict[str, list] = Field(default_factory=dict)
+    score_breakdown: Optional[List[dict]] = Field(default_factory=list)
+    fixes: Optional[Dict[str, list]] = Field(default_factory=dict)
     error: Optional[str] = None
-    restricted: bool = False
-    restricted_reason: str = ""
-    restricted_code: str = ""
-    redirected: bool = False
-    redirect_reason: str = ""
+    restricted: Optional[bool] = False
+    restricted_reason: Optional[str] = ""
+    restricted_code: Optional[str] = ""
+    redirected: Optional[bool] = False
+    redirect_reason: Optional[str] = ""
 
 
 # ---------- 域名验证模型 ----------

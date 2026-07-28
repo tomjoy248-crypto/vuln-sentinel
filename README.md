@@ -138,8 +138,30 @@ docker run -p 8000:8000 vulnsentinel:v11-s
 ```
 vuln-sentinel/
 ├── main.py                  # FastAPI 后端主程序（150+ API）
-├── static/
-│   └── index.html           # 单文件前端
+├── src_scanner.py           # SRC 级扫描引擎（SQLI/XSS/信息泄露/CSRF/敏感路径/组件漏洞）
+├── models.py                # Pydantic 数据模型
+├── frontend/                # 前后端分离前端（Vite + 原生 JS）
+│   ├── src/
+│   │   ├── main.js          # 应用入口与全局事件
+│   │   ├── api.js           # 后端 API 封装
+│   │   ├── utils.js         # 工具函数
+│   │   ├── style.css        # Burp Suite 暗色主题
+│   │   ├── pages/           # 页面模块
+│   │   │   ├── home.js
+│   │   │   ├── scan.js
+│   │   │   ├── result.js    # SRC 级报告渲染
+│   │   │   ├── fixer.js
+│   │   │   ├── tickets.js
+│   │   │   ├── assets.js
+│   │   │   ├── profile.js
+│   │   │   └── evolution.js
+│   │   └── components/      # 可复用组件
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.js
+├── static/                  # 构建后的前端产物（由 backend 直接服务）
+│   ├── index.html
+│   └── assets/
 ├── tests/                   # pytest 测试套件（186 用例）
 │   └── test_main.py
 ├── docs/                    # 文档 + 截图 + 架构图
@@ -186,7 +208,8 @@ python3 -m pytest tests/ -v
 | 层 | 技术 |
 |---|---|
 | 后端 | FastAPI + SQLite + httpx + dnspython |
-| 前端 | 原生 HTML + CSS + JS（无框架）|
+| 前端 | Vite + 原生 JS + 模块化组件（前后端分离）|
+| 扫描引擎 | SRC 级漏洞报告（SQLI / XSS / 信息泄露 / CSRF / 敏感路径 / 过时组件）|
 | 认证 | JWT (PyJWT) + bcrypt |
 | PDF 报告 | reportlab |
 | 定时任务 | apscheduler |
@@ -278,6 +301,8 @@ MIT License
 - 移除离线演示模式、硬编码演示账号、本地靶机
 - 公开扫描端点重构为免费试用
 - OWASP Top 10 全 10 大类覆盖 + 交叉验证降低误报率
+- 前后端分离：Vite 模块化前端 + FastAPI 后端
+- SRC 级漏洞报告：每条漏洞含请求/响应证据、Payload、复现步骤、修复代码、参考链接
 - 186 个测试用例（0 failed, 3 skipped）
 
 ---

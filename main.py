@@ -54,6 +54,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 # ---------- 代码拆分模块导入 ----------
+from src_scanner import run_src_scan
 from constants import (
     BLOCKED_HOSTS, BLOCKED_NETWORKS, ALLOWED_INTERNAL_HOSTS,
     CMDI_PAYLOADS, DESER_SIGNATURES, INFO_PATHS,
@@ -1033,10 +1034,15 @@ def auto_create_fix_tickets(user_id: int, scan_id: int, findings: list) -> int:
         severity = (f.get("severity") or "low").lower()
         if severity not in ("high", "critical"):
             continue
-        name = (f.get("name") or "").strip()
+        name = (f.get("name") or f.get("title") or "").strip()
         if not name:
             continue
-        candidates.append((name, severity, f.get("fix", "")))
+        fix_code = (
+            f.get("fix", "")
+            or f.get("fix_suggestion", "")
+            or (f.get("fix_code") or {}).get("generic", "")
+        )
+        candidates.append((name, severity, fix_code))
 
     if not candidates:
         return 0
@@ -1389,12 +1395,15 @@ if _cors_wildcard:
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
-# 静态资源缓存头中间件：开发期 index.html 短缓存，favicon/字体长缓存
+# 静态资源缓存头中间件：
+# - 生产环境从 static/ 目录提供静态资源（含前端构建产物 assets/）
+# - 开发环境由 Vite dev server 代理前端请求，本中间件仅对直接访问后端静态资源生效
 @app.middleware("http")
 async def _cache_control_middleware(request, call_next):
     response = await call_next(request)
     path = request.url.path
-    if path.startswith("/static/") and not path.endswith(".html"):
+    # static/ 与 Vite 构建产物 assets/ 均为可长缓存的静态资源
+    if (path.startswith("/static/") or path.startswith("/assets/")) and not path.endswith(".html"):
         # 字体、JS、CSS、图片：长缓存
         response.headers["Cache-Control"] = "public, max-age=3600"
     elif path == "/" or path.endswith(".html"):
@@ -5225,9 +5234,13 @@ def generate_fixes(findings: List[dict], headers: dict, is_https: bool, host: st
             seen.add(code)
 
     for f in findings:
-        name = (f.get("name") or "").strip()
+        name = (f.get("name") or f.get("title") or "").strip()
         severity = f.get("severity") or "low"
-        fix_text = f.get("fix", "") or ""
+        fix_text = (
+            f.get("fix", "")
+            or f.get("fix_suggestion", "")
+            or (f.get("fix_code") or {}).get("generic", "")
+        )
         ftype = f.get("type", "config")
 
         if name.startswith("缺少 "):
@@ -5891,12 +5904,13 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
     except ValueError as e:
         # 11-S fix: 返回友好的扫描失败结果，而不是 HTTP 422
         return ScanResponse(
-            success=False, scan_type="real", url=req.url, final_url=req.url,
+            success=False, scan_id=0, scan_type="real", url=req.url, final_url=req.url,
             time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             is_https=False, score=0, risk_level="无法扫描",
-            findings=[], summary={"high": 0, "medium": 0, "low": 0, "total": 0},
+            findings=[], summary={"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0},
+            headers={}, waf=None, ssl={}, duration_ms=0, report_share_id=None,
             owasp_coverage=[], header_details=[], info_leaks=[], cors=None,
-            cookie_issues=[], ssl_info={}, waf=[], sensitive_paths=[],
+            cookie_issues=[], ssl_info={}, waf_list=[], sensitive_paths=[],
             waf_detected=False, raw_headers={}, error=str(e),
         )
 
@@ -5957,12 +5971,13 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         if not req.authorized:
             await _update(0, "fail")
             return ScanResponse(
-                success=False, scan_type="real", url=url, final_url=url,
+                success=False, scan_id=0, scan_type="real", url=url, final_url=url,
                 time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 is_https=False, score=0, risk_level="未授权",
-                findings=[], summary={"high": 0, "medium": 0, "low": 0, "total": 0},
+                findings=[], summary={"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0},
+                headers={}, waf=None, ssl={}, duration_ms=0, report_share_id=None,
                 owasp_coverage=[], header_details=[], info_leaks=[], cors=None,
-                cookie_issues=[], ssl_info={}, waf=[], sensitive_paths=[],
+                cookie_issues=[], ssl_info={}, waf_list=[], sensitive_paths=[],
                 waf_detected=False, raw_headers={},
                 error="请先确认您有权扫描该目标（authorized: true）",
             )
@@ -5976,12 +5991,13 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             if not verified:
                 await _update(0, "fail")
                 return ScanResponse(
-                    success=False, scan_type="deep", url=url, final_url=url,
+                    success=False, scan_id=0, scan_type="deep", url=url, final_url=url,
                     time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     is_https=False, score=0, risk_level="未验证",
-                    findings=[], summary={"high": 0, "medium": 0, "low": 0, "total": 0},
+                    findings=[], summary={"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0},
+                    headers={}, waf=None, ssl={}, duration_ms=0, report_share_id=None,
                     owasp_coverage=[], header_details=[], info_leaks=[], cors=None,
-                    cookie_issues=[], ssl_info={}, waf=[], sensitive_paths=[],
+                    cookie_issues=[], ssl_info={}, waf_list=[], sensitive_paths=[],
                     waf_detected=False, raw_headers={},
                     error="深度扫描需要先完成域名归属验证。请通过域名验证流程验证 " + host + " 的所有权。",
                 )
@@ -6007,13 +6023,14 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             else:
                 user_msg = error
             return ScanResponse(
-                success=False, scan_type="real", url=url, final_url=final_url,
+                success=False, scan_id=0, scan_type="real", url=url, final_url=final_url,
                 time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 is_https=is_https, score=0, risk_level="无法扫描",
-                findings=[], summary={"high": 0, "medium": 0, "low": 0, "total": 0},
+                findings=[], summary={"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0},
+                headers=headers or {}, waf=None, ssl=ssl_info or {}, duration_ms=0, report_share_id=None,
                 owasp_coverage=[], header_details=[], info_leaks=[], cors=None,
-                cookie_issues=[], ssl_info={}, waf=[], sensitive_paths=[],
-                waf_detected=False, raw_headers={}, error=user_msg,
+                cookie_issues=[], ssl_info=ssl_info or {}, waf_list=[], sensitive_paths=[],
+                waf_detected=False, raw_headers=headers or {}, error=user_msg,
             )
         # 受限访问但能拿到头 → 区分跳转(301/302) 和 真正受限(401/403/405)
         restricted = False
@@ -6055,6 +6072,9 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 headers["_restricted_code"] = str(status_code)
                 error = None
         await _update(2, "done")
+        # 移除内部标记，避免进入响应头和证据
+        headers.pop("_status_code", None)
+        headers.pop("_redirect_location", None)
         # 修复：让 SSL 解析和敏感路径扫描同时进行，节省 1-2s
         waf_list = detect_waf(headers)
         await _update(5, "done")
@@ -6382,25 +6402,56 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             except Exception:
                 pass
 
-        result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings)
-        # 11-S：11 维交叉验证（降低误报）
+        # ---------- SRC 级扫描（新格式） ----------
+        waf_name = waf_list[0].get("name") if waf_list else None
+        src_result = await run_src_scan(
+            url, headers, is_https, ssl_info, waf=waf_name, deep=(depth == "deep")
+        )
+
+        # 保留旧版元数据，用于兼容历史展示与旧前端字段
         try:
-            cv_result = await cross_validate_findings(
-                url, headers, result["findings"],
-                sensitive_paths=sensitive_paths,
-                cookie_issues=result.get("cookie_issues") or [],
-                is_https=is_https,
+            legacy = await analyze_security(
+                url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings=[]
             )
-            apply_cross_validation(result["findings"], cv_result)
         except Exception as e:
-            logger.warning("Cross-validation failed during scan: %s", e)
+            logger.warning("Legacy analyze_security failed during scan: %s", e)
+            legacy = {}
+
+        # 合并响应：以 SRC 格式为主，附加旧字段兼容
+        result = src_result.copy()
+        result.update({
+            "scan_type": "deep" if req.deep else "real",
+            "final_url": final_url,
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "is_https": is_https,
+            "raw_headers": headers,
+            "owasp_coverage": legacy.get("owasp_coverage", []),
+            "header_details": legacy.get("header_details", []),
+            "info_leaks": legacy.get("info_leaks", []),
+            "cors": legacy.get("cors"),
+            "cookie_issues": legacy.get("cookie_issues", []),
+            "ssl_info": ssl_info,
+            "waf_list": waf_list,
+            "sensitive_paths": sensitive_paths,
+            "waf_detected": len(waf_list) > 0,
+            "crawled_pages": crawled_pages,
+            "vuln_tests": vuln_tests,
+            "score_breakdown": legacy.get("score_breakdown", []),
+            "improvements": legacy.get("improvements", []),
+        })
+
         fixes = generate_fixes(result["findings"], headers, is_https, host)
+        result["fixes"] = fixes
+
         scan_id = save_scan(
             user_id, url, result["score"], result["risk_level"],
             result["findings"], result["summary"],
             len(crawled_pages) if crawled_pages else 0,
             depth,
         )
+        # 用数据库自增 ID 覆盖 run_src_scan 生成的时间戳 ID
+        result["scan_id"] = scan_id
+
         # 自动为 high/critical finding 创建修复工单
         try:
             auto_create_fix_tickets(user_id, scan_id, result["findings"])
@@ -6412,19 +6463,10 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         except Exception as e:
             logger.warning("Update asset after scan failed: %s", e)
         await _update(6, "done")
-        # 受限扫描报告：合并 fetch_headers 的 HTTP 状态码限制 + analyze_security 的 WAF/反爬检测
+        # 受限扫描报告
         http_restricted_reason = headers.pop("_restricted_reason", "") if headers else ""
         http_restricted_code = headers.pop("_restricted_code", "") if headers else ""
-        # analyze_security 也返回了 restricted，优先用它的（WAF/反爬检测更全面）
-        as_restricted = result.get("restricted", False)
-        as_restricted_reason = result.get("restricted_reason", "")
-        as_restricted_code = result.get("restricted_code", "")
-        # 合并：如果 analyze_security 检测到受限，用它；否则用 fetch_headers 的
-        if as_restricted:
-            final_restricted = True
-            final_reason = as_restricted_reason
-            final_code = as_restricted_code
-        elif http_restricted_reason:
+        if http_restricted_reason:
             final_restricted = True
             final_reason = http_restricted_reason
             final_code = http_restricted_code
@@ -6432,24 +6474,32 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             final_restricted = False
             final_reason = ""
             final_code = ""
+        result.update({
+            "restricted": final_restricted,
+            "restricted_reason": final_reason,
+            "restricted_code": final_code,
+            "redirected": redirected,
+            "redirect_reason": redirect_reason,
+        })
+
         # 扫描完成通知：检查是否有 critical/high 漏洞
         try:
             high_risk_findings = [f for f in result["findings"] if f.get("severity") in ("critical", "high")]
             if high_risk_findings:
-                risk_names = ", ".join([f.get("name", "未知") for f in high_risk_findings[:5]])
+                risk_names = ", ".join([f.get("name") or f.get("title", "未知") for f in high_risk_findings[:5]])
                 alert_title = f"【高危告警】{host} 发现 {len(high_risk_findings)} 个高危漏洞"
                 alert_msg = f"扫描目标 {url} 发现 {len(high_risk_findings)} 个高危/严重级别安全问题：{risk_names}"
                 email_html = (
                     f"<h2>高危漏洞告警</h2>"
                     f"<p>扫描目标：<strong>{url}</strong></p>"
                     f"<p>发现 <strong>{len(high_risk_findings)}</strong> 个高危/严重级别安全问题：</p>"
-                    f"<ul>" + "".join([f"<li><strong>{escapeHtml(f.get('name',''))}</strong> - {escapeHtml(f.get('description',''))}</li>" for f in high_risk_findings[:10]]) + f"</ul>"
+                    f"<ul>" + "".join([f"<li><strong>{escapeHtml(f.get('name') or f.get('title',''))}</strong> - {escapeHtml(f.get('description',''))}</li>" for f in high_risk_findings[:10]]) + f"</ul>"
                     f"<p>评分：<strong>{result['score']}</strong> 分 | 风险等级：<strong>{result['risk_level']}</strong></p>"
                     f"<p><a href='#'>点击查看详细报告</a></p>"
                 )
                 md_lines = [f"### 高危漏洞告警: {host}", f"", f"- **目标**: {url}", f"- **评分**: {result['score']} 分", f"- **风险等级**: {result['risk_level']}", f"- **高危数量**: {len(high_risk_findings)} 个", f"", f"**问题列表**："]
                 for f in high_risk_findings[:10]:
-                    md_lines.append(f"- **{f.get('name','')}**: {f.get('description','')}")
+                    md_lines.append(f"- **{f.get('name') or f.get('title','')}**: {f.get('description','')}")
                 md_lines.append(f"")
                 md_lines.append(f"[点击查看详细报告]")
                 webhook_md = "\n".join(md_lines)
@@ -6487,23 +6537,8 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 ))
         except Exception as e:
             logger.warning("Scan notification trigger failed: %s", e)
-        # 避免 result 里的 restricted 和显式参数冲突
-        result.pop("restricted", None)
-        result.pop("restricted_reason", None)
-        result.pop("restricted_code", None)
-        return ScanResponse(
-            success=True, scan_type="deep" if req.deep else "real",
-            url=url, final_url=final_url,
-            time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            is_https=is_https, raw_headers=headers, crawled_pages=crawled_pages,
-            vuln_tests=vuln_tests, scan_id=scan_id, fixes=fixes,
-            restricted=final_restricted,
-            restricted_reason=final_reason,
-            restricted_code=final_code,
-            redirected=redirected,
-            redirect_reason=redirect_reason,
-            **result,
-        )
+
+        return ScanResponse(**result)
 
     try:
         result = await asyncio.wait_for(_do_scan(), timeout=30.0)
@@ -6532,12 +6567,13 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             _scan_progress.pop(scan_token, None)
         return JSONResponse(
             content=jsonable(ScanResponse(
-                success=False, scan_type="real", url=url, final_url=url,
+                success=False, scan_id=0, scan_type="real", url=url, final_url=url,
                 time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 is_https=False, score=0, risk_level="扫描超时",
-                findings=[], summary={"high": 0, "medium": 0, "low": 0, "total": 0},
+                findings=[], summary={"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0},
+                headers={}, waf=None, ssl={}, duration_ms=0, report_share_id=None,
                 owasp_coverage=[], header_details=[], info_leaks=[], cors=None,
-                cookie_issues=[], ssl_info={}, waf=[], sensitive_paths=[],
+                cookie_issues=[], ssl_info={}, waf_list=[], sensitive_paths=[],
                 waf_detected=False, raw_headers={},
                 error="扫描总时间超过 30 秒，请检查目标网站是否可访问",
             )),
@@ -6555,12 +6591,13 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
                 _scan_progress.pop(scan_token, None)
             return JSONResponse(
                 content=jsonable(ScanResponse(
-                    success=False, scan_type="real", url=url, final_url=url,
+                    success=False, scan_id=0, scan_type="real", url=url, final_url=url,
                     time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     is_https=False, score=0, risk_level="扫描异常",
-                    findings=[], summary={"high": 0, "medium": 0, "low": 0, "total": 0},
+                    findings=[], summary={"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0},
+                    headers={}, waf=None, ssl={}, duration_ms=0, report_share_id=None,
                     owasp_coverage=[], header_details=[], info_leaks=[], cors=None,
-                    cookie_issues=[], ssl_info={}, waf=[], sensitive_paths=[],
+                    cookie_issues=[], ssl_info={}, waf_list=[], sensitive_paths=[],
                     waf_detected=False, raw_headers={},
                     error="扫描过程中发生内部错误，请稍后重试。如持续失败，请刷新页面后重新扫描。",
                 )),
@@ -6577,12 +6614,13 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             logger.warning("Failed to clean scan progress after error: %s", e)
         return JSONResponse(
             content=jsonable(ScanResponse(
-                success=False, scan_type="real", url=url, final_url=url,
+                success=False, scan_id=0, scan_type="real", url=url, final_url=url,
                 time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 is_https=False, score=0, risk_level="扫描异常",
-                findings=[], summary={"high": 0, "medium": 0, "low": 0, "total": 0},
+                findings=[], summary={"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0},
+                headers={}, waf=None, ssl={}, duration_ms=0, report_share_id=None,
                 owasp_coverage=[], header_details=[], info_leaks=[], cors=None,
-                cookie_issues=[], ssl_info={}, waf=[], sensitive_paths=[],
+                cookie_issues=[], ssl_info={}, waf_list=[], sensitive_paths=[],
                 waf_detected=False, raw_headers={},
                 error="扫描过程中发生异常，请稍后重试。如持续失败，请检查目标网站是否可访问。",
             )),
