@@ -88,6 +88,8 @@ from app.db.session import init_db_path, check_db_health
 from app.health import router as health_router, get_health_summary
 from app.metrics import setup_metrics, record_scan_start, record_scan_end, record_cache_hit, record_cache_miss, record_findings
 from app.middleware import request_id_middleware, structured_request_logging_middleware
+from app.audit import save_audit_log, get_audit_logs
+from app.plugins.builtin import register_builtin_detectors
 
 
 # ---------- Logging ----------
@@ -576,6 +578,23 @@ def init_db() -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_finding_feedback_user_id ON finding_feedback(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_finding_feedback_scan_id ON finding_feedback(scan_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_finding_feedback_name ON finding_feedback(finding_name)")
+    # 审计日志表（11-S 专业化进化：阶段一）
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            resource_type TEXT NOT NULL,
+            resource_id TEXT,
+            details_json TEXT DEFAULT '{}',
+            client_ip TEXT,
+            request_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)")
     try:
         conn.execute("ALTER TABLE scans ADD COLUMN share_id TEXT")
     except Exception as e:
@@ -1359,6 +1378,12 @@ async def lifespan(app: FastAPI):
         logger.info("Database connection pool pre-warmed")
     except Exception as e:
         logger.warning("Database pre-warm failed: %s", e)
+    # 注册内置检测插件
+    try:
+        register_builtin_detectors()
+        logger.info("Builtin detectors registered")
+    except Exception as e:
+        logger.warning("Builtin detector registration failed: %s", e)
     logger.info("Application startup complete")
     yield
     # 关闭阶段：按顺序释放资源，每个步骤独立 try/except 确保全部执行
@@ -1473,6 +1498,13 @@ async def request_logging_middleware(request: Request, call_next: Callable[[Requ
         f" rid={rid}" if rid else "",
     )
     return response
+
+
+# 审计日志中间件：自动记录所有写操作 API（11-S 专业化进化：阶段一）
+@app.middleware("http")
+async def _audit_logging_middleware(request: Request, call_next: Callable[[Request], Coroutine[Any, Any, Any]]):
+    from app.middleware import audit_logging_middleware
+    return await audit_logging_middleware(request, call_next)
 
 
 @app.exception_handler(HTTPException)
@@ -4108,6 +4140,25 @@ def _confidence_level_from_int(c: int) -> str:
     return "低"
 
 
+def _finding_to_dict(finding: "Finding") -> dict:
+    """将插件 Finding 对象转换为 analyze_security 使用的字典格式。"""
+    return {
+        "name": finding.title,
+        "severity": finding.severity,
+        "level": SEVERITY_ZH.get(finding.severity, "低风险"),
+        "level_zh": SEVERITY_ZH.get(finding.severity, "低风险"),
+        "owasp": finding.owasp_category or "A05 安全配置错误",
+        "summary": finding.description,
+        "fix": finding.fix_suggestion,
+        "type": finding.type,
+        "evidence": finding.evidence,
+        "confidence_level": finding.confidence,
+        "location": {"type": "url_parameter", "target": finding.parameter, "detail": finding.description},
+        "ai_advice": f"**漏洞**：{finding.title}\n**优先级**：立即修复\n**影响**：{finding.description}\n**修复**：{finding.fix_suggestion}",
+        "cwe_id": finding.cwe_id,
+    }
+
+
 def add_finding(
     findings: List[dict],
     name: str,
@@ -4199,6 +4250,7 @@ async def analyze_security(
     waf_list: List[dict],
     sensitive_paths: List[dict],
     vuln_findings: Optional[List[dict]] = None,
+    depth: str = "standard",
 ) -> dict:
     findings: List[dict] = []
     score = 100
@@ -4438,39 +4490,57 @@ async def analyze_security(
                     evidence={"paths": suspect_names, "reason": "疑似项，响应内容特征不明确，需人工确认", "impact": "低风险，需人工确认是否真实暴露"},
                     verify_key="info", confidence_level="低")
 
-    # 11-S: 代码层漏洞动态检测（温和 fuzzing）
-    parsed_url = urlparse(url)
-    params = [p.split("=")[0] for p in parsed_url.query.split("&") if "=" in p] if parsed_url.query else []
-    if params:
-        try:
-            sqli_results, xss_results, cmdi_results, traversal_results, ssrf_results = await asyncio.gather(
-                detect_sqli(url, params),
-                detect_reflected_xss(url, params),
-                detect_command_injection(url, params),
-                detect_directory_traversal(url, params),
-                detect_ssrf_enhanced(url, params),
-                return_exceptions=True,
-            )
-            for res in (sqli_results, xss_results, cmdi_results, traversal_results, ssrf_results):
-                if isinstance(res, list):
-                    for item in res:
-                        if isinstance(item, dict):
-                            if vuln_findings is None:
-                                vuln_findings = []
-                            vuln_findings.append(item)
-                elif isinstance(res, Exception):
-                    logger.warning("Code-level detection error: %s", res)
-        except Exception as e:
-            logger.warning("Code-level vulnerability detection batch failed: %s", e)
-    # 反序列化检测（不依赖参数）
+    # 11-S: 代码层漏洞动态检测（插件化）
+    # 将原有直接调用迁移到插件架构，支持未来动态扩展和深度定制
     try:
-        deser_results = await detect_insecure_deserialization(headers, url)
-        for item in deser_results:
-            if vuln_findings is None:
-                vuln_findings = []
-            vuln_findings.append(item)
+        from app.plugins import ScanContext
+        from app.plugins.detectors import (
+            SQLiDetector,
+            ReflectedXSSDetector,
+            CommandInjectionDetector,
+            DirectoryTraversalDetector,
+            SSRFDetector,
+            InsecureDeserializationDetector,
+            TimeBasedSQLiDetector,
+        )
+
+        context = ScanContext(
+            url=url,
+            headers=headers,
+            is_https=is_https,
+            ssl_info=ssl_info,
+            waf_list=waf_list,
+            depth=depth,
+        )
+
+        detectors = [
+            SQLiDetector(),
+            ReflectedXSSDetector(),
+            CommandInjectionDetector(),
+            DirectoryTraversalDetector(),
+            SSRFDetector(),
+            InsecureDeserializationDetector(),
+        ]
+        if depth == "deep":
+            detectors.append(TimeBasedSQLiDetector())
+
+        plugin_tasks = []
+        for d in detectors:
+            if await d.is_applicable(context):
+                plugin_tasks.append(d.detect(context))
+
+        if plugin_tasks:
+            plugin_results = await asyncio.gather(*plugin_tasks, return_exceptions=True)
+            for res in plugin_results:
+                if isinstance(res, list):
+                    for finding in res:
+                        if vuln_findings is None:
+                            vuln_findings = []
+                        vuln_findings.append(_finding_to_dict(finding))
+                elif isinstance(res, Exception):
+                    logger.warning("Plugin detection error: %s", res)
     except Exception as e:
-        logger.warning("Deserialization detection error: %s", e)
+        logger.warning("Plugin-based vulnerability detection failed: %s", e)
 
     if vuln_findings:
         for v in vuln_findings:
@@ -6531,7 +6601,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
         # 保留旧版元数据，用于兼容历史展示与旧前端字段
         try:
             legacy = await analyze_security(
-                url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings=[]
+                url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings=[], depth=depth
             )
         except Exception as e:
             logger.warning("Legacy analyze_security failed during scan: %s", e)
@@ -11433,7 +11503,7 @@ async def batch_scan(req: BatchScanRequest, request: Request, user=Depends(requi
                 vuln_findings, _ = await run_payload_tests(url, crawled_pages)
             except Exception:
                 vuln_findings = []
-        result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings)
+        result = await analyze_security(url, headers, is_https, ssl_info, waf_list, sensitive_paths, vuln_findings, depth="deep" if deep else "standard")
         scan_id = save_scan(
             user_id, url, result["score"], result["risk_level"],
             result["findings"], result["summary"],
