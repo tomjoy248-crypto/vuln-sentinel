@@ -8,15 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>漏洞哨兵 11-S - AI 安全修复闭环</title>
 <style>
-/* Critical CSS - 首屏关键样式 */
-:root{--primary:#6366f1;--primary-dark:#4f46e5;--primary-light:#a5b4fc;--success:#22c55e;--warning:#f59e0b;--danger:#ef4444;--bg:#f8fafc;--bg-card:#fff;--bg-dark:#0f172a;--bg-dark2:#1e293b;--text:#1e293b;--text-secondary:#64748b;--border:#e2e8f0;--shadow:0 1px 3px rgba(0,0,0,0.08);--radius:20px;--radius-sm:12px;--nav-height:70px;--font:"WQY MicroHei Local",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC","Helvetica Neue",Arial,sans-serif}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{font-size:16px;-webkit-text-size-adjust:100%}
-body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;padding-bottom:calc(var(--nav-height) + 20px);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased}
-button{font-family:var(--font);cursor:pointer;border:none}
-input,textarea{font-family:var(--font)}
-img{max-width:100%}
-a{color:var(--primary);text-decoration:none}
+/* Critical CSS - 首屏关键样式（仅保留骨架屏和 toast，其余由完整 CSS 提供） */
 /* Skeleton */
 .skeleton-screen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;flex-direction:column;align-items:center;padding:100px 20px 20px;gap:16px}
 .skeleton-topbar{display:flex;align-items:center;gap:12px;width:100%;max-width:800px;margin-bottom:24px}
@@ -35,30 +27,6 @@ a{color:var(--primary);text-decoration:none}
 .toast.error{background:linear-gradient(135deg,#dc2626,#ef4444)}
 .toast.warning{background:linear-gradient(135deg,#d97706,#f59e0b)}
 .toast.info{background:linear-gradient(135deg,#4f46e5,#6366f1)}
-/* Nav */
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;height:var(--nav-height);background:var(--bg-card);border-top:1px solid var(--border);display:flex;justify-content:space-around;align-items:center;z-index:1000;box-shadow:0 -1px 8px rgba(0,0,0,0.04)}
-/* Page */
-.page{display:none}
-.page.active{display:block}
-/* Hero */
-.hero{background:linear-gradient(135deg,var(--primary),var(--hero-end));color:#fff;padding:24px 16px;border-radius:var(--radius);margin:16px;text-align:center}
-/* Card */
-.card{background:var(--bg-card);border-radius:var(--radius);padding:20px;margin:0 16px 16px;box-shadow:var(--shadow);transition:box-shadow 0.2s ease,transform 0.2s ease}
-.card:hover{box-shadow:0 4px 16px rgba(0,0,0,0.08)}
-.card-title{font-size:16px;font-weight:700;margin-bottom:4px;color:var(--text)}
-.card-desc{font-size:13px;color:var(--text-secondary);margin-bottom:16px}
-/* Scan */
-.scan-input-wrap{display:flex;gap:8px;margin-bottom:10px}
-.scan-input-wrap input{flex:1;padding:12px 16px;border:2px solid var(--border);border-radius:var(--radius-sm);font-size:14px;background:var(--bg-card);color:var(--text);transition:border-color 0.2s}
-.scan-input-wrap input:focus{border-color:var(--primary);outline:none}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 20px;border-radius:var(--radius-sm);font-size:14px;font-weight:600;transition:all 0.2s;white-space:nowrap}
-.btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;box-shadow:0 2px 8px rgba(99,102,241,0.3)}
-.btn-primary:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(99,102,241,0.4)}
-.btn-primary:disabled{opacity:0.5;cursor:not-allowed;transform:none}
-/* Hide non-critical content until CSS loads */
-.page:not(.active){display:none}
-@keyframes slideInRight{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
-@keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
 
 /* 字体：优先使用本地打包的文泉驿微米黑（保证中文显示一致） */
 @font-face {
@@ -89,10 +57,10 @@ font-weight: normal; font-style: normal; font-display: swap;
 --text-white: #f1f5f9;
 --border: #e2e8f0;
 --border-light: #f1f5f9;
---shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
---shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
---shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
---radius: 20px;
+--shadow: 0 1px 2px rgba(0,0,0,0.04);
+--shadow-md: 0 2px 4px -1px rgba(0,0,0,0.06);
+--shadow-lg: 0 4px 6px -2px rgba(0,0,0,0.06);
+--radius: 16px;
 --radius-sm: 12px;
 --radius-xs: 8px;
 --nav-height: 70px;
@@ -146,9 +114,9 @@ font-weight: normal; font-style: normal; font-display: swap;
 --text-lighter: #64748b;
 --border: #334155;
 --border-light: #1e293b;
---shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
---shadow-md: 0 4px 6px -1px rgba(0,0,0,0.4), 0 2px 4px -1px rgba(0,0,0,0.3);
---shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.4), 0 4px 6px -2px rgba(0,0,0,0.3);
+--shadow: 0 1px 2px rgba(0,0,0,0.2);
+--shadow-md: 0 2px 4px -1px rgba(0,0,0,0.3);
+--shadow-lg: 0 4px 6px -2px rgba(0,0,0,0.3);
 --code-bg: #0b1120;
 --code-color: #cbd5e1;
 --hero-end: #1e1b4b;
@@ -240,8 +208,7 @@ from { opacity: 0; }
 to { opacity: 1; }
 }
 @keyframes scorePulse {
-0%, 100% { transform: scale(1); }
-50% { transform: scale(1.05); }
+0%, 50%, 100% { transform: none; }
 }
 @keyframes progressFill {
 from { width: 0; }
@@ -273,8 +240,7 @@ to { opacity: 1; transform: translateX(0); }
 100% { opacity: 1; transform: scale(1); }
 }
 @keyframes glow {
-0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
-50% { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0.15); }
+0%, 50%, 100% { box-shadow: none; }
 }
 @keyframes countUp {
 from { transform: translateY(20px); opacity: 0; }
@@ -294,8 +260,8 @@ to { transform: translateY(0); opacity: 1; }
 /* 按钮点击微反馈 */
 .btn:active:not(:disabled) { transform: scale(0.96); transition: transform 0.1s; }
 /* 卡片悬浮 */
-.card { transition: box-shadow 0.2s ease, transform 0.2s ease; }
-.card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+.card { transition: box-shadow 0.2s ease; }
+.card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
 /* 链接点击反馈 */
 a { transition: color 0.15s ease; }
 /* 输入框聚焦动画 */
@@ -315,7 +281,7 @@ align-items: center;
 justify-content: center;
 z-index: 1000;
 padding-bottom: env(safe-area-inset-bottom, 0);
-box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+box-shadow: 0 -1px 0 var(--border);
 overflow-x: auto;
 -webkit-overflow-scrolling: touch;
 flex-wrap: nowrap;
@@ -337,7 +303,7 @@ min-height: 52px;
 justify-content: center;
 white-space: nowrap;
 }
-.nav-item.active { color: var(--primary); }
+.nav-item.active { color: var(--primary); background: rgba(99,102,241,0.08); }
 .nav-item:hover { background: var(--border-light); }
 .nav-item svg { width: 20px; height: 20px; flex-shrink: 0; }
 .nav-item.active svg { stroke: var(--primary); }
@@ -348,45 +314,26 @@ white-space: nowrap;
 
 /* Hero */
 .hero {
-background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
 border-radius: var(--radius);
-padding: 44px 24px 40px;
+padding: 32px 24px;
 text-align: center;
 color: #fff;
 margin-bottom: 20px;
 position: relative;
 overflow: hidden;
-border: 1px solid rgba(139,92,246,0.2);
 }
 .hero::before {
-content: '';
-position: absolute;
-top: -50%;
-left: -50%;
-width: 200%;
-height: 200%;
-background: radial-gradient(circle at 30% 50%, rgba(99,102,241,0.15) 0%, transparent 50%);
-pointer-events: none;
-animation: hero-glow 8s ease-in-out infinite alternate;
+content: none;
 }
 .hero::after {
-content: '';
-position: absolute;
-inset: 0;
-background-image:
-radial-gradient(circle at 20% 80%, rgba(139, 92, 246, 0.1) 0%, transparent 40%),
-radial-gradient(circle at 80% 20%, rgba(236, 72, 153, 0.08) 0%, transparent 40%),
-radial-gradient(circle at 50% 50%, rgba(34, 197, 94, 0.06) 0%, transparent 50%);
-pointer-events: none;
-animation: hero-float 12s ease-in-out infinite alternate;
+content: none;
 }
 @keyframes hero-glow {
-0% { transform: translate(0, 0) scale(1); opacity: 0.8; }
-100% { transform: translate(5%, -3%) scale(1.1); opacity: 1; }
+0%, 100% { transform: none; opacity: 0; }
 }
 @keyframes hero-float {
-0% { transform: translate(0, 0); }
-100% { transform: translate(-2%, 2%); }
+0%, 100% { transform: none; }
 }
 .hero h1 {
 font-size: 22px;
@@ -409,36 +356,31 @@ margin: 0 auto;
 .one-minute-cta {
 display: inline-block;
 margin: 0 auto 4px;
-padding: 16px 40px;
-background: linear-gradient(135deg, #6366f1, #a78bfa);
+padding: 12px 32px;
+background: var(--primary);
 color: #fff;
 border: none;
-border-radius: 14px;
-font-size: 18px;
-font-weight: 800;
+border-radius: 10px;
+font-size: 15px;
+font-weight: 600;
 cursor: pointer;
-transition: transform 0.2s, box-shadow 0.2s;
-box-shadow: 0 4px 20px rgba(99,102,241,0.4);
-animation: cta-pulse 2s ease-in-out infinite;
+transition: opacity 0.2s;
 letter-spacing: 0.5px;
 }
 .one-minute-cta:hover {
-transform: translateY(-3px) scale(1.05);
-box-shadow: 0 8px 30px rgba(139,92,246,0.6);
+opacity: 0.9;
 }
 @keyframes cta-pulse {
-0%, 100% { box-shadow: 0 4px 20px rgba(99,102,241,0.4); transform: scale(1); }
-50% { box-shadow: 0 8px 35px rgba(139,92,246,0.6); transform: scale(1.02); }
+0%, 50%, 100% { box-shadow: none; transform: none; }
 }
 
 /* Cards */
 .card {
 background: var(--bg-card);
 border-radius: var(--radius);
-padding: 20px;
+padding: 16px;
 box-shadow: var(--shadow);
-margin-bottom: 16px;
-border: 1px solid var(--border-light);
+margin-bottom: 12px;
 }
 .card-title {
 font-size: 16px;
@@ -491,8 +433,8 @@ white-space: nowrap;
 transition: all 0.2s;
 min-width: 100px;
 }
-.scan-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(99,102,241,0.35); }
-.scan-btn:active { transform: scale(0.97); }
+.scan-btn:hover { opacity: 0.9; }
+.scan-btn:active { opacity: 0.8; }
 .scan-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
 /* 11-S: 扫描按钮脉冲动画 */
@@ -501,25 +443,18 @@ position: relative;
 overflow: hidden;
 }
 .scan-btn:not(:disabled)::after {
-content: '';
-position: absolute;
-inset: -2px;
-border-radius: inherit;
-background: linear-gradient(135deg, rgba(255,255,255,0.2), transparent, rgba(255,255,255,0.1));
-animation: btn-shine 3s ease-in-out infinite;
+content: none;
 }
 @keyframes btn-shine {
-0%, 100% { opacity: 0; transform: translateX(-100%); }
-50% { opacity: 1; transform: translateX(100%); }
+0%, 50%, 100% { opacity: 0; transform: none; }
 }
 
 /* 11-S: 卡片悬浮增强 */
 .card {
-transition: transform 0.25s ease, box-shadow 0.25s ease;
+  transition: box-shadow 0.2s ease;
 }
 .card:hover {
-transform: translateY(-2px);
-box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
 }
 
 /* 11-S: 按钮通用波纹效果 */
@@ -2513,7 +2448,7 @@ color: #f8fafc;
 
 <!-- AI Advisor Floating Button -->
 <button class="ai-fab" id="ai-fab" onclick="toggleAIChat()" aria-label="打开AI顾问" title="安全顾问">
-  🤖
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:22px;height:22px"><path d="M12 2a8 8 0 0 1 8 8v4a8 8 0 0 1-16 0v-4a8 8 0 0 1 8-8z"/><circle cx="9" cy="10" r="1" fill="currentColor"/><circle cx="15" cy="10" r="1" fill="currentColor"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg>
   <span class="ai-fab-badge" id="ai-fab-badge" style="display:none">0</span>
 </button>
 
@@ -2521,7 +2456,7 @@ color: #f8fafc;
 <div class="ai-chat" id="ai-chat">
   <div class="ai-chat-header">
     <div class="ai-chat-header-info">
-      <div class="ai-avatar">🤖</div>
+      <div class="ai-avatar" style="background:var(--primary);color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;border-radius:50%;width:32px;height:32px">VS</div>
       <div>
         <div style="font-size:14px">安全顾问</div>
         <div style="font-size:11px;opacity:0.85">在线服务中</div>
@@ -2534,108 +2469,91 @@ color: #f8fafc;
       💡 当前使用本地规则引擎，配置 LLM API Key 可获得更智能回答
     </div>
     <div class="ai-msg bot">
-      你好！我是<strong>漏洞哨兵</strong>的安全顾问 🛡<br><br>
-      我能帮你：<br>
-      • 解释某个漏洞（如 HSTS、CSP、敏感文件）<br>
-      • 给出修复代码片段<br>
-      • 解读扫描报告<br><br>
-      试试下面这些快捷问题 👇
+      你好，我是<strong>漏洞哨兵</strong> AI 安全顾问。<br><br>
+      可以帮你分析漏洞、生成修复代码、解读扫描报告。<br><br>
+      快捷问题
     </div>
   </div>
   <div class="ai-quick" id="ai-quick">
     <button onclick="askAIQuick('HSTS 是什么？')">HSTS 是什么</button>
     <button onclick="askAIQuick('怎么修 CSP？')">修复 CSP</button>
     <button onclick="askAIQuick('敏感文件怎么防？')">敏感文件</button>
-    <button onclick="askAIQuick('我的评分怎么算？')">评分规则</button>
     <button onclick="askAIQuick('SQL 注入怎么防？')">SQL 注入</button>
     <button onclick="askAIQuick('XSS 是什么？')">XSS 漏洞</button>
-    <button onclick="askAIQuick('我该先修什么？')">修复优先级</button>
-    <button onclick="askAIQuick('Cookie 安全怎么弄？')">Cookie 安全</button>
   </div>
   <div class="ai-chat-input">
-    <input type="text" id="ai-input" placeholder="问我安全问题..." maxlength="200" onkeydown="if(event.key==='Enter')sendAIMessage()" />
-    <button onclick="sendAIMessage()" aria-label="发送">➤</button>
-  </div>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
-    <button onclick="askAI('生成修复计划')" style="padding:8px 14px;min-height:36px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-size:12px">📋 修复计划</button>
-    <button onclick="askAI('我最该先修什么？')" style="padding:8px 14px;min-height:36px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-size:12px">🔧 先修什么</button>
-    <button onclick="askAI('为什么扣这么多分？')" style="padding:8px 14px;min-height:36px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-size:12px">📊 扣分原因</button>
-    <button onclick="askAI('能提升多少分？')" style="padding:8px 14px;min-height:36px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-size:12px">📈 提分预估</button>
+    <input type="text" id="ai-input" placeholder="输入安全问题..." maxlength="200" onkeydown="if(event.key==='Enter')sendAIMessage()" />
+    <button onclick="sendAIMessage()" aria-label="发送">+</button>
   </div>
 </div>
 
 <div class="page active" id="page-home" role="main">
   <!-- Hero -->
   <div class="hero fade-in-up">
-    <h1 style="font-size:22px;font-weight:900;letter-spacing:0.5px;line-height:1.4;text-align:center">发现风险 → 生成修复 → 验证复测 → 导出报告</h1>
-    <p style="font-size:15px;margin-top:10px;line-height:1.6;text-align:center">漏洞哨兵把传统"只发现问题"的安全工具，升级为 <b style="color:#a78bfa">AI 安全修复闭环</b></p>
-    <p style="font-size:13px;color:rgba(255,255,255,0.6);margin-top:6px;line-height:1.5;text-align:center">面向没有安全团队的中小企业 · 扫描、生成修复配置、复测验证、导出报告，一站搞定</p>
+    <h1 style="font-size:20px;font-weight:700;letter-spacing:0.3px;line-height:1.5;text-align:center">扫描 · 修复 · 验证 · 报告</h1>
+    <p style="font-size:14px;margin-top:10px;line-height:1.6;text-align:center;color:rgba(255,255,255,0.75)">漏洞哨兵 -- AI 安全修复闭环平台，面向中小企业的自动化安全工具</p>
     <div style="display:flex;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap">
-      <span style="background:linear-gradient(135deg,rgba(99,102,241,0.25),rgba(139,92,246,0.25));color:#a78bfa;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(139,92,246,0.3)">&#x1F50D; 安全闭环</span>
-      <span style="background:linear-gradient(135deg,rgba(34,197,94,0.2),rgba(16,185,129,0.2));color:#4ade80;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(34,197,94,0.3)">&#x1F527; 修复配置生成</span>
-      <span style="background:linear-gradient(135deg,rgba(245,158,11,0.2),rgba(251,191,36,0.2));color:#fbbf24;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(245,158,11,0.3)">&#x1F504; 复测验证</span>
-      <span style="background:linear-gradient(135deg,rgba(236,72,153,0.2),rgba(244,114,182,0.2));color:#f472b6;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(236,72,153,0.3)">&#x26A1; 快速开始</span>
+      <span style="background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.9);padding:5px 14px;border-radius:16px;font-size:12px;font-weight:500;border:1px solid rgba(255,255,255,0.15)">安全闭环</span>
+      <span style="background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.9);padding:5px 14px;border-radius:16px;font-size:12px;font-weight:500;border:1px solid rgba(255,255,255,0.15)">修复配置生成</span>
+      <span style="background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.9);padding:5px 14px;border-radius:16px;font-size:12px;font-weight:500;border:1px solid rgba(255,255,255,0.15)">复测验证</span>
+      <span style="background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.9);padding:5px 14px;border-radius:16px;font-size:12px;font-weight:500;border:1px solid rgba(255,255,255,0.15)">快速开始</span>
     </div>
     <!-- 快速开始 CTA -->
-    <div style="margin-top:24px;text-align:center">
-      <button class="one-minute-cta" onclick="navigateTo('home');setTimeout(function(){var el=document.getElementById('demo-report');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});}},100);">&#x1F680; 开始使用</button>
-      <p style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">无需注册即可免费试用扫描，查看示例报告与修复配置</p>
+    <div style="margin-top:20px;text-align:center">
+      <button class="one-minute-cta" onclick="navigateTo('home');setTimeout(function(){var el=document.getElementById('demo-report');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});}},100);">开始使用</button>
+      <p style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:6px">无需注册即可免费试用扫描</p>
     </div>
   </div>
 
   <!-- 核心数据总览 -->
-  <div class="card fade-in-up" style="margin-top:14px;padding:14px;background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff">
+  <div class="card fade-in-up" style="margin-top:14px;padding:14px;background:#1e293b;color:#fff">
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
       <div>
-        <div style="font-size:24px;font-weight:800;color:#22c55e;line-height:1">基准测试</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:4px">0 误报</div>
-        <div style="font-size:9px;color:#64748b;margin-top:2px">多维交叉验证</div>
-      </div>
-      <div>
-        <div data-count="15" style="font-size:24px;font-weight:800;color:#6366f1;line-height:1" class="counter">15</div>
+        <div style="font-size:22px;font-weight:700;color:#22c55e;line-height:1">15</div>
         <div style="font-size:11px;color:#94a3b8;margin-top:4px">检测维度</div>
         <div style="font-size:9px;color:#64748b;margin-top:2px">含强度评估</div>
       </div>
       <div>
-        <div data-count="6" style="font-size:24px;font-weight:800;color:#f59e0b;line-height:1" class="counter">6</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:4px">平台修复</div>
+        <div style="font-size:22px;font-weight:700;color:#6366f1;line-height:1">6</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:4px">修复平台</div>
         <div style="font-size:9px;color:#64748b;margin-top:2px">Nginx/Apache...</div>
       </div>
       <div>
-        <div data-count="101" style="font-size:24px;font-weight:800;color:#ec4899;line-height:1" class="counter">101</div>
+        <div style="font-size:22px;font-weight:700;color:#f59e0b;line-height:1">101</div>
         <div style="font-size:11px;color:#94a3b8;margin-top:4px">测试通过</div>
-        <div style="font-size:9px;color:#64748b;margin-top:2px">pytest 全绿</div>
+        <div style="font-size:9px;color:#64748b;margin-top:2px">pytest</div>
+      </div>
+      <div>
+        <div style="font-size:22px;font-weight:700;color:#ec4899;line-height:1">3</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:4px">置信度等级</div>
+        <div style="font-size:9px;color:#64748b;margin-top:2px">高/中/低</div>
       </div>
     </div>
   </div>
 
   <!-- 11-S: 技术亮点（最醒目的位置） -->
-  <div class="card fade-in-up" style="margin-top:18px;background:linear-gradient(135deg,rgba(139,92,246,0.08),rgba(236,72,153,0.08));border:1px solid rgba(139,92,246,0.25);border-radius:14px;overflow:hidden">
+  <div class="card fade-in-up" style="margin-top:18px;background:rgba(99,102,241,0.03);border:1px solid rgba(99,102,241,0.15);border-radius:14px;overflow:hidden">
     <!-- 顶部标题栏 -->
-    <div style="padding:16px 16px 12px;background:linear-gradient(135deg,rgba(139,92,246,0.12),rgba(236,72,153,0.12));border-bottom:1px solid rgba(139,92,246,0.15)">
+    <div style="padding:16px 16px 12px;background:rgba(99,102,241,0.05);border-bottom:1px solid rgba(99,102,241,0.1)">
       <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:22px">&#x2728;</span>
         <div style="flex:1">
           <div style="font-size:15px;font-weight:700;color:var(--text-primary)">安全闭环：扫描 → 风险定位 → 修复配置生成 → 复测对比 → 报告导出</div>
           <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">多平台修复配置生成 · 交叉验证降低误报 · 导出专业报告</div>
         </div>
-        <span style="font-size:11px;background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff;padding:3px 10px;border-radius:12px;font-weight:700">11-S 核心能力</span>
+        <span style="font-size:11px;background:var(--primary);color:#fff;padding:3px 10px;border-radius:12px;font-weight:700">11-S 核心能力</span>
       </div>
     </div>
     <!-- 三大技术亮点 -->
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:rgba(139,92,246,0.1);margin:0">
       <div style="padding:14px 12px;background:var(--bg-card);text-align:center">
-        <div style="font-size:20px;margin-bottom:6px">&#x1F3AF;</div>
         <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">置信度分级</div>
         <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">高/中/低三级标注<br>人工复核量减少 60%</div>
       </div>
       <div style="padding:14px 12px;background:var(--bg-card);text-align:center">
-        <div style="font-size:20px;margin-bottom:6px">&#x1F504;</div>
         <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">反馈闭环</div>
         <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">用户标记误报<br>持续优化检测模型</div>
       </div>
       <div style="padding:14px 12px;background:var(--bg-card);text-align:center">
-        <div style="font-size:20px;margin-bottom:6px">&#x26A1;</div>
         <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">安全闭环</div>
         <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">扫描→风险定位→修复配置→复测→报告<br>30 秒见证效果</div>
       </div>
@@ -2646,7 +2564,7 @@ color: #f8fafc;
   <!-- 风险趋势图 -->
   <div class="card fade-in-up" style="margin-top:18px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <strong style="font-size:14px;color:var(--text-primary)">📈 风险趋势</strong>
+      <strong style="font-size:14px;color:var(--text-primary)">风险趋势</strong>
       <div style="display:flex;gap:6px">
         <button onclick="loadTrendChart(7)" class="trend-range" data-days="7" style="padding:8px 14px;min-height:36px;font-size:12px;border:1px solid var(--border);background:var(--bg-secondary);border-radius:6px;cursor:pointer;color:var(--text-secondary)">7天</button>
         <button onclick="loadTrendChart(30)" class="trend-range" data-days="30" style="padding:8px 14px;min-height:36px;font-size:12px;border:1px solid var(--border);background:var(--bg-secondary);border-radius:6px;cursor:pointer;color:var(--text-secondary)">30天</button>
@@ -2673,7 +2591,6 @@ color: #f8fafc;
       <div class="card" style="padding:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
           <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:16px">&#x1F4C8;</span>
             <h3 style="margin:0;font-size:15px;font-weight:700">安全评分趋势</h3>
           </div>
           <div id="trend-summary" style="display:flex;gap:12px;flex-wrap:wrap"></div>
@@ -2705,11 +2622,11 @@ color: #f8fafc;
       </label>
       <button class="scan-btn" id="scan-btn-step1" onclick="startScanDirect()" disabled>开始安全扫描</button>
       <div style="text-align:center;margin-top:10px">
-        <button onclick="goVerifyStep2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">🔐 域名归属验证（可选）</button>
+        <button onclick="goVerifyStep2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">域名归属验证（可选）</button>
         <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">快速跳过验证仅适用于自有测试环境</div>
       </div>
       <div style="text-align:center;margin-top:8px">
-        <button onclick="showBatchScanModal()" style="background:none;border:1px dashed var(--border);color:var(--text-secondary);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;width:100%">📦 批量扫描（一次最多 5 个 URL）</button>
+        <button onclick="showBatchScanModal()" style="background:none;border:1px dashed var(--border);color:var(--text-secondary);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;width:100%">批量扫描（一次最多 5 个 URL）</button>
       </div>
     </div>
 
@@ -2739,7 +2656,7 @@ color: #f8fafc;
         <p>请选择一种验证方式</p>
       </div>
       <button class="scan-btn" onclick="confirmVerification()" id="verify-confirm-btn" disabled>我已添加验证信息，确认验证</button>
-      <button onclick="skipVerification()" id="verify-skip-btn" style="background:none;border:none;color:var(--primary);font-size:13px;padding:10px;margin-top:6px;cursor:pointer;width:100%;text-align:center">⏭ 快速测试（跳过 DNS/文件验证）</button>
+      <button onclick="skipVerification()" id="verify-skip-btn" style="background:none;border:none;color:var(--primary);font-size:13px;padding:10px;margin-top:6px;cursor:pointer;width:100%;text-align:center">快速测试（跳过 DNS/文件验证）</button>
     </div>
 
     <!-- Step 3: Ready to Scan -->
@@ -2761,13 +2678,13 @@ color: #f8fafc;
           <span style="font-size:13px;color:var(--text-secondary)">扫描深度：</span>
           <div id="scan-depth-group" style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">
             <label class="scan-depth-opt" data-value="quick" style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--bg);color:var(--text);border:none;user-select:none;-webkit-tap-highlight-color:transparent">
-              <input type="radio" name="scan-depth" value="quick" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" /> ⚡ 快速
+              <input type="radio" name="scan-depth" value="quick" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" /> 快速
             </label>
             <label class="scan-depth-opt active" data-value="standard" style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--primary);color:#fff;border:none;user-select:none;-webkit-tap-highlight-color:transparent">
-              <input type="radio" name="scan-depth" value="standard" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" checked /> 🔍 标准
+              <input type="radio" name="scan-depth" value="standard" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" checked /> 标准
             </label>
             <label class="scan-depth-opt" data-value="deep" style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--bg);color:var(--text);border:none;user-select:none;-webkit-tap-highlight-color:transparent">
-              <input type="radio" name="scan-depth" value="deep" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" /> 🔬 深度
+              <input type="radio" name="scan-depth" value="deep" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" /> 深度
             </label>
           </div>
           <span id="depth-hint" style="font-size:12px;color:var(--text-secondary);margin-left:4px">约 3-5 秒 · 推荐</span>
@@ -2778,7 +2695,7 @@ color: #f8fafc;
   </section>
 
   <!-- Business Steps -->
-  <div class="section-title">&#x1F3AF; 使用流程</div>
+  <div class="section-title">使用流程</div>
   <div class="steps-grid">
     <div class="step-card fade-in-up" style="animation-delay:0.15s">
       <div class="step-num">1</div>
@@ -2814,7 +2731,7 @@ color: #f8fafc;
   <div class="card demo-report-card" id="demo-report" style="margin-top:18px">
     <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <div>
-        <span style="font-size:18px">🔍 免费试用扫描</span>
+        <span style="font-size:18px">免费试用扫描</span>
         <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">实时扫描公开测试站点</span>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -2824,34 +2741,34 @@ color: #f8fafc;
           <option value="https://httpbin.org">httpbin.org</option>
           <option value="https://testphp.vulnweb.com">testphp.vulnweb.com（故意有漏洞）</option>
         </select>
-        <button onclick="loadPublicDemo()" id="demo-refresh" style="background:var(--primary);color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600">🔄 重新扫描</button>
+        <button onclick="loadPublicDemo()" id="demo-refresh" style="background:var(--primary);color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600">重新扫描</button>
       </div>
     </div>
     <div id="demo-content">
       <div style="padding:24px 16px;text-align:center;color:var(--text-secondary);background:var(--bg);border-radius:10px;margin-top:12px;border:1px dashed var(--border)">
-        <div style="font-size:32px;margin-bottom:8px">&#x1F50D;</div>
+        <div style="font-size:32px;margin-bottom:8px;color:var(--text-secondary)">?</div>
         <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--text)">点击右上角任一站点，即刻开始真实扫描</div>
         <div style="font-size:12px">无需登录 · 1-3 秒出结果 · 真实检测 OWASP Top 10 安全问题</div>
-        <div style="margin-top:12px"><button onclick="loadPublicDemo()" style="background:var(--primary);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">&#x1F4E1; 立即扫描 example.com</button></div>
+        <div style="margin-top:12px"><button onclick="loadPublicDemo()" style="background:var(--primary);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">立即扫描 example.com</button></div>
       </div>
     </div>
   </div>
 
   <!-- Why It Works -->
-  <div class="section-title">&#x2705; 为什么选择漏洞哨兵</div>
+  <div class="section-title">为什么选择漏洞哨兵</div>
   <div class="trust-grid">
     <div class="trust-card fade-in-up" style="animation-delay:0.35s">
-      <div class="icon blue">&#x1F916;</div>
+      <div class="icon blue">AI</div>
       <h3>AI 驱动分析</h3>
       <p>智能识别安全漏洞，提供精准修复建议，无需人工审计</p>
     </div>
     <div class="trust-card fade-in-up" style="animation-delay:0.4s">
-      <div class="icon green">&#x1F527;</div>
+      <div class="icon green">Fix</div>
       <h3>修复配置生成</h3>
       <p>自动生成安全配置代码，直接复制应用到生产环境</p>
     </div>
     <div class="trust-card fade-in-up" style="animation-delay:0.45s">
-      <div class="icon orange">&#x1F4CA;</div>
+      <div class="icon orange">RPT</div>
       <h3>可视化报告</h3>
       <p>直观的安全评分和风险统计，让安全状况一目了然</p>
     </div>
@@ -2859,13 +2776,13 @@ color: #f8fafc;
 
   <!-- Fixer Entry -->
   <div class="fixer-entry fade-in-up" style="animation-delay:0.5s" onclick="navigateTo('fixer')">
-    <h3>&#x1F9E0; 配置修复器</h3>
+    <h3>配置修复器</h3>
     <p>粘贴您的 Nginx 配置，智能检测并生成安全补丁</p>
   </div>
 
   
   <section class="card fade-in-up" style="margin-top:14px;animation-delay:0.55s">
-    <h2 class="card-title">&#x1F6E1; 安全合规与能力说明</h2>
+    <h2 class="card-title">安全合规与能力说明</h2>
     <p class="card-desc">漏洞哨兵严格遵守安全合规要求，只检测已授权网站。支持 HTTPS、安全响应头、敏感文件暴露等常见问题检测。</p>
     <div class="trust-grid">
       <div class="trust-card">
@@ -3417,7 +3334,7 @@ color: #f8fafc;
 <div class="modal" id="batch-scan-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center">
   <div class="modal-content" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;max-width:520px;width:92vw;max-height:85vh;overflow-y:auto">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <h3 style="margin:0;font-size:16px">📦 批量扫描</h3>
+      <h3 style="margin:0;font-size:16px">批量扫描</h3>
       <button onclick="closeBatchScanModal()" aria-label="关闭批量扫描" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary)">×</button>
     </div>
     <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">每行一个 URL，最多 5 个。建议用「快速测试」模式扫描示例站点：</div>
@@ -3451,17 +3368,9 @@ color: #f8fafc;
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
     <span>修复器</span>
   </button>
-  <button class="nav-item" data-page="assets" onclick="navigateTo('assets')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-    <span>资产</span>
-  </button>
   <button class="nav-item" data-page="tickets" onclick="navigateTo('tickets')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
     <span>工单</span>
-  </button>
-  <button class="nav-item" data-page="evolution" onclick="navigateTo('evolution')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
-    <span>进化</span>
   </button>
   <button class="nav-item" data-page="profile" onclick="navigateTo('profile')">
     <div style="position:relative">
@@ -5703,7 +5612,7 @@ function renderDemoReport(d) {
   html += '</div>';
 
   // 真实证据 1: 实际响应头
-  html += '<details style="margin-top:12px"><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:6px">🔬 真实证据 1：服务器实际响应头（点击展开）</summary>';
+  html += '<details style="margin-top:12px"><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:6px">真实证据 1：服务器实际响应头（点击展开）</summary>';
   html += '<div style="margin-top:6px;background:#0f172a;color:#e2e8f0;border-radius:6px;padding:10px;font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto" class="response-headers-list">';
   presentHeaders.slice(0, 15).forEach(function(h) {
     let v = String(headers[h]);
@@ -5713,7 +5622,7 @@ function renderDemoReport(d) {
   html += '</div></details>';
 
   // 真实证据 2: 缺失安全头
-  html += '<details style="margin-top:8px" open><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:6px">🔬 真实证据 2：缺失关键安全头（' + missingCritical.length + ' 个）</summary>';
+  html += '<details style="margin-top:8px" open><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:6px">真实证据 2：缺失关键安全头（' + missingCritical.length + ' 个）</summary>';
   if (missingCritical.length === 0) {
     html += '<div style="margin-top:6px;padding:8px;font-size:12px;color:#10b981">✅ 关键安全头已全部配置</div>';
   } else {
@@ -5724,12 +5633,12 @@ function renderDemoReport(d) {
   html += '</details>';
 
   // 真实证据 3: 敏感路径探测
-  html += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:6px">🔬 真实证据 3：敏感文件探测</summary>';
+  html += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:6px">真实证据 3：敏感文件探测</summary>';
   html += '<div style="margin-top:6px">' + sensitiveHtml + '</div></details>';
 
   // 详细问题列表
   if (findings.length > 0) {
-    html += '<details style="margin-top:8px" open><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:6px">📋 详细问题列表（' + findings.length + ' 项）</summary>';
+    html += '<details style="margin-top:8px" open><summary style="cursor:pointer;font-size:13px;font-weight:600;padding:6px;background:var(--bg);border-radius:6px">详细问题列表（' + findings.length + ' 项）</summary>';
     html += '<div style="margin-top:6px;max-height:280px;overflow-y:auto">';
     findings.forEach(function(f) {
       let sevColor = f.severity === 'high' ? '#ef4444' : f.severity === 'medium' ? '#f59e0b' : '#3b82f6';
@@ -5754,14 +5663,14 @@ function renderDemoReport(d) {
       if (f.recommendation) html += '<div style="font-size:12px;color:#10b981;margin-top:4px">💡 ' + escapeHtml(f.recommendation) + '</div>';
       // 修复方法代码（11-S: 真实修复建议直接显示）
       if (fixText) {
-        html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--primary);font-weight:600">🛠 该怎么修</summary>';
+        html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--primary);font-weight:600">修复建议</summary>';
         html += '<pre style="margin-top:4px;padding:8px;background:#0f172a;color:#a7f3d0;border-radius:6px;font-size:12px;line-height:1.4;overflow-x:auto;white-space:pre-wrap;word-break:break-all">' + escapeHtml(fixText) + '</pre>';
         html += '</details>';
       }
       // 11-S: 验证方法（增强版：显示三步验证法摘要）
       if (fixText) {
         if (f && f.verify_steps && f.verify_steps.length > 0) {
-          html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--success);font-weight:600">✅ 如何验证修复</summary>';
+          html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--success);font-weight:600">如何验证修复</summary>';
           html += '<div style="margin-top:6px;display:flex;flex-direction:column;gap:5px">';
           f.verify_steps.forEach(function(step, idx) {
             html += '<div style="font-size:11px;padding:5px 8px;background:rgba(34,197,94,0.06);border-radius:5px;border-left:2px solid #22c55e">';
@@ -5790,8 +5699,8 @@ function renderDemoReport(d) {
     let platformOrder2 = ["nginx", "apache", "express", "flask", "spring_boot", "cloudflare", "nodejs", "python"];
     let availableP2 = platformOrder2.filter(function(p) { return fixPlatforms2[p] && fixPlatforms2[p].length > 0 });
     if (availableP2.length > 0) {
-      html += '<div style="margin-top:12px;padding:14px;border:2px solid rgba(34,197,94,0.4);background:linear-gradient(135deg,rgba(34,197,94,0.04),rgba(34,197,94,0.01));border-radius:10px">';
-      html += '<div style="font-weight:700;font-size:14px;margin-bottom:8px;color:var(--success)">🛠️ 完整修复建议（' + availableP2.length + ' 种平台）</div>';
+      html += '<div style="margin-top:12px;padding:14px;border:1px solid rgba(34,197,94,0.3);background:rgba(34,197,94,0.03);border-radius:10px">';
+      html += '<div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--success)">完整修复建议（' + availableP2.length + ' 种平台）</div>';
       html += '<div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap">';
       availableP2.forEach(function(p, i) {
         let active = i === 0;
@@ -5817,11 +5726,11 @@ function renderDemoReport(d) {
 
   // 操作按钮
   html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
-  html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 用 AI 修复器生成补丁</button>';
+  html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">用 AI 修复器生成补丁</button>';
   if (isLoggedIn()) {
-    html += '<button onclick="doPublicDemoFix()" style="background:var(--primary-dark,#4f46e5);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">📋 生成修复配置并预览</button>';
+    html += '<button onclick="doPublicDemoFix()" style="background:var(--primary-dark,#4f46e5);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">生成修复配置并预览</button>';
   } else {
-    html += '<button onclick="navigateTo(\'profile\')" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px">🔑 登录后获取修复配置</button>';
+    html += '<button onclick="navigateTo(\'profile\')" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px">登录后获取修复配置</button>';
   }
   html += '</div>';
 
@@ -5957,11 +5866,11 @@ function renderFixComparison(d) {
   // 操作
   html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
   if (isLoggedIn()) {
-    html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🛠 进入修复器获取完整补丁</button>';
+    html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">进入修复器获取完整补丁</button>';
     // 11-S 新增：自动修复按钮
-    html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🤖 应用修复</button>';
+    html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:#10b981;color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">应用修复</button>';
   } else {
-    html += '<button onclick="navigateTo(\'profile\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🔑 登录后获取完整补丁代码</button>';
+    html += '<button onclick="navigateTo(\'profile\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">登录后获取完整补丁代码</button>';
   }
   html += '</div>';
   c.innerHTML = html;
@@ -5987,16 +5896,16 @@ function showAutoFixDialog(scanId, fixCount) {
 
   // 标题
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
-  html += '<h3 style="margin:0;font-size:18px">🤖 生成修复配置 ' + fixCount + ' 项问题</h3>';
+  html += '<h3 style="margin:0;font-size:18px">生成修复配置 ' + fixCount + ' 项问题</h3>';
   html += '<button onclick="closeAutoFixDialog()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-secondary)">×</button>';
   html += '</div>';
 
   // 说明
   html += '<div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.3);border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:var(--text-secondary)">';
-  html += '🔒 <b>安全说明</b>：凭证仅在本请求中使用，不保存到数据库。<br>';
-  html += '⚙️ <b>修复流程</b>：连接 → 备份 → 写配置 → nginx -t 测试 → reload → 验证头<br>';
-  html += '🔄 <b>失败回滚</b>：如 nginx -t 失败，自动停止不会 reload<br>';
-  html += '✅ <b>零停机</b>：用 reload 而非 restart';
+  html += '<b>安全说明</b>：凭证仅在本请求中使用，不保存到数据库。<br>';
+  html += '<b>修复流程</b>：连接 → 备份 → 写配置 → nginx -t 测试 → reload → 验证头<br>';
+  html += '<b>失败回滚</b>：如 nginx -t 失败，自动停止不会 reload<br>';
+  html += '<b>零停机</b>：用 reload 而非 restart';
   html += '</div>';
 
   // 平台选择
@@ -6005,13 +5914,13 @@ function showAutoFixDialog(scanId, fixCount) {
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
   html += '<label style="background:var(--bg);border:2px solid var(--primary);border-radius:8px;padding:10px;cursor:pointer;text-align:center" id="opt-ssh">';
   html += '<input type="radio" name="auto-fix-method" value="ssh" checked style="display:none">';
-  html += '<div style="font-size:20px">🖥️</div>';
+  html += '<div style="font-size:20px;color:var(--text-secondary)">SSH</div>';
   html += '<div style="font-size:12px;font-weight:600;margin-top:4px">SSH 登录服务器</div>';
   html += '<div style="font-size:11px;color:var(--text-secondary)">需服务器 SSH 账号</div>';
   html += '</label>';
   html += '<label style="background:var(--bg);border:2px solid var(--border);border-radius:8px;padding:10px;cursor:pointer;text-align:center" id="opt-cf">';
   html += '<input type="radio" name="auto-fix-method" value="cloudflare" style="display:none">';
-  html += '<div style="font-size:20px">☁️</div>';
+  html += '<div style="font-size:20px;color:var(--text-secondary)">CF</div>';
   html += '<div style="font-size:12px;font-weight:600;margin-top:4px">Cloudflare API</div>';
   html += '<div style="font-size:11px;color:var(--text-secondary)">只需 API Token</div>';
   html += '</label>';
@@ -6038,7 +5947,7 @@ function showAutoFixDialog(scanId, fixCount) {
   html += '</div>';
 
   // 确认按钮
-  html += '<button onclick="executeAutoFix(\'' + scanId + '\')" style="width:100%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:12px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;margin-top:8px">🚀 生成修复配置并复测</button>';
+  html += '<button onclick="executeAutoFix(\'' + scanId + '\')" style="width:100%;background:#10b981;color:#fff;border:none;padding:12px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;margin-top:8px">生成修复配置并复测</button>';
 
   // 结果区
   html += '<div id="af-result" style="margin-top:14px"></div>';
@@ -7345,7 +7254,7 @@ function renderResult(data) {
   // ★ 雷达图：5 个 OWASP 维度得分
   html += '<div class="fade-in-up" style="margin-top:20px;background:linear-gradient(135deg,rgba(99,102,241,0.08),rgba(168,85,247,0.08));border:1px solid rgba(99,102,241,0.2);border-radius:14px;padding:20px;animation-delay:0.15s">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
-  html += '<h3 style="margin:0;font-size:15px;font-weight:700">🛡️ 安全雷达</h3>';
+  html += '<h3 style="margin:0;font-size:15px;font-weight:700">安全雷达</h3>';
   html += '<span style="font-size:12px;color:var(--text-secondary)">OWASP Top 10 维度</span>';
   html += '</div>';
   html += '<div id="radar-chart-container" style="display:flex;justify-content:center"></div>';
@@ -7353,17 +7262,17 @@ function renderResult(data) {
 
   // ★ 攻击模拟按钮
   html += '<div class="fade-in-up" style="margin-top:20px;background:linear-gradient(135deg,rgba(239,68,68,0.08),rgba(249,115,22,0.08));border:1px solid rgba(239,68,68,0.2);border-radius:14px;padding:20px;animation-delay:0.2s">';
-  html += '<h3 style="margin:0 0 8px 0;font-size:15px;font-weight:700">⚔️ 攻击模拟展示</h3>';
+  html += '<h3 style="margin:0 0 8px 0;font-size:15px;font-weight:700">攻击模拟展示</h3>';
   html += '<p style="margin:0 0 14px 0;font-size:12px;color:var(--text-secondary)">一键展示真实攻击场景，让安全风险看得见</p>';
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
   html += '<button onclick="simulateCSRF(\'' + escapeAttr(data.url) + '\')" style="padding:14px 8px;border:1px solid rgba(239,68,68,0.3);background:rgba(239,68,68,0.08);border-radius:10px;cursor:pointer;font-size:12px;font-weight:600;color:#dc2626;transition:all 0.2s" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 4px 12px rgba(239,68,68,0.3)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.boxShadow=\'none\'">';
-  html += '<div style="font-size:24px;margin-bottom:6px">🎯</div>CSRF 攻击';
+  html += '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">CSRF 攻击</div>';
   html += '<div style="font-size:11px;font-weight:400;color:#7f1d1d">跨站请求伪造</div></button>';
   html += '<button onclick="simulateXSS(\'' + escapeAttr(data.url) + '\')" style="padding:14px 8px;border:1px solid rgba(249,115,22,0.3);background:rgba(249,115,22,0.08);border-radius:10px;cursor:pointer;font-size:12px;font-weight:600;color:#ea580c;transition:all 0.2s" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 4px 12px rgba(249,115,22,0.3)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.boxShadow=\'none\'">';
   html += '<div style="font-size:24px;margin-bottom:6px">💉</div>XSS 注入';
   html += '<div style="font-size:11px;font-weight:400;color:#7c2d12">跨站脚本</div></button>';
   html += '<button onclick="simulateClickjacking(\'' + escapeAttr(data.url) + '\')" style="padding:14px 8px;border:1px solid rgba(168,85,247,0.3);background:rgba(168,85,247,0.08);border-radius:10px;cursor:pointer;font-size:12px;font-weight:600;color:#9333ea;transition:all 0.2s" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 4px 12px rgba(168,85,247,0.3)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.boxShadow=\'none\'">';
-  html += '<div style="font-size:24px;margin-bottom:6px">🖼️</div>点击劫持';
+  html += '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">点击劫持</div>';
   html += '<div style="font-size:11px;font-weight:400;color:#581c87">UI 覆盖</div></button>';
   html += '</div>';
   html += '<div id="attack-demo-result" style="margin-top:14px"></div>';
@@ -7626,12 +7535,12 @@ function renderResult(data) {
   // 11-S: 0 漏洞时显示友好的安全提示，避免用户觉得"扫了个空"
   if (!data.findings || data.findings.length === 0) {
     html += '<div class="card fade-in-up" style="animation-delay:0.35s;text-align:center;padding:40px 20px;background:linear-gradient(135deg,rgba(34,197,94,0.06),rgba(16,185,129,0.04));border:1px solid rgba(34,197,94,0.2)">';
-    html += '<div style="font-size:56px;margin-bottom:16px">✅</div>';
+    html += '<div style="font-size:40px;margin-bottom:16px;color:var(--success);font-weight:700">Done</div>';
     html += '<h3 style="margin:0 0 8px;color:#16a34a;font-size:18px">安全状况良好</h3>';
     html += '<p style="color:var(--text-secondary);margin:0 0 16px;font-size:13px;line-height:1.6">本次扫描未发现明显的安全配置问题。<br/>建议定期扫描，持续监控网站安全状态。</p>';
     html += '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">';
-    html += '<button onclick="navigateTo(\'scan\')" style="background:var(--primary);color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">🔄 重新扫描</button>';
-    html += '<button onclick="navigateTo(\'evolution\')" style="background:transparent;color:var(--text);border:1px solid var(--border);padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px">📈 查看进化中心</button>';
+    html += '<button onclick="navigateTo(\'scan\')" style="background:var(--primary);color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">重新扫描</button>';
+    html += '<button onclick="navigateTo(\'evolution\')" style="background:transparent;color:var(--text);border:1px solid var(--border);padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px">查看进化中心</button>';
     html += '</div></div>';
   }
   // 11-S: 给没有置信度的 finding 自动设置默认值（响应头检测=高，敏感路径=中，信息泄露=高）
@@ -7722,9 +7631,9 @@ function renderResult(data) {
     if (f.evidence) {
       let eviHtml = renderEvidence(f.evidence);
       if (eviHtml) {
-        html += '<details class="finding-section" style="cursor:pointer"><summary style="font-weight:600;font-size:13px;color:var(--text-primary);padding:6px 0;list-style:none">🔍 展开技术细节</summary><div style="background:rgba(0,0,0,0.02);padding:10px;border-radius:6px;margin-top:6px">' + eviHtml + '</div></details>';
+        html += '<details class="finding-section" style="cursor:pointer"><summary style="font-weight:600;font-size:13px;color:var(--text-primary);padding:6px 0;list-style:none">展开技术细节</summary><div style="background:rgba(0,0,0,0.02);padding:10px;border-radius:6px;margin-top:6px">' + eviHtml + '</div></details>';
       } else {
-        html += '<details class="finding-section" style="cursor:pointer"><summary style="font-weight:600;font-size:13px;color:var(--text-primary);padding:6px 0;list-style:none">🔍 展开技术细节</summary><div style="background:rgba(0,0,0,0.02);padding:10px;border-radius:6px;margin-top:6px;font-size:12px;color:var(--text-lighter)">无额外技术细节</div></details>';
+        html += '<details class="finding-section" style="cursor:pointer"><summary style="font-weight:600;font-size:13px;color:var(--text-primary);padding:6px 0;list-style:none">展开技术细节</summary><div style="background:rgba(0,0,0,0.02);padding:10px;border-radius:6px;margin-top:6px;font-size:12px;color:var(--text-lighter)">无额外技术细节</div></details>';
       }
     }
     // 多平台修复建议 Tab
@@ -8092,10 +8001,10 @@ function renderResult(data) {
     html += '<button class="pdf-download-btn" onclick="toggleReportDropdown()">&#x1F4C4; 下载报告 <span style="font-size:11px">▼</span></button>';
     html += '<div class="report-dropdown-menu" id="report-dropdown">';
     html += '<div onclick="downloadReport(\'pdf\');toggleReportDropdown()" style="padding:8px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background=\'var(--bg-secondary)\'" onmouseout="this.style.background=\'transparent\'">';
-    html += '<span>📄</span><span>PDF 格式</span><span style="margin-left:auto;font-size:12px;color:var(--text-secondary)">适合打印存档</span>';
+    html += '<span>PDF</span><span>PDF 格式</span><span style="margin-left:auto;font-size:12px;color:var(--text-secondary)">适合打印存档</span>';
     html += '</div>';
     html += '<div onclick="downloadReport(\'html\');toggleReportDropdown()" style="padding:8px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background=\'var(--bg-secondary)\'" onmouseout="this.style.background=\'transparent\'">';
-    html += '<span>🌐</span><span>HTML 格式</span><span style="margin-left:auto;font-size:12px;color:var(--text-secondary)">精美可交互</span>';
+    html += '<span>HTML</span><span>HTML 格式</span><span style="margin-left:auto;font-size:12px;color:var(--text-secondary)">精美可交互</span>';
     html += '</div>';
     html += '</div></div>';
     html += '<button class="fixer-btn success" id="verify-fix-btn" onclick="verifyFix()">&#x1F504; 验证修复效果</button>';
@@ -8974,7 +8883,7 @@ function renderFixerResult(result, original) {
   html += '<div class="compare-grid">';
   html += '<div class="compare-col"><h4><span class="dot red"></span>修复前</h4>';
   html += '<textarea class="compare-textarea" readonly>' + escapeHtml(original) + '</textarea></div>';
-  html += '<div class="compare-col"><h4><span class="dot green"></span>修复后 <button class="copy-btn-sm" onclick="copyFixedConfig(this)" data-state="idle" aria-label="复制修复后配置">📋 复制</button></h4>';
+  html += '<div class="compare-col"><h4><span class="dot green"></span>修复后 <button class="copy-btn-sm" onclick="copyFixedConfig(this)" data-state="idle" aria-label="复制修复后配置">复制</button></h4>';
   html += '<textarea class="compare-textarea fixed-textarea" readonly>' + escapeHtml(result.fixed) + '</textarea></div>';
   html += '</div></div>';
 
@@ -9267,7 +9176,7 @@ function renderScanHistory(page) {
   authFetch('/api/history?limit=50').then(function(resp) { return resp.json(); }).then(function(data) {
     let history = data.history || [];
     if (history.length === 0) {
-      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:36px;margin-bottom:8px">🔍</div><div style="font-size:13px">暂无扫描记录</div><div style="font-size:12px;margin-top:6px">点首页「开始扫描」试试</div></div>';
+      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:13px">暂无扫描记录</div><div style="font-size:12px;margin-top:6px">点首页「开始扫描」试试</div></div>';
       safeSetDisplay('history-pagination', 'none');
       let tw = document.getElementById('history-trend-wrap');
       if (tw) tw.style.display = 'none';
