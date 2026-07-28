@@ -82,6 +82,13 @@ from models import (
     VerifyReproduceRequest, VerifyRequest,
 )
 
+# ---------- 模块化基础设施导入 ----------
+from app.core.logging import configure_logging, get_request_id, set_request_id, generate_request_id
+from app.db.session import init_db_path, check_db_health
+from app.health import router as health_router, get_health_summary
+from app.metrics import setup_metrics, record_scan_start, record_scan_end, record_cache_hit, record_cache_miss, record_findings
+from app.middleware import request_id_middleware, structured_request_logging_middleware
+
 
 # ---------- Logging ----------
 
@@ -150,6 +157,16 @@ class Settings(BaseSettings):
         or os.environ.get("CORS_ORIGINS")
         or "http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000,http://localhost:5173"
     )
+
+    # --- 生产级配置（app.core.config 扩展） ---
+    database_url: str = Field(default="", description="数据库连接 URL，留空则使用 SQLite")
+    redis_url: str = Field(default="", description="Redis 连接 URL，留空则使用内存模式")
+    sentry_dsn: str = Field(default="", repr=False, description="Sentry DSN，用于错误追踪")
+    enable_metrics: bool = Field(default=True, description="是否启用 Prometheus /metrics 端点")
+    enable_structlog: bool = Field(default=True, description="是否启用 structlog 结构化 JSON 日志")
+    log_level: str = Field(default="INFO", description="日志级别")
+    tls_verify: bool = Field(default=True, description="是否验证 TLS 证书")
+    public_demo_enabled: bool = Field(default=True, description="是否开放公开演示扫描端点")
 
 
 settings = Settings()
@@ -227,6 +244,9 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 db_base = settings.db_dir if os.path.isdir(settings.db_dir) else os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(db_base, settings.db_name)
+
+# 初始化 app.db.session 的数据库路径
+init_db_path(DB_PATH, settings.database_url)
 
 # ---------- Auth ----------
 
@@ -1368,6 +1388,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_title, version=settings.app_version, lifespan=lifespan)
 
+# 注册 request_id 中间件（最早执行，确保所有后续中间件都能获取 request_id）
+@app.middleware("http")
+async def _request_id_middleware(request: Request, call_next):
+    return await request_id_middleware(request, call_next)
+
+# 注册健康检查路由（/health/live, /health/ready, /health/version）
+app.include_router(health_router)
+
+# 注册 Prometheus 指标（/metrics 端点）
+if settings.enable_metrics:
+    setup_metrics(app)
+
 # CORS 白名单（生产环境已在上方强制校验；此处仅做中间件注册）
 app.add_middleware(
     CORSMiddleware,
@@ -1434,9 +1466,11 @@ async def request_logging_middleware(request: Request, call_next: Callable[[Requ
     client_ip = request.client.host if request.client else "unknown"
     response = await call_next(request)
     duration = time.time() - start
+    rid = get_request_id()
     logger.info(
-        "[%s] %s %s -> %s (%.3fs)",
+        "[%s] %s %s -> %s (%.3fs)%s",
         client_ip, request.method, request.url.path, response.status_code, duration,
+        f" rid={rid}" if rid else "",
     )
     return response
 
@@ -9227,21 +9261,8 @@ async def api_dashboard(user=Depends(require_login)):
 
 @app.get("/api/health")
 async def api_health() -> dict:
-    """健康检查。返回服务状态、版本、DB 状态。"""
-    db_ok = True
-    try:
-        conn = get_db()
-        conn.execute("SELECT 1").fetchone()
-        conn.close()
-    except Exception:
-        db_ok = False
-    return {
-        "status": "ok" if db_ok else "degraded",
-        "version": settings.app_version,
-        "title": settings.app_title,
-        "db": "ok" if db_ok else "error",
-        "uptime_sec": int(time.time() - _SERVICE_START_TIME),
-    }
+    """健康检查。返回服务状态、版本、DB 状态、request_id。"""
+    return get_health_summary()
 
 
 # ===== 免费试用端点（无需登录） =====

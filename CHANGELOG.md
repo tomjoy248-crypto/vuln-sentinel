@@ -4,6 +4,23 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [未发布] - 2026-07-28
+
+### 新增 - 专业化基础设施（阶段一）
+- **app/ 模块化包**：创建 `app/core/`（config, logging, security）、`app/db/`（session）、`app/health.py`、`app/metrics.py`、`app/middleware.py`，为后续路由拆分打基础
+- **结构化日志**：引入 `structlog`，支持 JSON 格式输出和 `request_id` 链路追踪
+- **request_id 中间件**：每个请求自动生成唯一 ID，注入日志上下文和响应头 `X-Request-ID`
+- **健康检查三端点**：`/health/live`（存活探针）、`/health/ready`（就绪探针，检查 DB）、`/health/version`（版本信息）
+- **Prometheus 指标**：`/metrics` 端点，自定义业务指标（scans_total, scan_duration_seconds, active_scans, findings_total, scan_cache_hits/misses）
+- **配置扩展**：Settings 新增 `database_url`、`redis_url`、`sentry_dsn`、`enable_metrics`、`enable_structlog`、`log_level` 等生产级配置项
+- **数据库连接抽象**：`app/db/session.py` 提供 `get_db_connection()` 上下文管理器和 `check_db_health()` 健康检查
+
+### 改进
+- `/api/health` 兼容端点现在也返回 `request_id`
+- 请求日志现在包含 `request_id` 标记
+- `.env.example` 新增生产级基础设施配置示例
+- `requirements.txt` 新增 `structlog` 和 `prometheus-fastapi-instrumentator` 依赖
+
 ## [11-S] - 2026-06-27
 
 ### 新增

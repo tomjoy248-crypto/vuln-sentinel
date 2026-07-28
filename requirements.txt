@@ -33,6 +33,13 @@ apscheduler>=3.10
 # 加密（SSO 凭证存储 / Fernet）
 cryptography>=41.0
 
+# 结构化日志
+structlog>=24.0
+
+# Prometheus 指标
+prometheus-fastapi-instrumentator>=7.0
+prometheus-client>=0.20
+
 # 单元测试（开发用）
 pytest>=7.0
 
