@@ -1547,13 +1547,18 @@ async def _cache_control_middleware(request, call_next):
 # 安全响应头中间件：给所有响应添加安全头
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
+    from app.core.security_headers import apply_security_headers
     response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    is_https = request.url.is_secure or request.headers.get("x-forwarded-proto") == "https"
+    apply_security_headers(response, is_https=is_https)
     return response
+
+
+# API 限流中间件：基于令牌桶算法
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    from app.core.rate_limiter import rate_limit_middleware as _rl
+    return await _rl(request, call_next)
 
 
 # ---------- Middleware ----------
@@ -10639,6 +10644,141 @@ async def api_scan_progress(scan_token: str, user: dict = Depends(require_login)
     if time.time() - updated_at > 300:
         return {"stages": data.get("stages", []), "current": 999, "status": "done"}
     return {**data, "status": "running"}
+
+
+# ---------- 异步扫描任务队列 API ----------
+
+from app.tasks import ScanTaskManager
+
+_scan_task_manager = ScanTaskManager(max_concurrent=3, task_timeout=300)
+
+
+class AsyncScanRequest(BaseModel):
+    url: str
+    deep: bool = False
+    authorized: bool = False
+
+
+@app.post("/api/scan/async")
+async def api_async_scan(req: AsyncScanRequest, user: dict = Depends(require_login)) -> dict:
+    """提交异步扫描任务，返回 task_id 供前端轮询。"""
+    from app.core.input_validation import validate_scan_target
+
+    raw_url = req.url.strip()
+    if not raw_url.startswith(("http://", "https://")):
+        raw_url = "https://" + raw_url
+
+    valid, reason = validate_scan_target(raw_url, authorized=req.authorized)
+    if not valid:
+        raise HTTPException(403, reason)
+
+    async def _scan_fn(scan_url: str, progress_cb=None, **kwargs):
+        from app.services.scan_service import run_plugin_scan
+        if progress_cb:
+            progress_cb(10, "初始化扫描")
+        parsed = urlparse(scan_url)
+        headers, is_https, final_url, err = await fetch_headers(scan_url)
+        if err:
+            raise RuntimeError(f"无法连接目标: {err}")
+        if progress_cb:
+            progress_cb(30, "获取响应头")
+        ssl_info = {}
+        if is_https:
+            try:
+                import ssl as _ssl
+                import socket as _socket
+                ctx = _ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = _ssl.CERT_NONE
+                with _socket.create_connection((parsed.hostname, 443), timeout=5) as sock:
+                    with ctx.wrap_socket(sock, server_hostname=parsed.hostname) as ssock:
+                        cert = ssock.getpeercert()
+                        if cert:
+                            ssl_info = {"issuer": dict(x[0] for x in cert.get("issuer", [])),
+                                        "subject": dict(x[0] for x in cert.get("subject", [])),
+                                        "version": cert.get("version"),
+                                        "notAfter": cert.get("notAfter")}
+            except Exception:
+                pass
+        if progress_cb:
+            progress_cb(50, "执行插件检测")
+        result = await run_plugin_scan(
+            scan_url, headers, is_https, ssl_info,
+            waf=None, deep=kwargs.get("deep", False),
+        )
+        if progress_cb:
+            progress_cb(90, "生成报告")
+        fixes = generate_fixes(result["findings"], headers, is_https, parsed.hostname)
+        result["fixes"] = fixes
+        scan_id = save_scan(
+            user["user_id"], scan_url, result["score"], result["risk_level"],
+            result["findings"], result["summary"], 0, "deep" if kwargs.get("deep") else "real",
+        )
+        result["scan_id"] = scan_id
+        try:
+            auto_create_fix_tickets(user["user_id"], scan_id, result["findings"], target_host=parsed.hostname)
+        except Exception:
+            pass
+        if progress_cb:
+            progress_cb(100, "扫描完成")
+        return result
+
+    task_id = await _scan_task_manager.submit(
+        url=raw_url,
+        user_id=user["user_id"],
+        depth="deep" if req.deep else "standard",
+        scan_func=_scan_fn,
+        deep=req.deep,
+    )
+    return {"task_id": task_id, "status": "pending", "url": raw_url}
+
+
+@app.get("/api/scan/tasks/{task_id}")
+async def api_get_scan_task(task_id: str, user: dict = Depends(require_login)) -> dict:
+    """查询异步扫描任务状态。"""
+    task = _scan_task_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在或已过期")
+    if task.user_id != user["user_id"]:
+        raise HTTPException(403, "无权查看此任务")
+    return _scan_task_manager.get_task_status(task_id)
+
+
+@app.get("/api/scan/tasks")
+async def api_list_scan_tasks(
+    status: str = "",
+    user: dict = Depends(require_login),
+) -> dict:
+    """列出当前用户的异步扫描任务。"""
+    from app.tasks import TaskStatus
+    task_status = None
+    if status:
+        try:
+            task_status = TaskStatus(status)
+        except ValueError:
+            pass
+    tasks = _scan_task_manager.list_tasks(user_id=user["user_id"], status=task_status)
+    return {
+        "tasks": [t.to_dict() for t in tasks[:50]],
+        "stats": _scan_task_manager.get_stats(),
+    }
+
+
+@app.post("/api/scan/tasks/{task_id}/cancel")
+async def api_cancel_scan_task(
+    task_id: str,
+    user: dict = Depends(require_login),
+) -> dict:
+    """取消异步扫描任务。"""
+    task = _scan_task_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if task.user_id != user["user_id"]:
+        raise HTTPException(403, "无权操作此任务")
+    cancelled = await _scan_task_manager.cancel_task(task_id)
+    if not cancelled:
+        raise HTTPException(409, "任务已完成或无法取消")
+    return {"task_id": task_id, "status": "cancelled"}
 
 
 @app.post("/api/public-demo-scan", response_model=None)

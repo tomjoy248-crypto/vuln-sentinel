@@ -50,6 +50,11 @@ export function renderSRCResult(data) {
   // 顶部概览
   html += renderHeader(score, riskLevel, summary, url, data);
 
+  // 扫描质量详情面板
+  if (data.quality && data.quality.overall_score !== undefined) {
+    html += renderQualityPanel(data.quality, data.dedup_stats);
+  }
+
   // 主体：左列表 + 右详情
   html += '<div class="src-result-layout">';
   html += '<div class="src-result-sidebar">' + renderFindingList(_currentFindings, _selectedIndex) + '</div>';
@@ -58,6 +63,117 @@ export function renderSRCResult(data) {
 
   container.innerHTML = html;
   bindFindingListEvents();
+  bindQualityPanelEvents();
+}
+
+function renderQualityPanel(quality, dedupStats) {
+  const qScore = quality.overall_score || 0;
+  const qColor = qScore >= 80 ? '#73c990' : qScore >= 60 ? '#f0a732' : '#c75450';
+  const coverage = quality.coverage_score || 0;
+  const reliability = quality.reliability_score || 0;
+  const depth = quality.depth_score || 0;
+  const recommendations = quality.recommendations || [];
+
+  const coverageBreakdown = quality.coverage_breakdown || {};
+  const reliabilityBreakdown = quality.reliability_breakdown || {};
+  const typesDetected = coverageBreakdown.types_detected || [];
+
+  // 去重统计
+  const dedup = dedupStats || {};
+  const dedupHtml = dedup.original_count !== undefined
+    ? `<div class="src-quality-dedup">
+         <span class="src-quality-label">去重统计</span>
+         <span class="src-quality-stat">原始 ${dedup.original_count || 0}</span>
+         <span class="src-quality-arrow">→</span>
+         <span class="src-quality-stat highlight">${dedup.deduplicated_count || 0}</span>
+         ${dedup.duplicate_count > 0 ? `<span class="src-quality-tag">移除重复 ${dedup.duplicate_count}</span>` : ''}
+         ${dedup.correlation_groups > 0 ? `<span class="src-quality-tag">关联组 ${dedup.correlation_groups}</span>` : ''}
+       </div>`
+    : '';
+
+  // 可靠性详情
+  const fpRate = reliabilityBreakdown.fp_rate !== undefined ? (reliabilityBreakdown.fp_rate * 100).toFixed(0) + '%' : '-';
+  const highConfRate = reliabilityBreakdown.high_confidence_rate !== undefined ? (reliabilityBreakdown.high_confidence_rate * 100).toFixed(0) + '%' : '-';
+
+  return `
+    <div class="src-quality-panel" id="src-quality-panel">
+      <div class="src-quality-header" id="src-quality-toggle">
+        <div class="src-quality-score-wrap">
+          <div class="src-quality-ring" style="border-color:${qColor}">
+            <span style="color:${qColor};font-size:22px;font-weight:700">${qScore}</span>
+          </div>
+          <span class="src-quality-title">扫描质量</span>
+        </div>
+        <div class="src-quality-bars">
+          <div class="src-quality-bar-row">
+            <span class="src-quality-bar-label">覆盖度</span>
+            <div class="src-quality-bar"><div class="src-quality-bar-fill" style="width:${coverage}%;background:${coverage >= 80 ? '#73c990' : coverage >= 60 ? '#f0a732' : '#c75450'}"></div></div>
+            <span class="src-quality-bar-val">${coverage}</span>
+          </div>
+          <div class="src-quality-bar-row">
+            <span class="src-quality-bar-label">可靠性</span>
+            <div class="src-quality-bar"><div class="src-quality-bar-fill" style="width:${reliability}%;background:${reliability >= 80 ? '#73c990' : reliability >= 60 ? '#f0a732' : '#c75450'}"></div></div>
+            <span class="src-quality-bar-val">${reliability}</span>
+          </div>
+          <div class="src-quality-bar-row">
+            <span class="src-quality-bar-label">深度</span>
+            <div class="src-quality-bar"><div class="src-quality-bar-fill" style="width:${depth}%;background:${depth >= 80 ? '#73c990' : depth >= 60 ? '#f0a732' : '#c75450'}"></div></div>
+            <span class="src-quality-bar-val">${depth}</span>
+          </div>
+        </div>
+        <button class="src-quality-expand" id="src-quality-expand-btn">展开详情</button>
+      </div>
+      <div class="src-quality-detail" id="src-quality-detail" style="display:none">
+        <div class="src-quality-grid">
+          <div class="src-quality-section">
+            <div class="src-quality-section-title">覆盖度详情</div>
+            <div class="src-quality-section-body">
+              <div class="src-quality-kv"><span>检测漏洞类型</span><code>${typesDetected.length} 种</code></div>
+              <div class="src-quality-kv"><span>类型列表</span><code>${escapeHtml(typesDetected.join(', ') || '-')}</code></div>
+              <div class="src-quality-kv"><span>总发现数</span><code>${coverageBreakdown.total_findings || 0}</code></div>
+            </div>
+          </div>
+          <div class="src-quality-section">
+            <div class="src-quality-section-title">可靠性详情</div>
+            <div class="src-quality-section-body">
+              <div class="src-quality-kv"><span>误报率</span><code>${fpRate}</code></div>
+              <div class="src-quality-kv"><span>高置信度比例</span><code>${highConfRate}</code></div>
+              <div class="src-quality-kv"><span>潜在误报数</span><code>${reliabilityBreakdown.fp_count || 0}</code></div>
+              <div class="src-quality-kv"><span>高置信度数</span><code>${reliabilityBreakdown.high_confidence_count || 0}</code></div>
+            </div>
+          </div>
+        </div>
+        ${dedupHtml}
+        ${recommendations.length > 0 ? `
+          <div class="src-quality-recommendations">
+            <div class="src-quality-section-title">扫描建议</div>
+            <ul class="src-quality-rec-list">
+              ${recommendations.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function bindQualityPanelEvents() {
+  const toggle = document.getElementById('src-quality-toggle');
+  const detail = document.getElementById('src-quality-detail');
+  const btn = document.getElementById('src-quality-expand-btn');
+  if (!toggle || !detail || !btn) return;
+  toggle.addEventListener('click', function(e) {
+    if (e.target === btn) return;
+    const visible = detail.style.display !== 'none';
+    detail.style.display = visible ? 'none' : 'block';
+    btn.textContent = visible ? '展开详情' : '收起';
+  });
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    const visible = detail.style.display !== 'none';
+    detail.style.display = visible ? 'none' : 'block';
+    btn.textContent = visible ? '展开详情' : '收起';
+  });
 }
 
 function sortFindings(findings) {
@@ -134,17 +250,22 @@ function renderFindingList(findings, selectedIndex) {
       const typeLabel = f.type ? `<span class="src-list-type">${escapeHtml(f.type.toUpperCase())}</span>` : '';
       const host = f.url ? new URL(f.url, window.location.href).hostname : '';
       const path = f.url ? new URL(f.url, window.location.href).pathname : '';
+      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag" title="潜在误报">FP</span>' : '';
+      const corrGroup = f.correlation_group ? `<span class="src-list-corr" title="关联组 ${escapeAttr(f.correlation_group)}（${f.correlation_size || 0} 个相关）">${escapeHtml(f.correlation_group)}</span>` : '';
+      const mergedCount = f.merged_count > 1 ? `<span class="src-list-merged" title="合并了 ${f.merged_count} 个重复项">×${f.merged_count}</span>` : '';
       html += `
         <div class="src-list-item ${active} ${cls}" data-index="${i}">
           <div class="src-list-row top">
             <span class="src-sev-badge ${cls}">${SEVERITY_LABEL[sev]}</span>
             <span class="src-list-title" title="${escapeAttr(f.title || '')}">${escapeHtml(f.title || '未命名漏洞')}</span>
+            ${isFp}${mergedCount}
           </div>
           <div class="src-list-row meta">
             ${typeLabel}
             ${param}
             <span class="src-list-host" title="${escapeAttr(f.url || '')}">${escapeHtml(host)}${escapeHtml(path)}</span>
-            <span class="src-list-confidence">${escapeHtml(f.confidence || 'medium')}</span>
+            <span class="src-list-confidence">${escapeHtml(f.adjusted_confidence || f.confidence || 'medium')}</span>
+            ${corrGroup}
           </div>
         </div>
       `;
@@ -182,7 +303,9 @@ function renderFindingDetail(finding, index) {
       ${finding.owasp_category ? `<span class="src-detail-owasp">${escapeHtml(finding.owasp_category)}</span>` : ''}
       ${finding.cvss_score ? `<span class="src-detail-cvss" title="${escapeHtml(finding.cvss_vector || '')}">CVSS ${finding.cvss_score}</span>` : ''}
       ${finding.severity_score ? `<span class="src-detail-score">评分 ${finding.severity_score}/10</span>` : ''}
-      <span class="src-detail-confidence">置信度 ${escapeHtml(finding.confidence || 'medium')}</span>
+      <span class="src-detail-confidence">置信度 ${escapeHtml(finding.adjusted_confidence || finding.confidence || 'medium')}</span>
+      ${finding.is_likely_fp ? '<span class="src-detail-fp-badge">潜在误报</span>' : ''}
+      ${finding.verified !== undefined ? `<span class="src-detail-verify-badge ${finding.verified ? 'verified' : 'unverified'}">${finding.verified ? '已验证' : '未验证'}</span>` : ''}
     </div>
   </div>`;
 
@@ -195,6 +318,29 @@ function renderFindingDetail(finding, index) {
 
   // 概览面板
   html += `<div class="src-detail-panel active" data-panel="overview">`;
+
+  // 误报分析与验证信息
+  if (finding.fp_score !== undefined || finding.verification_score !== undefined || (finding.fp_reasons && finding.fp_reasons.length > 0)) {
+    html += `<div class="src-detail-section">
+      <div class="src-section-title">可信度分析</div>
+      <div class="src-section-body">`;
+    if (finding.fp_score !== undefined) {
+      const fpPct = (finding.fp_score * 100).toFixed(0);
+      const fpColor = finding.fp_score >= 0.5 ? '#c75450' : finding.fp_score >= 0.3 ? '#f0a732' : '#73c990';
+      html += `<div class="src-kv"><span class="src-k">误报概率</span><span class="src-v" style="color:${fpColor}">${fpPct}%</span></div>`;
+    }
+    if (finding.verification_score !== undefined) {
+      const vColor = finding.verification_score >= 80 ? '#73c990' : finding.verification_score >= 60 ? '#f0a732' : '#c75450';
+      html += `<div class="src-kv"><span class="src-k">验证得分</span><span class="src-v" style="color:${vColor}">${finding.verification_score}/100</span></div>`;
+    }
+    if (finding.verification_techniques && finding.verification_techniques.length > 0) {
+      html += `<div class="src-kv"><span class="src-k">验证技术</span><span class="src-v">${escapeHtml(finding.verification_techniques.join(', '))}</span></div>`;
+    }
+    if (finding.fp_reasons && finding.fp_reasons.length > 0) {
+      html += `<div class="src-fp-reasons"><ul>${finding.fp_reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul></div>`;
+    }
+    html += `</div></div>`;
+  }
 
   // 描述
   html += `<div class="src-detail-section">
@@ -549,6 +695,38 @@ export function injectSRCStyles() {
     .src-export-btn { background:var(--primary); color:#fff; border:none; padding:6px 14px; border-radius:var(--radius-xs); font-size:12px; cursor:pointer; }
     .src-export-btn:hover { background:var(--primary-light); }
 
+    .src-quality-panel { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:16px; overflow:hidden; }
+    .src-quality-header { display:flex; align-items:center; gap:20px; padding:14px 18px; cursor:pointer; }
+    .src-quality-score-wrap { display:flex; flex-direction:column; align-items:center; gap:4px; }
+    .src-quality-ring { width:48px; height:48px; border-radius:50%; border:3px solid; display:flex; align-items:center; justify-content:center; }
+    .src-quality-title { font-size:11px; color:var(--text-secondary); }
+    .src-quality-bars { flex:1; display:flex; flex-direction:column; gap:6px; }
+    .src-quality-bar-row { display:flex; align-items:center; gap:10px; }
+    .src-quality-bar-label { width:50px; font-size:12px; color:var(--text-secondary); text-align:right; }
+    .src-quality-bar { flex:1; height:8px; background:var(--bg-secondary); border-radius:4px; overflow:hidden; }
+    .src-quality-bar-fill { height:100%; border-radius:4px; transition:width 0.6s ease; }
+    .src-quality-bar-val { width:28px; font-size:12px; font-weight:600; text-align:right; }
+    .src-quality-expand { background:var(--bg-secondary); border:1px solid var(--border); color:var(--text-secondary); padding:4px 10px; border-radius:var(--radius-xs); font-size:11px; cursor:pointer; white-space:nowrap; }
+    .src-quality-expand:hover { border-color:var(--primary); color:var(--primary-light); }
+    .src-quality-detail { padding:0 18px 14px; border-top:1px solid var(--border-light); }
+    .src-quality-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px; }
+    @media (max-width:700px) { .src-quality-grid { grid-template-columns:1fr; } }
+    .src-quality-section { }
+    .src-quality-section-title { font-size:12px; font-weight:700; color:var(--text-secondary); margin-bottom:8px; }
+    .src-quality-section-body { display:flex; flex-direction:column; gap:4px; }
+    .src-quality-kv { display:flex; justify-content:space-between; align-items:center; font-size:12px; }
+    .src-quality-kv span { color:var(--text-secondary); }
+    .src-quality-kv code { background:var(--token-bg); padding:2px 6px; border-radius:var(--radius-xs); font-size:11px; }
+    .src-quality-dedup { display:flex; align-items:center; gap:8px; margin-top:12px; padding:10px; background:var(--bg-secondary); border-radius:var(--radius-sm); flex-wrap:wrap; }
+    .src-quality-label { font-size:12px; font-weight:700; color:var(--text-secondary); }
+    .src-quality-stat { font-size:13px; font-weight:600; }
+    .src-quality-stat.highlight { color:var(--primary-light); }
+    .src-quality-arrow { color:var(--text-secondary); }
+    .src-quality-tag { background:var(--token-bg); padding:2px 8px; border-radius:10px; font-size:11px; color:var(--text-secondary); }
+    .src-quality-recommendations { margin-top:12px; }
+    .src-quality-rec-list { margin:0; padding-left:18px; font-size:12px; color:var(--text-secondary); }
+    .src-quality-rec-list li { margin-bottom:4px; line-height:1.5; }
+
     .src-result-layout { display:grid; grid-template-columns:380px 1fr; gap:16px; }
     @media (max-width:900px) { .src-result-layout { grid-template-columns:1fr; } }
 
@@ -578,6 +756,9 @@ export function injectSRCStyles() {
     .src-list-param { font-size:10px; background:rgba(75,110,175,0.15); color:var(--primary-light); padding:2px 6px; border-radius:var(--radius-xs); }
     .src-list-host { color:var(--text-secondary); font-family:var(--font); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; }
     .src-list-confidence { font-size:11px; color:var(--text-secondary); margin-left:auto; text-transform:uppercase; }
+    .src-list-fp-tag { background:#c7545022; color:#c75450; font-size:10px; padding:1px 5px; border-radius:3px; font-weight:700; }
+    .src-list-merged { background:var(--primary); color:#fff; font-size:10px; padding:1px 5px; border-radius:3px; font-weight:600; }
+    .src-list-corr { background:var(--token-bg); color:var(--text-secondary); font-size:10px; padding:1px 5px; border-radius:3px; font-family:var(--font); }
 
     .src-result-detail { max-height:calc(100vh - 220px); overflow-y:auto; }
     .src-detail-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:0; display:flex; flex-direction:column; }
@@ -602,6 +783,14 @@ export function injectSRCStyles() {
     .src-detail-owasp { background:rgba(75,110,175,0.12); color:var(--primary-light); padding:2px 8px; border-radius:var(--radius-xs); }
     .src-detail-cvss { background:rgba(240,167,50,0.12); color:#f0a732; padding:2px 8px; border-radius:var(--radius-xs); }
     .src-detail-score { background:rgba(115,201,144,0.12); color:#73c990; padding:2px 8px; border-radius:var(--radius-xs); }
+    .src-detail-confidence { background:var(--token-bg); color:var(--text-secondary); padding:2px 8px; border-radius:var(--radius-xs); }
+    .src-detail-fp-badge { background:rgba(199,84,80,0.15); color:#c75450; padding:2px 8px; border-radius:var(--radius-xs); font-weight:600; }
+    .src-detail-verify-badge { padding:2px 8px; border-radius:var(--radius-xs); font-weight:600; }
+    .src-detail-verify-badge.verified { background:rgba(115,201,144,0.15); color:#73c990; }
+    .src-detail-verify-badge.unverified { background:rgba(240,167,50,0.15); color:#f0a732; }
+    .src-fp-reasons { margin-top:8px; }
+    .src-fp-reasons ul { margin:0; padding-left:18px; }
+    .src-fp-reasons li { font-size:12px; color:var(--text-secondary); margin-bottom:3px; }
 
     .src-detail-tabs { display:flex; border-bottom:1px solid var(--border-light); background:var(--bg-secondary); }
     .src-detail-tab { background:transparent; border:none; border-bottom:2px solid transparent; color:var(--text-secondary); padding:10px 16px; font-size:12px; font-weight:600; cursor:pointer; }
