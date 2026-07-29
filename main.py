@@ -57,6 +57,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 import src_scanner
 from src_scanner import run_src_scan
 from app.services.scan_service import run_plugin_scan
+from app.remediation import RemediationTemplateEngine, generate_remediation_plan
+from app.verification import ScanDiffEngine
 from constants import (
     BLOCKED_HOSTS, BLOCKED_NETWORKS, ALLOWED_INTERNAL_HOSTS,
     CMDI_PAYLOADS, DESER_SIGNATURES, INFO_PATHS,
@@ -76,7 +78,7 @@ from models import (
     AddTargetRequest, AIAdvisorRequest, ApplyFixRequest,
     AssetCreateRequest, AssetUpdateRequest,
     BatchScanRequest, DemoFixRequest, DemoFullCycleRequest,
-    FindingFeedbackRequest, FixTicketCreate, FixTicketUpdate,
+    FindingFeedbackRequest, FixTicketCreate, FixTicketUpdate, FixTicketVerifyRequest,
     FreeTrialRequest, LoginRequest, PasswordResetRequest,
     RegisterRequest, ScanRequest, ScanResponse,
     SimulateFixRequest, SRCReportExportRequest, VerifyFixRequest,
@@ -547,6 +549,22 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_scan_id ON alerts(scan_id)")
     except Exception:
         pass
+    # 迁移：为 fix_tickets 表扩展闭环修复字段
+    for col_def in [
+        "ALTER TABLE fix_tickets ADD COLUMN finding_id TEXT DEFAULT ''",
+        "ALTER TABLE fix_tickets ADD COLUMN finding_type TEXT DEFAULT ''",
+        "ALTER TABLE fix_tickets ADD COLUMN url TEXT DEFAULT ''",
+        "ALTER TABLE fix_tickets ADD COLUMN target_host TEXT DEFAULT ''",
+        "ALTER TABLE fix_tickets ADD COLUMN applied_at TEXT",
+        "ALTER TABLE fix_tickets ADD COLUMN rolled_back_at TEXT",
+        "ALTER TABLE fix_tickets ADD COLUMN rollback_code TEXT",
+        "ALTER TABLE fix_tickets ADD COLUMN verification_scan_id INTEGER",
+        "ALTER TABLE fix_tickets ADD COLUMN diff_summary TEXT DEFAULT '{}'",
+    ]:
+        try:
+            conn.execute(col_def)
+        except Exception as e:
+            logger.warning("DB migration %s skipped: %s", col_def, e)
     conn.execute(
         """CREATE TABLE IF NOT EXISTS assets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -979,13 +997,29 @@ def compute_fixed_count(history: list) -> int:
 
 # ---------- Fix Ticket Helpers ----------
 
-def create_fix_ticket(user_id: int, scan_id: Optional[int], finding_name: str, severity: str, fix_code: Optional[str] = None, notes: Optional[str] = None) -> int:
+def create_fix_ticket(
+    user_id: int,
+    scan_id: Optional[int],
+    finding_name: str,
+    severity: str,
+    fix_code: Optional[str] = None,
+    notes: Optional[str] = None,
+    finding_id: Optional[str] = None,
+    finding_type: Optional[str] = None,
+    url: Optional[str] = None,
+    target_host: Optional[str] = None,
+) -> int:
     conn = get_db()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cur = conn.execute(
-        """INSERT INTO fix_tickets (user_id, scan_id, finding_name, severity, status, fix_code, notes, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
-        (user_id, scan_id, finding_name, severity, "pending", fix_code, notes, now, now),
+        """INSERT INTO fix_tickets (
+            user_id, scan_id, finding_name, severity, status,
+            fix_code, notes, finding_id, finding_type, url, target_host,
+            created_at, updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (user_id, scan_id, finding_name, severity, "pending",
+         fix_code, notes, finding_id or "", finding_type or "", url or "", target_host or "",
+         now, now),
     )
     conn.commit()
     ticket_id = cur.lastrowid
@@ -1023,7 +1057,18 @@ def get_fix_ticket(ticket_id: int, user_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
-def update_fix_ticket(ticket_id: int, user_id: int, status: Optional[str] = None, fix_code: Optional[str] = None, notes: Optional[str] = None) -> bool:
+def update_fix_ticket(
+    ticket_id: int,
+    user_id: int,
+    status: Optional[str] = None,
+    fix_code: Optional[str] = None,
+    notes: Optional[str] = None,
+    applied_at: Optional[str] = None,
+    rolled_back_at: Optional[str] = None,
+    rollback_code: Optional[str] = None,
+    verification_scan_id: Optional[int] = None,
+    diff_summary: Optional[str] = None,
+) -> bool:
     conn = get_db()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     fields = []
@@ -1034,12 +1079,33 @@ def update_fix_ticket(ticket_id: int, user_id: int, status: Optional[str] = None
         if status == "fixed":
             fields.append("fixed_at=?")
             params.append(now)
+        if status == "applying":
+            fields.append("applied_at=?")
+            params.append(now)
+        if status == "rolled_back":
+            fields.append("rolled_back_at=?")
+            params.append(now)
     if fix_code is not None:
         fields.append("fix_code=?")
         params.append(fix_code)
     if notes is not None:
         fields.append("notes=?")
         params.append(notes)
+    if applied_at is not None:
+        fields.append("applied_at=?")
+        params.append(applied_at)
+    if rolled_back_at is not None:
+        fields.append("rolled_back_at=?")
+        params.append(rolled_back_at)
+    if rollback_code is not None:
+        fields.append("rollback_code=?")
+        params.append(rollback_code)
+    if verification_scan_id is not None:
+        fields.append("verification_scan_id=?")
+        params.append(verification_scan_id)
+    if diff_summary is not None:
+        fields.append("diff_summary=?")
+        params.append(diff_summary)
     if not fields:
         conn.close()
         return False
@@ -1065,13 +1131,13 @@ def delete_fix_ticket(ticket_id: int, user_id: int) -> bool:
     return n > 0
 
 
-def auto_create_fix_tickets(user_id: int, scan_id: int, findings: list) -> int:
+def auto_create_fix_tickets(user_id: int, scan_id: int, findings: list, target_host: str = "") -> int:
     """为 high/critical finding 自动创建工单，跳过已存在的同名待处理工单。
 
     优化：先一次性查出当前用户所有 pending 工单的 finding_name（set 缓存），
     避免对每条 finding 单独查询（消除 N+1）。
     """
-    candidates: list[tuple[str, str, str]] = []
+    candidates: list[tuple[str, str, str, str, str, str, str]] = []
     for f in findings:
         severity = (f.get("severity") or "low").lower()
         if severity not in ("high", "critical"):
@@ -1084,7 +1150,10 @@ def auto_create_fix_tickets(user_id: int, scan_id: int, findings: list) -> int:
             or f.get("fix_suggestion", "")
             or (f.get("fix_code") or {}).get("generic", "")
         )
-        candidates.append((name, severity, fix_code))
+        fid = f.get("id") or ""
+        ftype = f.get("type") or ""
+        url = f.get("url") or ""
+        candidates.append((name, severity, fix_code, fid, ftype, url, target_host))
 
     if not candidates:
         return 0
@@ -1100,10 +1169,13 @@ def auto_create_fix_tickets(user_id: int, scan_id: int, findings: list) -> int:
         conn.close()
 
     created = 0
-    for name, severity, fix_code in candidates:
+    for name, severity, fix_code, fid, ftype, url, host in candidates:
         if name in existing:
             continue
-        create_fix_ticket(user_id, scan_id, name, severity, fix_code)
+        create_fix_ticket(
+            user_id, scan_id, name, severity, fix_code,
+            finding_id=fid, finding_type=ftype, url=url, target_host=host,
+        )
         existing.add(name)
         created += 1
     return created
@@ -5397,6 +5469,14 @@ def _build_fix_entry(code: str, server_type: str, config_examples: Dict[str, str
 
 
 def generate_fixes(findings: List[dict], headers: dict, is_https: bool, host: str) -> dict:
+    # 优先使用新的修复模板引擎生成结构化修复计划
+    try:
+        plan = generate_remediation_plan(findings, headers, host)
+        # 保持与旧格式兼容：返回 legacy_fixes
+        return plan.get("legacy_fixes") or plan.get("fixes") or {}
+    except Exception as e:
+        logger.warning("RemediationTemplateEngine failed, fallback to legacy: %s", e)
+
     fixes: dict = {
         "nginx": [], "apache": [], "express": [], "flask": [], "spring_boot": [], "cloudflare": [],
         "nodejs": [], "python": [],  # 保留旧 key 兼容
@@ -6645,7 +6725,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
 
         # 自动为 high/critical finding 创建修复工单
         try:
-            auto_create_fix_tickets(user_id, scan_id, result["findings"])
+            auto_create_fix_tickets(user_id, scan_id, result["findings"], target_host=host)
         except Exception as e:
             logger.warning("Auto create fix tickets failed: %s", e)
         # 自动同步资产扫描信息
@@ -6962,6 +7042,135 @@ async def api_delete_fix_ticket(ticket_id: int, user: dict = Depends(require_log
     if not ok:
         raise HTTPException(404, "工单不存在或无权限")
     return {"success": True}
+
+
+@app.post("/api/fix-tickets/{ticket_id}/verify")
+async def api_verify_fix_ticket(ticket_id: int, req: FixTicketVerifyRequest, user: dict = Depends(require_login)) -> dict:
+    """工单复测验证：对比修复前后扫描结果，生成 diff 报告。
+
+    流程：
+    1. 获取工单关联的原始扫描
+    2. 触发重新扫描（如果 req.rescan=True）
+    3. 对比两次扫描结果
+    4. 更新工单状态与 diff 摘要
+    """
+    ticket = get_fix_ticket(ticket_id, user["user_id"])
+    if not ticket:
+        raise HTTPException(404, "工单不存在或无权限")
+
+    scan_id = ticket.get("scan_id")
+    if not scan_id:
+        raise HTTPException(400, "工单未关联扫描记录，无法验证")
+
+    # 获取原始扫描结果
+    before_scan = get_scan_by_id(scan_id, user["user_id"])
+    if not before_scan:
+        raise HTTPException(404, "原始扫描记录不存在")
+
+    before_result = before_scan.get("result_json") or "{}"
+    try:
+        before_data = json.loads(before_result) if isinstance(before_result, str) else dict(before_result)
+    except Exception:
+        before_data = {}
+
+    # 触发复测扫描（简化版：调用分析函数）
+    after_data = before_data.copy()
+    verification_scan_id = None
+    if req.rescan and ticket.get("url"):
+        try:
+            from src_scanner import analyze_security
+            url = ticket["url"]
+            host = urlparse(url).hostname or url
+            headers = before_data.get("raw_headers") or {}
+            is_https = before_data.get("is_https", url.startswith("https"))
+            ssl_info = before_data.get("ssl_info") or {}
+            waf_list = before_data.get("waf_list") or []
+            # 使用 analyze_security 做快速复测
+            new_result = await analyze_security(url, headers, is_https, ssl_info, waf_list, depth="standard")
+            # 保存复测结果
+            new_scan_id = save_scan(
+                user["user_id"], url,
+                new_result.get("score", before_data.get("score", 0)),
+                new_result.get("risk_level", before_data.get("risk_level", "low")),
+                new_result.get("findings", []),
+                new_result.get("summary", {}),
+                0, "verification",
+            )
+            verification_scan_id = new_scan_id
+            after_data = {
+                "scan_id": new_scan_id,
+                "findings": new_result.get("findings", []),
+                "score": new_result.get("score", 0),
+                "risk_level": new_result.get("risk_level", "low"),
+            }
+        except Exception as e:
+            logger.warning("Ticket verification rescan failed: %s", e)
+            # 复测失败，使用原始数据作为 after
+            after_data = before_data.copy()
+
+    # 对比两次扫描
+    diff = ScanDiffEngine.compare_scans(
+        {"scan_id": scan_id, "findings": before_data.get("findings", []), "score": before_data.get("score", 0)},
+        after_data,
+    )
+
+    # 更新工单
+    diff_json = json.dumps(diff.to_dict(), ensure_ascii=False, default=str)
+    is_fixed = diff.is_verified_fixed([ticket.get("finding_name")])
+    new_status = "fixed" if is_fixed else ("failed" if diff.score_delta < 0 else ticket.get("status", "pending"))
+
+    update_fix_ticket(
+        ticket_id, user["user_id"],
+        status=new_status,
+        verification_scan_id=verification_scan_id,
+        diff_summary=diff_json,
+    )
+
+    return {
+        "success": True,
+        "ticket_id": ticket_id,
+        "verification_scan_id": verification_scan_id,
+        "diff": diff.to_dict(),
+        "status": new_status,
+    }
+
+
+@app.get("/api/fix-tickets/{ticket_id}/timeline")
+async def api_fix_ticket_timeline(ticket_id: int, user: dict = Depends(require_login)) -> dict:
+    """获取工单的闭环时间线。"""
+    ticket = get_fix_ticket(ticket_id, user["user_id"])
+    if not ticket:
+        raise HTTPException(404, "工单不存在或无权限")
+
+    timeline = []
+    if ticket.get("created_at"):
+        timeline.append({"stage": "discovered", "label": "发现漏洞", "time": ticket["created_at"], "status": "done"})
+    if ticket.get("status") in ("confirmed", "applying", "fixed", "failed", "rolled_back"):
+        timeline.append({"stage": "confirmed", "label": "确认修复", "time": ticket.get("updated_at", ""), "status": "done"})
+    else:
+        timeline.append({"stage": "confirmed", "label": "确认修复", "time": "", "status": "pending"})
+    if ticket.get("applied_at"):
+        timeline.append({"stage": "applying", "label": "应用修复", "time": ticket["applied_at"], "status": "done"})
+    elif ticket.get("status") in ("applying", "fixed", "failed"):
+        timeline.append({"stage": "applying", "label": "应用修复", "time": ticket.get("updated_at", ""), "status": "doing"})
+    else:
+        timeline.append({"stage": "applying", "label": "应用修复", "time": "", "status": "pending"})
+    if ticket.get("verification_scan_id"):
+        timeline.append({"stage": "verified", "label": "复测验证", "time": ticket.get("updated_at", ""), "status": "done"})
+    elif ticket.get("status") in ("fixed", "failed"):
+        timeline.append({"stage": "verified", "label": "复测验证", "time": "", "status": "doing"})
+    else:
+        timeline.append({"stage": "verified", "label": "复测验证", "time": "", "status": "pending"})
+    if ticket.get("status") == "fixed":
+        timeline.append({"stage": "closed", "label": "闭环完成", "time": ticket.get("fixed_at", ""), "status": "done"})
+    elif ticket.get("status") == "failed":
+        timeline.append({"stage": "closed", "label": "修复失败", "time": ticket.get("updated_at", ""), "status": "failed"})
+    elif ticket.get("status") == "rolled_back":
+        timeline.append({"stage": "closed", "label": "已回滚", "time": ticket.get("rolled_back_at", ""), "status": "rolled_back"})
+    else:
+        timeline.append({"stage": "closed", "label": "闭环完成", "time": "", "status": "pending"})
+
+    return {"success": True, "ticket": ticket, "timeline": timeline}
 
 
 @app.post("/api/finding/feedback")
@@ -11612,7 +11821,7 @@ async def api_scan_asset(asset_id: int, request: Request, user: dict = Depends(r
         result["findings"], result["summary"], 0, "real",
     )
     try:
-        auto_create_fix_tickets(user["user_id"], scan_id, result["findings"])
+        auto_create_fix_tickets(user["user_id"], scan_id, result["findings"], target_host=host)
     except Exception as e:
         logger.warning("Quick scan auto create fix tickets failed: %s", e)
     try:

@@ -191,6 +191,23 @@ class FixTicketUpdate(BaseModel):
     status: Optional[str] = None
     fix_code: Optional[str] = None
     notes: Optional[str] = None
+    rollback_code: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        allowed = {"pending", "confirmed", "applying", "fixed", "failed", "rolled_back", "in_progress", "ignored"}
+        if v not in allowed:
+            raise ValueError(f"status must be one of {allowed}")
+        return v
+
+
+class FixTicketVerifyRequest(BaseModel):
+    """工单复测验证请求。"""
+
+    rescan: bool = True  # 是否触发重新扫描
 
 
 # ---------- 反馈模型 ----------
