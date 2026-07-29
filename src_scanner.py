@@ -2389,6 +2389,19 @@ async def run_src_scan(
 
     duration_ms = int((time.time() - start_ts) * 1000)
 
+    # 误报控制与质量评估
+    try:
+        from app.quality import assess_scan_quality, filter_findings
+        findings = filter_findings(findings, threshold=0.5, drop_fp=False)
+        quality = assess_scan_quality(
+            findings,
+            scan_duration_ms=duration_ms,
+            depth="deep" if deep else "standard",
+            target_url=url,
+        )
+    except Exception:
+        quality = None
+
     return {
         "success": True,
         "scan_id": int(time.time()),
@@ -2402,4 +2415,5 @@ async def run_src_scan(
         "ssl": ssl_info,
         "duration_ms": duration_ms,
         "report_share_id": _generate_id("RPT"),
+        "quality": quality.to_dict() if quality else {},
     }
