@@ -80,6 +80,13 @@ function renderHeader(score, riskLevel, summary, url, data) {
     ? `<button class="src-export-btn" id="src-export-markdown" title="导出 SRC 格式 Markdown 报告">导出 SRC 报告</button>`
     : '';
 
+  // 扫描质量评分
+  const quality = data.quality || {};
+  const qScore = quality.overall_score || 0;
+  const qBadge = qScore > 0
+    ? `<span class="meta-item" style="color:${qScore >= 80 ? '#73c990' : qScore >= 60 ? '#f0a732' : '#c75450'}">质量 ${qScore}分</span>`
+    : '';
+
   return `
     <div class="src-report-header fade-in-up">
       <div class="src-score-wrap">
@@ -102,7 +109,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
           <div class="src-stat total"><div class="num">${summary.total || 0}</div><div class="label">总计</div></div>
         </div>
         <div class="src-report-submeta">
-          ${scanId}${duration}${reportId}
+          ${scanId}${duration}${reportId}${qBadge}
           <span class="meta-item">发现于 ${formatDate(data.discovered_at || new Date().toISOString())}</span>
         </div>
         <div class="src-report-actions">
