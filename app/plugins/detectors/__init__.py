@@ -5,12 +5,15 @@ from __future__ import annotations
 from app.plugins.detectors.src_adapter import (
     BrokenAccessControlDetector,
     CSRFDetector,
+    CommandInjectionDetector,
+    DeserializationDetector,
     FileUploadDetector,
     IDORDetector,
     InfoLeakDetector,
     LogicBypassDetector,
     OpenRedirectDetector,
     OutdatedComponentDetector,
+    PathTraversalDetector,
     ReflectedXSSDetector,
     SQLiDetector,
     SSRFDetector,
@@ -32,4 +35,7 @@ __all__ = [
     "LogicBypassDetector",
     "OpenRedirectDetector",
     "XXEDetector",
+    "CommandInjectionDetector",
+    "PathTraversalDetector",
+    "DeserializationDetector",
 ]

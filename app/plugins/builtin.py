@@ -169,12 +169,15 @@ def register_builtin_detectors() -> None:
     from app.plugins.detectors import (
         BrokenAccessControlDetector,
         CSRFDetector,
+        CommandInjectionDetector,
+        DeserializationDetector,
         FileUploadDetector,
         IDORDetector,
         InfoLeakDetector,
         LogicBypassDetector,
         OpenRedirectDetector,
         OutdatedComponentDetector,
+        PathTraversalDetector,
         ReflectedXSSDetector,
         SQLiDetector,
         SSRFDetector,
@@ -197,3 +200,6 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(LogicBypassDetector())
     DetectorRegistry.register(OpenRedirectDetector())
     DetectorRegistry.register(XXEDetector())
+    DetectorRegistry.register(CommandInjectionDetector())
+    DetectorRegistry.register(PathTraversalDetector())
+    DetectorRegistry.register(DeserializationDetector())

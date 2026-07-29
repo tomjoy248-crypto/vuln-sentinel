@@ -192,3 +192,45 @@ class XXEDetector(BaseVulnDetector):
 
         raw = await detect_xxe_src(context.url, context.headers, context.body or "")
         return [old_finding_to_finding(r) for r in raw]
+
+
+class CommandInjectionDetector(BaseVulnDetector):
+    """命令注入检测插件。"""
+
+    name = "cmdi"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> List[Finding]:
+        from src_scanner import detect_command_injection_src
+
+        raw = await detect_command_injection_src(context.url)
+        return [old_finding_to_finding(r) for r in raw]
+
+
+class PathTraversalDetector(BaseVulnDetector):
+    """路径遍历检测插件。"""
+
+    name = "traversal"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> List[Finding]:
+        from src_scanner import detect_path_traversal_src
+
+        raw = await detect_path_traversal_src(context.url)
+        return [old_finding_to_finding(r) for r in raw]
+
+
+class DeserializationDetector(BaseVulnDetector):
+    """不安全反序列化检测插件。"""
+
+    name = "deserialization"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> List[Finding]:
+        from src_scanner import detect_deserialization_src
+
+        raw = await detect_deserialization_src(context.url, context.headers, context.body or "")
+        return [old_finding_to_finding(r) for r in raw]

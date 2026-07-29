@@ -693,6 +693,58 @@ dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
             "cloudflare": "# Cloudflare WAF 可拦截包含 XML 实体定义的请求体。",
             "generic": "禁用 XML DTD 处理和外部实体；使用安全的 XML 解析库（如 defusedxml）；对 XML 输入进行白名单校验。",
         },
+        "cmdi": {
+            "nginx": "# Nginx 无法直接修复命令注入，建议在后端使用参数化 API 并配合 WAF 拦截常见注入字符。",
+            "apache": "# Apache + ModSecurity 可拦截常见命令注入模式：SecRule ARGS '@rx [;&|`]' 'id:2000,deny,status:403'",
+            "express": """// Node.js：使用 execFile 替代 exec，避免 shell 解析
+const { execFile } = require('child_process');
+execFile('ls', [userInput], (err, stdout) => { ... });""",
+            "flask": """# Python：使用列表传参替代 shell=True
+import subprocess
+subprocess.run(['ls', user_input], shell=False, capture_output=True)""",
+            "spring_boot": """// Java：使用 ProcessBuilder 并校验参数
+List<String> cmd = Arrays.asList("ls", userInput);
+new ProcessBuilder(cmd).start();""",
+            "cloudflare": "# Cloudflare WAF 可拦截包含命令分隔符的请求参数。",
+            "generic": "永远不要将用户输入拼接到系统命令字符串中；使用参数化 API（列表传参）并严格校验输入字符白名单。",
+        },
+        "traversal": {
+            "nginx": "# Nginx 限制访问范围：location /files { alias /var/www/files; } 确保无法通过 ../ 跳出目录。",
+            "apache": "# Apache 限制访问范围并校验路径。",
+            "express": """// Node.js：校验路径在允许的基础目录内
+const path = require('path');
+const safePath = path.join(BASE_DIR, path.normalize(userInput));
+if (!safePath.startsWith(BASE_DIR)) throw new Error('非法路径');""",
+            "flask": """# Python：校验路径在允许的基础目录内
+import os
+base = '/var/www/files'
+requested = os.path.realpath(os.path.join(base, user_input))
+if not requested.startswith(base):
+    abort(403)""",
+            "spring_boot": """// Java：校验规范路径
+Path base = Paths.get("/var/www/files").toRealPath();
+Path target = base.resolve(userInput).toRealPath();
+if (!target.startsWith(base)) throw new SecurityException();""",
+            "cloudflare": "# Cloudflare WAF 可拦截包含 '../' 序列的请求参数。",
+            "generic": "对用户输入的文件路径进行标准化处理（realpath / getCanonicalPath），限制在允许的基础目录内；禁止直接使用用户输入拼接文件路径。",
+        },
+        "deserialization": {
+            "nginx": "# Nginx 无法直接修复反序列化漏洞，建议在应用层禁用原生反序列化。",
+            "apache": "# Apache 无法直接修复反序列化漏洞，建议在应用层禁用原生反序列化。",
+            "express": """// Node.js：使用 JSON 替代原生序列化
+const data = JSON.parse(userInput);  // 安全
+// 避免：eval(userInput) 或 require('vm').runInNewContext""",
+            "flask": """# Python：使用 JSON 替代 pickle
+import json
+data = json.loads(user_input)  # 安全
+# 避免：pickle.loads(user_input) 或 yaml.unsafe_load""",
+            "spring_boot": """// Java：使用 JSON 替代 ObjectInputStream
+ObjectMapper mapper = new ObjectMapper();
+MyClass obj = mapper.readValue(json, MyClass.class);  // 安全
+// 避免：new ObjectInputStream(in).readObject()""",
+            "cloudflare": "# Cloudflare WAF 可拦截包含序列化对象特征的请求体。",
+            "generic": "永远不要反序列化不可信数据；使用 JSON 等安全格式替代原生序列化；如需使用，实施签名验证和类型白名单。",
+        },
     }
     return templates.get(vuln_type, {k: None for k in ["nginx", "apache", "express", "flask", "spring_boot", "cloudflare", "generic"]})
 
@@ -754,6 +806,18 @@ def _references(vuln_type: str) -> List[str]:
             "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html",
             "https://portswigger.net/web-security/xxe",
         ],
+        "cmdi": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html",
+            "https://portswigger.net/web-security/os-command-injection",
+        ],
+        "traversal": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/Path_Traversal_Prevention_Cheat_Sheet.html",
+            "https://portswigger.net/web-security/file-path-traversal",
+        ],
+        "deserialization": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html",
+            "https://owasp.org/www-project-top-ten/2017/A8_2017-Insecure_Deserialization",
+        ],
     }
     return refs.get(vuln_type, [])
 
@@ -777,6 +841,9 @@ def _owasp_category(vuln_type: str) -> str:
         "logic_bypass": "A04:2021 - Insecure Design / A07 - Authentication Failures",
         "open_redirect": "A01:2021 - Broken Access Control",
         "xxe": "A05:2021 - Security Misconfiguration",
+        "cmdi": "A03:2021 - Injection",
+        "traversal": "A01:2021 - Broken Access Control",
+        "deserialization": "A08:2021 - Software and Data Integrity Failures",
     }
     return mapping.get(vuln_type, "A05:2021 - Security Misconfiguration")
 
@@ -801,6 +868,9 @@ def _cwe_id(vuln_type: str) -> str:
         "logic_bypass": "CWE-287",
         "open_redirect": "CWE-601",
         "xxe": "CWE-611",
+        "cmdi": "CWE-78",
+        "traversal": "CWE-22",
+        "deserialization": "CWE-502",
     }
     return mapping.get(vuln_type, "CWE-693")
 
@@ -1787,6 +1857,63 @@ XXE_BODY_INDICATORS = [
 
 XXE_PAYLOAD = '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><foo>&xxe;</foo>'
 
+# ---------- 命令注入检测常量 ----------
+CMDI_PAYLOADS: List[str] = [
+    ";id",
+    "|id",
+    "`id`",
+    "$(id)",
+    ";whoami",
+    "|whoami",
+    ";cat /etc/passwd",
+    "|cat /etc/passwd",
+]
+
+CMDI_INDICATORS: List[str] = [
+    "uid=", "gid=", "groups=", "root:", "daemon:", "bin:",
+    "www-data", "administrator", "nt authority",
+]
+
+# ---------- 路径遍历检测常量 ----------
+TRAVERSAL_PAYLOADS: List[Tuple[str, str]] = [
+    ("../../../etc/passwd", "linux_passwd"),
+    ("....//....//....//etc/passwd", "linux_passwd_alt"),
+    ("..%2f..%2f..%2fetc/passwd", "url_encoded"),
+    ("..\\..\\..\\windows\\win.ini", "windows_ini"),
+    ("....\\\\....\\\\....\\\\windows\\\\win.ini", "windows_ini_alt"),
+]
+
+TRAVERSAL_INDICATORS: Dict[str, List[str]] = {
+    "linux_passwd": ["root:", "daemon:", "bin:", "/bin/bash", "/bin/sh"],
+    "linux_passwd_alt": ["root:", "daemon:", "bin:", "/bin/bash", "/bin/sh"],
+    "url_encoded": ["root:", "daemon:", "bin:", "/bin/bash", "/bin/sh"],
+    "windows_ini": ["[fonts]", "[extensions]", "[mci extensions]", "[files]"],
+    "windows_ini_alt": ["[fonts]", "[extensions]", "[mci extensions]", "[files]"],
+}
+
+# ---------- 不安全的反序列化检测常量 ----------
+DESERIAL_ENDPOINTS: List[str] = [
+    "/api/deserialize", "/deserialize", "/object", "/rpc",
+    "/api/object", "/api/rpc", "/api/invoke", "/invoke",
+    "/api/batch", "/batch", "/api/process", "/process",
+]
+
+DESERIAL_CONTENT_TYPES: List[str] = [
+    "application/java-serialized-object",
+    "application/x-java-serialized-object",
+    "application/x-yaml",
+    "application/octet-stream",
+    "application/x-www-form-urlencoded",
+]
+
+DESERIAL_BODY_INDICATORS: List[re.Pattern] = [
+    re.compile(r"rO0[AB]"),  # Java serialized object base64
+    re.compile(r"aced00"),    # Java serialized object hex
+    re.compile(r"!!python/object"),  # PyYAML unsafe
+    re.compile(r"__reduce__"),       # Python pickle
+    re.compile(r"O:\d+:\""),         # PHP serialized
+]
+
 
 async def detect_xxe_src(url: str, headers: Dict[str, str], body: str = "") -> List[Dict[str, Any]]:
     """检测 XML 外部实体（XXE）注入漏洞。
@@ -1875,6 +2002,240 @@ async def detect_xxe_src(url: str, headers: Dict[str, str], body: str = "") -> L
 
     return findings
 
+
+async def detect_command_injection_src(url: str) -> List[Dict[str, Any]]:
+    """检测命令注入漏洞。
+
+    检测策略：
+    1. 提取 URL 参数
+    2. 注入命令执行 payload（;id, |whoami 等）
+    3. 检查响应中是否包含系统命令输出特征
+    """
+    _init_helpers()
+    findings: List[Dict[str, Any]] = []
+
+    parsed = urlparse(url)
+    params = list(parse_qs(parsed.query, keep_blank_values=True).keys()) if parsed.query else []
+    if not params:
+        return findings
+
+    for param in params[:4]:
+        for payload in CMDI_PAYLOADS:
+            test_url = _build_test_url(url, param, payload)
+            try:
+                resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=True)
+                body = _safe_read_body(resp)
+                body_lower = body.lower()
+
+                matched = False
+                for indicator in CMDI_INDICATORS:
+                    if indicator.lower() in body_lower:
+                        matched = True
+                        break
+
+                if matched:
+                    findings.append(build_finding(
+                        vuln_type="cmdi",
+                        title=f"命令注入漏洞（参数 {param}）",
+                        severity="critical",
+                        severity_score=10,
+                        url=test_url,
+                        parameter=param,
+                        location=f"URL 参数 {param}",
+                        description=f"参数 '{param}' 存在命令注入漏洞，服务器执行了用户输入中的系统命令并返回了命令输出。",
+                        evidence_request=_build_request_text("GET", test_url),
+                        evidence_response=_build_response_text(resp, 600),
+                        evidence_payload=payload,
+                        impact="攻击者可利用该漏洞执行任意系统命令，完全控制服务器、窃取数据或植入后门。",
+                        reproduce_steps=[
+                            f"访问目标页面：{url}",
+                            f"在参数 {param} 中注入命令：{payload}",
+                            "提交请求并观察响应是否包含系统命令输出（如 uid、whoami 结果）",
+                        ],
+                        fix_suggestion="永远不要将用户输入拼接到系统命令中；使用参数化 API（如 Python subprocess.run(list, shell=False)）。",
+                        confidence="high",
+                    ))
+                    break
+            except Exception:
+                pass
+        if findings:
+            break
+
+    return findings
+
+
+async def detect_path_traversal_src(url: str) -> List[Dict[str, Any]]:
+    """检测路径遍历/目录穿越漏洞。
+
+    检测策略：
+    1. 提取 URL 参数
+    2. 注入路径遍历 payload（../../../etc/passwd 等）
+    3. 检查响应中是否包含系统文件内容特征
+    """
+    _init_helpers()
+    findings: List[Dict[str, Any]] = []
+
+    parsed = urlparse(url)
+    params = list(parse_qs(parsed.query, keep_blank_values=True).keys()) if parsed.query else []
+    if not params:
+        return findings
+
+    for param in params[:4]:
+        for payload, tag in TRAVERSAL_PAYLOADS:
+            test_url = _build_test_url(url, param, payload)
+            try:
+                resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=True)
+                body = _safe_read_body(resp)
+                body_lower = body.lower()
+
+                indicators = TRAVERSAL_INDICATORS.get(tag, [])
+                matched = False
+                for indicator in indicators:
+                    if indicator.lower() in body_lower:
+                        matched = True
+                        break
+
+                if matched:
+                    findings.append(build_finding(
+                        vuln_type="traversal",
+                        title=f"路径遍历漏洞（参数 {param}）",
+                        severity="high",
+                        severity_score=8,
+                        url=test_url,
+                        parameter=param,
+                        location=f"URL 参数 {param}",
+                        description=f"参数 '{param}' 存在路径遍历漏洞，攻击者可通过构造 '../' 序列读取服务器上的任意文件。",
+                        evidence_request=_build_request_text("GET", test_url),
+                        evidence_response=_build_response_text(resp, 600),
+                        evidence_payload=payload,
+                        impact="攻击者可读取系统配置文件、源代码、数据库凭证，甚至通过日志包含等方式实现远程代码执行。",
+                        reproduce_steps=[
+                            f"访问目标页面：{url}",
+                            f"在参数 {param} 中注入路径遍历 payload：{payload}",
+                            "提交请求并观察响应是否包含系统文件内容",
+                        ],
+                        fix_suggestion="对用户输入的文件路径进行标准化处理（如 os.path.realpath），限制在允许的基础目录内；禁止直接使用用户输入拼接文件路径。",
+                        confidence="high",
+                    ))
+                    break
+            except Exception:
+                pass
+        if findings:
+            break
+
+    return findings
+
+
+async def detect_deserialization_src(url: str, headers: Dict[str, str], body: str = "") -> List[Dict[str, Any]]:
+    """检测不安全的反序列化漏洞。
+
+    检测策略：
+    1. 检查 URL 路径或 Content-Type 是否暗示反序列化端点
+    2. 检查响应体中是否包含序列化对象特征
+    3. 向疑似端点发送序列化 payload，观察异常响应
+    """
+    _init_helpers()
+    findings: List[Dict[str, Any]] = []
+
+    parsed = urlparse(url)
+    path_lower = parsed.path.lower()
+
+    # 1. 端点识别
+    is_deserial_endpoint = any(path_lower.endswith(ep) or ep in path_lower for ep in DESERIAL_ENDPOINTS)
+
+    content_type = headers.get("content-type", headers.get("Content-Type", "")).lower()
+    is_deserial_content_type = any(ct in content_type for ct in DESERIAL_CONTENT_TYPES)
+
+    has_deserial_body = False
+    if body:
+        for pattern in DESERIAL_BODY_INDICATORS:
+            if pattern.search(body[:2000]):
+                has_deserial_body = True
+                break
+
+    if not is_deserial_endpoint and not is_deserial_content_type and not has_deserial_body:
+        return findings
+
+    # 2. 动态检测：发送常见反序列化 payload
+    deserial_payloads = [
+        ("rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRwAIAA0kACmxvYWRGYWN0b3JJAAl0aHJlc2hvbGR4cA==", "java"),
+        ("O:8:\"stdClass\":0:{}", "php"),
+        ("!!python/object:__main__.Test {}", "python"),
+    ]
+
+    for payload, ptype in deserial_payloads:
+        try:
+            resp = await _recorded_request(
+                "post",
+                url,
+                content=payload,
+                headers={"Content-Type": "application/octet-stream"},
+                timeout=10.0,
+                follow_redirects=False,
+            )
+
+            body_text = _safe_read_body(resp)
+            body_lower = body_text.lower()
+
+            # 检查是否触发反序列化异常
+            error_indicators = [
+                "serialization", "deserialize", "objectinputstream",
+                "invalidclassexception", "classnotfound", "unpickling",
+                "yaml.constructor", "php unserialize",
+            ]
+            has_error = any(ind in body_lower for ind in error_indicators)
+
+            if has_error or resp.status_code in (500, 502, 503):
+                findings.append(build_finding(
+                    vuln_type="deserialization",
+                    title="不安全的反序列化漏洞",
+                    severity="critical",
+                    severity_score=10,
+                    url=url,
+                    parameter="HTTP Body",
+                    location="反序列化端点",
+                    description=f"目标端点 ({parsed.path}) 接受用户输入并进行反序列化操作，检测到类型为 {ptype} 的反序列化异常响应。",
+                    evidence_request=f"POST {url}\nContent-Type: application/octet-stream\n\n{payload[:80]}...",
+                    evidence_response=_build_response_text(resp, 600),
+                    evidence_payload=payload,
+                    impact="攻击者可构造恶意序列化对象实现远程代码执行（RCE），完全控制服务器。",
+                    reproduce_steps=[
+                        f"向 {url} 发送包含 {ptype} 序列化对象的请求",
+                        "观察响应是否包含反序列化异常或服务器错误",
+                        "使用 ysoserial、PHPGGC 等工具生成利用链进一步验证",
+                    ],
+                    fix_suggestion="永远不要反序列化不可信数据；使用 JSON 等安全格式替代原生序列化；如需使用，实施签名验证和类型白名单。",
+                    confidence="high" if has_error else "medium",
+                ))
+                break
+        except Exception:
+            pass
+
+    # 3. 静态检测：如果端点或内容类型匹配但动态检测未触发，报告潜在风险
+    if not findings and (is_deserial_endpoint or is_deserial_content_type):
+        findings.append(build_finding(
+            vuln_type="deserialization",
+            title="潜在不安全的反序列化端点",
+            severity="medium",
+            severity_score=5,
+            url=url,
+            parameter="",
+            location=parsed.path,
+            description=f"目标端点 ({parsed.path}) 的 URL 路径或 Content-Type 暗示其可能执行反序列化操作，需人工确认安全性。",
+            evidence_request=_build_request_text("GET", url),
+            evidence_response="",
+            impact="如果该端点确实执行反序列化且未做安全限制，攻击者可能通过恶意对象实现远程代码执行。",
+            reproduce_steps=[
+                f"确认端点 {parsed.path} 是否接受序列化对象输入",
+                "尝试发送不同格式的序列化 payload 观察响应",
+            ],
+            fix_suggestion="对所有反序列化操作实施严格的类型白名单和签名验证；优先使用 JSON 等安全数据交换格式。",
+            confidence="low",
+        ))
+
+    return findings
+
+
 async def run_src_scan(
     url: str,
     headers: Dict[str, str],
@@ -1902,10 +2263,14 @@ async def run_src_scan(
     logic_task = detect_logic_bypass_src(url, headers)
     open_redirect_task = detect_open_redirect_src(url)
     xxe_task = detect_xxe_src(url, headers, "")
+    cmdi_task = detect_command_injection_src(url)
+    traversal_task = detect_path_traversal_src(url)
+    deserial_task = detect_deserialization_src(url, headers, "")
 
     tasks = [
         sqli_task, xss_task, info_leak_task, csrf_task, paths_task, components_task,
         bac_task, ssrf_task, idor_task, upload_task, logic_task, open_redirect_task, xxe_task,
+        cmdi_task, traversal_task, deserial_task,
     ]
     if deep:
         # 深度模式：暂不增加额外任务，保留扩展位
