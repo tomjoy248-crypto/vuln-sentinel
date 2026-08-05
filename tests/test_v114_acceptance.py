@@ -1,5 +1,4 @@
 """V11.4 验收测试：PDF 中文字体不能退化为 ■"""
-import json
 import os
 import sys
 
@@ -78,6 +77,7 @@ def test_owasp_top10_full_coverage():
 def test_scan_auth_log_endpoint_exists():
     """/api/scan-auth-log 端点必须存在（前端会调用）"""
     from fastapi.testclient import TestClient
+
     from main import app
     client = TestClient(app)
     # 不需要登录，验证端点存在（不是 404）
@@ -88,6 +88,7 @@ def test_scan_auth_log_endpoint_exists():
 def test_get_single_scan_endpoint_exists():
     """/api/scan/{id} 端点必须存在"""
     from fastapi.testclient import TestClient
+
     from main import app
     client = TestClient(app)
     resp = client.get("/api/scan/1")

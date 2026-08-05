@@ -37,10 +37,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("vuln_sentinel.tasks")
 
@@ -48,7 +49,7 @@ logger = logging.getLogger("vuln_sentinel.tasks")
 ProgressCallback = Callable[[int], None]
 
 # 扫描函数类型：async (url, *, progress_cb, **kwargs) -> dict
-ScanFunc = Callable[..., Awaitable[Dict[str, Any]]]
+ScanFunc = Callable[..., Awaitable[dict[str, Any]]]
 
 # 终态集合：进入这些状态后任务不再流转
 _TERMINAL_STATUSES = frozenset(
@@ -105,13 +106,13 @@ class ScanTask:
     status: TaskStatus = TaskStatus.PENDING
     depth: str = "standard"
     progress: int = 0
-    created_at: Optional[str] = None
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    created_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """转换为字典，便于 API 序列化与日志输出。"""
         return {
             "task_id": self.task_id,
@@ -181,9 +182,9 @@ class ScanTaskManager:
         self._max_retained = max_retained
 
         # task_id -> ScanTask
-        self._tasks: Dict[str, ScanTask] = {}
+        self._tasks: dict[str, ScanTask] = {}
         # task_id -> asyncio.Task（后台协程句柄，用于取消）
-        self._handles: Dict[str, asyncio.Task] = {}
+        self._handles: dict[str, asyncio.Task] = {}
 
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._lock = asyncio.Lock()
@@ -253,7 +254,7 @@ class ScanTaskManager:
         self,
         task: ScanTask,
         scan_func: ScanFunc,
-        kwargs: Dict[str, Any],
+        kwargs: dict[str, Any],
     ) -> None:
         """单任务执行生命周期管理。
 
@@ -299,9 +300,7 @@ class ScanTaskManager:
                 )
 
                 # 兼容非 dict 返回值，统一存储为 dict
-                task.result = (
-                    result if isinstance(result, dict) else {"result": result}
-                )
+                task.result = result if isinstance(result, dict) else {"result": result}
                 task.progress = 100
                 task.status = TaskStatus.COMPLETED
                 logger.info("Task completed: id=%s", task.task_id)
@@ -339,7 +338,7 @@ class ScanTaskManager:
     # ------------------------------------------------------------------
     # 查询
     # ------------------------------------------------------------------
-    def get_task(self, task_id: str) -> Optional[ScanTask]:
+    def get_task(self, task_id: str) -> ScanTask | None:
         """按 task_id 获取任务对象。
 
         Args:
@@ -350,7 +349,7 @@ class ScanTaskManager:
         """
         return self._tasks.get(task_id)
 
-    def get_task_status(self, task_id: str) -> Dict[str, Any]:
+    def get_task_status(self, task_id: str) -> dict[str, Any]:
         """获取任务状态字典（供 API 响应直接返回）。
 
         Args:
@@ -373,9 +372,9 @@ class ScanTaskManager:
 
     def list_tasks(
         self,
-        user_id: Optional[Any] = None,
-        status: Optional[TaskStatus] = None,
-    ) -> List[ScanTask]:
+        user_id: Any | None = None,
+        status: TaskStatus | None = None,
+    ) -> list[ScanTask]:
         """列出任务，支持按用户与状态过滤。
 
         Args:
@@ -386,7 +385,7 @@ class ScanTaskManager:
         Returns:
             匹配的任务列表，按提交时间倒序排列（最新在前）
         """
-        normalized_status: Optional[TaskStatus] = None
+        normalized_status: TaskStatus | None = None
         if status is not None:
             normalized_status = (
                 status if isinstance(status, TaskStatus) else TaskStatus(status)
@@ -401,13 +400,13 @@ class ScanTaskManager:
         tasks.sort(key=lambda t: t.created_at or "", reverse=True)
         return tasks
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """返回队列统计信息。
 
         Returns:
             包含各状态计数与队列配置的字典
         """
-        counts: Dict[str, int] = {s.value: 0 for s in TaskStatus}
+        counts: dict[str, int] = {s.value: 0 for s in TaskStatus}
         for task in self._tasks.values():
             counts[task.status.value] += 1
 
@@ -484,9 +483,7 @@ class ScanTaskManager:
             return
 
         terminal = [
-            t
-            for t in self._tasks.values()
-            if t.status.value in _TERMINAL_STATUSES
+            t for t in self._tasks.values() if t.status.value in _TERMINAL_STATUSES
         ]
         if len(terminal) <= self._max_retained:
             return

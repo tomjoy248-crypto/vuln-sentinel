@@ -8,7 +8,6 @@ main.py 仍然保留原始函数定义以保证向后兼容，
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 import bcrypt
 import jwt
@@ -20,7 +19,9 @@ def hash_password(pwd: str) -> str:
 
     bcrypt 限制密码最长 72 字节，超出部分截断。
     """
-    return bcrypt.hashpw(pwd[:72].encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+    return bcrypt.hashpw(pwd[:72].encode("utf-8"), bcrypt.gensalt(rounds=12)).decode(
+        "utf-8"
+    )
 
 
 def verify_password(pwd: str, hashed: str) -> bool:
@@ -60,7 +61,7 @@ def create_token(
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
-def verify_token(token: str, *, secret: str = "") -> Optional[dict]:
+def verify_token(token: str, *, secret: str = "") -> dict | None:
     """验证 JWT token。
 
     Args:
@@ -76,18 +77,20 @@ def verify_token(token: str, *, secret: str = "") -> Optional[dict]:
         return None
 
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> Optional[dict]:
+async def get_current_user(
+    authorization: str | None = Header(None),
+) -> dict | None:
     """可选认证依赖：无 token 返回 None，不报错。"""
     if not authorization or not authorization.startswith("Bearer "):
         return None
     token = authorization[7:]
     # secret 由 main.py 的全局 settings 提供，此处通过延迟导入避免循环依赖
-    from main import settings, verify_token as _verify
+    from main import verify_token as _verify
 
     return _verify(token)
 
 
-async def require_login(authorization: Optional[str] = Header(None)) -> dict:
+async def require_login(authorization: str | None = Header(None)) -> dict:
     """强制认证依赖：无 token 或 token 无效时抛 401。"""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "请先登录")

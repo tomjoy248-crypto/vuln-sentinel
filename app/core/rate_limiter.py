@@ -5,18 +5,24 @@
 - 按 IP 地址限流（匿名用户）
 - 不同路径的差异化限流策略
 - 超限返回 429 Too Many Requests
+- Redis 分布式限流（生产环境）
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
 import threading
 import time
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from typing import Any, Callable, Coroutine, Optional
+from typing import Any
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
+logger = logging.getLogger("vuln_sentinel.rate_limiter")
 
 # ---------------------------------------------------------------------------
 # 令牌桶
@@ -55,9 +61,7 @@ class TokenBucket:
         now = time.monotonic()
         elapsed = now - self.last_refill
         if elapsed > 0:
-            self.tokens = min(
-                self.capacity, self.tokens + elapsed * self.refill_rate
-            )
+            self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)
         self.last_refill = now
 
     def try_consume(self, n: float = 1.0) -> bool:
@@ -159,7 +163,7 @@ class RateLimiter:
 
     # ---------------- 规则匹配 ----------------
 
-    def get_rule(self, path: str) -> Optional[RateLimitRule]:
+    def get_rule(self, path: str) -> RateLimitRule | None:
         """返回命中路径的限流规则；非 API 路径返回 ``None``（不限流）。"""
         for rule in self._rules:
             if self._path_matches(path, rule.path_prefix):
@@ -180,7 +184,7 @@ class RateLimiter:
 
     # ---------------- 限流检查 ----------------
 
-    def check(self, path: str, identifier: str) -> tuple[bool, dict[str, str]]:
+    async def check(self, path: str, identifier: str) -> tuple[bool, dict[str, str]]:
         """检查请求是否被允许。
 
         Args:
@@ -241,11 +245,146 @@ class RateLimiter:
 
 
 # ---------------------------------------------------------------------------
-# FastAPI 集成
+# Redis 分布式限流器
 # ---------------------------------------------------------------------------
 
+
+class RedisRateLimiter:
+    """基于 Redis 固定窗口的分布式限流器。
+
+    当 ``REDIS_URL`` 配置时启用，多实例共享限流计数。
+    使用 Lua 脚本保证 ``检查-扣减`` 原子性，避免并发竞态。
+    """
+
+    _WINDOW_SECONDS = 60
+
+    _ALLOW_SCRIPT = """
+    local key = KEYS[1]
+    local limit = tonumber(ARGV[1])
+    local ttl = tonumber(ARGV[2])
+    local current = tonumber(redis.call('GET', key) or 0)
+    if current >= limit then
+        return 0
+    end
+    redis.call('INCR', key)
+    if current == 0 then
+        redis.call('EXPIRE', key, ttl)
+    end
+    return 1
+    """
+
+    def __init__(
+        self, redis_url: str, default_rpm: int = 60, default_burst: int = 10
+    ) -> None:
+        self._redis_url = redis_url
+        self._default_rpm = default_rpm
+        self._default_burst = default_burst
+        self._rules: list[RateLimitRule] = [
+            RateLimitRule("/api/scan", 10, 3),
+            RateLimitRule("/api/login", 5, 3),
+            RateLimitRule("/api/register", 3, 2),
+            RateLimitRule("/api/ai/", 20, 5),
+            RateLimitRule("/api/", default_rpm, default_burst),
+        ]
+        self._redis: Any = None
+        self._lua_sha: str | None = None
+        self._lock = asyncio.Lock()
+
+    def _get_rule(self, path: str) -> RateLimitRule | None:
+        for rule in self._rules:
+            if RateLimiter._path_matches(path, rule.path_prefix):
+                return rule
+        return None
+
+    async def _get_redis(self) -> Any:
+        async with self._lock:
+            if self._redis is None:
+                import redis.asyncio as aioredis
+
+                self._redis = aioredis.from_url(self._redis_url, decode_responses=True)
+                self._lua_sha = await self._redis.script_load(self._ALLOW_SCRIPT)
+            return self._redis
+
+    async def check(self, path: str, identifier: str) -> tuple[bool, dict[str, str]]:
+        """检查请求是否被允许（Redis 固定窗口）。"""
+        rule = self._get_rule(path)
+        if rule is None:
+            return True, {}
+
+        now = int(time.time())
+        window_start = now - (now % self._WINDOW_SECONDS)
+        key = f"v11s:ratelimit:{rule.path_prefix}:{identifier}:{window_start}"
+        limit = rule.requests_per_minute
+
+        try:
+            r = await self._get_redis()
+            if self._lua_sha:
+                allowed = await r.evalsha(
+                    self._lua_sha, 1, key, str(limit), str(self._WINDOW_SECONDS)
+                )
+            else:
+                allowed = await r.eval(
+                    self._ALLOW_SCRIPT, 1, key, str(limit), str(self._WINDOW_SECONDS)
+                )
+            allowed = bool(int(allowed))
+            current = int(await r.get(key) or 0)
+            remaining = max(0, limit - current)
+            reset = window_start + self._WINDOW_SECONDS
+        except Exception as exc:
+            logger.warning("Redis rate limiter failed, allowing request: %s", exc)
+            return True, {}
+
+        headers = {
+            "X-RateLimit-Limit": str(limit),
+            "X-RateLimit-Remaining": str(remaining),
+            "X-RateLimit-Reset": str(reset),
+        }
+        return allowed, headers
+
+
+# ---------------------------------------------------------------------------
+# 限流器工厂与 FastAPI 集成
+# ---------------------------------------------------------------------------
+
+
+def create_rate_limiter(
+    redis_url: str | None = None,
+    default_rpm: int = 60,
+    default_burst: int = 10,
+) -> RateLimiter | RedisRateLimiter:
+    """根据配置创建合适的限流器。
+
+    - 若 ``redis_url`` 或环境变量 ``REDIS_URL`` 非空，优先使用 Redis 分布式限流。
+    - Redis 不可用或配置缺失时回退到内存 TokenBucket。
+    """
+    if redis_url is None:
+        redis_url = os.environ.get("REDIS_URL", "")
+        if not redis_url:
+            try:
+                from app.core.config import settings
+
+                redis_url = getattr(settings, "redis_url", "") or ""
+            except Exception:
+                pass
+
+    if redis_url:
+        try:
+            import redis
+
+            _ = redis.asyncio  # 仅验证 redis 包可用
+            return RedisRateLimiter(
+                redis_url, default_rpm=default_rpm, default_burst=default_burst
+            )
+        except Exception as exc:
+            logger.warning(
+                "Redis rate limiter unavailable, fallback to memory: %s", exc
+            )
+
+    return RateLimiter(default_rpm=default_rpm, default_burst=default_burst)
+
+
 # 模块级单例，供中间件默认使用；如需自定义规则可替换该实例
-rate_limiter = RateLimiter()
+rate_limiter = create_rate_limiter()
 
 
 def get_identifier(request: Request) -> str:
@@ -261,7 +400,7 @@ def get_identifier(request: Request) -> str:
     return f"ip:{client_ip}"
 
 
-def _extract_user_id(request: Request) -> Optional[str]:
+def _extract_user_id(request: Request) -> str | None:
     """从 ``Authorization`` 头解析 user_id，失败返回 ``None``。"""
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
@@ -321,6 +460,7 @@ async def rate_limit_middleware(
     # 测试环境下跳过限流
     import os
     import sys
+
     if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.argv[0]:
         return await call_next(request)
     if os.environ.get("VULN_SENTINEL_TEST") or os.environ.get("TESTING"):
@@ -328,10 +468,10 @@ async def rate_limit_middleware(
 
     path = request.url.path
     identifier = get_identifier(request)
-    allowed, headers = rate_limiter.check(path, identifier)
+    allowed, headers = await rate_limiter.check(path, identifier)
 
     if not allowed:
-        # Retry-After 取「下一个令牌可用」所需秒数，至少 1 秒
+        # Retry-After 取「下一个窗口起始」所需秒数，至少 1 秒
         retry_after = max(1, int(headers["X-RateLimit-Reset"]) - int(time.time()))
         return JSONResponse(
             status_code=429,

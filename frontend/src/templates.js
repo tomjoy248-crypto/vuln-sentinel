@@ -33,7 +33,7 @@ export const APP_TEMPLATE = `</head>
 <div class="toast-container" id="toast-container"></div>
 
 <!-- AI Advisor Floating Button -->
-<button class="ai-fab" id="ai-fab" onclick="toggleAIChat()" aria-label="打开AI顾问" title="安全顾问">
+<button class="ai-fab" id="ai-fab" onclick="toggleAIChat()" aria-label="打开安全顾问" title="安全顾问">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:22px;height:22px"><path d="M12 2a8 8 0 0 1 8 8v4a8 8 0 0 1-16 0v-4a8 8 0 0 1 8-8z"/><circle cx="9" cy="10" r="1" fill="currentColor"/><circle cx="15" cy="10" r="1" fill="currentColor"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg>
   <span class="ai-fab-badge" id="ai-fab-badge" style="display:none">0</span>
 </button>
@@ -52,11 +52,10 @@ export const APP_TEMPLATE = `</head>
   </div>
   <div class="ai-chat-body" id="ai-chat-body">
     <div id="ai-offline-notice" style="display:none;padding:8px 10px;background:#313335;border:1px solid #555555;border-radius:2px;font-size:12px;color:var(--text-secondary);text-align:center;margin-bottom:8px">
-      提示：当前使用本地规则引擎，配置 LLM API Key 可获得更智能回答
+      当前使用本地规则引擎；配置 LLM API Key 后回答更精准。
     </div>
     <div class="ai-msg bot">
-      你好，我是<strong>漏洞哨兵</strong> AI 安全顾问。<br><br>
-      可以帮你分析漏洞、生成修复代码、解读扫描报告。<br><br>
+      安全顾问随时在线，可以帮你分析漏洞、生成修复建议、解读扫描报告。<br><br>
       快捷问题
     </div>
   </div>
@@ -145,7 +144,7 @@ export const APP_TEMPLATE = `</head>
         <button onclick="loadTrendChart(30)" class="trend-range" data-days="30" style="padding:4px 10px;min-height:0;font-size:12px;border:1px solid #555555;background:#45494a;border-radius:2px;cursor:pointer;color:#808080;font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace">30天</button>
       </div>
     </div>
-    <div id="trend-chart" style="min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">点击扫描几个目标，查看分数变化趋势</div>
+    <div id="trend-chart" style="min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">扫描几个目标后，即可查看分数变化趋势。</div>
   </div>
 
 
@@ -188,12 +187,12 @@ export const APP_TEMPLATE = `</head>
         <input id="scan-url" type="url" placeholder="例如：https://example.com" aria-label="目标网址" />
       </div>
       <div id="scan-login-tip" style="background:#313335;border:1px solid #555555;border-radius:2px;padding:10px 14px;margin-bottom:10px;text-align:center;display:none">
-        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">提示：登录后即可开始扫描</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">登录后即可开始扫描</div>
         <button onclick="navigateTo('profile')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 18px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:500">立即登录 / 注册</button>
       </div>
       <label class="scan-checkbox" style="margin-bottom:12px">
         <input id="auth-check-step1" type="checkbox" />
-        <span>我已确认拥有该域名或已获得授权进行安全扫描</span>
+        <span>我已确认拥有该域名或已获得授权扫描</span>
       </label>
       <button class="scan-btn" id="scan-btn-step1" onclick="startScanDirect()" disabled>开始安全扫描</button>
       <div style="text-align:center;margin-top:10px">
@@ -228,9 +227,9 @@ export const APP_TEMPLATE = `</head>
         </div>
       </div>
       <div class="verify-method-selected" id="verify-method-info">
-        <p>请选择一种验证方式</p>
+        <p>选择一种验证方式</p>
       </div>
-      <button class="scan-btn" onclick="confirmVerification()" id="verify-confirm-btn" disabled>我已添加验证信息，确认验证</button>
+      <button class="scan-btn" onclick="confirmVerification()" id="verify-confirm-btn" disabled>已添加验证信息，确认验证</button>
       <button onclick="skipVerification()" id="verify-skip-btn" style="background:none;border:none;color:var(--primary);font-size:13px;padding:10px;margin-top:6px;cursor:pointer;width:100%;text-align:center">快速测试（跳过 DNS/文件验证）</button>
     </div>
 
@@ -241,13 +240,13 @@ export const APP_TEMPLATE = `</head>
         <span>准备开始扫描</span>
       </div>
       <div class="verify-passed">
-        <p>已确认目标网址，请勾选授权声明后开始安全扫描。</p>
+        <p>已确认目标网址，勾选授权声明后开始扫描。</p>
         <div class="scan-input-wrap">
           <input id="scan-url-confirmed" type="url" readonly aria-label="已确认的目标网址" />
         </div>
         <label class="scan-checkbox">
           <input id="auth-check" type="checkbox" />
-          <span>我已确认拥有该域名或已获得授权进行安全扫描</span>
+          <span>我已确认拥有该域名或已获得授权扫描</span>
         </label>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
           <span style="font-size:13px;color:var(--text-secondary)">扫描深度：</span>
@@ -288,7 +287,7 @@ export const APP_TEMPLATE = `</head>
     </div>
     <div id="demo-content">
       <div style="padding:16px;text-align:center;color:var(--text-secondary);background:var(--bg);border-radius:2px;margin-top:12px;border:1px dashed var(--border)">
-        <div style="font-size:12px;margin-bottom:8px;color:var(--text)">选择公开测试站点，执行即时扫描</div>
+        <div style="font-size:12px;margin-bottom:8px;color:var(--text)">选择公开测试站点，立即开始扫描</div>
         <div style="margin-top:10px"><button onclick="loadPublicDemo()" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">扫描 example.com</button></div>
       </div>
     </div>
@@ -314,7 +313,7 @@ export const APP_TEMPLATE = `</head>
   <div class="card" style="margin-bottom:16px">
     <div class="card-title">输入配置</div>
     <p class="card-desc" style="margin-bottom:12px">粘贴 Nginx/Apache 配置文件，检测安全问题并生成修复补丁。</p>
-    <textarea id="fixer-input" class="fixer-textarea" placeholder="粘贴您的 Nginx 配置文件内容到这里...&#10;&#10;例如：&#10;server {&#10;    listen 80;&#10;    server_name example.com;&#10;    ...&#10;}"></textarea>
+    <textarea id="fixer-input" class="fixer-textarea" placeholder="粘贴 Nginx 配置文件...&#10;&#10;例如：&#10;server {&#10;    listen 80;&#10;    server_name example.com;&#10;    ...&#10;}"></textarea>
     <div class="fixer-btns">
       <button class="fixer-btn primary" id="fixer-analyze-btn" onclick="analyzeFixer()">分析配置</button>
       <button class="fixer-btn secondary" onclick="loadSampleConfig()">加载示例</button>
@@ -378,7 +377,7 @@ export const APP_TEMPLATE = `</head>
         <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px">描述</label>
         <input type="text" id="asset-description" placeholder="资产描述（可选）" style="width:100%;padding:8px 10px;border:1px solid #646464;border-radius:2px;background:#45494a;color:#bbbbbb;font-size:13px" />
       </div>
-      <button class="fixer-btn primary" onclick="addAsset()" style="height:32px;padding:0 16px">添加</button>
+      <button class="fixer-btn primary" data-action="add-asset" style="height:32px;padding:0 16px">添加</button>
     </div>
     <div id="asset-form-error" style="color:var(--danger);font-size:12px;margin-top:8px;display:none"></div>
   </div>
@@ -388,7 +387,7 @@ export const APP_TEMPLATE = `</head>
     <div class="card-title">资产列表</div>
     <div id="asset-list" style="margin-top:10px"></div>
     <div id="asset-empty" class="ticket-empty" style="display:none">
-      <div class="ticket-empty-icon">-</div>
+      <div class="ticket-empty-icon"></div>
       <p>暂无资产</p>
       <p class="ticket-empty-hint">添加域名资产后可跟踪扫描状态</p>
     </div>
@@ -404,21 +403,21 @@ export const APP_TEMPLATE = `</head>
 
   <!-- 状态标签页 -->
   <div class="ticket-tabs">
-    <button class="ticket-tab active" data-status="pending" onclick="switchTicketTab('pending')">待修复</button>
-    <button class="ticket-tab" data-status="in_progress" onclick="switchTicketTab('in_progress')">修复中</button>
-    <button class="ticket-tab" data-status="fixed" onclick="switchTicketTab('fixed')">已修复</button>
-    <button class="ticket-tab" data-status="ignored" onclick="switchTicketTab('ignored')">已忽略</button>
+    <button class="ticket-tab active" data-action="switch-ticket-tab" data-status="pending">待修复</button>
+    <button class="ticket-tab" data-action="switch-ticket-tab" data-status="in_progress">修复中</button>
+    <button class="ticket-tab" data-action="switch-ticket-tab" data-status="fixed">已修复</button>
+    <button class="ticket-tab" data-action="switch-ticket-tab" data-status="ignored">已忽略</button>
   </div>
 
   <!-- 批量操作 -->
   <div class="ticket-batch" id="ticket-batch-bar" style="display:none">
-    <label class="ticket-batch-label"><input type="checkbox" id="ticket-select-all" onchange="toggleSelectAllTickets()"> 全选</label>
+    <label class="ticket-batch-label"><input type="checkbox" id="ticket-select-all" data-action="toggle-select-all"> 全选</label>
     <span id="ticket-selected-count" class="ticket-selected-count">已选 0 项</span>
     <div class="ticket-batch-actions">
-      <button class="ticket-batch-btn" onclick="batchUpdateTickets('in_progress')">标记修复中</button>
-      <button class="ticket-batch-btn" onclick="batchUpdateTickets('fixed')">标记已修复</button>
-      <button class="ticket-batch-btn secondary" onclick="batchUpdateTickets('ignored')">标记已忽略</button>
-      <button class="ticket-batch-btn danger" onclick="batchDeleteTickets()">删除</button>
+      <button class="ticket-batch-btn" data-action="batch-update" data-status="in_progress">标记修复中</button>
+      <button class="ticket-batch-btn" data-action="batch-update" data-status="fixed">标记已修复</button>
+      <button class="ticket-batch-btn secondary" data-action="batch-update" data-status="ignored">标记已忽略</button>
+      <button class="ticket-batch-btn danger" data-action="batch-delete">删除</button>
     </div>
   </div>
 
@@ -428,7 +427,7 @@ export const APP_TEMPLATE = `</head>
       <div class="ticket-list-header">工单列表</div>
       <div class="ticket-table-wrap">
         <table class="ticket-table" id="ticket-table">
-          <thead><tr><th style="width:30px"><input type="checkbox" id="ticket-select-all-table" onchange="toggleSelectAllTickets()"></th><th>发现项</th><th>等级</th><th>状态</th><th>创建时间</th></tr></thead>
+          <thead><tr><th style="width:30px"><input type="checkbox" id="ticket-select-all-table" data-action="toggle-select-all"></th><th>发现项</th><th>等级</th><th>状态</th><th>创建时间</th></tr></thead>
           <tbody id="ticket-list"></tbody>
         </table>
       </div>
@@ -440,7 +439,7 @@ export const APP_TEMPLATE = `</head>
 
   <!-- 空状态 -->
   <div id="ticket-empty" class="ticket-empty" style="display:none">
-    <div class="ticket-empty-icon">-</div>
+    <div class="ticket-empty-icon"></div>
     <p>该状态下暂无工单</p>
     <p class="ticket-empty-hint">完成扫描后，高危问题会自动创建工单</p>
   </div>
@@ -526,6 +525,7 @@ export const APP_TEMPLATE = `</head>
         <div>
           <div class="user-name" id="auth-display-name">用户</div>
           <div class="user-label" id="auth-user-role">已登录</div>
+          <div class="user-credits" id="user-credits" style="font-size:12px;color:var(--warning);margin-top:4px">额度：--</div>
         </div>
         <button class="auth-logout-btn" onclick="doLogout()">退出登录</button>
       </div>
@@ -568,6 +568,14 @@ export const APP_TEMPLATE = `</head>
       <span>告警历史</span>
       <span class="settings-arrow">&#x203A;</span>
     </div>
+    <div class="settings-row" onclick="showProfileTab('credits')">
+      <span>额度与使用记录</span>
+      <span class="settings-arrow">&#x203A;</span>
+    </div>
+    <div class="settings-row" onclick="navigateTo('billing')">
+      <span>购买积分套餐</span>
+      <span class="settings-arrow">&#x203A;</span>
+    </div>
     <div class="settings-row" onclick="showProfileTab('settings')">
       <span>扫描设置</span>
       <span class="settings-arrow">&#x203A;</span>
@@ -577,7 +585,7 @@ export const APP_TEMPLATE = `</head>
       <span class="settings-arrow">&#x203A;</span>
     </div>
     <div class="settings-row" onclick="showProfileTab('ai-config')">
-      <span>AI 顾问配置</span>
+      <span>安全顾问配置</span>
       <span class="settings-arrow">&#x203A;</span>
     </div>
     <div class="settings-row" onclick="showProfileTab('about')">
@@ -723,10 +731,28 @@ export const APP_TEMPLATE = `</head>
     </div>
   </div>
 
-  <!-- AI 顾问配置面板 -->
+  <!-- 额度与使用记录面板 -->
+  <div id="profile-tab-credits" class="profile-tab" style="display:none">
+    <div class="card">
+      <div class="card-title">额度与使用记录</div>
+      <div style="display:flex;align-items:center;gap:12px;margin:14px 0;padding:14px;background:var(--bg);border:1px solid var(--border);border-radius:2px">
+        <div>
+          <div style="font-size:12px;color:var(--text-secondary)">当前额度</div>
+          <div id="credits-balance" style="font-size:24px;font-weight:700;color:var(--warning)">--</div>
+        </div>
+        <button class="fixer-btn secondary" style="margin-left:auto;height:32px;padding:0 14px;font-size:12px" onclick="loadCreditsUsage()">刷新</button>
+      </div>
+      <div id="credits-usage-list" style="min-height:60px">
+        <div style="text-align:center;padding:20px;color:var(--text-secondary)">正在读取使用记录...</div>
+      </div>
+      <div id="credits-pagination" class="pagination-bar" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- 安全顾问配置面板 -->
   <div id="profile-tab-ai-config" class="profile-tab" style="display:none">
     <div class="card">
-      <div class="card-title">AI 顾问配置</div>
+      <div class="card-title">安全顾问配置</div>
       <div style="margin-top:14px">
         <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">API Key</label>
         <div style="display:flex;gap:8px">
@@ -763,7 +789,7 @@ export const APP_TEMPLATE = `</head>
       <div style="text-align:left;font-size:13px;color:var(--text-secondary);line-height:2">
         <p>基于 OWASP Top 10 安全标准</p>
         <p>域名归属验证，确保授权扫描</p>
-        <p>AI 分析，生成多平台修复配置</p>
+        <p>智能分析，生成多平台修复配置</p>
         <p>账号级数据隔离</p>
         <p>支持 Nginx / Apache / Node.js</p>
       </div>
@@ -775,6 +801,33 @@ export const APP_TEMPLATE = `</head>
   </div>
 </div>
 
+<!-- 计费套餐页面 -->
+<div class="page" id="page-billing">
+  <div class="workbench-header">
+    <h1 class="workbench-title">计费套餐 / Billing</h1>
+    <span class="workbench-subtitle">购买积分套餐，按量使用扫描与修复服务</span>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">选择套餐</div>
+    <p class="card-desc" style="margin-bottom:14px">积分用于扫描、修复验证等操作，购买后即时到账。</p>
+    <div id="billing-plans-list" style="min-height:80px">
+      <div style="text-align:center;padding:20px;color:var(--text-secondary)">正在加载套餐...</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div class="card-title">充值记录</div>
+      <button class="fixer-btn secondary" style="height:32px;padding:0 14px;font-size:12px" onclick="loadBillingPage()">刷新</button>
+    </div>
+    <div id="billing-records-list" style="min-height:60px">
+      <div style="text-align:center;padding:20px;color:var(--text-secondary)">正在读取充值记录...</div>
+    </div>
+    <div id="billing-records-pagination" class="pagination-bar" style="display:none"></div>
+  </div>
+</div>
+
 <!-- Batch Scan Modal -->
 <div class="modal" id="batch-scan-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center">
   <div class="modal-content" style="background:var(--card);border:1px solid var(--border);border-radius:2px;padding:20px;max-width:520px;width:92vw;max-height:85vh;overflow-y:auto">
@@ -782,15 +835,15 @@ export const APP_TEMPLATE = `</head>
       <h3 style="margin:0;font-size:16px">批量扫描</h3>
       <button onclick="closeBatchScanModal()" aria-label="关闭批量扫描" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary)">×</button>
     </div>
-    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">每行一个 URL，最多 5 个。建议用「快速测试」模式扫描示例站点：</div>
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">每行一个 URL，最多 5 个。建议先用快速模式扫描示例站点：</div>
     <textarea id="batch-urls" placeholder="https://example.com&#10;https://httpbin.org&#10;https://www.iana.org" style="width:100%;min-height:120px;padding:10px;border:1px solid var(--border);border-radius:2px;font-family:monospace;font-size:12px;background:var(--bg);color:var(--text);resize:vertical"></textarea>
     <div style="margin:10px 0;display:flex;align-items:center;gap:6px;font-size:12px">
       <input type="checkbox" id="batch-deep" style="cursor:pointer" />
-      <label for="batch-deep" style="cursor:pointer;color:var(--text-secondary)">深度扫描（包含 XSS/SQLi 注入测试）</label>
+      <label for="batch-deep" style="cursor:pointer;color:var(--text-secondary)">深度扫描（含 XSS/SQLi 注入测试）</label>
     </div>
     <label class="scan-checkbox" style="margin-bottom:10px">
       <input id="batch-auth-check" type="checkbox" />
-      <span>我已确认拥有上述域名或已获得授权进行安全扫描</span>
+      <span>我已确认拥有上述域名或已获得授权扫描</span>
     </label>
     <div id="batch-results" style="margin-top:12px"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
@@ -816,6 +869,10 @@ export const APP_TEMPLATE = `</head>
   <button class="nav-item" data-page="tickets" onclick="navigateTo('tickets')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
     <span>工单</span>
+  </button>
+  <button class="nav-item" data-page="billing" onclick="navigateTo('billing')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+    <span>计费</span>
   </button>
   <button class="nav-item" data-page="profile" onclick="navigateTo('profile')">
     <div style="position:relative">

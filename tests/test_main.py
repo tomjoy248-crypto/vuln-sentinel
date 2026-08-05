@@ -2,7 +2,6 @@
 11-S 单元测试
 覆盖：认证 / 工具函数 / WAF 检测 / 修复生成 / FastAPI 端点 / 11-S 新增能力
 """
-import json
 import os
 import sys
 import time
@@ -94,7 +93,10 @@ def test_login_wrong_password_401():
 
 
 def test_register_duplicate_400():
-    r1 = client.post("/api/register", json={"username": "demo", "password": "demo123"})
+    u = "u_dup_" + str(int(time.time() * 1000))
+    r0 = client.post("/api/register", json={"username": u, "password": "pass1234"})
+    assert r0.status_code == 200
+    r1 = client.post("/api/register", json={"username": u, "password": "pass1234"})
     assert r1.status_code in (400, 409)
 
 
@@ -325,12 +327,13 @@ def test_history_delete_real():
     assert r2.status_code == 200
     body = r2.json()
     assert body.get("success") is True
-    assert "deleted" in body
-    assert isinstance(body["deleted"], int)
+    assert "data" in body
+    assert "deleted" in body["data"]
+    assert isinstance(body["data"]["deleted"], int)
     # 清空后 history 应为空
     r3 = client.get("/api/history?limit=50", headers=h)
     assert r3.status_code == 200
-    assert r3.json().get("history") == []
+    assert r3.json().get("data", {}).get("history") == []
 
 
 def test_history_stats_shape():
@@ -343,9 +346,10 @@ def test_history_stats_shape():
     r2 = client.get("/api/history?limit=50", headers=h)
     assert r2.status_code == 200
     body = r2.json()
-    assert "stats" in body
-    assert "scan_count" in body["stats"]
-    assert "fixed_count" in body["stats"]
+    data = body.get("data", {})
+    assert "stats" in data
+    assert "scan_count" in data["stats"]
+    assert "fixed_count" in data["stats"]
 
 
 def test_compute_fixed_count_no_data():
@@ -357,7 +361,7 @@ def test_compute_fixed_count_no_data():
 # ============== 11-S：analyze_security 输出 summary ==============
 
 def test_analyze_security_returns_summary():
-    from main import analyze_security, SECURITY_HEADERS
+    from main import SECURITY_HEADERS
     headers = {k: "present" for k in SECURITY_HEADERS.keys()}  # 所有安全头都齐
     result = _run_analyze_security("https://example.com", headers, True, {"has_cert": True}, [], [], [])
     assert "summary" in result
@@ -373,14 +377,14 @@ class TestSSRFProtection:
     """验证 SSRF 防护能拦截内网/本地/云元数据地址。"""
 
     def test_blocked_hosts_set(self):
-        from main import BLOCKED_HOSTS
+        from constants import BLOCKED_HOSTS
         assert "localhost" in BLOCKED_HOSTS
         assert "127.0.0.1" in BLOCKED_HOSTS
         assert "169.254.169.254" in BLOCKED_HOSTS
 
     def test_blocked_networks_cover_private_ranges(self):
-        from main import BLOCKED_NETWORKS
-        import ipaddress
+
+        from constants import BLOCKED_NETWORKS
         networks_str = [str(n) for n in BLOCKED_NETWORKS]
         assert "127.0.0.0/8" in networks_str
         assert "10.0.0.0/8" in networks_str
@@ -389,12 +393,12 @@ class TestSSRFProtection:
         assert "169.254.0.0/16" in networks_str
 
     def test_is_private_ip_detects_blocked_hosts(self):
-        from main import _is_private_ip
+        from app.core.compliance import _is_blocked_ip as _is_private_ip
         assert _is_private_ip("localhost") is True
         assert _is_private_ip("169.254.169.254") is True
 
     def test_is_private_ip_allows_public(self):
-        from main import _is_private_ip
+        from app.core.compliance import _is_blocked_ip as _is_private_ip
         # 公网域名不应被拦截（DNS 解析后是公网 IP）
         assert _is_private_ip("example.com") is False
 
@@ -419,8 +423,8 @@ class TestSSRFProtection:
         assert "example.com" in result
 
     def test_sanitize_url_allows_whitelisted_internal(self):
-        from main import sanitize_url
         import main
+        from main import sanitize_url
         # 临时把 192.168.1.100 加进白名单
         original = main.ALLOWED_INTERNAL_HOSTS.copy()
         main.ALLOWED_INTERNAL_HOSTS.add("192.168.1.100")
@@ -439,7 +443,7 @@ class TestSSLEmptyValues:
     """防止 days_left=None 导致崩溃。"""
 
     def test_ssl_days_left_none_no_crash(self):
-        from main import analyze_security, SECURITY_HEADERS
+        from main import SECURITY_HEADERS
         headers = {k: "present" for k in SECURITY_HEADERS.keys()}
         ssl_info = {"has_cert": True, "days_left": None, "expired": False, "weak": False}
         # 不应抛异常
@@ -447,14 +451,14 @@ class TestSSLEmptyValues:
         assert result["score"] > 0
 
     def test_ssl_days_left_string_no_crash(self):
-        from main import analyze_security, SECURITY_HEADERS
+        from main import SECURITY_HEADERS
         headers = {k: "present" for k in SECURITY_HEADERS.keys()}
         ssl_info = {"has_cert": True, "days_left": "unknown", "expired": False, "weak": False}
         result = _run_analyze_security("https://example.com", headers, True, ssl_info, [], [], [])
         assert result["score"] > 0
 
     def test_ssl_expired_with_none_days(self):
-        from main import analyze_security, SECURITY_HEADERS
+        from main import SECURITY_HEADERS
         headers = {k: "present" for k in SECURITY_HEADERS.keys()}
         ssl_info = {"has_cert": True, "days_left": None, "expired": True, "weak": False}
         result = _run_analyze_security("https://example.com", headers, True, ssl_info, [], [], [])
@@ -463,7 +467,7 @@ class TestSSLEmptyValues:
         assert any(f["name"] == "SSL 证书已过期" for f in result["findings"])
 
     def test_ssl_no_cert_info_no_crash(self):
-        from main import analyze_security, SECURITY_HEADERS
+        from main import SECURITY_HEADERS
         headers = {k: "present" for k in SECURITY_HEADERS.keys()}
         ssl_info = {}  # 完全空的 SSL 信息
         result = _run_analyze_security("https://example.com", headers, True, ssl_info, [], [], [])
@@ -476,14 +480,12 @@ class TestScoreBreakdownAndEvidence:
     """验证评分明细和证据链。"""
 
     def test_score_breakdown_exists(self):
-        from main import analyze_security
         headers = {}
         result = _run_analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
         assert "score_breakdown" in result
         assert isinstance(result["score_breakdown"], list)
 
     def test_score_breakdown_has_deductions(self):
-        from main import analyze_security
         headers = {}
         # HTTP + 无安全头 → 应该有扣分
         result = _run_analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
@@ -495,7 +497,6 @@ class TestScoreBreakdownAndEvidence:
             assert b["deduction"] > 0
 
     def test_evidence_on_findings(self):
-        from main import analyze_security
         headers = {}
         result = _run_analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
         findings = result["findings"]
@@ -505,7 +506,6 @@ class TestScoreBreakdownAndEvidence:
             assert isinstance(f["evidence"], dict)
 
     def test_evidence_contains_reason_and_impact(self):
-        from main import analyze_security
         headers = {}
         result = _run_analyze_security("http://example.com", headers, False, {"has_cert": False}, [], [], [])
         findings = result["findings"]
@@ -813,7 +813,6 @@ def test_consecutive_scans_no_event_loop_error():
 
 def test_waf_page_200_not_sensitive_file_leak():
     """模拟 WAF/登录页返回 200 但内容含 waf_block/login，不应判定为敏感文件泄露"""
-    import main
     # analyze_content 是 check_sensitive_paths 内部嵌套函数，需要提取或单独测试逻辑
     # 这里直接通过构造敏感路径结果来验证：exposed=False, suspect=True
     # 由于 analyze_content 嵌套在 async 函数内部，我们通过调用 check_sensitive_paths
@@ -858,7 +857,6 @@ def test_waf_page_200_not_sensitive_file_leak():
 
 def test_waf_page_triggers_restricted_scan():
     """检测到 WAF/反爬特征时，analyze_security 应返回 restricted=True"""
-    import main
     # 模拟 WAF 响应头 + suspect 敏感路径
     headers = {"server": "nginx", "x-waf-status": "blocked"}
     sensitive_paths = [
@@ -876,7 +874,6 @@ def test_waf_page_triggers_restricted_scan():
 
 def test_restricted_scan_with_anti_bot_headers():
     """响应头含 alicdn/captcha 等反爬特征时，应触发 restricted"""
-    import main
     headers = {"server": "nginx", "set-cookie": "captcha=1; path=/"}
     result = _run_analyze_security(
         "https://example.com", headers, True,
@@ -895,6 +892,7 @@ def test_sqli_time_based_blind_detection():
     如果响应时间 ≥ 2.5 秒，判定存在 time-based SQLi 盲注
     """
     import asyncio
+
     from main import detect_time_based_sqli
 
     # 模拟正常请求（< 1 秒）
@@ -926,6 +924,7 @@ class TestCrossValidateFindings:
     def test_hsts_on_http_returns_confidence_zero(self):
         """5 维交叉验证：HSTS 在 HTTP 站应该 confidence=0（不报）"""
         import asyncio
+
         from main import cross_validate_findings
         headers = {"server": "nginx/1.18", "content-type": "text/html"}
         findings = [
@@ -950,6 +949,7 @@ class TestCrossValidateFindings:
     def test_cross_validate_returns_dict_with_required_keys(self):
         """返回 dict 应包含 verified / confidence / reason / evidence_d1_d5"""
         import asyncio
+
         from main import cross_validate_findings
         findings = [{"name": "缺少 CSP", "severity": "high"}]
         result = asyncio.run(cross_validate_findings(
@@ -1071,7 +1071,6 @@ class _FakeAsyncClient:
 
 def test_finding_feedback_saved():
     """test_finding_feedback_saved: 调 /api/finding/feedback，验证数据库有记录。"""
-    import asyncio
     import sqlite3
     # 用 demo 账号登录（已存在）
     headers = auth_headers()
@@ -1136,7 +1135,7 @@ def test_finding_feedback_saved():
         "is_false_positive": False, "is_confirmed": True,
     })
     assert r4.status_code == 200 and r4.json().get("success") is True
-    fid2 = r4.json()["feedback_id"]
+    r4.json()["feedback_id"]
 
     # 查询接口：scan_id 过滤
     r5 = client.get(f"/api/finding/feedback?scan_id={scan_id}", headers=headers)
@@ -1164,6 +1163,7 @@ def test_cross_validate_sensitive_path():
     - 路径未稳定重现 → confidence=50
     """
     import asyncio
+
     from main import cross_validate_findings
 
     # ---- 场景 1: 完全可重现 + 内容命中 → 95 ----
@@ -1340,7 +1340,6 @@ def test_alerts_mark_read():
 
 def test_cookie_samesite_none_without_secure_detected():
     """SameSite=None 不带 Secure 应被检测为问题。"""
-    from main import analyze_security
     headers = {
         "Set-Cookie": "session=abc; SameSite=None; Path=/",
     }
@@ -1353,7 +1352,6 @@ def test_cookie_samesite_none_without_secure_detected():
 
 def test_cookie_samesite_strict_ok():
     """SameSite=Strict + Secure + HttpOnly 不应报 Cookie 问题。"""
-    from main import analyze_security
     headers = {
         "Set-Cookie": "session=abc; Secure; HttpOnly; SameSite=Strict",
     }
@@ -1364,7 +1362,6 @@ def test_cookie_samesite_strict_ok():
 
 def test_cookie_missing_samesite_detected():
     """缺少 SameSite 应被检测。"""
-    from main import analyze_security
     headers = {
         "Set-Cookie": "session=abc; Secure; HttpOnly",
     }
@@ -1380,6 +1377,7 @@ def test_cookie_missing_samesite_detected():
 def test_options_preflight_probe():
     """OPTIONS 预检探针应返回 status 字段。"""
     import asyncio
+
     # _d7_d8_cors_probe 是嵌套在 cross_validate_findings 内部的函数，无法直接调用
     # 但我们可以在 cross_validate_findings 的结果中验证 evidence 包含 OPTIONS 信息
     from main import cross_validate_findings
@@ -1477,6 +1475,7 @@ def test_cross_validate_cors():
     - 重访未发现 * → 50
     """
     import asyncio
+
     from main import cross_validate_findings
 
     # ---- 场景 1: 主响应+子资源 ACAO 都为 * → 95 ----

@@ -1,19 +1,20 @@
 """漏洞哨兵 11-S - 数据模型模块"""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 from utils import sanitize_email, sanitize_password, sanitize_url, sanitize_username
 
-
 # ---------- 扫描相关模型 ----------
+
 
 class ScanRequest(BaseModel):
     url: str
     depth: str = "standard"
     deep: bool = False
     authorized: bool = False
+    verification_token: str | None = None
 
     @field_validator("depth")
     @classmethod
@@ -25,7 +26,7 @@ class ScanRequest(BaseModel):
 
 class VerifyFixRequest(BaseModel):
     url: str
-    previous_scan_id: Optional[int] = None
+    previous_scan_id: int | None = None
 
     @field_validator("url")
     @classmethod
@@ -34,8 +35,8 @@ class VerifyFixRequest(BaseModel):
 
 
 class SimulateFixRequest(BaseModel):
-    findings: List[dict] = Field(default_factory=list)
-    scan_id: Optional[int] = None
+    findings: list[dict] = Field(default_factory=list)
+    scan_id: int | None = None
 
     @field_validator("findings")
     @classmethod
@@ -47,7 +48,7 @@ class SimulateFixRequest(BaseModel):
 
 class ApplyFixRequest(BaseModel):
     url: str
-    previous_scan_id: Optional[int] = None
+    previous_scan_id: int | None = None
 
     @field_validator("url")
     @classmethod
@@ -67,21 +68,22 @@ class FreeTrialRequest(BaseModel):
 
 
 class AIAdvisorRequest(BaseModel):
-    message: Optional[str] = None
-    scan_id: Optional[int] = None
-    api_key: Optional[str] = Field(default=None, repr=False)
-    model: Optional[str] = None
-    provider: Optional[str] = None
-    use_llm: Optional[bool] = None
+    message: str | None = None
+    scan_id: int | None = None
+    api_key: str | None = Field(default=None, repr=False)
+    model: str | None = None
+    provider: str | None = None
+    use_llm: bool | None = None
 
 
 class BatchScanRequest(BaseModel):
-    urls: List[str] = Field(default_factory=list)
+    urls: list[str] = Field(default_factory=list)
     deep: bool = False
+    authorized: bool = False
 
     @field_validator("urls")
     @classmethod
-    def validate_urls(cls, v: List[str]) -> List[str]:
+    def validate_urls(cls, v: list[str]) -> list[str]:
         if not isinstance(v, list):
             raise ValueError("urls 必须是数组")
         if len(v) > 5:
@@ -95,6 +97,7 @@ class BatchScanRequest(BaseModel):
 
 
 # ---------- 认证相关模型 ----------
+
 
 class RegisterRequest(BaseModel):
     username: str
@@ -145,6 +148,7 @@ class PasswordResetRequest(BaseModel):
 
 # ---------- 资产管理模型 ----------
 
+
 class AddTargetRequest(BaseModel):
     url: str
     schedule: str = Field(default="daily", pattern="^(daily|weekly|never)$")
@@ -168,37 +172,48 @@ class AssetCreateRequest(BaseModel):
             raise ValueError("域名不能为空")
         if v.startswith(("http://", "https://")):
             from urllib.parse import urlparse
+
             v = urlparse(v).hostname or v
         return v
 
 
 class AssetUpdateRequest(BaseModel):
-    owner: Optional[str] = None
-    description: Optional[str] = None
+    owner: str | None = None
+    description: str | None = None
 
 
 # ---------- 修复工单模型 ----------
 
+
 class FixTicketCreate(BaseModel):
-    scan_id: Optional[int] = None
+    scan_id: int | None = None
     finding_name: str
     severity: str = "low"
-    fix_code: Optional[str] = None
-    notes: Optional[str] = None
+    fix_code: str | None = None
+    notes: str | None = None
 
 
 class FixTicketUpdate(BaseModel):
-    status: Optional[str] = None
-    fix_code: Optional[str] = None
-    notes: Optional[str] = None
-    rollback_code: Optional[str] = None
+    status: str | None = None
+    fix_code: str | None = None
+    notes: str | None = None
+    rollback_code: str | None = None
 
     @field_validator("status")
     @classmethod
-    def validate_status(cls, v: Optional[str]) -> Optional[str]:
+    def validate_status(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        allowed = {"pending", "confirmed", "applying", "fixed", "failed", "rolled_back", "in_progress", "ignored"}
+        allowed = {
+            "pending",
+            "confirmed",
+            "applying",
+            "fixed",
+            "failed",
+            "rolled_back",
+            "in_progress",
+            "ignored",
+        }
         if v not in allowed:
             raise ValueError(f"status must be one of {allowed}")
         return v
@@ -212,32 +227,37 @@ class FixTicketVerifyRequest(BaseModel):
 
 # ---------- 反馈模型 ----------
 
+
 class FindingFeedbackRequest(BaseModel):
     """用户对 finding 的误报/确认反馈。"""
+
     scan_id: int
     finding_name: str
-    finding_type: Optional[str] = None
+    finding_type: str | None = None
     is_false_positive: bool = False
     is_confirmed: bool = False
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class SRCReportExportRequest(BaseModel):
     """导出 SRC 格式漏洞报告请求。"""
+
     scan_id: int
     format: str = Field(default="markdown", pattern="^(markdown|md|pdf)$")
-    finding_ids: Optional[List[str]] = Field(default=None, max_length=100)
+    finding_ids: list[str] | None = Field(default=None, max_length=100)
     template: str = "src"
 
 
 class VerifyReproduceRequest(BaseModel):
     """对单个 finding 进行复现验证。"""
+
     scan_id: int
     finding_id: str
     url: str
 
 
 # ---------- 扫描响应模型 ----------
+
 
 class ScanResponse(BaseModel):
     # SRC 级扫描核心字段
@@ -246,42 +266,52 @@ class ScanResponse(BaseModel):
     url: str
     score: int
     risk_level: str
-    summary: Dict[str, int] = Field(default_factory=lambda: {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0})
-    findings: List[dict]
-    headers: Dict[str, Any] = Field(default_factory=dict)
-    waf: Optional[str] = None
-    ssl: Dict[str, Any] = Field(default_factory=dict)
+    summary: dict[str, int] = Field(
+        default_factory=lambda: {
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "info": 0,
+            "total": 0,
+        }
+    )
+    findings: list[dict]
+    headers: dict[str, Any] = Field(default_factory=dict)
+    waf: str | None = None
+    ssl: dict[str, Any] = Field(default_factory=dict)
     duration_ms: int = 0
-    report_share_id: Optional[str] = None
+    report_share_id: str | None = None
 
     # 保留旧字段兼容（历史记录/旧前端可继续读取）
-    scan_type: Optional[str] = "real"
-    final_url: Optional[str] = ""
-    time: Optional[str] = ""
-    is_https: Optional[bool] = False
-    raw_headers: Optional[Dict[str, Any]] = Field(default_factory=dict)
-    owasp_coverage: Optional[List[dict]] = Field(default_factory=list)
-    header_details: Optional[List[dict]] = Field(default_factory=list)
-    info_leaks: Optional[List[dict]] = Field(default_factory=list)
-    cors: Optional[dict] = None
-    cookie_issues: Optional[List[str]] = Field(default_factory=list)
-    ssl_info: Optional[Dict[str, Any]] = Field(default_factory=dict)
-    waf_list: Optional[List[dict]] = Field(default_factory=list)
-    sensitive_paths: Optional[List[dict]] = Field(default_factory=list)
-    waf_detected: Optional[bool] = False
-    crawled_pages: Optional[List[dict]] = None
-    vuln_tests: Optional[List[dict]] = None
-    score_breakdown: Optional[List[dict]] = Field(default_factory=list)
-    fixes: Optional[Dict[str, list]] = Field(default_factory=dict)
-    error: Optional[str] = None
-    restricted: Optional[bool] = False
-    restricted_reason: Optional[str] = ""
-    restricted_code: Optional[str] = ""
-    redirected: Optional[bool] = False
-    redirect_reason: Optional[str] = ""
+    scan_type: str | None = "real"
+    final_url: str | None = ""
+    time: str | None = ""
+    is_https: bool | None = False
+    raw_headers: dict[str, Any] | None = Field(default_factory=dict)
+    owasp_coverage: list[dict] | None = Field(default_factory=list)
+    header_details: list[dict] | None = Field(default_factory=list)
+    info_leaks: list[dict] | None = Field(default_factory=list)
+    cors: dict | None = None
+    cookie_issues: list[str] | None = Field(default_factory=list)
+    ssl_info: dict[str, Any] | None = Field(default_factory=dict)
+    waf_list: list[dict] | None = Field(default_factory=list)
+    sensitive_paths: list[dict] | None = Field(default_factory=list)
+    waf_detected: bool | None = False
+    crawled_pages: list[dict] | None = None
+    vuln_tests: list[dict] | None = None
+    score_breakdown: list[dict] | None = Field(default_factory=list)
+    fixes: dict[str, list] | None = Field(default_factory=dict)
+    error: str | None = None
+    restricted: bool | None = False
+    restricted_reason: str | None = ""
+    restricted_code: str | None = ""
+    redirected: bool | None = False
+    redirect_reason: str | None = ""
 
 
 # ---------- 域名验证模型 ----------
+
 
 class VerifyRequest(BaseModel):
     url: str
@@ -303,6 +333,7 @@ class VerifyRequest(BaseModel):
 
 
 # ---------- Demo 修复模型 ----------
+
 
 class DemoFixRequest(BaseModel):
     action: str
@@ -326,3 +357,23 @@ class DemoFixRequest(BaseModel):
 class DemoFullCycleRequest(BaseModel):
     target: str = "localhost:8080"
     action: str = "full_cycle"
+
+
+# ---------- 计费相关模型 ----------
+
+
+class PurchasePlanRequest(BaseModel):
+    plan_id: int = Field(..., ge=1, description="套餐 ID")
+
+
+class AdminRechargeRequest(BaseModel):
+    user_id: int = Field(..., ge=1, description="目标用户 ID")
+    credits: int = Field(..., ge=1, description="充值积分数量")
+    note: str = Field(default="", max_length=200, description="充值备注")
+
+
+class CreateOrderRequest(BaseModel):
+    plan_id: int = Field(..., ge=1, description="套餐 ID")
+    provider: str = Field(default="mock", pattern="^(mock|stripe|alipay|wechat)$", description="支付渠道")
+    success_url: str | None = Field(default=None, max_length=500, description="支付成功跳转地址")
+    cancel_url: str | None = Field(default=None, max_length=500, description="支付取消跳转地址")

@@ -25,12 +25,10 @@ YAML 规则格式示例:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from app.plugins import BaseVulnDetector, Finding, ScanContext
@@ -41,15 +39,16 @@ logger = logging.getLogger("vuln_sentinel.rule_engine")
 @dataclass
 class MatchConfig:
     """规则匹配配置。"""
-    param_names: List[str] = field(default_factory=list)
-    param_patterns: List[str] = field(default_factory=list)
-    response_patterns: List[str] = field(default_factory=list)
-    response_status: List[int] = field(default_factory=list)
-    header_patterns: Dict[str, str] = field(default_factory=dict)
-    body_regex: List[str] = field(default_factory=list)
+
+    param_names: list[str] = field(default_factory=list)
+    param_patterns: list[str] = field(default_factory=list)
+    response_patterns: list[str] = field(default_factory=list)
+    response_status: list[int] = field(default_factory=list)
+    header_patterns: dict[str, str] = field(default_factory=dict)
+    body_regex: list[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "MatchConfig":
+    def from_dict(cls, data: dict) -> MatchConfig:
         return cls(
             param_names=data.get("param_names", []),
             param_patterns=data.get("param_patterns", []),
@@ -63,6 +62,7 @@ class MatchConfig:
 @dataclass
 class CustomRule:
     """自定义检测规则。"""
+
     id: str
     name: str
     severity: str
@@ -72,12 +72,12 @@ class CustomRule:
     description: str = ""
     fix_suggestion: str = ""
     confidence: str = "medium"
-    supported_depths: List[str] = field(default_factory=lambda: ["standard", "deep"])
+    supported_depths: list[str] = field(default_factory=lambda: ["standard", "deep"])
     match: MatchConfig = field(default_factory=MatchConfig)
     payload: str = ""
 
     @classmethod
-    def from_dict(cls, data: dict) -> "CustomRule":
+    def from_dict(cls, data: dict) -> CustomRule:
         match_data = data.get("match", {})
         return cls(
             id=data.get("id", "unknown"),
@@ -95,7 +95,7 @@ class CustomRule:
         )
 
 
-def load_rules_from_yaml(file_path: str) -> List[CustomRule]:
+def load_rules_from_yaml(file_path: str) -> list[CustomRule]:
     """从 YAML 文件加载规则列表。
 
     Args:
@@ -111,7 +111,7 @@ def load_rules_from_yaml(file_path: str) -> List[CustomRule]:
         return []
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         if not data or not isinstance(data, dict):
             return []
@@ -122,7 +122,7 @@ def load_rules_from_yaml(file_path: str) -> List[CustomRule]:
         return []
 
 
-def load_rules_from_directory(dir_path: str) -> List[CustomRule]:
+def load_rules_from_directory(dir_path: str) -> list[CustomRule]:
     """从目录加载所有 YAML 规则文件。
 
     Args:
@@ -131,7 +131,7 @@ def load_rules_from_directory(dir_path: str) -> List[CustomRule]:
     Returns:
         合并后的 CustomRule 列表
     """
-    all_rules: List[CustomRule] = []
+    all_rules: list[CustomRule] = []
     if not os.path.isdir(dir_path):
         return all_rules
 
@@ -158,7 +158,7 @@ class YAMLRuleDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["quick", "standard", "deep"]
 
-    def __init__(self, rules: List[CustomRule]):
+    def __init__(self, rules: list[CustomRule]):
         self._rules = rules
         # 动态设置 supported_depths
         depths = set()
@@ -167,10 +167,14 @@ class YAMLRuleDetector(BaseVulnDetector):
         if depths:
             self.supported_depths = list(depths)
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
-        findings: List[Finding] = []
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        findings: list[Finding] = []
         parsed = urlparse(context.url)
-        params = [p.split("=")[0] for p in parsed.query.split("&") if "=" in p] if parsed.query else []
+        params = (
+            [p.split("=")[0] for p in parsed.query.split("&") if "=" in p]
+            if parsed.query
+            else []
+        )
 
         for rule in self._rules:
             if context.depth not in rule.supported_depths:
@@ -184,7 +188,9 @@ class YAMLRuleDetector(BaseVulnDetector):
 
         return findings
 
-    async def _match_rule(self, rule: CustomRule, context: ScanContext, params: List[str]) -> Optional[Finding]:
+    async def _match_rule(
+        self, rule: CustomRule, context: ScanContext, params: list[str]
+    ) -> Finding | None:
         """匹配单条规则。"""
         match = rule.match
 
@@ -206,7 +212,9 @@ class YAMLRuleDetector(BaseVulnDetector):
         if match.header_patterns:
             header_matched = False
             for header_name, pattern in match.header_patterns.items():
-                header_value = context.headers.get(header_name, context.headers.get(header_name.title(), ""))
+                header_value = context.headers.get(
+                    header_name, context.headers.get(header_name.title(), "")
+                )
                 if header_value and re.search(pattern, header_value, re.IGNORECASE):
                     header_matched = True
                     break
@@ -223,10 +231,11 @@ class YAMLRuleDetector(BaseVulnDetector):
 
     async def _check_response(
         self, rule: CustomRule, context: ScanContext, match: MatchConfig
-    ) -> Optional[Finding]:
+    ) -> Finding | None:
         """检查响应内容和状态码。"""
         try:
             from main import get_httpx_client
+
             client = get_httpx_client()
             resp = await client.get(context.url, timeout=10.0, follow_redirects=True)
 
@@ -239,20 +248,28 @@ class YAMLRuleDetector(BaseVulnDetector):
             # 响应模式匹配
             for pattern in match.response_patterns:
                 if pattern.lower() in body:
-                    return self._build_finding(rule, context, evidence={
-                        "matched_pattern": pattern,
-                        "status_code": resp.status_code,
-                        "url": context.url,
-                    })
+                    return self._build_finding(
+                        rule,
+                        context,
+                        evidence={
+                            "matched_pattern": pattern,
+                            "status_code": resp.status_code,
+                            "url": context.url,
+                        },
+                    )
 
             # 正则匹配
             for regex in match.body_regex:
                 if re.search(regex, body, re.IGNORECASE):
-                    return self._build_finding(rule, context, evidence={
-                        "matched_regex": regex,
-                        "status_code": resp.status_code,
-                        "url": context.url,
-                    })
+                    return self._build_finding(
+                        rule,
+                        context,
+                        evidence={
+                            "matched_regex": regex,
+                            "status_code": resp.status_code,
+                            "url": context.url,
+                        },
+                    )
 
         except Exception as e:
             logger.debug("Rule %s response check failed: %s", rule.id, e)
@@ -260,7 +277,7 @@ class YAMLRuleDetector(BaseVulnDetector):
         return None
 
     def _build_finding(
-        self, rule: CustomRule, context: ScanContext, evidence: Optional[dict] = None
+        self, rule: CustomRule, context: ScanContext, evidence: dict | None = None
     ) -> Finding:
         """构建 Finding 对象。"""
         return Finding(
@@ -295,5 +312,7 @@ def register_yaml_rules(rules_dir: str = "rules/") -> int:
 
     detector = YAMLRuleDetector(rules)
     DetectorRegistry.register(detector)
-    logger.info("Registered %d custom YAML rules as detector '%s'", len(rules), detector.name)
+    logger.info(
+        "Registered %d custom YAML rules as detector '%s'", len(rules), detector.name
+    )
     return len(rules)

@@ -1,6 +1,6 @@
 /** 后端 API 封装 */
 
-export const API_BASE = '';
+export const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : '';
 
 export function getToken() {
   try { return localStorage.getItem('vs_token'); } catch (e) { return null; }
@@ -40,17 +40,32 @@ export async function apiPost(url, body) {
     method: 'POST',
     body: JSON.stringify(body)
   });
-  return resp.json();
+  const data = await resp.json().catch(() => ({}));
+  if (data && typeof data === 'object') {
+    data._status = resp.status;
+    data._statusText = resp.statusText;
+  }
+  return data;
 }
 
 export async function apiGet(url) {
   const resp = await authFetch(url);
-  return resp.json();
+  const data = await resp.json().catch(() => ({}));
+  if (data && typeof data === 'object') {
+    data._status = resp.status;
+    data._statusText = resp.statusText;
+  }
+  return data;
 }
 
 export async function apiDelete(url) {
   const resp = await authFetch(url, { method: 'DELETE' });
-  return resp.json();
+  const data = await resp.json().catch(() => ({}));
+  if (data && typeof data === 'object') {
+    data._status = resp.status;
+    data._statusText = resp.statusText;
+  }
+  return data;
 }
 
 export async function apiPatch(url, body) {
@@ -58,14 +73,26 @@ export async function apiPatch(url, body) {
     method: 'PATCH',
     body: JSON.stringify(body)
   });
-  return resp.json();
+  const data = await resp.json().catch(() => ({}));
+  if (data && typeof data === 'object') {
+    data._status = resp.status;
+    data._statusText = resp.statusText;
+  }
+  return data;
 }
+
+// Public config
+export function publicConfig() { return apiGet('/api/config'); }
 
 // Auth
 export function register(body) { return apiPost('/api/register', body); }
 export function login(body) { return apiPost('/api/login', body); }
 export function resetPassword(body) { return apiPost('/api/reset-password', body); }
 export function me() { return apiGet('/api/me'); }
+export function credits() { return apiGet('/api/me/credits'); }
+export function usage(limit = 20, offset = 0) {
+  return apiGet('/api/usage?limit=' + encodeURIComponent(limit) + '&offset=' + encodeURIComponent(offset));
+}
 
 // Scan
 export function scan(body) { return apiPost('/api/scan', body); }
@@ -122,3 +149,12 @@ export function listFindingFeedback(scanId) {
 export function team() { return apiGet('/api/team'); }
 export function createTeam() { return apiPost('/api/team/create', {}); }
 export function joinTeam(body) { return apiPost('/api/team/join', body); }
+
+// Billing
+export function billingPlans() { return apiGet('/api/billing/plans'); }
+export function createOrder(body) { return apiPost('/api/billing/order', body); }
+export function getOrderStatus(transactionId) { return apiGet('/api/billing/order/' + encodeURIComponent(transactionId)); }
+export function purchasePlan(body) { return apiPost('/api/billing/purchase', body); }
+export function recharges(limit = 50, offset = 0) {
+  return apiGet('/api/billing/recharges?limit=' + encodeURIComponent(limit) + '&offset=' + encodeURIComponent(offset));
+}

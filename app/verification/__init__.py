@@ -4,7 +4,7 @@
 """
 
 from app.verification.cross_validator import CrossValidator, VerificationResult
-from app.verification.diff_engine import ScanDiffEngine, DiffResult
+from app.verification.diff_engine import DiffResult, ScanDiffEngine
 
 __all__ = [
     "CrossValidator",

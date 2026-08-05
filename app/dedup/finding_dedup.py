@@ -23,14 +23,14 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 __all__ = ["FindingDeduplicator", "DedupStats", "deduplicate_findings"]
 
 
 # 严重度排序权重：数值越小优先级越高
-SEVERITY_ORDER: Dict[str, int] = {
+SEVERITY_ORDER: dict[str, int] = {
     "critical": 0,
     "high": 1,
     "medium": 2,
@@ -39,7 +39,7 @@ SEVERITY_ORDER: Dict[str, int] = {
 }
 
 # 置信度排序权重：数值越小优先级越高
-CONFIDENCE_ORDER: Dict[str, int] = {
+CONFIDENCE_ORDER: dict[str, int] = {
     "high": 0,
     "medium": 1,
     "low": 2,
@@ -62,9 +62,9 @@ class DedupStats:
     deduplicated_count: int = 0
     duplicate_count: int = 0
     correlation_groups: int = 0
-    by_type: Dict[str, int] = field(default_factory=dict)
+    by_type: dict[str, int] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """转换为字典，便于序列化与日志输出。"""
         return {
             "original_count": self.original_count,
@@ -93,8 +93,8 @@ class FindingDeduplicator:
 
     def __init__(
         self,
-        severity_order: Dict[str, int] = SEVERITY_ORDER,
-        confidence_order: Dict[str, int] = CONFIDENCE_ORDER,
+        severity_order: dict[str, int] = SEVERITY_ORDER,
+        confidence_order: dict[str, int] = CONFIDENCE_ORDER,
     ) -> None:
         """
         Args:
@@ -108,8 +108,8 @@ class FindingDeduplicator:
     # 主入口
     # ------------------------------------------------------------------
     def deduplicate(
-        self, findings: List[Dict[str, Any]]
-    ) -> Tuple[List[Dict[str, Any]], DedupStats]:
+        self, findings: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], DedupStats]:
         """对 finding 列表执行去重、合并、关联与排序。
 
         Args:
@@ -123,13 +123,13 @@ class FindingDeduplicator:
         original_count = len(findings)
 
         # 1. 按指纹分组
-        groups: Dict[str, List[Dict[str, Any]]] = {}
+        groups: dict[str, list[dict[str, Any]]] = {}
         for finding in findings:
             fingerprint = self._compute_fingerprint(finding)
             groups.setdefault(fingerprint, []).append(finding)
 
         # 2. 合并每组重复 finding
-        merged: List[Dict[str, Any]] = [
+        merged: list[dict[str, Any]] = [
             self._merge_findings(group) for group in groups.values()
         ]
 
@@ -140,7 +140,7 @@ class FindingDeduplicator:
         merged = self._sort_findings(merged)
 
         # 5. 统计
-        by_type: Dict[str, int] = {}
+        by_type: dict[str, int] = {}
         for finding in merged:
             vuln_type = (finding.get("type") or "unknown").lower()
             by_type[vuln_type] = by_type.get(vuln_type, 0) + 1
@@ -163,7 +163,7 @@ class FindingDeduplicator:
     # ------------------------------------------------------------------
     # 指纹与合并
     # ------------------------------------------------------------------
-    def _compute_fingerprint(self, finding: Dict[str, Any]) -> str:
+    def _compute_fingerprint(self, finding: dict[str, Any]) -> str:
         """计算 finding 的去重指纹。
 
         指纹由 (漏洞类型, 规范化 URL, 参数, 严重度) 四元组构成，
@@ -181,7 +181,7 @@ class FindingDeduplicator:
         severity = (finding.get("severity") or "info").strip().lower()
         return f"{vuln_type}|{normalized_url}|{parameter}|{severity}"
 
-    def _merge_findings(self, findings: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _merge_findings(self, findings: list[dict[str, Any]]) -> dict[str, Any]:
         """合并一组重复 finding。
 
         合并策略:
@@ -206,10 +206,10 @@ class FindingDeduplicator:
         )
         base = dict(ordered[0])
 
-        payloads: List[str] = []
-        signatures: List[str] = []
-        notes: List[str] = []
-        duplicate_ids: List[str] = []
+        payloads: list[str] = []
+        signatures: list[str] = []
+        notes: list[str] = []
+        duplicate_ids: list[str] = []
 
         for finding in findings:
             evidence = finding.get("evidence") or {}
@@ -247,7 +247,7 @@ class FindingDeduplicator:
     # ------------------------------------------------------------------
     # 关联分析
     # ------------------------------------------------------------------
-    def correlate(self, findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def correlate(self, findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """按 URL 关联聚簇，为同源 finding 标注关联组。
 
         规则: 以规范化 URL 作为聚簇键，同一 URL 下存在 2 个及以上 finding
@@ -264,14 +264,14 @@ class FindingDeduplicator:
         if not findings:
             return []
 
-        url_groups: Dict[str, List[int]] = {}
+        url_groups: dict[str, list[int]] = {}
         for idx, finding in enumerate(findings):
             normalized_url = self._normalize_url(finding.get("url") or "")
             if not normalized_url:
                 continue
             url_groups.setdefault(normalized_url, []).append(idx)
 
-        result: List[Dict[str, Any]] = [dict(finding) for finding in findings]
+        result: list[dict[str, Any]] = [dict(finding) for finding in findings]
         for normalized_url, indices in url_groups.items():
             if len(indices) < 2:
                 # 单一 finding 不构成关联，跳过
@@ -330,9 +330,7 @@ class FindingDeduplicator:
     # ------------------------------------------------------------------
     # 内部工具
     # ------------------------------------------------------------------
-    def _sort_findings(
-        self, findings: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def _sort_findings(self, findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """按严重度（升优先级）再按置信度（升优先级）稳定排序。"""
         return sorted(
             findings,
@@ -344,31 +342,29 @@ class FindingDeduplicator:
 
     def _severity_rank(self, severity: str) -> int:
         """获取严重度排序权重，未知值降级为最低优先级。"""
-        return self._severity_order.get((severity or "").strip().lower(), len(self._severity_order))
+        return self._severity_order.get(
+            (severity or "").strip().lower(), len(self._severity_order)
+        )
 
     def _confidence_rank(self, confidence: str) -> int:
         """获取置信度排序权重，未知值降级为 medium。"""
         return self._confidence_order.get((confidence or "").strip().lower(), 1)
 
     @staticmethod
-    def _extract_confidence(finding: Dict[str, Any]) -> str:
+    def _extract_confidence(finding: dict[str, Any]) -> str:
         """从 finding 中提取置信度，兼容 confidence / confidence_level 字段。"""
-        return (
-            finding.get("confidence")
-            or finding.get("confidence_level")
-            or "medium"
-        )
+        return finding.get("confidence") or finding.get("confidence_level") or "medium"
 
     @staticmethod
     def _build_group_id(normalized_url: str) -> str:
         """基于规范化 URL 生成稳定的关联组标识。"""
-        digest = hashlib.md5(normalized_url.encode("utf-8")).hexdigest()[:8].upper()
+        digest = hashlib.md5(normalized_url.encode("utf-8"), usedforsecurity=False).hexdigest()[:8].upper()
         return f"CG-{digest}"
 
 
 def deduplicate_findings(
-    findings: List[Dict[str, Any]],
-) -> Tuple[List[Dict[str, Any]], DedupStats]:
+    findings: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], DedupStats]:
     """便捷函数：使用默认配置对 finding 列表执行去重与关联。
 
     Args:

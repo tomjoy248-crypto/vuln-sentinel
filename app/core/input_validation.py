@@ -1,6 +1,8 @@
-"""输入校验工具。
+"""[DEPRECATED] 此模块为未使用的死代码。
 
-提供 URL 校验、SQL 注入防护校验、XSS 输入过滤等安全校验函数。
+实际的 SSRF 防护逻辑在 utils.py 的 sanitize_url() 和 fetch_headers() 中实现。
+此文件保留仅供参考，不应被任何端点导入。
+如需清理，可安全删除此文件。
 """
 
 from __future__ import annotations
@@ -10,7 +12,6 @@ import re
 import socket
 from urllib.parse import urlparse
 
-
 # URL 最大长度（与项目 constants._MAX_URL_LEN 保持一致）
 _MAX_URL_LENGTH = 2048
 
@@ -19,19 +20,25 @@ _ALLOWED_SCHEMES = frozenset({"http", "https"})
 
 # SSRF 防护：禁止访问的网段（与项目 constants.BLOCKED_NETWORKS 一致）
 _SSRF_BLOCKED_NETWORKS = (
-    ipaddress.ip_network("127.0.0.0/8"),       # 回环
-    ipaddress.ip_network("10.0.0.0/8"),        # A 类私有
-    ipaddress.ip_network("172.16.0.0/12"),     # B 类私有 (172.16 - 172.31)
-    ipaddress.ip_network("192.168.0.0/16"),    # C 类私有
-    ipaddress.ip_network("169.254.0.0/16"),    # 链路本地 / 云元数据
-    ipaddress.ip_network("::1/128"),           # IPv6 回环
-    ipaddress.ip_network("fc00::/7"),          # IPv6 唯一本地地址
+    ipaddress.ip_network("127.0.0.0/8"),  # 回环
+    ipaddress.ip_network("10.0.0.0/8"),  # A 类私有
+    ipaddress.ip_network("172.16.0.0/12"),  # B 类私有 (172.16 - 172.31)
+    ipaddress.ip_network("192.168.0.0/16"),  # C 类私有
+    ipaddress.ip_network("169.254.0.0/16"),  # 链路本地 / 云元数据
+    ipaddress.ip_network("::1/128"),  # IPv6 回环
+    ipaddress.ip_network("fc00::/7"),  # IPv6 唯一本地地址
 )
 
 # 常见内网/元数据主机名（字面量）
-_SSRF_BLOCKED_HOSTS = frozenset({
-    "localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254",
-})
+_SSRF_BLOCKED_HOSTS = frozenset(
+    {
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",  # nosec B104 - 这是 SSRF 黑名单中的被封锁地址，非绑定地址
+        "::1",
+        "169.254.169.254",
+    }
+)
 
 # 本地主机名集合（用于扫描授权判断）
 _LOCALHOST_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -202,11 +209,11 @@ def validate_scan_target(url: str, authorized: bool = False) -> tuple[bool, str]
 
 # 常见 SQL 注入特征（粗粒度，仅作输入层提示，不能替代参数化查询）
 _SQLI_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\bunion\b\s+\bselect\b", re.I),                       # UNION SELECT
-    re.compile(r"'\s*(?:or|and)\s+'?\w+'?\s*=\s*'?\w+", re.I),         # ' OR '1'='1
-    re.compile(r"\b(?:or|and)\s+\d+\s*=\s*\d+\b", re.I),               # OR 1=1
-    re.compile(r"--\s*$", re.I),                                       # 行尾注释
-    re.compile(r"/\*.*?\*/", re.I | re.S),                             # 块注释
+    re.compile(r"\bunion\b\s+\bselect\b", re.I),  # UNION SELECT
+    re.compile(r"'\s*(?:or|and)\s+'?\w+'?\s*=\s*'?\w+", re.I),  # ' OR '1'='1
+    re.compile(r"\b(?:or|and)\s+\d+\s*=\s*\d+\b", re.I),  # OR 1=1
+    re.compile(r"--\s*$", re.I),  # 行尾注释
+    re.compile(r"/\*.*?\*/", re.I | re.S),  # 块注释
     re.compile(r";\s*(?:drop|update|insert|delete|truncate|alter|exec)\b", re.I),
     re.compile(r"\bexec(?:ute)?\s*\(", re.I),
     re.compile(r"\bxp_cmdshell\b", re.I),
@@ -229,9 +236,7 @@ def detect_sql_injection(text: str) -> bool:
 _SCRIPT_TAG_RE = re.compile(
     r"<\s*/?\s*(script|iframe|object|embed|svg)\b[^>]*>", re.I | re.S
 )
-_EVENT_HANDLER_RE = re.compile(
-    r"\bon\w+\s*=\s*(?:'[^']*'|\"[^\"]*\"|[^\s>]+)", re.I
-)
+_EVENT_HANDLER_RE = re.compile(r"\bon\w+\s*=\s*(?:'[^']*'|\"[^\"]*\"|[^\s>]+)", re.I)
 _JS_URI_RE = re.compile(r"(?:javascript|vbscript|data)\s*:", re.I)
 
 

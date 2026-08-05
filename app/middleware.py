@@ -10,8 +10,8 @@ audit_logging_middleware：自动记录所有写操作 API 的审计日志。
 from __future__ import annotations
 
 import time
-import uuid
-from typing import Callable, Coroutine, Any, Optional
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from fastapi import Request
 from fastapi.responses import Response
@@ -45,6 +45,7 @@ async def request_id_middleware(
 
     # 注入响应头
     response.headers["X-Request-ID"] = request_id
+    response.headers["X-Response-Time"] = f"{duration:.3f}s"
 
     return response
 
@@ -148,7 +149,7 @@ _AUDIT_PATH_RESOURCE_MAP: dict[str, str] = {
 }
 
 
-def _extract_resource_id(path: str) -> Optional[str]:
+def _extract_resource_id(path: str) -> str | None:
     """从 RESTful 路径中提取资源 ID，如 /api/scans/123/retest -> 123。"""
     parts = path.strip("/").split("/")
     # 模式：/api/{resource}/{id}/... 或 /api/{resource}/{id}
@@ -168,7 +169,7 @@ def _infer_resource_type(path: str) -> str:
     return "api"
 
 
-def _parse_user_id_from_request(request: Request) -> Optional[int]:
+def _parse_user_id_from_request(request: Request) -> int | None:
     """从请求 Authorization header 中解析 user_id。"""
     auth = request.headers.get("Authorization")
     if not auth or not auth.startswith("Bearer "):
@@ -176,7 +177,9 @@ def _parse_user_id_from_request(request: Request) -> Optional[int]:
     token = auth[7:]
     try:
         import jwt
+
         from app.core.config import settings
+
         payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
         return payload.get("user_id")
     except Exception:

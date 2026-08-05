@@ -1,0 +1,17 @@
+// 测试依赖参考文件（JSONC 格式，仅供人工参考，不会被 npm 直接解析）。
+// 说明：这是测试依赖参考，合并到 package.json 时运行
+//   npm install --save-dev vitest jsdom @playwright/test
+// 合并后即可删除本文件。
+{
+  "name": "vuln-sentinel-frontend-test-deps",
+  "private": true,
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "jsdom": "^24.0.0",
+    "@playwright/test": "^1.40.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  }
+}

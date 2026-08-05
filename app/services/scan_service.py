@@ -6,11 +6,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.dedup import FindingDeduplicator
 from app.plugins import DetectorRegistry, EvidenceStore, ScanContext
@@ -18,6 +19,9 @@ from app.plugins._compat import findings_to_old_list
 from app.plugins.builtin import register_builtin_detectors
 from app.quality.fp_control import FalsePositiveControl
 from app.quality.quality_assessment import assess_scan_quality
+from app.services.discovery_crawler import DiscoveryCrawler
+from app.services.fuzz_engine import FuzzEngine, fuzz_results_to_findings
+from app.verification.cross_validator import CrossValidator
 
 logger = logging.getLogger("vuln_sentinel.scan_service")
 
@@ -28,7 +32,7 @@ def _ensure_plugins_registered() -> None:
         register_builtin_detectors()
 
 
-def _calculate_score(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _calculate_score(findings: list[dict[str, Any]]) -> dict[str, Any]:
     """根据 findings 计算评分与汇总。"""
     score = 100
     summary = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0}
@@ -39,19 +43,55 @@ def _calculate_score(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
         summary["total"] += 1
         score -= severity_weights.get(sev, 0)
     score = max(10, min(100, score))
-    risk_level = "critical" if score < 40 else "high" if score < 60 else "medium" if score < 80 else "low"
+    risk_level = (
+        "critical"
+        if score < 40
+        else "high"
+        if score < 60
+        else "medium"
+        if score < 80
+        else "low"
+    )
     return {"score": score, "risk_level": risk_level, "summary": summary}
+
+
+async def _run_cross_validation(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """对 findings 执行交叉验证，失败时返回原始结果不阻塞主流程。"""
+    validator = CrossValidator()
+    try:
+        enriched = await validator.validate_finding_batch(findings)
+        verified_count = sum(
+            1 for f in enriched if f.get("verification_status") == "confirmed"
+        )
+        probable_count = sum(
+            1 for f in enriched if f.get("verification_status") == "probable"
+        )
+        suspected_count = sum(
+            1 for f in enriched if f.get("verification_status") == "suspected"
+        )
+        logger.info(
+            "Cross-validation: %d confirmed, %d probable, %d suspected (total %d)",
+            verified_count,
+            probable_count,
+            suspected_count,
+            len(enriched),
+        )
+        return enriched
+    except Exception as exc:
+        logger.warning("Cross-validation failed, returning original findings: %s", exc)
+        return findings
 
 
 async def run_plugin_scan(
     url: str,
-    headers: Dict[str, str],
+    headers: dict[str, str],
     is_https: bool,
-    ssl_info: Dict[str, Any],
-    waf: Optional[str] = None,
+    ssl_info: dict[str, Any],
+    waf: str | None = None,
     deep: bool = False,
     body: str = "",
-) -> Dict[str, Any]:
+    enable_verification: bool = True,
+) -> dict[str, Any]:
     """使用插件化检测引擎执行扫描。
 
     返回结构与 src_scanner.run_src_scan 保持一致，确保前端与测试兼容。
@@ -60,7 +100,8 @@ async def run_plugin_scan(
       1. 插件检测器并行执行
       2. 误报控制：启发式分析并标记潜在误报
       3. Finding 去重与关联：合并重复 finding，标注关联组
-      4. 质量评估：生成扫描质量评分
+      4. 交叉验证：对关键漏洞类型进行多技术验证（可配置）
+      5. 质量评估：生成扫描质量评分
     """
     import src_scanner
 
@@ -80,11 +121,98 @@ async def run_plugin_scan(
         evidence_store=store,
     )
 
-    # 1. 插件检测器并行执行
+    # 1. 插件检测器并行执行（首页上下文）
     results = await DetectorRegistry.run_all(context)
-    plugin_findings: List[Any] = []
+    plugin_findings: list[Any] = []
     for detector_findings in results.values():
         plugin_findings.extend(detector_findings)
+
+    # 1.5 端点发现：扩大覆盖面（仅在 deep 模式下开启，避免 standard 超时）
+    if deep:
+        try:
+            crawler = DiscoveryCrawler(
+                max_pages=15 if deep else 8,
+                request_timeout=4.0,
+                total_timeout=15.0 if deep else 8.0,
+                max_forms=10 if deep else 5,
+            )
+            endpoints = await crawler.discover(url, headers=context.headers)
+            logger.info("Running detectors on %d discovered endpoints", len(endpoints))
+
+            async def _run_on_endpoint(ep: Any) -> list[Any]:
+                sub_ctx = ScanContext(
+                    url=ep.url,
+                    headers=context.headers,
+                    body=ep.body or "",
+                    is_https=is_https,
+                    ssl_info=ssl_info or {},
+                    waf_list=context.waf_list,
+                    depth="deep" if deep else "standard",
+                    evidence_store=store,
+                )
+                sub_results = await DetectorRegistry.run_all(sub_ctx)
+                collected: list[Any] = []
+                for detector_findings in sub_results.values():
+                    for finding in detector_findings:
+                        # 记录发现来源，方便后续定位
+                        finding.url = ep.url
+                        finding.location.url = ep.url
+                        if ep.method != "GET":
+                            finding.location.method = ep.method
+                        collected.append(finding)
+                return collected
+
+            if endpoints:
+                endpoint_tasks = [_run_on_endpoint(ep) for ep in endpoints]
+                endpoint_results = await asyncio.gather(
+                    *endpoint_tasks, return_exceptions=True
+                )
+                for res in endpoint_results:
+                    if isinstance(res, list):
+                        plugin_findings.extend(res)
+                    elif isinstance(res, Exception):
+                        logger.warning("Endpoint detection error: %s", res)
+        except Exception as exc:
+            logger.warning("Endpoint discovery disabled or failed: %s", exc)
+
+    # 2. 参数 fuzz：对发现的端点执行定向注入测试（deep 模式启用）
+    if deep:
+        try:
+            fuzzer = FuzzEngine(
+                techniques=[
+                    "sqli",
+                    "xss",
+                    "cmdi",
+                    "traversal",
+                    "ssrf",
+                    "open_redirect",
+                ],
+                request_timeout=6.0,
+                max_params=12,
+            )
+            fuzz_targets = [url]
+            if endpoints:
+                fuzz_targets.extend(
+                    [ep.url for ep in endpoints if ep.url and "?" in ep.url]
+                )
+            fuzz_targets = list(dict.fromkeys(fuzz_targets))[:20]  # 去重并限制数量
+
+            fuzz_results_map = await fuzzer.fuzz_multiple(
+                urls=fuzz_targets,
+                headers=context.headers,
+                max_concurrency=3,
+            )
+            fuzz_count = 0
+            for target_url, fuzz_results in fuzz_results_map.items():
+                if fuzz_results:
+                    converted = fuzz_results_to_findings(fuzz_results, target_url)
+                    plugin_findings.extend(converted)
+                    fuzz_count += len(converted)
+            if fuzz_count > 0:
+                logger.info("Fuzzing found %d potential injection issues", fuzz_count)
+        except Exception as exc:
+            logger.warning("Fuzzing engine failed: %s", exc)
+
     findings = findings_to_old_list(plugin_findings)
 
     # 2. 误报控制
@@ -92,7 +220,9 @@ async def run_plugin_scan(
     findings = fp_controller.analyze_batch(findings)
     fp_marked = sum(1 for f in findings if f.get("is_likely_fp"))
     if fp_marked > 0:
-        logger.info("FP control: %d findings flagged as likely false positive", fp_marked)
+        logger.info(
+            "FP control: %d findings flagged as likely false positive", fp_marked
+        )
 
     # 3. Finding 去重与关联
     deduper = FindingDeduplicator()
@@ -106,7 +236,27 @@ async def run_plugin_scan(
             dedup_stats.correlation_groups,
         )
 
-    # 4. 质量评估
+    # 4. 交叉验证（standard/deep 默认开启，quick 可关闭）
+    verification_stats = {
+        "enabled": False,
+        "confirmed": 0,
+        "probable": 0,
+        "suspected": 0,
+    }
+    if enable_verification:
+        findings = await _run_cross_validation(findings)
+        verification_stats["enabled"] = True
+        verification_stats["confirmed"] = sum(
+            1 for f in findings if f.get("verification_status") == "confirmed"
+        )
+        verification_stats["probable"] = sum(
+            1 for f in findings if f.get("verification_status") == "probable"
+        )
+        verification_stats["suspected"] = sum(
+            1 for f in findings if f.get("verification_status") == "suspected"
+        )
+
+    # 5. 质量评估
     duration_ms = int((time.time() - start_ts) * 1000)
     quality = assess_scan_quality(
         findings=findings,
@@ -118,7 +268,9 @@ async def run_plugin_scan(
     stats = _calculate_score(findings)
 
     # 生成与 run_src_scan 兼容的 report_share_id
-    report_id = f"RPT-{''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=12))}"
+    report_id = (
+        f"RPT-{''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=12))}"
+    )
 
     src_scanner.clear_evidence_store()
 
@@ -139,4 +291,5 @@ async def run_plugin_scan(
         "scan_engine": "plugin",
         "quality": quality.to_dict(),
         "dedup_stats": dedup_stats.to_dict(),
+        "verification_stats": verification_stats,
     }

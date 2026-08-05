@@ -3,13 +3,14 @@
 - 字体加载
 - 置信度系统
 """
+import asyncio  # noqa: E402
 import re
 from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
 import main as M
-import asyncio  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -95,7 +96,6 @@ def test_trusted_domains_removed():
 
 def test_waf_does_not_erase_findings():
     """WAF 站点仍应报告 missing header finding，只是置信度为中"""
-    from main import analyze_security
     result = _run_analyze_security(
         url="https://example.com",
         headers={},  # 空 headers
@@ -114,7 +114,6 @@ def test_waf_does_not_erase_findings():
 
 def test_confidence_levels_present():
     """所有 finding 必须包含 confidence_level 字段"""
-    from main import analyze_security
     result = _run_analyze_security(
         url="https://example.com",
         headers={},
@@ -131,7 +130,6 @@ def test_confidence_levels_present():
 
 def test_waf_bonus_capped_at_3():
     """WAF 最多 +3 分，不能覆盖真实缺失项"""
-    from main import analyze_security
     # 无 WAF 的站点
     result_no_waf = _run_analyze_security(
         url="https://example.com",
@@ -162,7 +160,6 @@ def test_waf_bonus_capped_at_3():
 
 def test_restricted_scan_low_confidence():
     """受限扫描的所有 finding 置信度应为低"""
-    from main import analyze_security
     result = _run_analyze_security(
         url="https://example.com",
         headers={"x-waf-check": "captcha"},  # 触发受限扫描

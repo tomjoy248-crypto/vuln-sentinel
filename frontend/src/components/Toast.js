@@ -5,45 +5,49 @@ let _toastActive = 0;
 const _TOAST_MAX = 3;
 const _TOAST_DURATION = 2500;
 
-export function showToast(msg, type = 'info') {
-  const container = document.getElementById('toast-container');
-  if (!container) {
-    console.log('[' + type + ']', msg);
-    return;
-  }
-  _toastQueue.push({ msg, type });
-  _processToastQueue(container);
+export function showToast(msg, type) {
+  _toastQueue.push({ msg: msg, type: type });
+  _processToastQueue();
 }
 
-function _processToastQueue(container) {
+function _processToastQueue() {
   if (_toastActive >= _TOAST_MAX || _toastQueue.length === 0) return;
-  const item = _toastQueue.shift();
+  let item = _toastQueue.shift();
   _toastActive++;
 
-  const el = document.createElement('div');
-  el.className = 'toast ' + item.type;
-  el.innerHTML = '<span>' + _escapeHtml(item.msg) + '</span>';
-  container.appendChild(el);
+  let container = document.getElementById('toast-container');
+  if (!container) { _toastActive--; return; }
+  let t = document.createElement('div');
+  t.className = 'toast';
+
+  let icon = 'ℹ️';
+  if (item.type === 'error') icon = '[错误]';
+  else if (item.type === 'success') icon = '[成功]';
+  else if (item.type === 'warn') icon = '[警告]';
+  let iconSpan = document.createElement('span');
+  iconSpan.textContent = icon + ' ';
+  iconSpan.style.marginRight = '6px';
+  t.appendChild(iconSpan);
+  t.appendChild(document.createTextNode(item.msg));
+
+  if (item.type === 'error') t.classList.add('error');
+  else if (item.type === 'success') t.classList.add('success');
+
+  container.appendChild(t);
 
   requestAnimationFrame(function() {
-    el.style.opacity = '1';
-    el.style.transform = 'translateX(0)';
+    requestAnimationFrame(function() {
+      t.classList.add('show');
+    });
   });
 
   setTimeout(function() {
-    el.style.opacity = '0';
-    el.style.transform = 'translateX(20px)';
+    t.classList.add('hiding');
+    t.classList.remove('show');
     setTimeout(function() {
-      if (el.parentNode) el.parentNode.removeChild(el);
+      if (t.parentNode) t.parentNode.removeChild(t);
       _toastActive--;
-      _processToastQueue(container);
-    }, 250);
+      _processToastQueue();
+    }, 300);
   }, _TOAST_DURATION);
-}
-
-function _escapeHtml(str) {
-  if (str == null) return '';
-  const div = document.createElement('div');
-  div.appendChild(document.createTextNode(String(str)));
-  return div.innerHTML;
 }

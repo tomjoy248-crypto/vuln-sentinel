@@ -1,8 +1,9 @@
 """11-S 本地演示靶场测试 - 测试扫描-修复-复测完整闭环"""
-import pytest
-import sys
 import os
+import sys
 from pathlib import Path
+
+import pytest
 
 # 添加项目根目录到 path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -12,6 +13,7 @@ os.environ["TEST_MODE"] = "1"
 os.environ["JWT_SECRET"] = "test-secret-key-for-v115-demo-tests"
 
 from fastapi.testclient import TestClient
+
 import main as app_module
 
 
@@ -63,9 +65,9 @@ def auth_headers(client):
 class TestDemoTarget:
     """测试本地演示靶场"""
 
-    def test_demo_status_endpoint(self, client):
-        """测试演示靶场状态查询接口"""
-        resp = client.get("/api/demo-status")
+    def test_demo_status_endpoint(self, client, auth_headers):
+        """测试演示靶场状态查询接口（需登录认证）"""
+        resp = client.get("/api/demo-status", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True

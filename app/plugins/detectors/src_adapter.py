@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 from app.plugins import BaseVulnDetector, Finding, ScanContext
 from app.plugins._compat import old_finding_to_finding
 
@@ -19,7 +17,7 @@ class SQLiDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_sqli_src
 
         raw = await detect_sqli_src(context.url)
@@ -33,7 +31,7 @@ class ReflectedXSSDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_xss_src
 
         raw = await detect_xss_src(context.url)
@@ -47,10 +45,12 @@ class InfoLeakDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["quick", "standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_info_leak_src
 
-        raw = await detect_info_leak_src(context.url, context.headers, context.body or None)
+        raw = await detect_info_leak_src(
+            context.url, context.headers, context.body or None
+        )
         return [old_finding_to_finding(r) for r in raw]
 
 
@@ -61,7 +61,7 @@ class CSRFDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_csrf_src
 
         raw = await detect_csrf_src(context.url, context.headers, context.body or None)
@@ -75,7 +75,7 @@ class SensitivePathDetectorPlugin(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_sensitive_paths_src
 
         raw = await detect_sensitive_paths_src(context.url)
@@ -89,10 +89,12 @@ class OutdatedComponentDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["quick", "standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_outdated_components_src
 
-        raw = await detect_outdated_components_src(context.url, context.headers, context.body or None)
+        raw = await detect_outdated_components_src(
+            context.url, context.headers, context.body or None
+        )
         return [old_finding_to_finding(r) for r in raw]
 
 
@@ -103,7 +105,7 @@ class BrokenAccessControlDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_broken_access_control_src
 
         raw = await detect_broken_access_control_src(context.url)
@@ -117,7 +119,7 @@ class SSRFDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_ssrf_src
 
         raw = await detect_ssrf_src(context.url)
@@ -131,7 +133,7 @@ class IDORDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_idor_src
 
         raw = await detect_idor_src(context.url)
@@ -145,7 +147,7 @@ class FileUploadDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_file_upload_src
 
         raw = await detect_file_upload_src(context.url, context.body or None)
@@ -159,10 +161,12 @@ class LogicBypassDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_logic_bypass_src
 
-        raw = await detect_logic_bypass_src(context.url, context.headers, context.body or None)
+        raw = await detect_logic_bypass_src(
+            context.url, context.headers, context.body or None
+        )
         return [old_finding_to_finding(r) for r in raw]
 
 
@@ -173,7 +177,7 @@ class OpenRedirectDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_open_redirect_src
 
         raw = await detect_open_redirect_src(context.url)
@@ -187,7 +191,7 @@ class XXEDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_xxe_src
 
         raw = await detect_xxe_src(context.url, context.headers, context.body or "")
@@ -201,7 +205,7 @@ class CommandInjectionDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_command_injection_src
 
         raw = await detect_command_injection_src(context.url)
@@ -215,7 +219,7 @@ class PathTraversalDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_path_traversal_src
 
         raw = await detect_path_traversal_src(context.url)
@@ -229,8 +233,10 @@ class DeserializationDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         from src_scanner import detect_deserialization_src
 
-        raw = await detect_deserialization_src(context.url, context.headers, context.body or "")
+        raw = await detect_deserialization_src(
+            context.url, context.headers, context.body or ""
+        )
         return [old_finding_to_finding(r) for r in raw]

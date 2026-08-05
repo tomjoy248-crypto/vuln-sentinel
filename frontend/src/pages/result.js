@@ -1,6 +1,6 @@
 /** SRC 级扫描结果页 */
 
-import { escapeHtml, getScoreColor, getScoreGradient, getRiskColor, getRiskClass, formatDate, copyToClipboard } from '../utils.js';
+import { escapeHtml, escapeAttr, getScoreColor, getScoreGradient, getRiskColor, getRiskClass, formatDate, copyToClipboard } from '../utils.js';
 import { showToast } from '../components/Toast.js';
 import { exportSRCReport, verifyReproduce, findingFeedback, isLoggedIn } from '../api.js';
 
@@ -203,6 +203,16 @@ function renderHeader(score, riskLevel, summary, url, data) {
     ? `<span class="meta-item" style="color:${qScore >= 80 ? '#73c990' : qScore >= 60 ? '#f0a732' : '#c75450'}">质量 ${qScore}分</span>`
     : '';
 
+  // 交叉验证统计
+  const vStats = data.verification_stats || {};
+  const vBadge = vStats.enabled
+    ? `<span class="meta-item verification-badge">
+        <span class="v-confirmed" title="已验证">${vStats.confirmed || 0}</span>
+        <span class="v-probable" title="可能存在">${vStats.probable || 0}</span>
+        <span class="v-suspected" title="存疑">${vStats.suspected || 0}</span>
+       </span>`
+    : '';
+
   return `
     <div class="src-report-header fade-in-up">
       <div class="src-score-wrap">
@@ -225,7 +235,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
           <div class="src-stat total"><div class="num">${summary.total || 0}</div><div class="label">总计</div></div>
         </div>
         <div class="src-report-submeta">
-          ${scanId}${duration}${reportId}${qBadge}
+          ${scanId}${duration}${reportId}${qBadge}${vBadge}
           <span class="meta-item">发现于 ${formatDate(data.discovered_at || new Date().toISOString())}</span>
         </div>
         <div class="src-report-actions">
@@ -253,18 +263,24 @@ function renderFindingList(findings, selectedIndex) {
       const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag" title="潜在误报">FP</span>' : '';
       const corrGroup = f.correlation_group ? `<span class="src-list-corr" title="关联组 ${escapeAttr(f.correlation_group)}（${f.correlation_size || 0} 个相关）">${escapeHtml(f.correlation_group)}</span>` : '';
       const mergedCount = f.merged_count > 1 ? `<span class="src-list-merged" title="合并了 ${f.merged_count} 个重复项">×${f.merged_count}</span>` : '';
+      const vStatus = f.verification_status;
+      const vIcon = vStatus === 'confirmed' ? '<span class="src-list-v confirmed" title="已验证">✓</span>' :
+                    vStatus === 'probable' ? '<span class="src-list-v probable" title="可能存在">?</span>' :
+                    vStatus === 'suspected' ? '<span class="src-list-v suspected" title="存疑">!</span>' : '';
+      const fbIcon = f.user_feedback ? (f.user_feedback.is_false_positive ? '<span class="src-list-fb fp" title="您已标记为误报">FP</span>' : '<span class="src-list-fb confirmed" title="您已确认有效">✓</span>') : '';
+      const confidence = escapeHtml(f.adjusted_confidence || f.confidence || 'medium');
       html += `
         <div class="src-list-item ${active} ${cls}" data-index="${i}">
           <div class="src-list-row top">
             <span class="src-sev-badge ${cls}">${SEVERITY_LABEL[sev]}</span>
             <span class="src-list-title" title="${escapeAttr(f.title || '')}">${escapeHtml(f.title || '未命名漏洞')}</span>
-            ${isFp}${mergedCount}
+            ${vIcon}${fbIcon}${isFp}${mergedCount}
           </div>
           <div class="src-list-row meta">
             ${typeLabel}
             ${param}
             <span class="src-list-host" title="${escapeAttr(f.url || '')}">${escapeHtml(host)}${escapeHtml(path)}</span>
-            <span class="src-list-confidence">${escapeHtml(f.adjusted_confidence || f.confidence || 'medium')}</span>
+            <span class="src-list-confidence ${confidence}">${confidence}</span>
             ${corrGroup}
           </div>
         </div>
@@ -304,8 +320,9 @@ function renderFindingDetail(finding, index) {
       ${finding.cvss_score ? `<span class="src-detail-cvss" title="${escapeHtml(finding.cvss_vector || '')}">CVSS ${finding.cvss_score}</span>` : ''}
       ${finding.severity_score ? `<span class="src-detail-score">评分 ${finding.severity_score}/10</span>` : ''}
       <span class="src-detail-confidence">置信度 ${escapeHtml(finding.adjusted_confidence || finding.confidence || 'medium')}</span>
+      ${finding.verification_status ? `<span class="src-detail-verify-badge ${finding.verification_status}">${finding.verification_status === 'confirmed' ? '已验证' : finding.verification_status === 'probable' ? '可能存在' : '存疑'}</span>` : ''}
       ${finding.is_likely_fp ? '<span class="src-detail-fp-badge">潜在误报</span>' : ''}
-      ${finding.verified !== undefined ? `<span class="src-detail-verify-badge ${finding.verified ? 'verified' : 'unverified'}">${finding.verified ? '已验证' : '未验证'}</span>` : ''}
+      ${finding.user_feedback ? (finding.user_feedback.is_false_positive ? '<span class="src-detail-fp-badge" title="您已标记为误报">已标记误报</span>' : '<span class="src-detail-verify-badge verified" title="您已确认有效">您已确认</span>') : ''}
     </div>
   </div>`;
 
@@ -759,6 +776,21 @@ export function injectSRCStyles() {
     .src-list-fp-tag { background:#c7545022; color:#c75450; font-size:10px; padding:1px 5px; border-radius:3px; font-weight:700; }
     .src-list-merged { background:var(--primary); color:#fff; font-size:10px; padding:1px 5px; border-radius:3px; font-weight:600; }
     .src-list-corr { background:var(--token-bg); color:var(--text-secondary); font-size:10px; padding:1px 5px; border-radius:3px; font-family:var(--font); }
+    .src-list-v { font-size:10px; padding:1px 5px; border-radius:3px; font-weight:700; margin-left:4px; }
+    .src-list-v.confirmed { background:rgba(115,201,144,0.2); color:#73c990; }
+    .src-list-v.probable { background:rgba(240,167,50,0.2); color:#f0a732; }
+    .src-list-v.suspected { background:rgba(199,84,80,0.2); color:#c75450; }
+    .src-list-fb { font-size:10px; padding:1px 5px; border-radius:3px; font-weight:700; margin-left:4px; }
+    .src-list-fb.confirmed { background:rgba(115,201,144,0.2); color:#73c990; }
+    .src-list-fb.fp { background:rgba(128,128,128,0.2); color:#808080; }
+    .src-list-confidence.high { color:#73c990; }
+    .src-list-confidence.medium { color:#f0a732; }
+    .src-list-confidence.low { color:#c75450; }
+    .verification-badge { display:flex; gap:4px; align-items:center; }
+    .verification-badge span { font-size:10px; padding:1px 5px; border-radius:3px; font-weight:600; }
+    .v-confirmed { background:rgba(115,201,144,0.2); color:#73c990; }
+    .v-probable { background:rgba(240,167,50,0.2); color:#f0a732; }
+    .v-suspected { background:rgba(199,84,80,0.2); color:#c75450; }
 
     .src-result-detail { max-height:calc(100vh - 220px); overflow-y:auto; }
     .src-detail-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:0; display:flex; flex-direction:column; }
@@ -788,6 +820,9 @@ export function injectSRCStyles() {
     .src-detail-verify-badge { padding:2px 8px; border-radius:var(--radius-xs); font-weight:600; }
     .src-detail-verify-badge.verified { background:rgba(115,201,144,0.15); color:#73c990; }
     .src-detail-verify-badge.unverified { background:rgba(240,167,50,0.15); color:#f0a732; }
+    .src-detail-verify-badge.confirmed { background:rgba(115,201,144,0.15); color:#73c990; }
+    .src-detail-verify-badge.probable { background:rgba(240,167,50,0.15); color:#f0a732; }
+    .src-detail-verify-badge.suspected { background:rgba(199,84,80,0.15); color:#c75450; }
     .src-fp-reasons { margin-top:8px; }
     .src-fp-reasons ul { margin:0; padding-left:18px; }
     .src-fp-reasons li { font-size:12px; color:var(--text-secondary); margin-bottom:3px; }

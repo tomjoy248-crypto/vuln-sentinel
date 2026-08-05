@@ -5,11 +5,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Coroutine
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from fastapi import Request
 from fastapi.responses import Response
-
 
 # 默认注入到所有响应的安全头
 SECURITY_HEADERS: dict[str, str] = {
@@ -17,12 +17,20 @@ SECURITY_HEADERS: dict[str, str] = {
     "X-XSS-Protection": "1; mode=block",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
+    # NOTE: 'unsafe-inline' 保留在 script-src 中是因为当前前端代码中存在
+    # 内联脚本（非 Vite 注入的部分），直接移除会导致功能损坏。
+    # TODO（未来改进）: 将所有内联脚本迁移至外部文件后，改用基于 nonce 或 hash
+    # 的 CSP（Vite 已为构建产物生成哈希文件名，具备实施条件），
+    # 届时可移除 'unsafe-inline' 以显著增强 XSS 防护。
     "Content-Security-Policy": (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
-        "font-src 'self' data:;"
+        "font-src 'self' data:; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
     ),
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
 }

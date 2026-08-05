@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 
 class FalsePositiveControl:
@@ -19,15 +19,28 @@ class FalsePositiveControl:
     """
 
     # 误报风险关键词（出现在响应中时，finding 可信度下降）
-    FP_RESPONSE_KEYWORDS: List[str] = [
-        "waf", "firewall", "blocked", "blocked by", "cloudflare",
-        "access denied", "forbidden", "unauthorized", "authentication required",
-        "captcha", "challenge", "rate limit", "too many requests",
-        "incapsula", "sucuri", "akamai", "f5",
+    FP_RESPONSE_KEYWORDS: list[str] = [
+        "waf",
+        "firewall",
+        "blocked",
+        "blocked by",
+        "cloudflare",
+        "access denied",
+        "forbidden",
+        "unauthorized",
+        "authentication required",
+        "captcha",
+        "challenge",
+        "rate limit",
+        "too many requests",
+        "incapsula",
+        "sucuri",
+        "akamai",
+        "f5",
     ]
 
     # 高置信度响应特征（出现时保持或提升可信度）
-    HIGH_CONFIDENCE_INDICATORS: Dict[str, List[str]] = {
+    HIGH_CONFIDENCE_INDICATORS: dict[str, list[str]] = {
         "sqli": ["sql syntax", "mysql_fetch", "ora-", "pl/sql", "unclosed quotation"],
         "xss": ["<script>alert", "onerror=alert", "svg onload"],
         "cmdi": ["uid=", "gid=", "groups=", "root:", "www-data"],
@@ -36,7 +49,7 @@ class FalsePositiveControl:
     }
 
     # 低置信度上下文模式
-    LOW_CONFIDENCE_PATTERNS: List[re.Pattern] = [
+    LOW_CONFIDENCE_PATTERNS: list[re.Pattern] = [
         re.compile(r"\b404\b.*not found", re.I),
         re.compile(r"\b500\b.*internal server error", re.I),
         re.compile(r"\b503\b.*service unavailable", re.I),
@@ -49,7 +62,7 @@ class FalsePositiveControl:
         """
         self.threshold = threshold
 
-    def analyze(self, finding: Dict[str, Any]) -> Dict[str, Any]:
+    def analyze(self, finding: dict[str, Any]) -> dict[str, Any]:
         """分析单个 finding，返回带误报评估的结果。
 
         Returns:
@@ -60,7 +73,7 @@ class FalsePositiveControl:
             - is_likely_fp: 是否可能为误报
         """
         fp_score = 0.0
-        reasons: List[str] = []
+        reasons: list[str] = []
 
         vuln_type = (finding.get("type") or "").lower()
         response = self._get_response_text(finding)
@@ -73,7 +86,9 @@ class FalsePositiveControl:
 
         # 规则 2：HTTP 错误状态码且无利用证据
         status_code = self._extract_status_code(response)
-        if status_code in (403, 429, 503) and not self._has_exploit_evidence(finding, vuln_type):
+        if status_code in (403, 429, 503) and not self._has_exploit_evidence(
+            finding, vuln_type
+        ):
             fp_score += 0.25
             reasons.append(f"HTTP {status_code} 响应且无明确利用证据")
 
@@ -111,18 +126,18 @@ class FalsePositiveControl:
         result["is_likely_fp"] = fp_score >= self.threshold
         return result
 
-    def analyze_batch(self, findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def analyze_batch(self, findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """批量分析 finding 列表。"""
         return [self.analyze(f) for f in findings]
 
-    def _get_response_text(self, finding: Dict[str, Any]) -> str:
+    def _get_response_text(self, finding: dict[str, Any]) -> str:
         """提取响应文本。"""
         evidence = finding.get("evidence") or {}
         if isinstance(evidence, dict):
             return (evidence.get("response") or "").lower()
         return ""
 
-    def _get_request_text(self, finding: Dict[str, Any]) -> str:
+    def _get_request_text(self, finding: dict[str, Any]) -> str:
         """提取请求文本。"""
         evidence = finding.get("evidence") or {}
         if isinstance(evidence, dict):
@@ -133,26 +148,28 @@ class FalsePositiveControl:
         text_lower = text.lower()
         return any(kw in text_lower for kw in self.FP_RESPONSE_KEYWORDS)
 
-    def _extract_status_code(self, response_text: str) -> Optional[int]:
+    def _extract_status_code(self, response_text: str) -> int | None:
         m = re.search(r"http/\d\.\d\s+(\d{3})", response_text, re.I)
         if m:
             return int(m.group(1))
         return None
 
-    def _has_exploit_evidence(self, finding: Dict[str, Any], vuln_type: str) -> bool:
+    def _has_exploit_evidence(self, finding: dict[str, Any], vuln_type: str) -> bool:
         """检查是否有明确的利用证据。"""
         response = self._get_response_text(finding)
         indicators = self.HIGH_CONFIDENCE_INDICATORS.get(vuln_type, [])
         return any(ind in response for ind in indicators)
 
-    def _has_strong_evidence(self, finding: Dict[str, Any], vuln_type: str) -> bool:
+    def _has_strong_evidence(self, finding: dict[str, Any], vuln_type: str) -> bool:
         """检查是否有强利用证据（高可信度）。"""
         response = self._get_response_text(finding)
         payload = finding.get("evidence", {}).get("payload", "")
 
         # XSS：payload 完整反射且包含事件处理器
         if vuln_type == "xss" and payload and payload.lower() in response:
-            if any(evt in response for evt in ["onerror", "onload", "alert(", "confirm("]):
+            if any(
+                evt in response for evt in ["onerror", "onload", "alert(", "confirm("]
+            ):
                 return True
 
         # SQLi：明确的数据库错误信息
@@ -162,23 +179,47 @@ class FalsePositiveControl:
                 return True
 
         # CMDi：系统命令输出
-        if vuln_type == "cmdi" and any(ind in response for ind in ["uid=", "gid=", "groups="]):
+        if vuln_type == "cmdi" and any(
+            ind in response for ind in ["uid=", "gid=", "groups="]
+        ):
             return True
 
         # Traversal：系统文件内容
-        if vuln_type == "traversal" and any(ind in response for ind in ["root:", "daemon:", "[fonts]"]):
+        if vuln_type == "traversal" and any(
+            ind in response for ind in ["root:", "daemon:", "[fonts]"]
+        ):
             return True
 
         return False
 
     def _is_static_resource(self, request_text: str) -> bool:
-        static_exts = [".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".ttf"]
+        static_exts = [
+            ".css",
+            ".js",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".svg",
+            ".ico",
+            ".woff",
+            ".ttf",
+        ]
         return any(ext in request_text for ext in static_exts)
 
     def _contains_framework_markup(self, response: str) -> bool:
         framework_patterns = [
-            "<!doctype html>", "<html", "<head", "<body", "<div", "<script",
-            "react", "vue", "angular", "next.js", "nuxt",
+            "<!doctype html>",
+            "<html",
+            "<head",
+            "<body",
+            "<div",
+            "<script",
+            "react",
+            "vue",
+            "angular",
+            "next.js",
+            "nuxt",
         ]
         return any(p in response for p in framework_patterns)
 
@@ -201,10 +242,10 @@ class FalsePositiveControl:
 
 
 def filter_findings(
-    findings: List[Dict[str, Any]],
+    findings: list[dict[str, Any]],
     threshold: float = 0.5,
     drop_fp: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """对 finding 列表进行误报过滤。
 
     Args:

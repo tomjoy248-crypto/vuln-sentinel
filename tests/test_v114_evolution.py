@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 def test_learn_insights_uses_history():
     """智能学习必须基于真实历史（不是返回空）"""
     from fastapi.testclient import TestClient
+
     from main import app
     client = TestClient(app)
     login = client.post("/api/login", json={"username": "demo", "password": "demo123"})
@@ -29,6 +30,7 @@ def test_learn_insights_uses_history():
 def test_create_and_list_monitor():
     """添加/列出监控目标端点必须工作"""
     from fastapi.testclient import TestClient
+
     from main import app
     client = TestClient(app)
     login = client.post("/api/login", json={"username": "demo", "password": "demo123"})
@@ -57,6 +59,7 @@ def test_create_and_list_monitor():
 def test_ai_chat_remembers_conversation():
     """AI 对话必须基于记忆（第二次能用到第一次的上下文）"""
     from fastapi.testclient import TestClient
+
     from main import app
     client = TestClient(app)
     login = client.post("/api/login", json={"username": "demo", "password": "demo123"})
@@ -91,6 +94,7 @@ def test_ai_chat_remembers_conversation():
 def test_create_team_and_comment():
     """团队创建 + 评论端点必须工作"""
     from fastapi.testclient import TestClient
+
     from main import app
     client = TestClient(app)
     login = client.post("/api/login", json={"username": "demo", "password": "demo123"})
@@ -122,6 +126,7 @@ def test_create_team_and_comment():
 def test_evolution_dashboard_aggregates():
     """综合仪表盘必须聚合学习/监控/团队"""
     from fastapi.testclient import TestClient
+
     from main import app
     client = TestClient(app)
     login = client.post("/api/login", json={"username": "demo", "password": "demo123"})
@@ -144,6 +149,7 @@ def test_evolution_dashboard_aggregates():
 def test_monitor_alerts_endpoint():
     """告警端点必须返回正确结构"""
     from fastapi.testclient import TestClient
+
     from main import app
     client = TestClient(app)
     login = client.post("/api/login", json={"username": "demo", "password": "demo123"})

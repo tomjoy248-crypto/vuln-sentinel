@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,7 +34,7 @@ class AppSettings(BaseSettings):
     app_version: str = "11-S"
     build_time: str = "2026-06-25"
     port: int = 8000
-    host: str = "0.0.0.0"
+    host: str = "0.0.0.0"  # nosec B104 - 默认监听所有接口，生产环境可通过环境变量覆盖
     env: str = "development"  # development / production
 
     # --- JWT ---
@@ -117,9 +116,13 @@ class AppSettings(BaseSettings):
 
 def is_production(settings: AppSettings) -> bool:
     """判断是否为生产环境。"""
-    return (
-        settings.env == "production"
-        or os.environ.get("PRODUCTION", "").strip() in ("1", "true", "TRUE", "True", "yes", "YES")
+    return settings.env == "production" or os.environ.get("PRODUCTION", "").strip() in (
+        "1",
+        "true",
+        "TRUE",
+        "True",
+        "yes",
+        "YES",
     )
 
 

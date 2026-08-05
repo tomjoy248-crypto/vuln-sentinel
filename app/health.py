@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, Response
 from fastapi.responses import JSONResponse
@@ -27,7 +27,7 @@ _SERVICE_START_TIME = time.time()
 
 
 @router.get("/live")
-async def health_live() -> Dict[str, Any]:
+async def health_live() -> dict[str, Any]:
     """存活探针：只要进程在跑就返回 200。
 
     用于 K8s livenessProbe：失败则重启容器。
@@ -56,7 +56,7 @@ async def health_ready(response: Response) -> JSONResponse:
 
 
 @router.get("/version")
-async def health_version() -> Dict[str, Any]:
+async def health_version() -> dict[str, Any]:
     """版本信息端点。"""
     # 延迟导入避免循环依赖
     from main import settings
@@ -70,7 +70,7 @@ async def health_version() -> Dict[str, Any]:
     }
 
 
-def get_health_summary() -> Dict[str, Any]:
+def get_health_summary() -> dict[str, Any]:
     """获取健康摘要（供 /api/health 兼容端点使用）。"""
     db_ok = check_db_health()
     from main import settings

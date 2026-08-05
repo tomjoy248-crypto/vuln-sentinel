@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 
 @dataclass
@@ -18,11 +18,11 @@ class ScanQualityAssessment:
     reliability_score: int = 0  # 可靠性 0-100
     depth_score: int = 0  # 深度 0-100
 
-    coverage_breakdown: Dict[str, Any] = field(default_factory=dict)
-    reliability_breakdown: Dict[str, Any] = field(default_factory=dict)
-    recommendations: List[str] = field(default_factory=list)
+    coverage_breakdown: dict[str, Any] = field(default_factory=dict)
+    reliability_breakdown: dict[str, Any] = field(default_factory=dict)
+    recommendations: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "overall_score": self.overall_score,
             "coverage_score": self.coverage_score,
@@ -35,7 +35,7 @@ class ScanQualityAssessment:
 
 
 def assess_scan_quality(
-    findings: List[Dict[str, Any]],
+    findings: list[dict[str, Any]],
     scan_duration_ms: int = 0,
     depth: str = "standard",
     target_url: str = "",
@@ -86,9 +86,7 @@ def assess_scan_quality(
         high_conf_rate = 0.0
 
     # 误报率越低越好，高置信度比例越高越好
-    reliability_score = int(
-        max(0, min(100, (1 - fp_rate) * 60 + high_conf_rate * 40))
-    )
+    reliability_score = int(max(0, min(100, (1 - fp_rate) * 60 + high_conf_rate * 40)))
     assessment.reliability_score = reliability_score
     assessment.reliability_breakdown = {
         "fp_count": fp_count,
@@ -121,15 +119,21 @@ def assess_scan_quality(
     )
 
     # ---------- 建议 ----------
-    recommendations: List[str] = []
+    recommendations: list[str] = []
     if type_coverage < 0.5:
         recommendations.append("建议启用深度扫描模式以提升漏洞类型覆盖度")
     if fp_rate > 0.3:
-        recommendations.append("检测到较高比例的潜在误报，建议人工复核标记为低置信度的 finding")
+        recommendations.append(
+            "检测到较高比例的潜在误报，建议人工复核标记为低置信度的 finding"
+        )
     if duration_sec < 5 and depth != "quick":
-        recommendations.append("扫描完成速度较快，可能目标响应异常或网络受限，建议检查连接质量")
+        recommendations.append(
+            "扫描完成速度较快，可能目标响应异常或网络受限，建议检查连接质量"
+        )
     if total_findings == 0:
-        recommendations.append("未检测到漏洞，建议确认目标是否可访问、是否存在 WAF 拦截")
+        recommendations.append(
+            "未检测到漏洞，建议确认目标是否可访问、是否存在 WAF 拦截"
+        )
     if not recommendations:
         recommendations.append("扫描质量良好，建议关注高危及以上级别的 finding")
 

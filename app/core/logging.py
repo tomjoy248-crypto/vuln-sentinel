@@ -106,13 +106,13 @@ def configure_logging(
     handler.setFormatter(formatter)
 
     logger = structlog.get_logger(app_name)
-    logger.info("logging_configured", enable_structlog=enable_structlog, level=log_level)
+    logger.info(
+        "logging_configured", enable_structlog=enable_structlog, level=log_level
+    )
     return logger
 
 
-def _inject_request_id(
-    logger: Any, method_name: str, event_dict: dict
-) -> dict:
+def _inject_request_id(logger: Any, method_name: str, event_dict: dict) -> dict:
     """structlog processor: 注入 request_id。"""
     rid = get_request_id()
     if rid:

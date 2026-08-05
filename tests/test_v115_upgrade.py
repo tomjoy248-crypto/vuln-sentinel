@@ -3,8 +3,8 @@
 确认所有面向用户的版本标识都已从 V11.4 → 11-S,
 并且 11-S 新增的能力(LLM/auto-patrol/trusted domains/AI 顾问优化)都还在。
 """
-import re
 from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 

@@ -4,9 +4,9 @@
 支持版本化更新和外部规则加载。
 """
 
+from app.knowledge.components import ComponentDatabase
 from app.knowledge.payloads import PayloadLibrary
 from app.knowledge.signatures import SignatureLibrary
-from app.knowledge.components import ComponentDatabase
 
 __all__ = [
     "PayloadLibrary",

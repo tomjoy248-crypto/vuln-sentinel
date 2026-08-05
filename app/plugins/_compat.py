@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import uuid
+from typing import Any
 
 from app.plugins import Evidence, Finding, FixSuggestion, VulnLocation
 
 
-def old_finding_to_finding(data: Dict[str, Any]) -> Finding:
+def old_finding_to_finding(data: dict[str, Any]) -> Finding:
     """把 src_scanner.build_finding 产出的字典转为插件化 Finding。"""
     evidence = data.get("evidence") or {}
 
@@ -32,8 +33,12 @@ def old_finding_to_finding(data: Dict[str, Any]) -> Finding:
         risk_note="",
     )
 
+    finding_id = data.get("id") or ""
+    if not finding_id:
+        finding_id = f"VS-{str(uuid.uuid4())[:8].upper()}"
+
     return Finding(
-        id=data.get("id") or "",
+        id=finding_id,
         title=data.get("title") or data.get("name") or "未命名漏洞",
         type=data.get("type") or "unknown",
         severity=(data.get("severity") or "medium").lower(),
@@ -61,14 +66,56 @@ def old_finding_to_finding(data: Dict[str, Any]) -> Finding:
             payload=evidence.get("payload") or "",
             notes=evidence.get("notes") or "",
             screenshot=evidence.get("screenshot"),
-            extra={k: v for k, v in evidence.items() if k not in {"request", "response", "request_raw", "response_raw", "matched_signature", "payload", "notes", "screenshot"}},
+            extra={
+                k: v
+                for k, v in evidence.items()
+                if k
+                not in {
+                    "request",
+                    "response",
+                    "request_raw",
+                    "response_raw",
+                    "matched_signature",
+                    "payload",
+                    "notes",
+                    "screenshot",
+                }
+            },
         ),
-        raw_evidence={k: v for k, v in data.items() if k not in {
-            "id", "title", "name", "type", "severity", "severity_score", "cvss_score", "cvss_vector",
-            "confidence", "cwe_id", "owasp_category", "owasp", "description", "summary", "impact",
-            "url", "parameter", "location", "evidence", "fix", "fix_suggestion", "fix_code",
-            "fixes_by_platform", "reproduce_steps", "references", "discovered_at", "status",
-        }},
+        raw_evidence={
+            k: v
+            for k, v in data.items()
+            if k
+            not in {
+                "id",
+                "title",
+                "name",
+                "type",
+                "severity",
+                "severity_score",
+                "cvss_score",
+                "cvss_vector",
+                "confidence",
+                "cwe_id",
+                "owasp_category",
+                "owasp",
+                "description",
+                "summary",
+                "impact",
+                "url",
+                "parameter",
+                "location",
+                "evidence",
+                "fix",
+                "fix_suggestion",
+                "fix_code",
+                "fixes_by_platform",
+                "reproduce_steps",
+                "references",
+                "discovered_at",
+                "status",
+            }
+        },
         fix_suggestion=data.get("fix") or data.get("fix_suggestion") or "",
         fix=fix,
         fix_code=fix_code,
@@ -79,6 +126,6 @@ def old_finding_to_finding(data: Dict[str, Any]) -> Finding:
     )
 
 
-def findings_to_old_list(findings: List[Finding]) -> List[Dict[str, Any]]:
+def findings_to_old_list(findings: list[Finding]) -> list[dict[str, Any]]:
     """将 Finding 对象列表转回旧版字典列表（用于兼容既有 API）。"""
     return [f.to_dict() for f in findings]

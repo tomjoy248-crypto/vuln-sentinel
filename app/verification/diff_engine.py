@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 
 @dataclass
@@ -18,7 +18,7 @@ class FindingSignature:
     severity: str
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "FindingSignature":
+    def from_dict(cls, data: dict[str, Any]) -> FindingSignature:
         return cls(
             vuln_type=(data.get("type") or data.get("vuln_type") or "unknown").lower(),
             location_key=_location_key(data),
@@ -29,7 +29,7 @@ class FindingSignature:
         return hash((self.vuln_type, self.location_key, self.severity))
 
 
-def _location_key(data: Dict[str, Any]) -> str:
+def _location_key(data: dict[str, Any]) -> str:
     """从 finding 中提取位置标识用于对比。"""
     url = data.get("url") or ""
     param = data.get("parameter") or ""
@@ -47,9 +47,9 @@ class FindingChange:
     """单个 finding 的变化记录。"""
 
     change_type: str  # eliminated / new / retained / severity_changed
-    before: Optional[Dict[str, Any]] = None
-    after: Optional[Dict[str, Any]] = None
-    severity_delta: Optional[str] = None  # e.g. "high -> medium"
+    before: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
+    severity_delta: str | None = None  # e.g. "high -> medium"
     notes: str = ""
 
 
@@ -57,20 +57,22 @@ class FindingChange:
 class DiffResult:
     """修复前后扫描结果对比报告。"""
 
-    before_scan_id: Optional[int] = None
-    after_scan_id: Optional[int] = None
+    before_scan_id: int | None = None
+    after_scan_id: int | None = None
     before_score: int = 0
     after_score: int = 0
     score_delta: int = 0
 
-    eliminated: List[FindingChange] = field(default_factory=list)
-    new_findings: List[FindingChange] = field(default_factory=list)
-    retained: List[FindingChange] = field(default_factory=list)
-    severity_changed: List[FindingChange] = field(default_factory=list)
+    eliminated: list[FindingChange] = field(default_factory=list)
+    new_findings: list[FindingChange] = field(default_factory=list)
+    retained: list[FindingChange] = field(default_factory=list)
+    severity_changed: list[FindingChange] = field(default_factory=list)
 
-    summary: Dict[str, Any] = field(default_factory=dict)
+    summary: dict[str, Any] = field(default_factory=dict)
 
-    def is_verified_fixed(self, target_finding_names: Optional[List[str]] = None) -> bool:
+    def is_verified_fixed(
+        self, target_finding_names: list[str] | None = None
+    ) -> bool:
         """判断目标漏洞是否已被修复。
 
         如果提供了 target_finding_names，则检查这些特定漏洞是否已消除；
@@ -78,15 +80,14 @@ class DiffResult:
         """
         if target_finding_names:
             eliminated_names = {
-                (c.before or {}).get("name", "")
-                or (c.before or {}).get("title", "")
+                (c.before or {}).get("name", "") or (c.before or {}).get("title", "")
                 for c in self.eliminated
             }
             return all(name in eliminated_names for name in target_finding_names)
         # 默认：评分提升超过 20 分且高危漏洞减少
         return self.score_delta >= 20 and len(self.eliminated) > 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "before_scan_id": self.before_scan_id,
             "after_scan_id": self.after_scan_id,
@@ -140,16 +141,16 @@ class ScanDiffEngine:
     @classmethod
     def compare(
         cls,
-        before_findings: List[Dict[str, Any]],
-        after_findings: List[Dict[str, Any]],
-        before_scan_id: Optional[int] = None,
-        after_scan_id: Optional[int] = None,
+        before_findings: list[dict[str, Any]],
+        after_findings: list[dict[str, Any]],
+        before_scan_id: int | None = None,
+        after_scan_id: int | None = None,
         before_score: int = 0,
         after_score: int = 0,
     ) -> DiffResult:
         """对比两次扫描结果，生成 diff 报告。"""
-        before_map: Dict[FindingSignature, Dict[str, Any]] = {}
-        after_map: Dict[FindingSignature, Dict[str, Any]] = {}
+        before_map: dict[FindingSignature, dict[str, Any]] = {}
+        after_map: dict[FindingSignature, dict[str, Any]] = {}
 
         for f in before_findings:
             sig = FindingSignature.from_dict(f)
@@ -159,8 +160,8 @@ class ScanDiffEngine:
             sig = FindingSignature.from_dict(f)
             after_map[sig] = f
 
-        before_sigs: Set[FindingSignature] = set(before_map.keys())
-        after_sigs: Set[FindingSignature] = set(after_map.keys())
+        before_sigs: set[FindingSignature] = set(before_map.keys())
+        after_sigs: set[FindingSignature] = set(after_map.keys())
 
         eliminated_sigs = before_sigs - after_sigs
         new_sigs = after_sigs - before_sigs
@@ -176,19 +177,23 @@ class ScanDiffEngine:
 
         # 已消除
         for sig in eliminated_sigs:
-            result.eliminated.append(FindingChange(
-                change_type="eliminated",
-                before=before_map[sig],
-                notes="该漏洞在复测中已不再出现",
-            ))
+            result.eliminated.append(
+                FindingChange(
+                    change_type="eliminated",
+                    before=before_map[sig],
+                    notes="该漏洞在复测中已不再出现",
+                )
+            )
 
         # 新增
         for sig in new_sigs:
-            result.new_findings.append(FindingChange(
-                change_type="new",
-                after=after_map[sig],
-                notes="复测中发现了新的漏洞",
-            ))
+            result.new_findings.append(
+                FindingChange(
+                    change_type="new",
+                    after=after_map[sig],
+                    notes="复测中发现了新的漏洞",
+                )
+            )
 
         # 保留（可能 severity 变化）
         for sig in common_sigs:
@@ -199,29 +204,37 @@ class ScanDiffEngine:
 
             if before_sev != after_sev:
                 delta = f"{before_sev} -> {after_sev}"
-                better = cls.SEVERITY_ORDER.get(after_sev, 99) > cls.SEVERITY_ORDER.get(before_sev, 99)
-                result.severity_changed.append(FindingChange(
-                    change_type="severity_changed",
-                    before=before_f,
-                    after=after_f,
-                    severity_delta=delta,
-                    notes=f"严重度变化：{delta}（{'改善' if better else '恶化'}）",
-                ))
+                better = cls.SEVERITY_ORDER.get(after_sev, 99) > cls.SEVERITY_ORDER.get(
+                    before_sev, 99
+                )
+                result.severity_changed.append(
+                    FindingChange(
+                        change_type="severity_changed",
+                        before=before_f,
+                        after=after_f,
+                        severity_delta=delta,
+                        notes=f"严重度变化：{delta}（{'改善' if better else '恶化'}）",
+                    )
+                )
             else:
-                result.retained.append(FindingChange(
-                    change_type="retained",
-                    before=before_f,
-                    after=after_f,
-                    notes="漏洞仍存在，未发生变化",
-                ))
+                result.retained.append(
+                    FindingChange(
+                        change_type="retained",
+                        before=before_f,
+                        after=after_f,
+                        notes="漏洞仍存在，未发生变化",
+                    )
+                )
 
         # 汇总统计
         total_before_high = sum(
-            1 for f in before_findings
+            1
+            for f in before_findings
             if (f.get("severity") or "").lower() in ("high", "critical")
         )
         total_after_high = sum(
-            1 for f in after_findings
+            1
+            for f in after_findings
             if (f.get("severity") or "").lower() in ("high", "critical")
         )
 
@@ -236,7 +249,8 @@ class ScanDiffEngine:
             "high_critical_after": total_after_high,
             "high_critical_delta": total_after_high - total_before_high,
             "score_improved": result.score_delta > 0,
-            "risk_level_changed": cls._risk_level(before_score) != cls._risk_level(after_score),
+            "risk_level_changed": cls._risk_level(before_score)
+            != cls._risk_level(after_score),
         }
 
         return result
@@ -254,8 +268,8 @@ class ScanDiffEngine:
     @classmethod
     def compare_scans(
         cls,
-        before_scan: Dict[str, Any],
-        after_scan: Dict[str, Any],
+        before_scan: dict[str, Any],
+        after_scan: dict[str, Any],
     ) -> DiffResult:
         """直接对比两次完整扫描结果字典。"""
         return cls.compare(

@@ -13,23 +13,23 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.core.logging import get_request_id
+from app.core.sanitization import redact_sensitive_data
 from app.db.session import get_db
 
 logger = logging.getLogger("vuln_sentinel.audit")
 
 
 def save_audit_log(
-    user_id: Optional[int],
+    user_id: int | None,
     action: str,
     resource_type: str,
-    resource_id: Optional[str] = None,
-    details: Optional[Dict[str, Any]] = None,
-    client_ip: Optional[str] = None,
-) -> Optional[int]:
+    resource_id: str | None = None,
+    details: dict[str, Any] | None = None,
+    client_ip: str | None = None,
+) -> int | None:
     """保存审计日志。
 
     Args:
@@ -43,6 +43,8 @@ def save_audit_log(
     Returns:
         插入的审计日志 ID，失败返回 None
     """
+    # 审计日志必须脱敏，避免密码、Token、密钥等敏感信息入库
+    safe_details = redact_sensitive_data(details or {})
     try:
         conn = get_db()
         conn.execute(
@@ -54,7 +56,7 @@ def save_audit_log(
                 action,
                 resource_type,
                 resource_id,
-                json.dumps(details or {}, ensure_ascii=False),
+                json.dumps(safe_details, ensure_ascii=False),
                 client_ip,
                 get_request_id(),
             ),
@@ -69,12 +71,12 @@ def save_audit_log(
 
 
 def get_audit_logs(
-    user_id: Optional[int] = None,
-    action: Optional[str] = None,
-    resource_type: Optional[str] = None,
+    user_id: int | None = None,
+    action: str | None = None,
+    resource_type: str | None = None,
     limit: int = 100,
     offset: int = 0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """查询审计日志。
 
     Args:
@@ -90,7 +92,7 @@ def get_audit_logs(
     try:
         conn = get_db()
         where_parts = []
-        params: List[Any] = []
+        params: list[Any] = []
         if user_id is not None:
             where_parts.append("user_id = ?")
             params.append(user_id)
@@ -106,7 +108,7 @@ def get_audit_logs(
                   FROM audit_logs
                   {where_clause}
                   ORDER BY created_at DESC
-                  LIMIT ? OFFSET ?"""
+                  LIMIT ? OFFSET ?"""  # nosec B608 - where_clause 由硬编码列名构建，值通过参数化查询传递
         params.extend([limit, offset])
         rows = conn.execute(sql, params).fetchall()
         conn.close()

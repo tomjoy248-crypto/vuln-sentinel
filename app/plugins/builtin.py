@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
-
 from app.plugins import BaseVulnDetector, Evidence, Finding, ScanContext, VulnLocation
 
 
@@ -17,9 +15,9 @@ class HeaderSecurityDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["quick", "standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         """检测缺失的安全响应头。"""
-        findings: List[Finding] = []
+        findings: list[Finding] = []
         headers = context.headers
 
         required_headers = {
@@ -69,7 +67,10 @@ class HeaderSecurityDetector(BaseVulnDetector):
                             snippet="HTTP 响应头",
                         ),
                         evidence=Evidence(
-                            extra={"missing_header": header, "present_headers": list(headers.keys())},
+                            extra={
+                                "missing_header": header,
+                                "present_headers": list(headers.keys()),
+                            },
                         ),
                         fix_suggestion=fix,
                         confidence="high",
@@ -88,9 +89,9 @@ class SSLInfoDetector(BaseVulnDetector):
     version = "1.0"
     supported_depths = ["standard", "deep"]
 
-    async def detect(self, context: ScanContext) -> List[Finding]:
+    async def detect(self, context: ScanContext) -> list[Finding]:
         """检测 SSL/TLS 配置问题。"""
-        findings: List[Finding] = []
+        findings: list[Finding] = []
         ssl_info = context.ssl_info or {}
 
         if not context.is_https:
@@ -163,13 +164,206 @@ class SSLInfoDetector(BaseVulnDetector):
         return findings
 
 
+class CookieSecurityDetector(BaseVulnDetector):
+    """Cookie 安全属性检测插件。"""
+
+    name = "cookie_security"
+    version = "1.0"
+    supported_depths = ["quick", "standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测 Set-Cookie 头中缺失的安全属性。"""
+        findings: list[Finding] = []
+        headers = context.headers
+        set_cookie = headers.get("set-cookie") or headers.get("Set-Cookie", "")
+        if not set_cookie:
+            return findings
+
+        cookies = [c.strip() for c in str(set_cookie).split(",") if c.strip()]
+        for cookie in cookies:
+            name = cookie.split("=")[0] if "=" in cookie else ""
+            issues = []
+            if "secure" not in cookie.lower() and context.is_https:
+                issues.append("缺少 Secure 属性")
+            if "httponly" not in cookie.lower():
+                issues.append("缺少 HttpOnly 属性")
+            if "samesite" not in cookie.lower():
+                issues.append("缺少 SameSite 属性")
+            if issues:
+                findings.append(
+                    Finding(
+                        title=f"Cookie '{name}' 安全属性不足",
+                        type="cookie_security",
+                        severity="medium" if "httponly" in issues else "low",
+                        description=f"Set-Cookie 头中的 {name} 存在以下问题：{', '.join(issues)}。",
+                        url=context.url,
+                        location=VulnLocation(
+                            url=context.url,
+                            parameter=name,
+                            parameter_type="cookie",
+                            snippet=cookie,
+                        ),
+                        evidence=Evidence(extra={"cookie": cookie, "issues": issues}),
+                        fix_suggestion="为敏感 Cookie 添加 Secure、HttpOnly 和 SameSite=Lax/Strict 属性。",
+                        confidence="high",
+                        owasp_category="A05 安全配置错误",
+                        cwe_id="CWE-1004",
+                    )
+                )
+        return findings
+
+
+class CORSSecurityDetector(BaseVulnDetector):
+    """CORS 配置安全检测插件。"""
+
+    name = "cors_security"
+    version = "1.0"
+    supported_depths = ["quick", "standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测不安全的 CORS 配置。"""
+        findings: list[Finding] = []
+        headers = context.headers
+        acao = headers.get("access-control-allow-origin") or headers.get(
+            "Access-Control-Allow-Origin", ""
+        )
+        acac = headers.get("access-control-allow-credentials") or headers.get(
+            "Access-Control-Allow-Credentials", ""
+        )
+        if not acao:
+            return findings
+
+        if acao == "*":
+            if acac and acac.lower() == "true":
+                findings.append(
+                    Finding(
+                        title="CORS 配置存在高风险：允许任意来源且携带凭证",
+                        type="cors_misconfig",
+                        severity="high",
+                        description="Access-Control-Allow-Origin: * 与 Access-Control-Allow-Credentials: true 同时存在，任意恶意网站可发起带凭证的跨域请求。",
+                        url=context.url,
+                        location=VulnLocation(
+                            url=context.url,
+                            parameter="Access-Control-Allow-Origin",
+                            parameter_type="header",
+                            snippet=f"Access-Control-Allow-Origin: {acao}",
+                        ),
+                        evidence=Evidence(extra={"acao": acao, "acac": acac}),
+                        fix_suggestion="禁止同时设置 Access-Control-Allow-Origin: * 与 Access-Control-Allow-Credentials: true；应使用白名单动态校验 Origin。",
+                        confidence="high",
+                        owasp_category="A05 安全配置错误",
+                        cwe_id="CWE-942",
+                    )
+                )
+            else:
+                findings.append(
+                    Finding(
+                        title="CORS 允许任意来源",
+                        type="cors_misconfig",
+                        severity="low",
+                        description="Access-Control-Allow-Origin: * 允许任意域访问资源，可能泄露敏感信息。",
+                        url=context.url,
+                        location=VulnLocation(
+                            url=context.url,
+                            parameter="Access-Control-Allow-Origin",
+                            parameter_type="header",
+                            snippet=f"Access-Control-Allow-Origin: {acao}",
+                        ),
+                        evidence=Evidence(extra={"acao": acao}),
+                        fix_suggestion="根据业务需要，将 Access-Control-Allow-Origin 设置为可信域名白名单。",
+                        confidence="high",
+                        owasp_category="A05 安全配置错误",
+                        cwe_id="CWE-942",
+                    )
+                )
+        elif "null" in acao.lower():
+            findings.append(
+                Finding(
+                    title="CORS 允许 null Origin",
+                    type="cors_misconfig",
+                    severity="medium",
+                    description="Access-Control-Allow-Origin 设置为 null，攻击者可利用 sandboxed iframe 绕过同源策略。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="Access-Control-Allow-Origin",
+                        parameter_type="header",
+                        snippet=f"Access-Control-Allow-Origin: {acao}",
+                    ),
+                    evidence=Evidence(extra={"acao": acao}),
+                    fix_suggestion="移除 null 来源，仅允许可信域名。",
+                    confidence="high",
+                    owasp_category="A05 安全配置错误",
+                    cwe_id="CWE-942",
+                )
+            )
+        return findings
+
+
+class EnhancedHeaderSecurityDetector(BaseVulnDetector):
+    """增强安全响应头检测插件（Permissions-Policy / Referrer-Policy）。"""
+
+    name = "enhanced_header_security"
+    version = "1.0"
+    supported_depths = ["quick", "standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测缺失的 Permissions-Policy 和 Referrer-Policy 响应头。"""
+        findings: list[Finding] = []
+        headers = context.headers
+        required = {
+            "Referrer-Policy": (
+                "缺少 Referrer-Policy 响应头",
+                "low",
+                "配置 Referrer-Policy: strict-origin-when-cross-origin 或 no-referrer",
+                "CWE-200",
+                "A05 安全配置错误",
+            ),
+            "Permissions-Policy": (
+                "缺少 Permissions-Policy 响应头",
+                "low",
+                "配置 Permissions-Policy 以限制浏览器敏感 API 的使用",
+                "CWE-693",
+                "A05 安全配置错误",
+            ),
+        }
+        for header, (title, severity, fix, cwe, owasp) in required.items():
+            if header.lower() not in {k.lower(): v for k, v in headers.items()}:
+                findings.append(
+                    Finding(
+                        title=title,
+                        type="header_missing",
+                        severity=severity,
+                        description=f"响应头中未找到 {header}，可能导致信息泄露或敏感 API 被滥用。",
+                        url=context.url,
+                        location=VulnLocation(
+                            url=context.url,
+                            parameter=header,
+                            parameter_type="header",
+                            snippet="HTTP 响应头",
+                        ),
+                        evidence=Evidence(
+                            extra={
+                                "missing_header": header,
+                                "present_headers": list(headers.keys()),
+                            }
+                        ),
+                        fix_suggestion=fix,
+                        confidence="high",
+                        owasp_category=owasp,
+                        cwe_id=cwe,
+                    )
+                )
+        return findings
+
+
 def register_builtin_detectors() -> None:
     """注册所有内置检测器。"""
     from app.plugins import DetectorRegistry
     from app.plugins.detectors import (
         BrokenAccessControlDetector,
-        CSRFDetector,
         CommandInjectionDetector,
+        CSRFDetector,
         DeserializationDetector,
         FileUploadDetector,
         IDORDetector,
@@ -179,14 +373,17 @@ def register_builtin_detectors() -> None:
         OutdatedComponentDetector,
         PathTraversalDetector,
         ReflectedXSSDetector,
+        SensitivePathDetectorPlugin,
         SQLiDetector,
         SSRFDetector,
-        SensitivePathDetectorPlugin,
         XXEDetector,
     )
 
     DetectorRegistry.register(HeaderSecurityDetector())
+    DetectorRegistry.register(EnhancedHeaderSecurityDetector())
     DetectorRegistry.register(SSLInfoDetector())
+    DetectorRegistry.register(CookieSecurityDetector())
+    DetectorRegistry.register(CORSSecurityDetector())
     DetectorRegistry.register(SQLiDetector())
     DetectorRegistry.register(ReflectedXSSDetector())
     DetectorRegistry.register(InfoLeakDetector())

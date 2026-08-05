@@ -1,0 +1,46 @@
+version: "3.8"
+
+# 漏洞哨兵 11-S - 本地开发 / 快速体验编排
+# 复制 .env.example 为 .env 并填写关键配置后运行：docker compose up --build
+
+services:
+  vuln-sentinel:
+    build: .
+    container_name: vuln-sentinel
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PORT=8000
+      - DATABASE_URL=sqlite:///data/vuln_sentinel.db
+      - REDIS_URL=redis://redis:6379/0
+      - ENABLE_METRICS=1
+    volumes:
+      - vuln-sentinel-data:/data
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  redis:
+    image: redis:7-alpine
+    container_name: vuln-sentinel-redis
+    volumes:
+      - vuln-sentinel-redis:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  vuln-sentinel-data:
+  vuln-sentinel-redis:

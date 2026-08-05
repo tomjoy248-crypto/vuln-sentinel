@@ -11,7 +11,7 @@ import re
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
@@ -26,6 +26,7 @@ def _init_helpers() -> None:
     global _get_httpx_client, _safe_read_body
     if _get_httpx_client is None:
         import main as _main
+
         _get_httpx_client = _main.get_httpx_client
         _safe_read_body = _main._safe_read_body
 
@@ -58,7 +59,9 @@ async def _recorded_request(method: str, url: str, **kwargs: Any) -> Any:
         try:
             headers = kwargs.get("headers") or {}
             body = kwargs.get("content") or kwargs.get("data") or ""
-            request_text = _build_request_text(method.upper(), url, headers, body if isinstance(body, str) else "")
+            request_text = _build_request_text(
+                method.upper(), url, headers, body if isinstance(body, str) else ""
+            )
             response_text = _build_response_text(resp, 800)
             _evidence_store.record(
                 method=method.upper(),
@@ -75,31 +78,48 @@ async def _recorded_request(method: str, url: str, **kwargs: Any) -> Any:
 
 # ---------- 常量 ----------
 
-SQLI_PAYLOADS: List[str] = [
+SQLI_PAYLOADS: list[str] = [
     "'",
-    "\"",
+    '"',
     "' OR '1'='1",
     "' AND SLEEP(5)--",
     "1' OR '1'='1",
     "admin'--",
 ]
 
-SQLI_ERROR_PATTERNS: List[str] = [
-    "sql syntax", "mysql", "postgresql", "sqlite", "oracle", "sql error",
-    "unclosed quotation", "query failed", "warning: mysql", "syntax error",
-    "sqlstate", "odbc", "microsoft sql", "mariadb", "pg_query", "pg_exec",
-    "you have an error in your sql", "quoted string not properly terminated",
-    "unterminated string", "pg_sql", "sqlite3", "database error",
+SQLI_ERROR_PATTERNS: list[str] = [
+    "sql syntax",
+    "mysql",
+    "postgresql",
+    "sqlite",
+    "oracle",
+    "sql error",
+    "unclosed quotation",
+    "query failed",
+    "warning: mysql",
+    "syntax error",
+    "sqlstate",
+    "odbc",
+    "microsoft sql",
+    "mariadb",
+    "pg_query",
+    "pg_exec",
+    "you have an error in your sql",
+    "quoted string not properly terminated",
+    "unterminated string",
+    "pg_sql",
+    "sqlite3",
+    "database error",
 ]
 
-XSS_PAYLOADS: List[Tuple[str, str]] = [
+XSS_PAYLOADS: list[tuple[str, str]] = [
     ("<script>alert('xss')</script>", "script_tag"),
     ("<img src=x onerror=alert(1)>", "img_onerror"),
     ("'\"><svg onload=alert(1)>", "svg_onload"),
 ]
 
 # 敏感信息正则
-INFO_LEAK_PATTERNS: Dict[str, Dict[str, Any]] = {
+INFO_LEAK_PATTERNS: dict[str, dict[str, Any]] = {
     "phone": {
         "pattern": re.compile(r"(?<![\d])1[3-9]\d{9}(?![\d])"),
         "name": "手机号",
@@ -119,13 +139,17 @@ INFO_LEAK_PATTERNS: Dict[str, Dict[str, Any]] = {
         "score": 3,
     },
     "internal_ip": {
-        "pattern": re.compile(r"\b(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b"),
+        "pattern": re.compile(
+            r"\b(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b"
+        ),
         "name": "内网 IP",
         "severity": "medium",
         "score": 5,
     },
     "api_key": {
-        "pattern": re.compile(r"\b(?:api[_-]?key|apikey)\s*[:=]\s*['\"]?([a-zA-Z0-9_\-]{16,})['\"]?", re.I),
+        "pattern": re.compile(
+            r"\b(?:api[_-]?key|apikey)\s*[:=]\s*['\"]?([a-zA-Z0-9_\-]{16,})['\"]?", re.I
+        ),
         "name": "API Key",
         "severity": "high",
         "score": 8,
@@ -144,7 +168,7 @@ INFO_LEAK_PATTERNS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-SENSITIVE_PATHS: List[Tuple[str, str, List[str]]] = [
+SENSITIVE_PATHS: list[tuple[str, str, list[str]]] = [
     ("/.git/config", "Git 配置泄露", ["[core]", "[remote"]),
     ("/.env", "环境变量文件", ["=", "DATABASE", "SECRET", "API"]),
     ("/.env.local", "本地环境变量", ["=", "DATABASE"]),
@@ -161,19 +185,79 @@ SENSITIVE_PATHS: List[Tuple[str, str, List[str]]] = [
     ("/phpinfo.php", "PHP 信息页", ["phpinfo", "PHP Version"]),
 ]
 
-OUTDATED_COMPONENTS: Dict[str, Dict[str, Any]] = {
-    "nginx/1.18.0": {"severity": "medium", "score": 6, "cve": "CVE-2021-23017", "safe": "1.20.1+"},
-    "nginx/1.19": {"severity": "medium", "score": 6, "cve": "CVE-2021-23017", "safe": "1.20.1+"},
-    "apache/2.4.49": {"severity": "critical", "score": 10, "cve": "CVE-2021-41773", "safe": "2.4.51+"},
-    "apache/2.4.50": {"severity": "critical", "score": 10, "cve": "CVE-2021-42013", "safe": "2.4.51+"},
-    "php/5.": {"severity": "high", "score": 8, "cve": "CVE-2019-11043", "safe": "7.4+ / 8.x"},
-    "php/7.1": {"severity": "high", "score": 8, "cve": "CVE-2019-11043", "safe": "7.4+ / 8.x"},
-    "php/7.2": {"severity": "high", "score": 7, "cve": "CVE-2020-7060", "safe": "7.4+ / 8.x"},
-    "jquery/1.": {"severity": "medium", "score": 6, "cve": "CVE-2020-11022", "safe": "3.5.0+"},
-    "jquery/2.": {"severity": "medium", "score": 6, "cve": "CVE-2020-11022", "safe": "3.5.0+"},
-    "lodash/4.17.20": {"severity": "high", "score": 8, "cve": "CVE-2021-23337", "safe": "4.17.21+"},
-    "spring-boot/1.": {"severity": "high", "score": 8, "cve": "CVE-2022-22965", "safe": "2.6.6+ / 2.7.x"},
-    "spring-boot/2.6": {"severity": "critical", "score": 10, "cve": "CVE-2022-22965", "safe": "2.6.6+ / 2.7.x"},
+OUTDATED_COMPONENTS: dict[str, dict[str, Any]] = {
+    "nginx/1.18.0": {
+        "severity": "medium",
+        "score": 6,
+        "cve": "CVE-2021-23017",
+        "safe": "1.20.1+",
+    },
+    "nginx/1.19": {
+        "severity": "medium",
+        "score": 6,
+        "cve": "CVE-2021-23017",
+        "safe": "1.20.1+",
+    },
+    "apache/2.4.49": {
+        "severity": "critical",
+        "score": 10,
+        "cve": "CVE-2021-41773",
+        "safe": "2.4.51+",
+    },
+    "apache/2.4.50": {
+        "severity": "critical",
+        "score": 10,
+        "cve": "CVE-2021-42013",
+        "safe": "2.4.51+",
+    },
+    "php/5.": {
+        "severity": "high",
+        "score": 8,
+        "cve": "CVE-2019-11043",
+        "safe": "7.4+ / 8.x",
+    },
+    "php/7.1": {
+        "severity": "high",
+        "score": 8,
+        "cve": "CVE-2019-11043",
+        "safe": "7.4+ / 8.x",
+    },
+    "php/7.2": {
+        "severity": "high",
+        "score": 7,
+        "cve": "CVE-2020-7060",
+        "safe": "7.4+ / 8.x",
+    },
+    "jquery/1.": {
+        "severity": "medium",
+        "score": 6,
+        "cve": "CVE-2020-11022",
+        "safe": "3.5.0+",
+    },
+    "jquery/2.": {
+        "severity": "medium",
+        "score": 6,
+        "cve": "CVE-2020-11022",
+        "safe": "3.5.0+",
+    },
+    "lodash/4.17.20": {
+        "severity": "high",
+        "score": 8,
+        "cve": "CVE-2021-23337",
+        "safe": "4.17.21+",
+    },
+    "spring-boot/1.": {
+        "severity": "high",
+        "score": 8,
+        "cve": "CVE-2022-22965",
+        "safe": "2.6.6+ / 2.7.x",
+    },
+    "spring-boot/2.6": {
+        "severity": "critical",
+        "score": 10,
+        "cve": "CVE-2022-22965",
+        "safe": "2.6.6+ / 2.7.x",
+    },
 }
 
 SECURITY_HEADERS = [
@@ -202,7 +286,9 @@ def _mask_snippet(snippet: str, visible: int = 4) -> str:
     return s[:visible] + "****" + s[-visible:]
 
 
-def _build_request_text(method: str, url: str, headers: Optional[Dict] = None, body: Optional[str] = None) -> str:
+def _build_request_text(
+    method: str, url: str, headers: dict | None = None, body: str | None = None
+) -> str:
     lines = [f"{method} {urlparse(url).path or '/'}?{urlparse(url).query} HTTP/1.1"]
     host = urlparse(url).hostname or ""
     lines.append(f"Host: {host}")
@@ -249,9 +335,9 @@ def _confidence_text(confidence: str) -> str:
     return "low"
 
 
-def _fix_code_template(vuln_type: str) -> Dict[str, Optional[str]]:
+def _fix_code_template(vuln_type: str) -> dict[str, str | None]:
     """为常见漏洞类型提供各平台修复代码模板。"""
-    templates: Dict[str, Dict[str, Optional[str]]] = {
+    templates: dict[str, dict[str, str | None]] = {
         "sqli": {
             "nginx": """# Nginx 无法直接修复 SQL 注入，建议：
 # 1. 在后端使用参数化查询
@@ -343,13 +429,13 @@ public String search(@RequestParam String q, Model model) {
             "generic": "对所有用户输入进行 HTML 上下文编码，配置 Content-Security-Policy，使用现代框架的自动转义功能。",
         },
         "info_leak": {
-            "nginx": """# Nginx 隐藏版本号与敏感路径
+            "nginx": r"""# Nginx 隐藏版本号与敏感路径
 server_tokens off;
 location ~ /\.(env|git|svn|htaccess|bak) {
     deny all;
     return 404;
 }""",
-            "apache": """# Apache 隐藏版本与敏感路径
+            "apache": r"""# Apache 隐藏版本与敏感路径
 ServerTokens Prod
 ServerSignature Off
 <FilesMatch "^\.">
@@ -413,7 +499,7 @@ public class SecurityConfig {
             "generic": "所有状态变更请求使用不可预测的反 CSRF Token；Cookie 设置 SameSite=Strict/Lax 与 Secure；校验 Referer/Origin。",
         },
         "sensitive_path": {
-            "nginx": """location ~ /\.(git|env|svn|htaccess|bak) {
+            "nginx": r"""location ~ /\.(git|env|svn|htaccess|bak) {
     deny all;
     return 404;
 }
@@ -421,7 +507,7 @@ location /admin {
     allow 10.0.0.0/8;
     deny all;
 }""",
-            "apache": """<LocationMatch "^/\.(git|env|svn)">
+            "apache": r"""<LocationMatch "^/\.(git|env|svn)">
     Require all denied
 </LocationMatch>
 <Location "/admin">
@@ -472,7 +558,7 @@ Header always set Content-Security-Policy "default-src 'self'"
 Header always set X-Frame-Options "DENY"
 Header always set X-Content-Type-Options "nosniff"
 Header always set Referrer-Policy "strict-origin-when-cross-origin" """,
-              "express": """// Express 安全头中间件
+            "express": """// Express 安全头中间件
 const helmet = require('helmet');
 app.use(helmet());""",
             "flask": """# Flask-Talisman
@@ -746,10 +832,24 @@ MyClass obj = mapper.readValue(json, MyClass.class);  // 安全
             "generic": "永远不要反序列化不可信数据；使用 JSON 等安全格式替代原生序列化；如需使用，实施签名验证和类型白名单。",
         },
     }
-    return templates.get(vuln_type, {k: None for k in ["nginx", "apache", "express", "flask", "spring_boot", "cloudflare", "generic"]})
+    return templates.get(
+        vuln_type,
+        {
+            k: None
+            for k in [
+                "nginx",
+                "apache",
+                "express",
+                "flask",
+                "spring_boot",
+                "cloudflare",
+                "generic",
+            ]
+        },
+    )
 
 
-def _references(vuln_type: str) -> List[str]:
+def _references(vuln_type: str) -> list[str]:
     refs = {
         "sqli": [
             "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
@@ -892,7 +992,12 @@ def _cvss_vector(severity_score: int, vuln_type: str = "") -> str:
     if vuln_type in ("sqli", "xss", "ssrf"):
         pr = "PR:N"
     # 用户交互
-    ui = "UI:N" if vuln_type in ("sqli", "ssrf", "idor", "info_leak", "sensitive_path", "outdated_component") else "UI:R"
+    ui = (
+        "UI:N"
+        if vuln_type
+        in ("sqli", "ssrf", "idor", "info_leak", "sensitive_path", "outdated_component")
+        else "UI:R"
+    )
     # 作用范围
     s = "S:U"
     # 机密性 / 完整性 / 可用性
@@ -920,14 +1025,28 @@ def _cvss_score_from_vector(vector: str) -> float:
     """从 CVSS v3.1 向量计算近似的 Base Score（简化版，用于排序）。"""
     # 简化公式：参考 CVSS v3.1 线性近似，保留一位小数
     scores = {
-        "AV:N": 0.85, "AV:A": 0.62, "AV:L": 0.55, "AV:P": 0.2,
-        "AC:L": 0.77, "AC:H": 0.44,
-        "PR:N": 0.85, "PR:L": 0.62, "PR:H": 0.27,
-        "UI:N": 0.85, "UI:R": 0.62,
-        "S:U": 6.42, "S:C": 7.52,
-        "C:H": 0.56, "C:L": 0.22, "C:N": 0.0,
-        "I:H": 0.56, "I:L": 0.22, "I:N": 0.0,
-        "A:H": 0.56, "A:L": 0.22, "A:N": 0.0,
+        "AV:N": 0.85,
+        "AV:A": 0.62,
+        "AV:L": 0.55,
+        "AV:P": 0.2,
+        "AC:L": 0.77,
+        "AC:H": 0.44,
+        "PR:N": 0.85,
+        "PR:L": 0.62,
+        "PR:H": 0.27,
+        "UI:N": 0.85,
+        "UI:R": 0.62,
+        "S:U": 6.42,
+        "S:C": 7.52,
+        "C:H": 0.56,
+        "C:L": 0.22,
+        "C:N": 0.0,
+        "I:H": 0.56,
+        "I:L": 0.22,
+        "I:N": 0.0,
+        "A:H": 0.56,
+        "A:L": 0.22,
+        "A:N": 0.0,
     }
     parts = [p.strip() for p in vector.replace("CVSS:3.1/", "").split("/")]
     vals = {}
@@ -935,14 +1054,19 @@ def _cvss_score_from_vector(vector: str) -> float:
         if ":" in p:
             k, v = p.split(":", 1)
             vals[k + ":" + v] = scores.get(k + ":" + v, 0.0)
-    iss = 1 - ((1 - vals.get("C:H", vals.get("C:L", 0))) *
-               (1 - vals.get("I:H", vals.get("I:L", 0))) *
-               (1 - vals.get("A:H", vals.get("A:L", 0))))
+    iss = 1 - (
+        (1 - vals.get("C:H", vals.get("C:L", 0)))
+        * (1 - vals.get("I:H", vals.get("I:L", 0)))
+        * (1 - vals.get("A:H", vals.get("A:L", 0)))
+    )
     impact = vals.get("S:U", 6.42) * iss
-    exploitability = (8.22 * vals.get("AV:N", 0.85) *
-                      vals.get("AC:L", 0.77) *
-                      vals.get("PR:N", 0.85) *
-                      vals.get("UI:N", 0.85))
+    exploitability = (
+        8.22
+        * vals.get("AV:N", 0.85)
+        * vals.get("AC:L", 0.77)
+        * vals.get("PR:N", 0.85)
+        * vals.get("UI:N", 0.85)
+    )
     if impact <= 0:
         return 0.0
     base = min(impact + exploitability, 10)
@@ -960,13 +1084,13 @@ def build_finding(
     description: str,
     evidence_request: str,
     evidence_response: str,
-    evidence_payload: Optional[str] = None,
+    evidence_payload: str | None = None,
     impact: str = "",
-    reproduce_steps: Optional[List[str]] = None,
+    reproduce_steps: list[str] | None = None,
     fix_suggestion: str = "",
     confidence: str = "high",
-    screenshot: Optional[str] = None,
-) -> Dict[str, Any]:
+    screenshot: str | None = None,
+) -> dict[str, Any]:
     """构建 SRC 标准 finding。"""
     fix_code = _fix_code_template(vuln_type)
     cvss_vector = _cvss_vector(severity_score, vuln_type)
@@ -990,7 +1114,8 @@ def build_finding(
         "impact": impact or description,
         "reproduce_steps": reproduce_steps or [],
         "fix": fix_suggestion or _fix_code_template(vuln_type).get("generic", ""),
-        "fix_suggestion": fix_suggestion or _fix_code_template(vuln_type).get("generic", ""),
+        "fix_suggestion": fix_suggestion
+        or _fix_code_template(vuln_type).get("generic", ""),
         "fix_code": fix_code,
         "references": _references(vuln_type),
         "confidence": _confidence_text(confidence),
@@ -1004,6 +1129,7 @@ def build_finding(
 
 # ---------- 真实检测能力 ----------
 
+
 def _build_test_url(url: str, param: str, payload: str) -> str:
     parsed = urlparse(url)
     qs = parse_qs(parsed.query, keep_blank_values=True)
@@ -1012,14 +1138,18 @@ def _build_test_url(url: str, param: str, payload: str) -> str:
     return urlunparse(parsed._replace(query=new_query))
 
 
-async def detect_sqli_src(url: str) -> List[Dict[str, Any]]:
+async def detect_sqli_src(url: str) -> list[dict[str, Any]]:
     """SQL 注入检测（SRC 格式）。"""
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     parsed = urlparse(url)
-    params = list(parse_qs(parsed.query, keep_blank_values=True).keys()) if parsed.query else []
+    params = (
+        list(parse_qs(parsed.query, keep_blank_values=True).keys())
+        if parsed.query
+        else []
+    )
     if not params:
         return findings
 
@@ -1037,7 +1167,9 @@ async def detect_sqli_src(url: str) -> List[Dict[str, Any]]:
             test_url = _build_test_url(url, param, payload)
             try:
                 start = time.time()
-                resp = await _recorded_request("get", test_url, timeout=12.0, follow_redirects=True)
+                resp = await _recorded_request(
+                    "get", test_url, timeout=12.0, follow_redirects=True
+                )
                 elapsed = time.time() - start
                 body = _safe_read_body(resp)
                 body_lower = body.lower()
@@ -1049,85 +1181,94 @@ async def detect_sqli_src(url: str) -> List[Dict[str, Any]]:
                         break
 
                 if matched_pattern:
-                    findings.append(build_finding(
-                        vuln_type="sqli",
-                        title=f"SQL 注入漏洞（参数 {param}）",
-                        severity="critical",
-                        severity_score=10,
-                        url=test_url,
-                        parameter=param,
-                        location=f"URL 参数 {param}",
-                        description=f"参数 '{param}' 存在 SQL 注入漏洞，响应中包含数据库错误信息，攻击者可构造恶意 SQL 语句读取、修改或删除数据库数据。",
-                        evidence_request=_build_request_text("GET", test_url),
-                        evidence_response=_build_response_text(resp, 600),
-                        evidence_payload=payload,
-                        impact="攻击者可利用该漏洞绕过认证、读取敏感数据、篡改数据库内容，甚至获取服务器权限。",
-                        reproduce_steps=[
-                            f"访问目标页面：{url}",
-                            f"在参数 {param} 中注入 payload：{payload}",
-                            "提交请求并观察响应是否包含数据库错误信息或异常数据",
-                            "使用 sqlmap 或手工 union select 进一步验证数据读取能力",
-                        ],
-                        fix_suggestion="在所有数据库操作中使用参数化查询（Prepared Statements），禁止字符串拼接 SQL；对 ORM 禁用原生 SQL 拼接。",
-                        confidence="high",
-                    ))
+                    findings.append(
+                        build_finding(
+                            vuln_type="sqli",
+                            title=f"SQL 注入漏洞（参数 {param}）",
+                            severity="critical",
+                            severity_score=10,
+                            url=test_url,
+                            parameter=param,
+                            location=f"URL 参数 {param}",
+                            description=f"参数 '{param}' 存在 SQL 注入漏洞，响应中包含数据库错误信息，攻击者可构造恶意 SQL 语句读取、修改或删除数据库数据。",
+                            evidence_request=_build_request_text("GET", test_url),
+                            evidence_response=_build_response_text(resp, 600),
+                            evidence_payload=payload,
+                            impact="攻击者可利用该漏洞绕过认证、读取敏感数据、篡改数据库内容，甚至获取服务器权限。",
+                            reproduce_steps=[
+                                f"访问目标页面：{url}",
+                                f"在参数 {param} 中注入 payload：{payload}",
+                                "提交请求并观察响应是否包含数据库错误信息或异常数据",
+                                "使用 sqlmap 或手工 union select 进一步验证数据读取能力",
+                            ],
+                            fix_suggestion="在所有数据库操作中使用参数化查询（Prepared Statements），禁止字符串拼接 SQL；对 ORM 禁用原生 SQL 拼接。",
+                            confidence="high",
+                        )
+                    )
                     break
 
                 elif "sleep" in payload.lower() or "delay" in payload.lower():
                     if elapsed > baseline_time + 4 and elapsed > 5:
-                        findings.append(build_finding(
-                            vuln_type="sqli",
-                            title=f"SQL 注入漏洞 - 时间盲注（参数 {param}）",
-                            severity="high",
-                            severity_score=8,
-                            url=test_url,
-                            parameter=param,
-                            location=f"URL 参数 {param}",
-                            description=f"参数 '{param}' 疑似存在 SQL 时间盲注，注入延时 payload 后响应时间显著增加（{elapsed:.1f}s）。",
-                            evidence_request=_build_request_text("GET", test_url),
-                            evidence_response=_build_response_text(resp, 400) + f"\n\n[响应时间] {elapsed:.2f}s",
-                            evidence_payload=payload,
-                            impact="即使无错误回显，攻击者仍可通过逐位猜测的方式抽取数据库内容。",
-                            reproduce_steps=[
-                                f"记录正常请求响应时间（约 {baseline_time:.2f}s）",
-                                f"在参数 {param} 注入：{payload}",
-                                f"观察响应时间是否显著增加（实测 {elapsed:.1f}s）",
-                            ],
-                            fix_suggestion="使用参数化查询；为数据库查询设置最大执行时间（statement_timeout）；统一错误处理避免信息泄露。",
-                            confidence="medium",
-                        ))
+                        findings.append(
+                            build_finding(
+                                vuln_type="sqli",
+                                title=f"SQL 注入漏洞 - 时间盲注（参数 {param}）",
+                                severity="high",
+                                severity_score=8,
+                                url=test_url,
+                                parameter=param,
+                                location=f"URL 参数 {param}",
+                                description=f"参数 '{param}' 疑似存在 SQL 时间盲注，注入延时 payload 后响应时间显著增加（{elapsed:.1f}s）。",
+                                evidence_request=_build_request_text("GET", test_url),
+                                evidence_response=_build_response_text(resp, 400)
+                                + f"\n\n[响应时间] {elapsed:.2f}s",
+                                evidence_payload=payload,
+                                impact="即使无错误回显，攻击者仍可通过逐位猜测的方式抽取数据库内容。",
+                                reproduce_steps=[
+                                    f"记录正常请求响应时间（约 {baseline_time:.2f}s）",
+                                    f"在参数 {param} 注入：{payload}",
+                                    f"观察响应时间是否显著增加（实测 {elapsed:.1f}s）",
+                                ],
+                                fix_suggestion="使用参数化查询；为数据库查询设置最大执行时间（statement_timeout）；统一错误处理避免信息泄露。",
+                                confidence="medium",
+                            )
+                        )
                         break
 
                 elif _response_differs_significantly(baseline_body, body_lower):
-                    findings.append(build_finding(
-                        vuln_type="sqli",
-                        title=f"SQL 注入漏洞 - 疑似布尔盲注（参数 {param}）",
-                        severity="high",
-                        severity_score=7,
-                        url=test_url,
-                        parameter=param,
-                        location=f"URL 参数 {param}",
-                        description=f"参数 '{param}' 注入后响应内容显著变化，疑似存在布尔盲注。",
-                        evidence_request=_build_request_text("GET", test_url),
-                        evidence_response=_build_response_text(resp, 600),
-                        evidence_payload=payload,
-                        impact="攻击者可通过构造布尔条件逐位推断数据库内容。",
-                        reproduce_steps=[
-                            "记录正常页面响应内容",
-                            f"注入永真条件：{payload}",
-                            "对比响应内容差异，确认是否存在布尔盲注",
-                        ],
-                        fix_suggestion="使用参数化查询；统一错误页面与正常页面的响应长度和内容。",
-                        confidence="medium",
-                    ))
+                    findings.append(
+                        build_finding(
+                            vuln_type="sqli",
+                            title=f"SQL 注入漏洞 - 疑似布尔盲注（参数 {param}）",
+                            severity="high",
+                            severity_score=7,
+                            url=test_url,
+                            parameter=param,
+                            location=f"URL 参数 {param}",
+                            description=f"参数 '{param}' 注入后响应内容显著变化，疑似存在布尔盲注。",
+                            evidence_request=_build_request_text("GET", test_url),
+                            evidence_response=_build_response_text(resp, 600),
+                            evidence_payload=payload,
+                            impact="攻击者可通过构造布尔条件逐位推断数据库内容。",
+                            reproduce_steps=[
+                                "记录正常页面响应内容",
+                                f"注入永真条件：{payload}",
+                                "对比响应内容差异，确认是否存在布尔盲注",
+                            ],
+                            fix_suggestion="使用参数化查询；统一错误页面与正常页面的响应长度和内容。",
+                            confidence="medium",
+                        )
+                    )
                     break
 
-            except Exception as e:
+            except Exception:
                 continue
     return findings
 
 
-def _response_differs_significantly(baseline: str, current: str, threshold: float = 0.3) -> bool:
+def _response_differs_significantly(
+    baseline: str, current: str, threshold: float = 0.3
+) -> bool:
     if not baseline or not current:
         return False
     if abs(len(baseline) - len(current)) > max(len(baseline), 1) * threshold:
@@ -1135,14 +1276,18 @@ def _response_differs_significantly(baseline: str, current: str, threshold: floa
     return False
 
 
-async def detect_xss_src(url: str) -> List[Dict[str, Any]]:
+async def detect_xss_src(url: str) -> list[dict[str, Any]]:
     """反射型 XSS 检测（SRC 格式）。"""
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     parsed = urlparse(url)
-    params = list(parse_qs(parsed.query, keep_blank_values=True).keys()) if parsed.query else []
+    params = (
+        list(parse_qs(parsed.query, keep_blank_values=True).keys())
+        if parsed.query
+        else []
+    )
     if not params:
         return findings
 
@@ -1150,62 +1295,85 @@ async def detect_xss_src(url: str) -> List[Dict[str, Any]]:
         for payload, tag in XSS_PAYLOADS:
             test_url = _build_test_url(url, param, payload)
             try:
-                resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=True)
+                resp = await _recorded_request(
+                    "get", test_url, timeout=10.0, follow_redirects=True
+                )
                 body = _safe_read_body(resp)
 
                 if payload in body:
-                    script_pattern = re.compile(r"<script[^>]*>.*" + re.escape(payload) + r".*</script>", re.I | re.S)
-                    event_pattern = re.compile(r"(on\w+)=[\"'].*" + re.escape(payload) + r".*[\"']", re.I)
-                    attr_pattern = re.compile(r"<[^>]*" + re.escape(payload) + r"[^>]*>", re.I)
+                    script_pattern = re.compile(
+                        r"<script[^>]*>.*" + re.escape(payload) + r".*</script>",
+                        re.I | re.S,
+                    )
+                    event_pattern = re.compile(
+                        r"(on\w+)=[\"'].*" + re.escape(payload) + r".*[\"']", re.I
+                    )
+                    attr_pattern = re.compile(
+                        r"<[^>]*" + re.escape(payload) + r"[^>]*>", re.I
+                    )
 
-                    dangerous = bool(script_pattern.search(body) or event_pattern.search(body))
-                    reflected_context = "script/event" if dangerous else "html_attribute" if attr_pattern.search(body) else "html_body"
+                    dangerous = bool(
+                        script_pattern.search(body) or event_pattern.search(body)
+                    )
+                    reflected_context = (
+                        "script/event"
+                        if dangerous
+                        else "html_attribute"
+                        if attr_pattern.search(body)
+                        else "html_body"
+                    )
 
                     severity = "high" if dangerous else "medium"
                     score = 8 if dangerous else 5
 
-                    findings.append(build_finding(
-                        vuln_type="xss",
-                        title=f"反射型 XSS 漏洞（参数 {param}）",
-                        severity=severity,
-                        severity_score=score,
-                        url=test_url,
-                        parameter=param,
-                        location=f"URL 参数 {param}，反射位置：{reflected_context}",
-                        description=f"参数 '{param}' 的输入未经过滤即反射到响应中，payload 在 {reflected_context} 上下文中执行，可触发任意 JavaScript 代码。",
-                        evidence_request=_build_request_text("GET", test_url),
-                        evidence_response=_build_response_text(resp, 800),
-                        evidence_payload=payload,
-                        impact="攻击者可构造恶意链接，诱导用户点击后窃取 Cookie、会话令牌或执行钓鱼攻击。",
-                        reproduce_steps=[
-                            f"访问：{test_url}",
-                            "查看页面源代码，确认 payload 是否原样反射",
-                            f"在浏览器开发者工具中观察 payload 所在上下文（{reflected_context}）",
-                            "尝试替换为 document.cookie 窃取脚本验证",
-                        ],
-                        fix_suggestion="在输出到 HTML 前进行上下文相关编码；配置 CSP；优先使用框架自动转义机制。",
-                        confidence="high" if dangerous else "medium",
-                    ))
+                    findings.append(
+                        build_finding(
+                            vuln_type="xss",
+                            title=f"反射型 XSS 漏洞（参数 {param}）",
+                            severity=severity,
+                            severity_score=score,
+                            url=test_url,
+                            parameter=param,
+                            location=f"URL 参数 {param}，反射位置：{reflected_context}",
+                            description=f"参数 '{param}' 的输入未经过滤即反射到响应中，payload 在 {reflected_context} 上下文中执行，可触发任意 JavaScript 代码。",
+                            evidence_request=_build_request_text("GET", test_url),
+                            evidence_response=_build_response_text(resp, 800),
+                            evidence_payload=payload,
+                            impact="攻击者可构造恶意链接，诱导用户点击后窃取 Cookie、会话令牌或执行钓鱼攻击。",
+                            reproduce_steps=[
+                                f"访问：{test_url}",
+                                "查看页面源代码，确认 payload 是否原样反射",
+                                f"在浏览器开发者工具中观察 payload 所在上下文（{reflected_context}）",
+                                "尝试替换为 document.cookie 窃取脚本验证",
+                            ],
+                            fix_suggestion="在输出到 HTML 前进行上下文相关编码；配置 CSP；优先使用框架自动转义机制。",
+                            confidence="high" if dangerous else "medium",
+                        )
+                    )
                     break
             except Exception:
                 continue
     return findings
 
 
-async def detect_info_leak_src(url: str, headers: Dict[str, str], body: Optional[str] = None) -> List[Dict[str, Any]]:
+async def detect_info_leak_src(
+    url: str, headers: dict[str, str], body: str | None = None
+) -> list[dict[str, Any]]:
     """敏感信息泄露检测（SRC 格式）。"""
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     if body is None:
         try:
-            resp = await _recorded_request("get", url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request(
+                "get", url, timeout=10.0, follow_redirects=True
+            )
             body = _safe_read_body(resp)
         except Exception:
             body = ""
 
-    text = body[:500 * 1024]  # 限制扫描长度
+    text = body[: 500 * 1024]  # 限制扫描长度
 
     for leak_type, config in INFO_LEAK_PATTERNS.items():
         matches = list(config["pattern"].finditer(text))
@@ -1229,63 +1397,71 @@ async def detect_info_leak_src(url: str, headers: Dict[str, str], body: Optional
 
         first = next(iter(matches))
         snippet_text = "; ".join(snippets)
-        findings.append(build_finding(
-            vuln_type="info_leak",
-            title=f"敏感信息泄露：{config['name']}",
-            severity=config["severity"],
-            severity_score=config["score"],
-            url=url,
-            parameter="",
-            location="响应体",
-            description=f"响应中检测到 {config['name']} 信息泄露，可能暴露用户隐私或内部凭证。",
-            evidence_request=_build_request_text("GET", url),
-            evidence_response=f"[匹配片段（已脱敏）]\n{snippet_text}\n\n[匹配位置] 响应体偏移 {first.start()}",
-            impact=f"泄露 {config['name']} 可用于社会工程、横向渗透或进一步利用。",
-            reproduce_steps=[
-                f"访问 {url}",
-                f"在响应中搜索 {config['name']} 特征",
-                "使用 Burp/正则提取完整内容并评估影响范围",
-            ],
-            fix_suggestion="对响应中的敏感数据进行脱敏、删除或加密；加强日志与错误处理；定期使用 DLP 工具扫描。",
-            confidence="high",
-        ))
+        findings.append(
+            build_finding(
+                vuln_type="info_leak",
+                title=f"敏感信息泄露：{config['name']}",
+                severity=config["severity"],
+                severity_score=config["score"],
+                url=url,
+                parameter="",
+                location="响应体",
+                description=f"响应中检测到 {config['name']} 信息泄露，可能暴露用户隐私或内部凭证。",
+                evidence_request=_build_request_text("GET", url),
+                evidence_response=f"[匹配片段（已脱敏）]\n{snippet_text}\n\n[匹配位置] 响应体偏移 {first.start()}",
+                impact=f"泄露 {config['name']} 可用于社会工程、横向渗透或进一步利用。",
+                reproduce_steps=[
+                    f"访问 {url}",
+                    f"在响应中搜索 {config['name']} 特征",
+                    "使用 Burp/正则提取完整内容并评估影响范围",
+                ],
+                fix_suggestion="对响应中的敏感数据进行脱敏、删除或加密；加强日志与错误处理；定期使用 DLP 工具扫描。",
+                confidence="high",
+            )
+        )
 
     # Server / X-Powered-By 头泄露
     for header_name in ["server", "x-powered-by"]:
         value = headers.get(header_name, headers.get(header_name.title(), ""))
         if value and re.search(r"\d+\.\d+", value):
-            findings.append(build_finding(
-                vuln_type="info_leak",
-                title=f"服务器信息泄露：{header_name.title()}",
-                severity="low",
-                severity_score=2,
-                url=url,
-                parameter="",
-                location=f"响应头 {header_name.title()}",
-                description=f"响应头 {header_name.title()} 暴露了服务器软件及版本信息，便于攻击者筛选已知 CVE。",
-                evidence_request=_build_request_text("GET", url),
-                evidence_response=f"{header_name.title()}: {value}",
-                impact="攻击者可结合版本信息快速定位已知漏洞利用代码。",
-                reproduce_steps=[
-                    f"curl -I {url}",
-                    f"观察 {header_name.title()} 头是否包含版本号",
-                ],
-                fix_suggestion="隐藏或修改 Server / X-Powered-By 头；保持组件及时更新。",
-                confidence="high",
-            ))
+            findings.append(
+                build_finding(
+                    vuln_type="info_leak",
+                    title=f"服务器信息泄露：{header_name.title()}",
+                    severity="low",
+                    severity_score=2,
+                    url=url,
+                    parameter="",
+                    location=f"响应头 {header_name.title()}",
+                    description=f"响应头 {header_name.title()} 暴露了服务器软件及版本信息，便于攻击者筛选已知 CVE。",
+                    evidence_request=_build_request_text("GET", url),
+                    evidence_response=f"{header_name.title()}: {value}",
+                    impact="攻击者可结合版本信息快速定位已知漏洞利用代码。",
+                    reproduce_steps=[
+                        f"curl -I {url}",
+                        f"观察 {header_name.title()} 头是否包含版本号",
+                    ],
+                    fix_suggestion="隐藏或修改 Server / X-Powered-By 头；保持组件及时更新。",
+                    confidence="high",
+                )
+            )
 
     return findings
 
 
-async def detect_csrf_src(url: str, headers: Dict[str, str], body: Optional[str] = None) -> List[Dict[str, Any]]:
+async def detect_csrf_src(
+    url: str, headers: dict[str, str], body: str | None = None
+) -> list[dict[str, Any]]:
     """CSRF 防护缺失检测（SRC 格式）。"""
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     if body is None:
         try:
-            resp = await _recorded_request("get", url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request(
+                "get", url, timeout=10.0, follow_redirects=True
+            )
             body = _safe_read_body(resp)
         except Exception:
             body = ""
@@ -1297,31 +1473,33 @@ async def detect_csrf_src(url: str, headers: Dict[str, str], body: Optional[str]
         form_html = match.group(1)
         action_match = re.search(r'action=["\']([^"\']*)["\']', match.group(0), re.I)
         method_match = re.search(r'method=["\']([^"\']*)["\']', match.group(0), re.I)
-        method = (method_match.group(1).upper() if method_match else "GET")
+        method = method_match.group(1).upper() if method_match else "GET"
         if method != "POST":
             continue
         if not token_pattern.search(form_html):
-            findings.append(build_finding(
-                vuln_type="csrf",
-                title="表单缺少 CSRF Token 防护",
-                severity="medium",
-                severity_score=6,
-                url=url,
-                parameter="",
-                location=f"页面表单 (action={action_match.group(1) if action_match else ''})",
-                description="页面中存在 POST 表单，但未包含 CSRF Token，攻击者可构造跨站请求伪造攻击。",
-                evidence_request=_build_request_text("GET", url),
-                evidence_response=form_html[:600],
-                impact="攻击者可诱导已登录用户提交非预期请求，导致数据修改、权限变更等操作。",
-                reproduce_steps=[
-                    f"访问 {url}",
-                    "定位页面中的 POST 表单",
-                    "检查表单字段是否包含 csrf_token / _csrf 等",
-                    "构造恶意 HTML 页面，使用自动提交的 form 进行验证",
-                ],
-                fix_suggestion="为所有状态变更表单添加不可预测且与用户会话绑定的 CSRF Token；同时校验 Referer/Origin。",
-                confidence="medium",
-            ))
+            findings.append(
+                build_finding(
+                    vuln_type="csrf",
+                    title="表单缺少 CSRF Token 防护",
+                    severity="medium",
+                    severity_score=6,
+                    url=url,
+                    parameter="",
+                    location=f"页面表单 (action={action_match.group(1) if action_match else ''})",
+                    description="页面中存在 POST 表单，但未包含 CSRF Token，攻击者可构造跨站请求伪造攻击。",
+                    evidence_request=_build_request_text("GET", url),
+                    evidence_response=form_html[:600],
+                    impact="攻击者可诱导已登录用户提交非预期请求，导致数据修改、权限变更等操作。",
+                    reproduce_steps=[
+                        f"访问 {url}",
+                        "定位页面中的 POST 表单",
+                        "检查表单字段是否包含 csrf_token / _csrf 等",
+                        "构造恶意 HTML 页面，使用自动提交的 form 进行验证",
+                    ],
+                    fix_suggestion="为所有状态变更表单添加不可预测且与用户会话绑定的 CSRF Token；同时校验 Referer/Origin。",
+                    confidence="medium",
+                )
+            )
             break
 
     # Cookie SameSite=None 且无 Secure
@@ -1329,97 +1507,118 @@ async def detect_csrf_src(url: str, headers: Dict[str, str], body: Optional[str]
     if set_cookie:
         cookie_lower = set_cookie.lower()
         if "samesite=none" in cookie_lower and "secure" not in cookie_lower:
-            findings.append(build_finding(
-                vuln_type="csrf",
-                title="Cookie SameSite=None 未配合 Secure 标志",
-                severity="medium",
-                severity_score=5,
-                url=url,
-                parameter="",
-                location="Set-Cookie 响应头",
-                description="Cookie 设置为 SameSite=None 但未标记 Secure，浏览器将拒绝发送该 Cookie，且存在 CSRF 风险。",
-                evidence_request=_build_request_text("GET", url),
-                evidence_response=f"Set-Cookie: {set_cookie}",
-                impact="跨站请求可携带会话 Cookie，增加 CSRF 攻击面。",
-                reproduce_steps=[
-                    f"curl -I {url}",
-                    "检查 Set-Cookie 头是否包含 SameSite=None 且缺少 Secure",
-                ],
-                fix_suggestion="为 SameSite=None 的 Cookie 同时设置 Secure 标志；或改用 SameSite=Strict/Lax。",
-                confidence="high",
-            ))
+            findings.append(
+                build_finding(
+                    vuln_type="csrf",
+                    title="Cookie SameSite=None 未配合 Secure 标志",
+                    severity="medium",
+                    severity_score=5,
+                    url=url,
+                    parameter="",
+                    location="Set-Cookie 响应头",
+                    description="Cookie 设置为 SameSite=None 但未标记 Secure，浏览器将拒绝发送该 Cookie，且存在 CSRF 风险。",
+                    evidence_request=_build_request_text("GET", url),
+                    evidence_response=f"Set-Cookie: {set_cookie}",
+                    impact="跨站请求可携带会话 Cookie，增加 CSRF 攻击面。",
+                    reproduce_steps=[
+                        f"curl -I {url}",
+                        "检查 Set-Cookie 头是否包含 SameSite=None 且缺少 Secure",
+                    ],
+                    fix_suggestion="为 SameSite=None 的 Cookie 同时设置 Secure 标志；或改用 SameSite=Strict/Lax。",
+                    confidence="high",
+                )
+            )
 
     return findings
 
 
-async def detect_sensitive_paths_src(base_url: str) -> List[Dict[str, Any]]:
+async def detect_sensitive_paths_src(base_url: str) -> list[dict[str, Any]]:
     """目录遍历 / 未授权访问检测（SRC 格式）。"""
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     parsed = urlparse(base_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
 
-    async def check(path: str, name: str, indicators: List[str]) -> None:
+    async def check(path: str, name: str, indicators: list[str]) -> None:
         test_url = origin + path
         try:
-            resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request(
+                "get", test_url, timeout=10.0, follow_redirects=True
+            )
             if resp.status_code != 200:
                 return
             body = _safe_read_body(resp)
             body_lower = body.lower()
 
             # 软 404 过滤
-            soft_404 = ["page not found", "not found", "404 not found", "找不到页面", "页面不存在"]
+            soft_404 = [
+                "page not found",
+                "not found",
+                "404 not found",
+                "找不到页面",
+                "页面不存在",
+            ]
             if any(p in body_lower for p in soft_404):
                 return
 
             matched = [i for i in indicators if i.lower() in body_lower]
             if matched or len(body) > 10:
-                snippet = body[:500]
-                findings.append(build_finding(
-                    vuln_type="sensitive_path",
-                    title=f"敏感路径可访问：{path}",
-                    severity="high" if path in ("/.git/config", "/.env", "/wp-config.php") else "medium",
-                    severity_score=8 if path in ("/.git/config", "/.env", "/wp-config.php") else 5,
-                    url=test_url,
-                    parameter="",
-                    location=f"路径 {path}",
-                    description=f"{name} 路径可直接访问，可能暴露源代码、配置信息或管理接口。",
-                    evidence_request=_build_request_text("GET", test_url),
-                    evidence_response=_build_response_text(resp, 700),
-                    impact="攻击者可获取数据库凭证、源代码、系统配置，进而控制服务器或横向移动。",
-                    reproduce_steps=[
-                        f"直接访问：{test_url}",
-                        "确认返回状态码为 200 且包含敏感内容",
-                        "尝试访问父目录或相关文件",
-                    ],
-                    fix_suggestion="禁止公开访问敏感路径；对管理后台加 IP 白名单/MFA；Web 服务器配置拒绝访问 .git/.env 等目录。",
-                    confidence="high" if matched else "medium",
-                ))
+                body[:500]
+                findings.append(
+                    build_finding(
+                        vuln_type="sensitive_path",
+                        title=f"敏感路径可访问：{path}",
+                        severity="high"
+                        if path in ("/.git/config", "/.env", "/wp-config.php")
+                        else "medium",
+                        severity_score=8
+                        if path in ("/.git/config", "/.env", "/wp-config.php")
+                        else 5,
+                        url=test_url,
+                        parameter="",
+                        location=f"路径 {path}",
+                        description=f"{name} 路径可直接访问，可能暴露源代码、配置信息或管理接口。",
+                        evidence_request=_build_request_text("GET", test_url),
+                        evidence_response=_build_response_text(resp, 700),
+                        impact="攻击者可获取数据库凭证、源代码、系统配置，进而控制服务器或横向移动。",
+                        reproduce_steps=[
+                            f"直接访问：{test_url}",
+                            "确认返回状态码为 200 且包含敏感内容",
+                            "尝试访问父目录或相关文件",
+                        ],
+                        fix_suggestion="禁止公开访问敏感路径；对管理后台加 IP 白名单/MFA；Web 服务器配置拒绝访问 .git/.env 等目录。",
+                        confidence="high" if matched else "medium",
+                    )
+                )
         except Exception:
             return
 
-    tasks = [check(path, name, indicators) for path, name, indicators in SENSITIVE_PATHS]
+    tasks = [
+        check(path, name, indicators) for path, name, indicators in SENSITIVE_PATHS
+    ]
     await asyncio.gather(*tasks, return_exceptions=True)
     return findings
 
 
-async def detect_outdated_components_src(url: str, headers: Dict[str, str], body: Optional[str] = None) -> List[Dict[str, Any]]:
+async def detect_outdated_components_src(
+    url: str, headers: dict[str, str], body: str | None = None
+) -> list[dict[str, Any]]:
     """过时组件 / CVE 检测（SRC 格式）。"""
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
 
     if body is None:
         try:
-            resp = await _recorded_request("get", url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request(
+                "get", url, timeout=10.0, follow_redirects=True
+            )
             body = _safe_read_body(resp)
         except Exception:
             body = ""
 
-    detected: List[Tuple[str, str]] = []
+    detected: list[tuple[str, str]] = []
 
     # 从响应头识别
     for header in ["server", "x-powered-by"]:
@@ -1441,36 +1640,87 @@ async def detect_outdated_components_src(url: str, headers: Dict[str, str], body
 
     checked = set()
     for source, signature in detected:
+        # 1. 优先命中硬编码规则（高置信度）
         for prefix, info in OUTDATED_COMPONENTS.items():
             if signature.startswith(prefix) and prefix not in checked:
                 checked.add(prefix)
-                findings.append(build_finding(
-                    vuln_type="outdated_component",
-                    title=f"过时组件：{signature}",
-                    severity=info["severity"],
-                    severity_score=info["score"],
-                    url=url,
-                    parameter="",
-                    location=f"{source} 识别",
-                    description=f"检测到组件 {signature}，该版本存在已知漏洞 {info['cve']}，建议升级至 {info['safe']}。",
-                    evidence_request=_build_request_text("GET", url),
-                    evidence_response=f"{source}: {signature}",
-                    impact="攻击者可利用已知 CVE 执行远程代码、读取敏感数据或提升权限。",
-                    reproduce_steps=[
-                        f"curl -I {url}",
-                        f"确认 {source} 头或 JS 资源包含 {signature}",
-                        f"查询 {info['cve']} 利用条件与 PoC",
-                    ],
-                    fix_suggestion=f"升级 {signature.split('/')[0]} 至安全版本 {info['safe']}，并建立组件漏洞监控流程。",
-                    confidence="high",
-                ))
+                findings.append(
+                    build_finding(
+                        vuln_type="outdated_component",
+                        title=f"过时组件：{signature}",
+                        severity=info["severity"],
+                        severity_score=info["score"],
+                        url=url,
+                        parameter="",
+                        location=f"{source} 识别",
+                        description=f"检测到组件 {signature}，该版本存在已知漏洞 {info['cve']}，建议升级至 {info['safe']}。",
+                        evidence_request=_build_request_text("GET", url),
+                        evidence_response=f"{source}: {signature}",
+                        impact="攻击者可利用已知 CVE 执行远程代码、读取敏感数据或提升权限。",
+                        reproduce_steps=[
+                            f"curl -I {url}",
+                            f"确认 {source} 头或 JS 资源包含 {signature}",
+                            f"查询 {info['cve']} 利用条件与 PoC",
+                        ],
+                        fix_suggestion=f"升级 {signature.split('/')[0]} 至安全版本 {info['safe']}，并建立组件漏洞监控流程。",
+                        confidence="high",
+                    )
+                )
+
+        # 2. 尝试关联本地 CVE 缓存 / NVD（补充情报）
+        comp_name = (
+            signature.split("/")[0] if "/" in signature else signature.split(" ")[0]
+        )
+        if comp_name and comp_name not in checked:
+            try:
+                from app.services.vuln_intel_service import get_cves_for_component
+
+                cve_records = get_cves_for_component(comp_name)
+                if cve_records:
+                    top_cve = cve_records[0]
+                    severity = top_cve.get("severity", "medium")
+                    cvss = top_cve.get("cvss_score", 5.0)
+                    severity_map = {
+                        "critical": "critical",
+                        "high": "high",
+                        "medium": "medium",
+                        "low": "low",
+                    }
+                    findings.append(
+                        build_finding(
+                            vuln_type="outdated_component",
+                            title=f"组件 {comp_name} 存在已知 CVE",
+                            severity=severity_map.get(severity, "medium"),
+                            severity_score=int(cvss),
+                            url=url,
+                            parameter="",
+                            location=f"{source} 识别 / CVE 情报库",
+                            description=(
+                                f"检测到组件 {signature}，"
+                                f"NVD 收录相关 CVE {top_cve.get('cve_id')}（CVSS {cvss}）。"
+                                f"{top_cve.get('description', '')[:200]}..."
+                            ),
+                            evidence_request=_build_request_text("GET", url),
+                            evidence_response=f"{source}: {signature} | CVE: {top_cve.get('cve_id')}",
+                            impact="该组件版本可能存在公开 CVE，攻击者可参考公开 PoC 进行利用。",
+                            reproduce_steps=[
+                                f"curl -I {url} 确认组件版本",
+                                f"访问 https://nvd.nist.gov/vuln/detail/{top_cve.get('cve_id')} 查看详情",
+                            ],
+                            fix_suggestion="升级组件至最新稳定版本，并订阅 CVE 监控告警。",
+                            confidence="medium",
+                        )
+                    )
+                    checked.add(comp_name)
+            except Exception:
+                pass
 
     return findings
 
 
 # ---------- SRC 扩展检测：越权、SSRF、IDOR、文件上传、逻辑绕过 ----------
 
-ADMIN_PATHS: List[Tuple[str, str]] = [
+ADMIN_PATHS: list[tuple[str, str]] = [
     ("/admin", "管理后台入口"),
     ("/api/admin", "API 管理接口"),
     ("/manage", "管理后台"),
@@ -1478,7 +1728,7 @@ ADMIN_PATHS: List[Tuple[str, str]] = [
     ("/console", "控制台"),
 ]
 
-SSRF_PAYLOADS: List[Tuple[str, str, str]] = [
+SSRF_PAYLOADS: list[tuple[str, str, str]] = [
     ("http://127.0.0.1", "本地回环", "127.0.0.1"),
     ("http://169.254.169.254/latest/meta-data/", "AWS 元数据", "169.254.169.254"),
     ("http://metadata.google.internal/", "GCP 元数据", "metadata.google.internal"),
@@ -1486,27 +1736,29 @@ SSRF_PAYLOADS: List[Tuple[str, str, str]] = [
     ("file:///etc/passwd", "文件协议", "file://"),
 ]
 
-IDOR_ID_PATTERNS: List[Tuple[str, re.Pattern]] = [
+IDOR_ID_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("id", re.compile(r"\b(id|user_id|order_id|pid|sid)=\d+", re.I)),
     ("page", re.compile(r"\b(page|offset|limit)=\d+", re.I)),
 ]
 
-FILE_UPLOAD_FORM_PATTERNS: List[re.Pattern] = [
+FILE_UPLOAD_FORM_PATTERNS: list[re.Pattern] = [
     re.compile(r"<input[^>]*type=[\"']file[\"']", re.I),
     re.compile(r"<form[^>]*enctype=[\"']multipart/form-data[\"']", re.I),
 ]
 
-LOGIN_BYPASS_PATTERNS: Dict[str, re.Pattern] = {
-    "no_csrf_login": re.compile(r"<form[^>]*>.*?<input[^>]*type=[\"']password[\"'].*?</form>", re.I | re.S),
+LOGIN_BYPASS_PATTERNS: dict[str, re.Pattern] = {
+    "no_csrf_login": re.compile(
+        r"<form[^>]*>.*?<input[^>]*type=[\"']password[\"'].*?</form>", re.I | re.S
+    ),
     "json_login": re.compile(r"['\"]/api/(login|auth|signin)['\"]", re.I),
 }
 
 
-async def detect_broken_access_control_src(base_url: str) -> List[Dict[str, Any]]:
+async def detect_broken_access_control_src(base_url: str) -> list[dict[str, Any]]:
     """检测未授权访问管理接口（越权）。"""
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     parsed = urlparse(base_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
@@ -1514,56 +1766,92 @@ async def detect_broken_access_control_src(base_url: str) -> List[Dict[str, Any]
     for path, name in ADMIN_PATHS:
         test_url = origin + path
         try:
-            resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=False)
+            resp = await _recorded_request(
+                "get", test_url, timeout=10.0, follow_redirects=False
+            )
             # 200 且无登录特征，判定为未授权访问
             if resp.status_code != 200:
                 continue
             body = _safe_read_body(resp).lower()
-            login_markers = ["login", "sign in", "登录", "用户名", "password", "密码", "otp", "mfa", "sso"]
+            login_markers = [
+                "login",
+                "sign in",
+                "登录",
+                "用户名",
+                "password",
+                "密码",
+                "otp",
+                "mfa",
+                "sso",
+            ]
             if any(m in body for m in login_markers):
                 continue
-            findings.append(build_finding(
-                vuln_type="broken_access_control",
-                title=f"未授权访问：{name}",
-                severity="high",
-                severity_score=8,
-                url=test_url,
-                parameter="",
-                location=f"路径 {path}",
-                description=f"{name}（{path}）可直接访问，响应中未出现登录入口，疑似缺少身份认证。",
-                evidence_request=_build_request_text("GET", test_url),
-                evidence_response=_build_response_text(resp, 700),
-                impact="攻击者可能无需登录即可访问管理功能，导致数据泄露、权限滥用或系统被接管。",
-                reproduce_steps=[
-                    f"在无痕模式下访问 {test_url}",
-                    "确认未跳转至登录页",
-                    "尝试访问下级功能路径验证权限边界",
-                ],
-                fix_suggestion="对管理接口实施强制认证与授权；默认拒绝匿名访问；结合 IP 白名单与 MFA。",
-                confidence="medium",
-            ))
+            findings.append(
+                build_finding(
+                    vuln_type="broken_access_control",
+                    title=f"未授权访问：{name}",
+                    severity="high",
+                    severity_score=8,
+                    url=test_url,
+                    parameter="",
+                    location=f"路径 {path}",
+                    description=f"{name}（{path}）可直接访问，响应中未出现登录入口，疑似缺少身份认证。",
+                    evidence_request=_build_request_text("GET", test_url),
+                    evidence_response=_build_response_text(resp, 700),
+                    impact="攻击者可能无需登录即可访问管理功能，导致数据泄露、权限滥用或系统被接管。",
+                    reproduce_steps=[
+                        f"在无痕模式下访问 {test_url}",
+                        "确认未跳转至登录页",
+                        "尝试访问下级功能路径验证权限边界",
+                    ],
+                    fix_suggestion="对管理接口实施强制认证与授权；默认拒绝匿名访问；结合 IP 白名单与 MFA。",
+                    confidence="medium",
+                )
+            )
         except Exception:
             continue
     return findings
 
 
-async def detect_ssrf_src(url: str) -> List[Dict[str, Any]]:
+async def detect_ssrf_src(url: str) -> list[dict[str, Any]]:
     """检测 SSRF 入口点：URL 参数、表单 action 等可接受外部地址的位置。"""
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     parsed = urlparse(url)
-    params = list(parse_qs(parsed.query, keep_blank_values=True).keys()) if parsed.query else []
+    params = (
+        list(parse_qs(parsed.query, keep_blank_values=True).keys())
+        if parsed.query
+        else []
+    )
 
     # 只检测名字像 URL 的参数
-    url_like_params = [p for p in params if any(k in p.lower() for k in ("url", "link", "path", "src", "redirect", "callback", "uri", "site"))]
+    url_like_params = [
+        p
+        for p in params
+        if any(
+            k in p.lower()
+            for k in (
+                "url",
+                "link",
+                "path",
+                "src",
+                "redirect",
+                "callback",
+                "uri",
+                "site",
+            )
+        )
+    ]
 
     for param in url_like_params[:4]:
         for payload, target_name, indicator in SSRF_PAYLOADS:
             test_url = _build_test_url(url, param, payload)
             try:
-                resp = await _recorded_request("get", test_url, timeout=8.0, follow_redirects=False)
+                resp = await _recorded_request(
+                    "get", test_url, timeout=8.0, follow_redirects=False
+                )
                 body = _safe_read_body(resp).lower()
                 elapsed = resp.elapsed.total_seconds() if resp.elapsed else 0.0
 
@@ -1571,44 +1859,55 @@ async def detect_ssrf_src(url: str) -> List[Dict[str, Any]]:
                 detected = False
                 if resp.status_code == 200 and indicator in body:
                     detected = True
-                elif resp.status_code in (301, 302, 307, 308) and indicator in (resp.headers.get("location") or "").lower():
+                elif (
+                    resp.status_code in (301, 302, 307, 308)
+                    and indicator in (resp.headers.get("location") or "").lower()
+                ):
                     detected = True
-                elif elapsed < 0.5 and any(x in body for x in ["root:", "meta-data", "iam", "instance-id"]):
+                elif elapsed < 0.5 and any(
+                    x in body for x in ["root:", "meta-data", "iam", "instance-id"]
+                ):
                     detected = True
 
                 if detected:
-                    findings.append(build_finding(
-                        vuln_type="ssrf",
-                        title=f"服务端请求伪造（参数 {param}）",
-                        severity="critical" if "metadata" in target_name.lower() or "file://" in payload else "high",
-                        severity_score=9 if "metadata" in target_name.lower() or "file://" in payload else 8,
-                        url=test_url,
-                        parameter=param,
-                        location=f"URL 参数 {param}",
-                        description=f"参数 '{param}' 接受外部地址并可能由服务端发起请求，测试 payload 命中 {target_name}，存在 SSRF 风险。",
-                        evidence_request=_build_request_text("GET", test_url),
-                        evidence_response=_build_response_text(resp, 600),
-                        evidence_payload=payload,
-                        impact="攻击者可利用服务端访问内网、云服务元数据接口或本地文件，导致敏感信息泄露甚至云环境接管。",
-                        reproduce_steps=[
-                            f"访问 {test_url}",
-                            f"观察响应是否包含 {target_name} 内容或重定向到内部地址",
-                            "尝试访问 169.254.169.254 等元数据地址进一步验证",
-                        ],
-                        fix_suggestion="严格校验用户输入的 URL；禁用重定向；解析并拒绝私有 IP、元数据域名与 file:// 协议；使用白名单。",
-                        confidence="medium",
-                    ))
+                    findings.append(
+                        build_finding(
+                            vuln_type="ssrf",
+                            title=f"服务端请求伪造（参数 {param}）",
+                            severity="critical"
+                            if "metadata" in target_name.lower() or "file://" in payload
+                            else "high",
+                            severity_score=9
+                            if "metadata" in target_name.lower() or "file://" in payload
+                            else 8,
+                            url=test_url,
+                            parameter=param,
+                            location=f"URL 参数 {param}",
+                            description=f"参数 '{param}' 接受外部地址并可能由服务端发起请求，测试 payload 命中 {target_name}，存在 SSRF 风险。",
+                            evidence_request=_build_request_text("GET", test_url),
+                            evidence_response=_build_response_text(resp, 600),
+                            evidence_payload=payload,
+                            impact="攻击者可利用服务端访问内网、云服务元数据接口或本地文件，导致敏感信息泄露甚至云环境接管。",
+                            reproduce_steps=[
+                                f"访问 {test_url}",
+                                f"观察响应是否包含 {target_name} 内容或重定向到内部地址",
+                                "尝试访问 169.254.169.254 等元数据地址进一步验证",
+                            ],
+                            fix_suggestion="严格校验用户输入的 URL；禁用重定向；解析并拒绝私有 IP、元数据域名与 file:// 协议；使用白名单。",
+                            confidence="medium",
+                        )
+                    )
                     break
             except Exception:
                 continue
     return findings
 
 
-async def detect_idor_src(url: str) -> List[Dict[str, Any]]:
+async def detect_idor_src(url: str) -> list[dict[str, Any]]:
     """检测不安全的直接对象引用（IDOR）：尝试替换连续数字 ID。"""
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     parsed = urlparse(url)
     qs = parse_qs(parsed.query, keep_blank_values=True)
@@ -1622,50 +1921,73 @@ async def detect_idor_src(url: str) -> List[Dict[str, Any]]:
             original_id = int(value)
             test_ids = [original_id + 1, original_id - 1, original_id + 10]
             for test_id in test_ids:
-                new_qs = {k: ([str(test_id)] if k == param else v) for k, v in qs.items()}
-                test_url = urlunparse(parsed._replace(query=urlencode(new_qs, doseq=True)))
+                new_qs = {
+                    k: ([str(test_id)] if k == param else v) for k, v in qs.items()
+                }
+                test_url = urlunparse(
+                    parsed._replace(query=urlencode(new_qs, doseq=True))
+                )
                 try:
-                    resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=True)
+                    resp = await _recorded_request(
+                        "get", test_url, timeout=10.0, follow_redirects=True
+                    )
                     if resp.status_code != 200:
                         continue
                     body = _safe_read_body(resp)
                     # 简单启发：响应长度相近且包含常见资源字段，认为存在 IDOR
-                    if any(k in body.lower() for k in ["email", "phone", "username", "order", "user", "amount", "balance"]):
-                        findings.append(build_finding(
-                            vuln_type="idor",
-                            title=f"不安全的直接对象引用（参数 {param}）",
-                            severity="high",
-                            severity_score=8,
-                            url=test_url,
-                            parameter=param,
-                            location=f"URL 参数 {param}",
-                            description=f"参数 '{param}' 为连续数字 ID，通过将其从 {original_id} 改为 {test_id} 仍可访问资源，说明未校验资源归属。",
-                            evidence_request=_build_request_text("GET", test_url),
-                            evidence_response=_build_response_text(resp, 700),
-                            impact="攻击者可通过遍历 ID 访问其他用户的订单、资料、账单等敏感数据。",
-                            reproduce_steps=[
-                                f"访问原始链接：{url}",
-                                f"将参数 {param} 依次替换为相邻 ID（如 {test_ids}）",
-                                "观察是否返回其他用户数据",
-                            ],
-                            fix_suggestion="使用 UUID/间接引用；每次访问资源时校验当前用户是否为资源所有者；限制批量遍历。",
-                            confidence="medium",
-                        ))
+                    if any(
+                        k in body.lower()
+                        for k in [
+                            "email",
+                            "phone",
+                            "username",
+                            "order",
+                            "user",
+                            "amount",
+                            "balance",
+                        ]
+                    ):
+                        findings.append(
+                            build_finding(
+                                vuln_type="idor",
+                                title=f"不安全的直接对象引用（参数 {param}）",
+                                severity="high",
+                                severity_score=8,
+                                url=test_url,
+                                parameter=param,
+                                location=f"URL 参数 {param}",
+                                description=f"参数 '{param}' 为连续数字 ID，通过将其从 {original_id} 改为 {test_id} 仍可访问资源，说明未校验资源归属。",
+                                evidence_request=_build_request_text("GET", test_url),
+                                evidence_response=_build_response_text(resp, 700),
+                                impact="攻击者可通过遍历 ID 访问其他用户的订单、资料、账单等敏感数据。",
+                                reproduce_steps=[
+                                    f"访问原始链接：{url}",
+                                    f"将参数 {param} 依次替换为相邻 ID（如 {test_ids}）",
+                                    "观察是否返回其他用户数据",
+                                ],
+                                fix_suggestion="使用 UUID/间接引用；每次访问资源时校验当前用户是否为资源所有者；限制批量遍历。",
+                                confidence="medium",
+                            )
+                        )
                         return findings
                 except Exception:
                     continue
     return findings
 
 
-async def detect_file_upload_src(url: str, body: Optional[str] = None) -> List[Dict[str, Any]]:
+async def detect_file_upload_src(
+    url: str, body: str | None = None
+) -> list[dict[str, Any]]:
     """检测页面中是否存在文件上传入口。"""
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     if body is None:
         try:
-            resp = await _recorded_request("get", url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request(
+                "get", url, timeout=10.0, follow_redirects=True
+            )
             body = _safe_read_body(resp)
         except Exception:
             body = ""
@@ -1674,42 +1996,50 @@ async def detect_file_upload_src(url: str, body: Optional[str] = None) -> List[D
         matches = list(pattern.finditer(body))
         if matches:
             first = matches[0].group(0)
-            action_match = re.search(r'<form[^>]*action=["\']([^"\']*)["\']', body, re.I)
+            action_match = re.search(
+                r'<form[^>]*action=["\']([^"\']*)["\']', body, re.I
+            )
             action = action_match.group(1) if action_match else ""
-            findings.append(build_finding(
-                vuln_type="file_upload",
-                title="发现文件上传入口",
-                severity="medium",
-                severity_score=6,
-                url=url,
-                parameter="",
-                location=f"页面表单（action={action}）",
-                description="页面中存在文件上传表单，若后端未对文件类型、内容、扩展名进行严格校验，可能被上传 WebShell 或恶意文件。",
-                evidence_request=_build_request_text("GET", url),
-                evidence_response=first[:500],
-                impact="攻击者可能上传并执行服务器端脚本，导致服务器被控制、数据泄露或横向移动。",
-                reproduce_steps=[
-                    f"访问 {url}",
-                    "定位文件上传表单",
-                    "尝试上传带有脚本扩展名的文件（如 .php/.jsp/.aspx）",
-                    "确认是否被拦截或可直接访问执行",
-                ],
-                fix_suggestion="使用白名单扩展名与 MIME 类型；校验文件 Magic Number；上传目录禁止脚本执行；重命名并隔离存储。",
-                confidence="low",
-            ))
+            findings.append(
+                build_finding(
+                    vuln_type="file_upload",
+                    title="发现文件上传入口",
+                    severity="medium",
+                    severity_score=6,
+                    url=url,
+                    parameter="",
+                    location=f"页面表单（action={action}）",
+                    description="页面中存在文件上传表单，若后端未对文件类型、内容、扩展名进行严格校验，可能被上传 WebShell 或恶意文件。",
+                    evidence_request=_build_request_text("GET", url),
+                    evidence_response=first[:500],
+                    impact="攻击者可能上传并执行服务器端脚本，导致服务器被控制、数据泄露或横向移动。",
+                    reproduce_steps=[
+                        f"访问 {url}",
+                        "定位文件上传表单",
+                        "尝试上传带有脚本扩展名的文件（如 .php/.jsp/.aspx）",
+                        "确认是否被拦截或可直接访问执行",
+                    ],
+                    fix_suggestion="使用白名单扩展名与 MIME 类型；校验文件 Magic Number；上传目录禁止脚本执行；重命名并隔离存储。",
+                    confidence="low",
+                )
+            )
             break
     return findings
 
 
-async def detect_logic_bypass_src(url: str, headers: Dict[str, str], body: Optional[str] = None) -> List[Dict[str, Any]]:
+async def detect_logic_bypass_src(
+    url: str, headers: dict[str, str], body: str | None = None
+) -> list[dict[str, Any]]:
     """检测登录/认证相关页面的逻辑绕过风险点。"""
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     if body is None:
         try:
-            resp = await _recorded_request("get", url, timeout=10.0, follow_redirects=True)
+            resp = await _recorded_request(
+                "get", url, timeout=10.0, follow_redirects=True
+            )
             body = _safe_read_body(resp)
         except Exception:
             body = ""
@@ -1720,50 +2050,57 @@ async def detect_logic_bypass_src(url: str, headers: Dict[str, str], body: Optio
     if LOGIN_BYPASS_PATTERNS["no_csrf_login"].search(body):
         has_csrf = bool(re.search(r"csrf|xsrf|captcha|recaptcha", body_lower))
         if not has_csrf:
-            findings.append(build_finding(
-                vuln_type="logic_bypass",
-                title="登录接口缺少 CSRF / 验证码保护",
-                severity="medium",
-                severity_score=5,
-                url=url,
-                parameter="",
-                location="登录表单",
-                description="登录表单未包含 CSRF Token 或验证码，攻击者可构造自动化的凭证喷洒、暴力破解或钓鱼登录请求。",
-                evidence_request=_build_request_text("GET", url),
-                evidence_response=LOGIN_BYPASS_PATTERNS["no_csrf_login"].search(body).group(0)[:500],
-                impact="弱口令与自动化撞库攻击风险提升；钓鱼页面可跨站提交登录请求。",
-                reproduce_steps=[
-                    f"访问 {url}",
-                    "查看登录表单源码",
-                    "确认是否缺少 csrf_token / captcha",
-                    "使用 Burp Intruder 测试登录接口对高频请求的拦截策略",
-                ],
-                fix_suggestion="登录接口添加 CSRF Token；实施速率限制、账户锁定与验证码（推荐行为验证码）；监控异常登录。",
-                confidence="medium",
-            ))
+            findings.append(
+                build_finding(
+                    vuln_type="logic_bypass",
+                    title="登录接口缺少 CSRF / 验证码保护",
+                    severity="medium",
+                    severity_score=5,
+                    url=url,
+                    parameter="",
+                    location="登录表单",
+                    description="登录表单未包含 CSRF Token 或验证码，攻击者可构造自动化的凭证喷洒、暴力破解或钓鱼登录请求。",
+                    evidence_request=_build_request_text("GET", url),
+                    evidence_response=LOGIN_BYPASS_PATTERNS["no_csrf_login"]
+                    .search(body)
+                    .group(0)[:500],
+                    impact="弱口令与自动化撞库攻击风险提升；钓鱼页面可跨站提交登录请求。",
+                    reproduce_steps=[
+                        f"访问 {url}",
+                        "查看登录表单源码",
+                        "确认是否缺少 csrf_token / captcha",
+                        "使用 Burp Intruder 测试登录接口对高频请求的拦截策略",
+                    ],
+                    fix_suggestion="登录接口添加 CSRF Token；实施速率限制、账户锁定与验证码（推荐行为验证码）；监控异常登录。",
+                    confidence="medium",
+                )
+            )
 
     # API 登录端点暴露
     if LOGIN_BYPASS_PATTERNS["json_login"].search(body):
-        findings.append(build_finding(
-            vuln_type="logic_bypass",
-            title="前端暴露 API 登录端点",
-            severity="low",
-            severity_score=3,
-            url=url,
-            parameter="",
-            location="前端 JS/HTML",
-            description="前端代码中可直接定位到登录 API 端点，便于攻击者进行自动化认证测试。",
-            evidence_request=_build_request_text("GET", url),
-            evidence_response="匹配内容：" + LOGIN_BYPASS_PATTERNS["json_login"].search(body).group(0),
-            impact="攻击者可绕过前端限制，直接调用登录 API 进行暴力破解。",
-            reproduce_steps=[
-                f"查看 {url} 前端源码",
-                "搜索 /api/login、/api/auth 等端点",
-                "使用脚本直接 POST 测试",
-            ],
-            fix_suggestion="服务端实施统一认证策略、速率限制、设备指纹与异常检测；不要依赖前端隐藏端点。",
-            confidence="low",
-        ))
+        findings.append(
+            build_finding(
+                vuln_type="logic_bypass",
+                title="前端暴露 API 登录端点",
+                severity="low",
+                severity_score=3,
+                url=url,
+                parameter="",
+                location="前端 JS/HTML",
+                description="前端代码中可直接定位到登录 API 端点，便于攻击者进行自动化认证测试。",
+                evidence_request=_build_request_text("GET", url),
+                evidence_response="匹配内容："
+                + LOGIN_BYPASS_PATTERNS["json_login"].search(body).group(0),
+                impact="攻击者可绕过前端限制，直接调用登录 API 进行暴力破解。",
+                reproduce_steps=[
+                    f"查看 {url} 前端源码",
+                    "搜索 /api/login、/api/auth 等端点",
+                    "使用脚本直接 POST 测试",
+                ],
+                fix_suggestion="服务端实施统一认证策略、速率限制、设备指纹与异常检测；不要依赖前端隐藏端点。",
+                confidence="low",
+            )
+        )
 
     return findings
 
@@ -1771,9 +2108,23 @@ async def detect_logic_bypass_src(url: str, headers: Dict[str, str], body: Optio
 # ---------- 开放重定向检测 ----------
 
 OPEN_REDIRECT_PARAM_NAMES = [
-    "url", "redirect", "redirect_url", "redirect_to", "return_url",
-    "returnurl", "next", "target", "to", "goto", "dest", "destination",
-    "continue", "callback_url", "rurl", "u", "link",
+    "url",
+    "redirect",
+    "redirect_url",
+    "redirect_to",
+    "return_url",
+    "returnurl",
+    "next",
+    "target",
+    "to",
+    "goto",
+    "dest",
+    "destination",
+    "continue",
+    "callback_url",
+    "rurl",
+    "u",
+    "link",
 ]
 
 OPEN_REDIRECT_PAYLOADS = [
@@ -1784,55 +2135,56 @@ OPEN_REDIRECT_PAYLOADS = [
 ]
 
 
-async def detect_open_redirect_src(url: str) -> List[Dict[str, Any]]:
+async def detect_open_redirect_src(url: str) -> list[dict[str, Any]]:
     """检测开放重定向漏洞。
 
     通过在重定向相关参数中注入外部 URL，检查 HTTP 响应的 Location 头
     是否指向外部域名。
     """
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     parsed = urlparse(url)
     if not parsed.query:
         return findings
 
     params = [p.split("=")[0] for p in parsed.query.split("&") if "=" in p]
-    redirect_params = [
-        p for p in params
-        if p.lower() in OPEN_REDIRECT_PARAM_NAMES
-    ]
+    redirect_params = [p for p in params if p.lower() in OPEN_REDIRECT_PARAM_NAMES]
 
     for param in redirect_params[:3]:
         for payload, indicator in OPEN_REDIRECT_PAYLOADS:
             test_url = _build_test_url(url, param, payload)
             try:
-                resp = await _recorded_request("get", test_url, timeout=8.0, follow_redirects=False)
+                resp = await _recorded_request(
+                    "get", test_url, timeout=8.0, follow_redirects=False
+                )
 
                 # 检查 3xx 重定向的 Location 头
                 if resp.status_code in (301, 302, 303, 307, 308):
                     location = resp.headers.get("location", "")
                     if indicator in location:
-                        findings.append(build_finding(
-                            vuln_type="open_redirect",
-                            title="开放重定向漏洞",
-                            severity="medium",
-                            severity_score=6,
-                            url=test_url,
-                            parameter=param,
-                            location="URL 参数",
-                            description=f"参数 '{param}' 存在开放重定向漏洞，可将用户重定向到外部恶意站点（{indicator}）。",
-                            evidence_request=_build_request_text("GET", test_url),
-                            evidence_response=f"HTTP {resp.status_code}\\nLocation: {location}",
-                            impact="攻击者可利用此漏洞进行钓鱼攻击、恶意软件分发，或窃取用户凭证。",
-                            reproduce_steps=[
-                                f"访问: {test_url}",
-                                f"观察浏览器被重定向到: {location}",
-                            ],
-                            fix_suggestion="对重定向参数进行白名单校验，仅允许站内相对路径。",
-                            confidence="high",
-                        ))
+                        findings.append(
+                            build_finding(
+                                vuln_type="open_redirect",
+                                title="开放重定向漏洞",
+                                severity="medium",
+                                severity_score=6,
+                                url=test_url,
+                                parameter=param,
+                                location="URL 参数",
+                                description=f"参数 '{param}' 存在开放重定向漏洞，可将用户重定向到外部恶意站点（{indicator}）。",
+                                evidence_request=_build_request_text("GET", test_url),
+                                evidence_response=f"HTTP {resp.status_code}\\nLocation: {location}",
+                                impact="攻击者可利用此漏洞进行钓鱼攻击、恶意软件分发，或窃取用户凭证。",
+                                reproduce_steps=[
+                                    f"访问: {test_url}",
+                                    f"观察浏览器被重定向到: {location}",
+                                ],
+                                fix_suggestion="对重定向参数进行白名单校验，仅允许站内相对路径。",
+                                confidence="high",
+                            )
+                        )
                         break  # 一个参数命中即可
             except Exception:
                 pass
@@ -1858,7 +2210,7 @@ XXE_BODY_INDICATORS = [
 XXE_PAYLOAD = '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><foo>&xxe;</foo>'
 
 # ---------- 命令注入检测常量 ----------
-CMDI_PAYLOADS: List[str] = [
+CMDI_PAYLOADS: list[str] = [
     ";id",
     "|id",
     "`id`",
@@ -1869,13 +2221,20 @@ CMDI_PAYLOADS: List[str] = [
     "|cat /etc/passwd",
 ]
 
-CMDI_INDICATORS: List[str] = [
-    "uid=", "gid=", "groups=", "root:", "daemon:", "bin:",
-    "www-data", "administrator", "nt authority",
+CMDI_INDICATORS: list[str] = [
+    "uid=",
+    "gid=",
+    "groups=",
+    "root:",
+    "daemon:",
+    "bin:",
+    "www-data",
+    "administrator",
+    "nt authority",
 ]
 
 # ---------- 路径遍历检测常量 ----------
-TRAVERSAL_PAYLOADS: List[Tuple[str, str]] = [
+TRAVERSAL_PAYLOADS: list[tuple[str, str]] = [
     ("../../../etc/passwd", "linux_passwd"),
     ("....//....//....//etc/passwd", "linux_passwd_alt"),
     ("..%2f..%2f..%2fetc/passwd", "url_encoded"),
@@ -1883,7 +2242,7 @@ TRAVERSAL_PAYLOADS: List[Tuple[str, str]] = [
     ("....\\\\....\\\\....\\\\windows\\\\win.ini", "windows_ini_alt"),
 ]
 
-TRAVERSAL_INDICATORS: Dict[str, List[str]] = {
+TRAVERSAL_INDICATORS: dict[str, list[str]] = {
     "linux_passwd": ["root:", "daemon:", "bin:", "/bin/bash", "/bin/sh"],
     "linux_passwd_alt": ["root:", "daemon:", "bin:", "/bin/bash", "/bin/sh"],
     "url_encoded": ["root:", "daemon:", "bin:", "/bin/bash", "/bin/sh"],
@@ -1892,13 +2251,22 @@ TRAVERSAL_INDICATORS: Dict[str, List[str]] = {
 }
 
 # ---------- 不安全的反序列化检测常量 ----------
-DESERIAL_ENDPOINTS: List[str] = [
-    "/api/deserialize", "/deserialize", "/object", "/rpc",
-    "/api/object", "/api/rpc", "/api/invoke", "/invoke",
-    "/api/batch", "/batch", "/api/process", "/process",
+DESERIAL_ENDPOINTS: list[str] = [
+    "/api/deserialize",
+    "/deserialize",
+    "/object",
+    "/rpc",
+    "/api/object",
+    "/api/rpc",
+    "/api/invoke",
+    "/invoke",
+    "/api/batch",
+    "/batch",
+    "/api/process",
+    "/process",
 ]
 
-DESERIAL_CONTENT_TYPES: List[str] = [
+DESERIAL_CONTENT_TYPES: list[str] = [
     "application/java-serialized-object",
     "application/x-java-serialized-object",
     "application/x-yaml",
@@ -1906,16 +2274,18 @@ DESERIAL_CONTENT_TYPES: List[str] = [
     "application/x-www-form-urlencoded",
 ]
 
-DESERIAL_BODY_INDICATORS: List[re.Pattern] = [
+DESERIAL_BODY_INDICATORS: list[re.Pattern] = [
     re.compile(r"rO0[AB]"),  # Java serialized object base64
-    re.compile(r"aced00"),    # Java serialized object hex
+    re.compile(r"aced00"),  # Java serialized object hex
     re.compile(r"!!python/object"),  # PyYAML unsafe
-    re.compile(r"__reduce__"),       # Python pickle
-    re.compile(r"O:\d+:\""),         # PHP serialized
+    re.compile(r"__reduce__"),  # Python pickle
+    re.compile(r"O:\d+:\""),  # PHP serialized
 ]
 
 
-async def detect_xxe_src(url: str, headers: Dict[str, str], body: str = "") -> List[Dict[str, Any]]:
+async def detect_xxe_src(
+    url: str, headers: dict[str, str], body: str = ""
+) -> list[dict[str, Any]]:
     """检测 XML 外部实体（XXE）注入漏洞。
 
     检测策略：
@@ -1924,12 +2294,16 @@ async def detect_xxe_src(url: str, headers: Dict[str, str], body: str = "") -> L
     3. 向疑似 XML 端点发送 XXE payload，检查是否泄露文件内容
     """
     _init_helpers()
-    client = _get_httpx_client()
-    findings: List[Dict[str, Any]] = []
+    _get_httpx_client()
+    findings: list[dict[str, Any]] = []
 
     # 1. 静态检测：响应头或响应体暗示 XML 处理
     content_type = headers.get("content-type", headers.get("Content-Type", ""))
-    is_xml_endpoint = any(p.search(content_type) for p in XXE_CONTENT_TYPE_PATTERNS) if content_type else False
+    is_xml_endpoint = (
+        any(p.search(content_type) for p in XXE_CONTENT_TYPE_PATTERNS)
+        if content_type
+        else False
+    )
 
     has_xml_body = False
     if body:
@@ -1937,12 +2311,16 @@ async def detect_xxe_src(url: str, headers: Dict[str, str], body: str = "") -> L
 
     if not is_xml_endpoint and not has_xml_body:
         # 检查 URL 是否暗示 XML 端点
-        if not any(kw in url.lower() for kw in ["/api/xml", "/xml", "/rss", "/atom", "/feed", "/soap"]):
+        if not any(
+            kw in url.lower()
+            for kw in ["/api/xml", "/xml", "/rss", "/atom", "/feed", "/soap"]
+        ):
             return findings
 
     # 2. 动态检测：发送 XXE payload
     try:
-        resp = await _recorded_request("post", 
+        resp = await _recorded_request(
+            "post",
             url,
             content=XXE_PAYLOAD,
             headers={"Content-Type": "application/xml"},
@@ -1954,56 +2332,62 @@ async def detect_xxe_src(url: str, headers: Dict[str, str], body: str = "") -> L
             resp_body = resp.text.lower()
             # 检查是否泄露了 /etc/passwd 内容
             if "root:" in resp_body and "/bin/" in resp_body:
-                findings.append(build_finding(
-                    vuln_type="xxe",
-                    title="XML 外部实体注入（XXE）",
-                    severity="critical",
-                    severity_score=10,
-                    url=url,
-                    parameter="XML Body",
-                    location="HTTP 请求体",
-                    description="目标端点在解析 XML 时未禁用外部实体，可读取服务器本地文件（已通过 file:// 协议读取 /etc/passwd）。",
-                    evidence_request=f"POST {url}\\nContent-Type: application/xml\\n\\n{XXE_PAYLOAD}",
-                    evidence_response=f"HTTP {resp.status_code}\\n{resp.text[:500]}",
-                    impact="攻击者可读取任意文件、执行 SSRF、导致拒绝服务，甚至在某些配置下实现远程代码执行。",
-                    reproduce_steps=[
-                        f"POST {url}",
-                        "Content-Type: application/xml",
-                        f"Body: {XXE_PAYLOAD}",
-                        "检查响应中是否包含文件内容",
-                    ],
-                    fix_suggestion="禁用 XML DTD 和外部实体处理；使用 defusedxml 等安全解析库。",
-                    confidence="high",
-                ))
-            elif resp.status_code == 200 and ("error" not in resp_body or "parse" in resp_body):
-                # 响应正常但未泄露文件，可能是端点接受 XML 但未泄露内容
-                if is_xml_endpoint or has_xml_body:
-                    findings.append(build_finding(
+                findings.append(
+                    build_finding(
                         vuln_type="xxe",
-                        title="潜在 XML 外部实体注入",
-                        severity="medium",
-                        severity_score=5,
+                        title="XML 外部实体注入（XXE）",
+                        severity="critical",
+                        severity_score=10,
                         url=url,
                         parameter="XML Body",
                         location="HTTP 请求体",
-                        description="目标端点接受 XML 输入，但未验证是否禁用了外部实体处理。需人工确认是否可利用。",
+                        description="目标端点在解析 XML 时未禁用外部实体，可读取服务器本地文件（已通过 file:// 协议读取 /etc/passwd）。",
                         evidence_request=f"POST {url}\\nContent-Type: application/xml\\n\\n{XXE_PAYLOAD}",
-                        evidence_response=f"HTTP {resp.status_code} (响应长度: {len(resp.text)})",
-                        impact="如果 XML 解析器未禁用外部实体，攻击者可能读取文件或执行 SSRF。",
+                        evidence_response=f"HTTP {resp.status_code}\\n{resp.text[:500]}",
+                        impact="攻击者可读取任意文件、执行 SSRF、导致拒绝服务，甚至在某些配置下实现远程代码执行。",
                         reproduce_steps=[
-                            "发送包含外部实体定义的 XML 请求",
-                            "检查响应中是否泄露系统文件内容",
+                            f"POST {url}",
+                            "Content-Type: application/xml",
+                            f"Body: {XXE_PAYLOAD}",
+                            "检查响应中是否包含文件内容",
                         ],
-                        fix_suggestion="确保 XML 解析器禁用 DTD 和外部实体；使用 defusedxml 库。",
-                        confidence="medium",
-                    ))
+                        fix_suggestion="禁用 XML DTD 和外部实体处理；使用 defusedxml 等安全解析库。",
+                        confidence="high",
+                    )
+                )
+            elif resp.status_code == 200 and (
+                "error" not in resp_body or "parse" in resp_body
+            ):
+                # 响应正常但未泄露文件，可能是端点接受 XML 但未泄露内容
+                if is_xml_endpoint or has_xml_body:
+                    findings.append(
+                        build_finding(
+                            vuln_type="xxe",
+                            title="潜在 XML 外部实体注入",
+                            severity="medium",
+                            severity_score=5,
+                            url=url,
+                            parameter="XML Body",
+                            location="HTTP 请求体",
+                            description="目标端点接受 XML 输入，但未验证是否禁用了外部实体处理。需人工确认是否可利用。",
+                            evidence_request=f"POST {url}\\nContent-Type: application/xml\\n\\n{XXE_PAYLOAD}",
+                            evidence_response=f"HTTP {resp.status_code} (响应长度: {len(resp.text)})",
+                            impact="如果 XML 解析器未禁用外部实体，攻击者可能读取文件或执行 SSRF。",
+                            reproduce_steps=[
+                                "发送包含外部实体定义的 XML 请求",
+                                "检查响应中是否泄露系统文件内容",
+                            ],
+                            fix_suggestion="确保 XML 解析器禁用 DTD 和外部实体；使用 defusedxml 库。",
+                            confidence="medium",
+                        )
+                    )
     except Exception:
         pass
 
     return findings
 
 
-async def detect_command_injection_src(url: str) -> List[Dict[str, Any]]:
+async def detect_command_injection_src(url: str) -> list[dict[str, Any]]:
     """检测命令注入漏洞。
 
     检测策略：
@@ -2012,10 +2396,14 @@ async def detect_command_injection_src(url: str) -> List[Dict[str, Any]]:
     3. 检查响应中是否包含系统命令输出特征
     """
     _init_helpers()
-    findings: List[Dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
 
     parsed = urlparse(url)
-    params = list(parse_qs(parsed.query, keep_blank_values=True).keys()) if parsed.query else []
+    params = (
+        list(parse_qs(parsed.query, keep_blank_values=True).keys())
+        if parsed.query
+        else []
+    )
     if not params:
         return findings
 
@@ -2023,7 +2411,9 @@ async def detect_command_injection_src(url: str) -> List[Dict[str, Any]]:
         for payload in CMDI_PAYLOADS:
             test_url = _build_test_url(url, param, payload)
             try:
-                resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=True)
+                resp = await _recorded_request(
+                    "get", test_url, timeout=10.0, follow_redirects=True
+                )
                 body = _safe_read_body(resp)
                 body_lower = body.lower()
 
@@ -2034,27 +2424,29 @@ async def detect_command_injection_src(url: str) -> List[Dict[str, Any]]:
                         break
 
                 if matched:
-                    findings.append(build_finding(
-                        vuln_type="cmdi",
-                        title=f"命令注入漏洞（参数 {param}）",
-                        severity="critical",
-                        severity_score=10,
-                        url=test_url,
-                        parameter=param,
-                        location=f"URL 参数 {param}",
-                        description=f"参数 '{param}' 存在命令注入漏洞，服务器执行了用户输入中的系统命令并返回了命令输出。",
-                        evidence_request=_build_request_text("GET", test_url),
-                        evidence_response=_build_response_text(resp, 600),
-                        evidence_payload=payload,
-                        impact="攻击者可利用该漏洞执行任意系统命令，完全控制服务器、窃取数据或植入后门。",
-                        reproduce_steps=[
-                            f"访问目标页面：{url}",
-                            f"在参数 {param} 中注入命令：{payload}",
-                            "提交请求并观察响应是否包含系统命令输出（如 uid、whoami 结果）",
-                        ],
-                        fix_suggestion="永远不要将用户输入拼接到系统命令中；使用参数化 API（如 Python subprocess.run(list, shell=False)）。",
-                        confidence="high",
-                    ))
+                    findings.append(
+                        build_finding(
+                            vuln_type="cmdi",
+                            title=f"命令注入漏洞（参数 {param}）",
+                            severity="critical",
+                            severity_score=10,
+                            url=test_url,
+                            parameter=param,
+                            location=f"URL 参数 {param}",
+                            description=f"参数 '{param}' 存在命令注入漏洞，服务器执行了用户输入中的系统命令并返回了命令输出。",
+                            evidence_request=_build_request_text("GET", test_url),
+                            evidence_response=_build_response_text(resp, 600),
+                            evidence_payload=payload,
+                            impact="攻击者可利用该漏洞执行任意系统命令，完全控制服务器、窃取数据或植入后门。",
+                            reproduce_steps=[
+                                f"访问目标页面：{url}",
+                                f"在参数 {param} 中注入命令：{payload}",
+                                "提交请求并观察响应是否包含系统命令输出（如 uid、whoami 结果）",
+                            ],
+                            fix_suggestion="永远不要将用户输入拼接到系统命令中；使用参数化 API（如 Python subprocess.run(list, shell=False)）。",
+                            confidence="high",
+                        )
+                    )
                     break
             except Exception:
                 pass
@@ -2064,7 +2456,7 @@ async def detect_command_injection_src(url: str) -> List[Dict[str, Any]]:
     return findings
 
 
-async def detect_path_traversal_src(url: str) -> List[Dict[str, Any]]:
+async def detect_path_traversal_src(url: str) -> list[dict[str, Any]]:
     """检测路径遍历/目录穿越漏洞。
 
     检测策略：
@@ -2073,10 +2465,14 @@ async def detect_path_traversal_src(url: str) -> List[Dict[str, Any]]:
     3. 检查响应中是否包含系统文件内容特征
     """
     _init_helpers()
-    findings: List[Dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
 
     parsed = urlparse(url)
-    params = list(parse_qs(parsed.query, keep_blank_values=True).keys()) if parsed.query else []
+    params = (
+        list(parse_qs(parsed.query, keep_blank_values=True).keys())
+        if parsed.query
+        else []
+    )
     if not params:
         return findings
 
@@ -2084,7 +2480,9 @@ async def detect_path_traversal_src(url: str) -> List[Dict[str, Any]]:
         for payload, tag in TRAVERSAL_PAYLOADS:
             test_url = _build_test_url(url, param, payload)
             try:
-                resp = await _recorded_request("get", test_url, timeout=10.0, follow_redirects=True)
+                resp = await _recorded_request(
+                    "get", test_url, timeout=10.0, follow_redirects=True
+                )
                 body = _safe_read_body(resp)
                 body_lower = body.lower()
 
@@ -2096,27 +2494,29 @@ async def detect_path_traversal_src(url: str) -> List[Dict[str, Any]]:
                         break
 
                 if matched:
-                    findings.append(build_finding(
-                        vuln_type="traversal",
-                        title=f"路径遍历漏洞（参数 {param}）",
-                        severity="high",
-                        severity_score=8,
-                        url=test_url,
-                        parameter=param,
-                        location=f"URL 参数 {param}",
-                        description=f"参数 '{param}' 存在路径遍历漏洞，攻击者可通过构造 '../' 序列读取服务器上的任意文件。",
-                        evidence_request=_build_request_text("GET", test_url),
-                        evidence_response=_build_response_text(resp, 600),
-                        evidence_payload=payload,
-                        impact="攻击者可读取系统配置文件、源代码、数据库凭证，甚至通过日志包含等方式实现远程代码执行。",
-                        reproduce_steps=[
-                            f"访问目标页面：{url}",
-                            f"在参数 {param} 中注入路径遍历 payload：{payload}",
-                            "提交请求并观察响应是否包含系统文件内容",
-                        ],
-                        fix_suggestion="对用户输入的文件路径进行标准化处理（如 os.path.realpath），限制在允许的基础目录内；禁止直接使用用户输入拼接文件路径。",
-                        confidence="high",
-                    ))
+                    findings.append(
+                        build_finding(
+                            vuln_type="traversal",
+                            title=f"路径遍历漏洞（参数 {param}）",
+                            severity="high",
+                            severity_score=8,
+                            url=test_url,
+                            parameter=param,
+                            location=f"URL 参数 {param}",
+                            description=f"参数 '{param}' 存在路径遍历漏洞，攻击者可通过构造 '../' 序列读取服务器上的任意文件。",
+                            evidence_request=_build_request_text("GET", test_url),
+                            evidence_response=_build_response_text(resp, 600),
+                            evidence_payload=payload,
+                            impact="攻击者可读取系统配置文件、源代码、数据库凭证，甚至通过日志包含等方式实现远程代码执行。",
+                            reproduce_steps=[
+                                f"访问目标页面：{url}",
+                                f"在参数 {param} 中注入路径遍历 payload：{payload}",
+                                "提交请求并观察响应是否包含系统文件内容",
+                            ],
+                            fix_suggestion="对用户输入的文件路径进行标准化处理（如 os.path.realpath），限制在允许的基础目录内；禁止直接使用用户输入拼接文件路径。",
+                            confidence="high",
+                        )
+                    )
                     break
             except Exception:
                 pass
@@ -2126,7 +2526,9 @@ async def detect_path_traversal_src(url: str) -> List[Dict[str, Any]]:
     return findings
 
 
-async def detect_deserialization_src(url: str, headers: Dict[str, str], body: str = "") -> List[Dict[str, Any]]:
+async def detect_deserialization_src(
+    url: str, headers: dict[str, str], body: str = ""
+) -> list[dict[str, Any]]:
     """检测不安全的反序列化漏洞。
 
     检测策略：
@@ -2135,13 +2537,15 @@ async def detect_deserialization_src(url: str, headers: Dict[str, str], body: st
     3. 向疑似端点发送序列化 payload，观察异常响应
     """
     _init_helpers()
-    findings: List[Dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
 
     parsed = urlparse(url)
     path_lower = parsed.path.lower()
 
     # 1. 端点识别
-    is_deserial_endpoint = any(path_lower.endswith(ep) or ep in path_lower for ep in DESERIAL_ENDPOINTS)
+    is_deserial_endpoint = any(
+        path_lower.endswith(ep) or ep in path_lower for ep in DESERIAL_ENDPOINTS
+    )
 
     content_type = headers.get("content-type", headers.get("Content-Type", "")).lower()
     is_deserial_content_type = any(ct in content_type for ct in DESERIAL_CONTENT_TYPES)
@@ -2153,13 +2557,20 @@ async def detect_deserialization_src(url: str, headers: Dict[str, str], body: st
                 has_deserial_body = True
                 break
 
-    if not is_deserial_endpoint and not is_deserial_content_type and not has_deserial_body:
+    if (
+        not is_deserial_endpoint
+        and not is_deserial_content_type
+        and not has_deserial_body
+    ):
         return findings
 
     # 2. 动态检测：发送常见反序列化 payload
     deserial_payloads = [
-        ("rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRwAIAA0kACmxvYWRGYWN0b3JJAAl0aHJlc2hvbGR4cA==", "java"),
-        ("O:8:\"stdClass\":0:{}", "php"),
+        (
+            "rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRwAIAA0kACmxvYWRGYWN0b3JJAAl0aHJlc2hvbGR4cA==",
+            "java",
+        ),
+        ('O:8:"stdClass":0:{}', "php"),
         ("!!python/object:__main__.Test {}", "python"),
     ]
 
@@ -2179,75 +2590,84 @@ async def detect_deserialization_src(url: str, headers: Dict[str, str], body: st
 
             # 检查是否触发反序列化异常
             error_indicators = [
-                "serialization", "deserialize", "objectinputstream",
-                "invalidclassexception", "classnotfound", "unpickling",
-                "yaml.constructor", "php unserialize",
+                "serialization",
+                "deserialize",
+                "objectinputstream",
+                "invalidclassexception",
+                "classnotfound",
+                "unpickling",
+                "yaml.constructor",
+                "php unserialize",
             ]
             has_error = any(ind in body_lower for ind in error_indicators)
 
             if has_error or resp.status_code in (500, 502, 503):
-                findings.append(build_finding(
-                    vuln_type="deserialization",
-                    title="不安全的反序列化漏洞",
-                    severity="critical",
-                    severity_score=10,
-                    url=url,
-                    parameter="HTTP Body",
-                    location="反序列化端点",
-                    description=f"目标端点 ({parsed.path}) 接受用户输入并进行反序列化操作，检测到类型为 {ptype} 的反序列化异常响应。",
-                    evidence_request=f"POST {url}\nContent-Type: application/octet-stream\n\n{payload[:80]}...",
-                    evidence_response=_build_response_text(resp, 600),
-                    evidence_payload=payload,
-                    impact="攻击者可构造恶意序列化对象实现远程代码执行（RCE），完全控制服务器。",
-                    reproduce_steps=[
-                        f"向 {url} 发送包含 {ptype} 序列化对象的请求",
-                        "观察响应是否包含反序列化异常或服务器错误",
-                        "使用 ysoserial、PHPGGC 等工具生成利用链进一步验证",
-                    ],
-                    fix_suggestion="永远不要反序列化不可信数据；使用 JSON 等安全格式替代原生序列化；如需使用，实施签名验证和类型白名单。",
-                    confidence="high" if has_error else "medium",
-                ))
+                findings.append(
+                    build_finding(
+                        vuln_type="deserialization",
+                        title="不安全的反序列化漏洞",
+                        severity="critical",
+                        severity_score=10,
+                        url=url,
+                        parameter="HTTP Body",
+                        location="反序列化端点",
+                        description=f"目标端点 ({parsed.path}) 接受用户输入并进行反序列化操作，检测到类型为 {ptype} 的反序列化异常响应。",
+                        evidence_request=f"POST {url}\nContent-Type: application/octet-stream\n\n{payload[:80]}...",
+                        evidence_response=_build_response_text(resp, 600),
+                        evidence_payload=payload,
+                        impact="攻击者可构造恶意序列化对象实现远程代码执行（RCE），完全控制服务器。",
+                        reproduce_steps=[
+                            f"向 {url} 发送包含 {ptype} 序列化对象的请求",
+                            "观察响应是否包含反序列化异常或服务器错误",
+                            "使用 ysoserial、PHPGGC 等工具生成利用链进一步验证",
+                        ],
+                        fix_suggestion="永远不要反序列化不可信数据；使用 JSON 等安全格式替代原生序列化；如需使用，实施签名验证和类型白名单。",
+                        confidence="high" if has_error else "medium",
+                    )
+                )
                 break
         except Exception:
             pass
 
     # 3. 静态检测：如果端点或内容类型匹配但动态检测未触发，报告潜在风险
     if not findings and (is_deserial_endpoint or is_deserial_content_type):
-        findings.append(build_finding(
-            vuln_type="deserialization",
-            title="潜在不安全的反序列化端点",
-            severity="medium",
-            severity_score=5,
-            url=url,
-            parameter="",
-            location=parsed.path,
-            description=f"目标端点 ({parsed.path}) 的 URL 路径或 Content-Type 暗示其可能执行反序列化操作，需人工确认安全性。",
-            evidence_request=_build_request_text("GET", url),
-            evidence_response="",
-            impact="如果该端点确实执行反序列化且未做安全限制，攻击者可能通过恶意对象实现远程代码执行。",
-            reproduce_steps=[
-                f"确认端点 {parsed.path} 是否接受序列化对象输入",
-                "尝试发送不同格式的序列化 payload 观察响应",
-            ],
-            fix_suggestion="对所有反序列化操作实施严格的类型白名单和签名验证；优先使用 JSON 等安全数据交换格式。",
-            confidence="low",
-        ))
+        findings.append(
+            build_finding(
+                vuln_type="deserialization",
+                title="潜在不安全的反序列化端点",
+                severity="medium",
+                severity_score=5,
+                url=url,
+                parameter="",
+                location=parsed.path,
+                description=f"目标端点 ({parsed.path}) 的 URL 路径或 Content-Type 暗示其可能执行反序列化操作，需人工确认安全性。",
+                evidence_request=_build_request_text("GET", url),
+                evidence_response="",
+                impact="如果该端点确实执行反序列化且未做安全限制，攻击者可能通过恶意对象实现远程代码执行。",
+                reproduce_steps=[
+                    f"确认端点 {parsed.path} 是否接受序列化对象输入",
+                    "尝试发送不同格式的序列化 payload 观察响应",
+                ],
+                fix_suggestion="对所有反序列化操作实施严格的类型白名单和签名验证；优先使用 JSON 等安全数据交换格式。",
+                confidence="low",
+            )
+        )
 
     return findings
 
 
 async def run_src_scan(
     url: str,
-    headers: Dict[str, str],
+    headers: dict[str, str],
     is_https: bool,
-    ssl_info: Dict[str, Any],
-    waf: Optional[str] = None,
+    ssl_info: dict[str, Any],
+    waf: str | None = None,
     deep: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """执行 SRC 级扫描并返回标准化响应。"""
     _init_helpers()
     start_ts = time.time()
-    findings: List[Dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
 
     # 并行执行动态检测
     sqli_task = detect_sqli_src(url)
@@ -2268,9 +2688,22 @@ async def run_src_scan(
     deserial_task = detect_deserialization_src(url, headers, "")
 
     tasks = [
-        sqli_task, xss_task, info_leak_task, csrf_task, paths_task, components_task,
-        bac_task, ssrf_task, idor_task, upload_task, logic_task, open_redirect_task, xxe_task,
-        cmdi_task, traversal_task, deserial_task,
+        sqli_task,
+        xss_task,
+        info_leak_task,
+        csrf_task,
+        paths_task,
+        components_task,
+        bac_task,
+        ssrf_task,
+        idor_task,
+        upload_task,
+        logic_task,
+        open_redirect_task,
+        xxe_task,
+        cmdi_task,
+        traversal_task,
+        deserial_task,
     ]
     if deep:
         # 深度模式：暂不增加额外任务，保留扩展位
@@ -2282,6 +2715,7 @@ async def run_src_scan(
             findings.extend(res)
         elif isinstance(res, Exception):
             import logging
+
             logging.getLogger("src_scanner").warning("Detection error: %s", res)
 
     # 安全头缺失
@@ -2297,82 +2731,109 @@ async def run_src_scan(
                 "referrer-policy": "缺少 Referrer-Policy 响应头",
                 "permissions-policy": "缺少 Permissions-Policy 响应头",
             }.get(h, f"缺少 {h} 响应头")
-            findings.append(build_finding(
-                vuln_type="header_missing",
-                title=title,
-                severity="medium" if h in ("strict-transport-security", "content-security-policy", "x-frame-options") else "low",
-                severity_score=5 if h in ("strict-transport-security", "content-security-policy", "x-frame-options") else 2,
-                url=url,
-                parameter="",
-                location="HTTP 响应头",
-                description=f"目标未配置 {h} 安全响应头，降低了浏览器端的安全防护能力。",
-                evidence_request=_build_request_text("GET", url),
-                evidence_response="\n".join([f"{k}: {v}" for k, v in headers.items()]) or "（无响应头）",
-                impact="缺少安全头可导致点击劫持、MIME 嗅探、信息泄露等风险。",
-                reproduce_steps=[
-                    f"curl -I {url}",
-                    f"确认响应头中不存在 {h}",
-                ],
-                fix_suggestion="在 Web 服务器或应用框架中配置对应安全响应头。",
-                confidence="high",
-            ))
+            findings.append(
+                build_finding(
+                    vuln_type="header_missing",
+                    title=title,
+                    severity="medium"
+                    if h
+                    in (
+                        "strict-transport-security",
+                        "content-security-policy",
+                        "x-frame-options",
+                    )
+                    else "low",
+                    severity_score=5
+                    if h
+                    in (
+                        "strict-transport-security",
+                        "content-security-policy",
+                        "x-frame-options",
+                    )
+                    else 2,
+                    url=url,
+                    parameter="",
+                    location="HTTP 响应头",
+                    description=f"目标未配置 {h} 安全响应头，降低了浏览器端的安全防护能力。",
+                    evidence_request=_build_request_text("GET", url),
+                    evidence_response="\n".join(
+                        [f"{k}: {v}" for k, v in headers.items()]
+                    )
+                    or "（无响应头）",
+                    impact="缺少安全头可导致点击劫持、MIME 嗅探、信息泄露等风险。",
+                    reproduce_steps=[
+                        f"curl -I {url}",
+                        f"确认响应头中不存在 {h}",
+                    ],
+                    fix_suggestion="在 Web 服务器或应用框架中配置对应安全响应头。",
+                    confidence="high",
+                )
+            )
 
     # HTTPS / SSL
-    ssl_finding = None
     if not is_https:
-        findings.append(build_finding(
-            vuln_type="header_missing",
-            title="未启用 HTTPS",
-            severity="critical",
-            severity_score=10,
-            url=url,
-            parameter="",
-            location="协议层",
-            description="目标使用 HTTP 明文传输，数据可被中间人窃听或篡改。",
-            evidence_request=_build_request_text("GET", url),
-            evidence_response="URL 协议为 http://",
-            impact="用户凭证、Cookie、业务数据在传输过程中完全暴露。",
-            reproduce_steps=[
-                f"使用 curl 访问 {url}",
-                "确认未发生 301 跳转到 HTTPS",
-            ],
-            fix_suggestion="申请 SSL/TLS 证书，强制 80 端口 301 跳转至 HTTPS，并配置 HSTS。",
-            confidence="high",
-        ))
+        findings.append(
+            build_finding(
+                vuln_type="header_missing",
+                title="未启用 HTTPS",
+                severity="critical",
+                severity_score=10,
+                url=url,
+                parameter="",
+                location="协议层",
+                description="目标使用 HTTP 明文传输，数据可被中间人窃听或篡改。",
+                evidence_request=_build_request_text("GET", url),
+                evidence_response="URL 协议为 http://",
+                impact="用户凭证、Cookie、业务数据在传输过程中完全暴露。",
+                reproduce_steps=[
+                    f"使用 curl 访问 {url}",
+                    "确认未发生 301 跳转到 HTTPS",
+                ],
+                fix_suggestion="申请 SSL/TLS 证书，强制 80 端口 301 跳转至 HTTPS，并配置 HSTS。",
+                confidence="high",
+            )
+        )
     elif ssl_info.get("expired"):
-        findings.append(build_finding(
-            vuln_type="ssl",
-            title="SSL 证书已过期",
-            severity="high",
-            severity_score=8,
-            url=url,
-            parameter="",
-            location="TLS 证书",
-            description=f"SSL 证书已过期 {ssl_info.get('days_left')} 天，浏览器会显示安全警告。",
-            evidence_request=_build_request_text("GET", url),
-            evidence_response=str(ssl_info),
-            impact="用户无法正常访问，数据传输不受信任。",
-            reproduce_steps=["使用 openssl s_client 连接目标", "检查证书有效期"],
-            fix_suggestion="立即续期 SSL 证书并部署。",
-            confidence="high",
-        ))
-    elif isinstance(ssl_info.get("days_left"), (int, float)) and ssl_info["days_left"] < 30:
-        findings.append(build_finding(
-            vuln_type="ssl",
-            title="SSL 证书即将过期",
-            severity="medium",
-            severity_score=4,
-            url=url,
-            parameter="",
-            location="TLS 证书",
-            description=f"SSL 证书将在 {ssl_info['days_left']} 天后过期。",
-            evidence_request=_build_request_text("GET", url),
-            evidence_response=str(ssl_info),
-            impact="证书过期后将导致服务不可用。",
-            reproduce_steps=["检查证书有效期"],
-            fix_suggestion="提前续期 SSL 证书。",
-            confidence="high",
-        ))
+        findings.append(
+            build_finding(
+                vuln_type="ssl",
+                title="SSL 证书已过期",
+                severity="high",
+                severity_score=8,
+                url=url,
+                parameter="",
+                location="TLS 证书",
+                description=f"SSL 证书已过期 {ssl_info.get('days_left')} 天，浏览器会显示安全警告。",
+                evidence_request=_build_request_text("GET", url),
+                evidence_response=str(ssl_info),
+                impact="用户无法正常访问，数据传输不受信任。",
+                reproduce_steps=["使用 openssl s_client 连接目标", "检查证书有效期"],
+                fix_suggestion="立即续期 SSL 证书并部署。",
+                confidence="high",
+            )
+        )
+    elif (
+        isinstance(ssl_info.get("days_left"), (int, float))
+        and ssl_info["days_left"] < 30
+    ):
+        findings.append(
+            build_finding(
+                vuln_type="ssl",
+                title="SSL 证书即将过期",
+                severity="medium",
+                severity_score=4,
+                url=url,
+                parameter="",
+                location="TLS 证书",
+                description=f"SSL 证书将在 {ssl_info['days_left']} 天后过期。",
+                evidence_request=_build_request_text("GET", url),
+                evidence_response=str(ssl_info),
+                impact="证书过期后将导致服务不可用。",
+                reproduce_steps=["检查证书有效期"],
+                fix_suggestion="提前续期 SSL 证书。",
+                confidence="high",
+            )
+        )
 
     # 评分
     score = 100
@@ -2385,13 +2846,22 @@ async def run_src_scan(
         score -= severity_weights.get(sev, 0)
     score = max(10, min(100, score))
 
-    risk_level = "critical" if score < 40 else "high" if score < 60 else "medium" if score < 80 else "low"
+    risk_level = (
+        "critical"
+        if score < 40
+        else "high"
+        if score < 60
+        else "medium"
+        if score < 80
+        else "low"
+    )
 
     duration_ms = int((time.time() - start_ts) * 1000)
 
     # 误报控制与质量评估
     try:
         from app.quality import assess_scan_quality, filter_findings
+
         findings = filter_findings(findings, threshold=0.5, drop_fp=False)
         quality = assess_scan_quality(
             findings,

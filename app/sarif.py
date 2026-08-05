@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("vuln_sentinel.sarif")
 
@@ -23,6 +23,7 @@ _SEVERITY_TO_SARIF_LEVEL = {
     "low": "note",
     "info": "none",
 }
+
 
 # SARIF 规则 ID 生成
 def _make_rule_id(finding: dict) -> str:
@@ -43,7 +44,9 @@ def _finding_to_sarif_result(finding: dict, rule_index_map: dict) -> dict:
     level = _SEVERITY_TO_SARIF_LEVEL.get(severity, "warning")
 
     # 构建消息
-    message_text = finding.get("summary", finding.get("description", finding.get("name", "漏洞")))
+    message_text = finding.get(
+        "summary", finding.get("description", finding.get("name", "漏洞"))
+    )
     if len(message_text) > 500:
         message_text = message_text[:497] + "..."
 
@@ -51,19 +54,26 @@ def _finding_to_sarif_result(finding: dict, rule_index_map: dict) -> dict:
     url = finding.get("url", finding.get("evidence", {}).get("url", ""))
     locations = []
     if url:
-        locations.append({
-            "physicalLocation": {
-                "artifactLocation": {
-                    "uri": url,
+        locations.append(
+            {
+                "physicalLocation": {
+                    "artifactLocation": {
+                        "uri": url,
+                    },
                 },
-            },
-            "logicalLocations": [
-                {
-                    "name": finding.get("parameter", finding.get("location", {}).get("target", "")) or "N/A",
-                    "kind": "parameter",
-                }
-            ] if finding.get("parameter") or finding.get("location", {}).get("target") else [],
-        })
+                "logicalLocations": [
+                    {
+                        "name": finding.get(
+                            "parameter", finding.get("location", {}).get("target", "")
+                        )
+                        or "N/A",
+                        "kind": "parameter",
+                    }
+                ]
+                if finding.get("parameter") or finding.get("location", {}).get("target")
+                else [],
+            }
+        )
 
     # 构建部分指纹（用于去重）
     partial_fingerprints = {
@@ -74,25 +84,31 @@ def _finding_to_sarif_result(finding: dict, rule_index_map: dict) -> dict:
     code_flows = []
     evidence = finding.get("evidence", {})
     if evidence:
-        code_flows.append({
-            "threadFlows": [
-                {
-                    "locations": [
-                        {
-                            "location": {
-                                "physicalLocation": {
-                                    "artifactLocation": {"uri": url or "unknown"},
-                                    "region": {"startLine": 1},
-                                },
-                                "message": {"text": json.dumps(evidence, ensure_ascii=False)[:1000]},
+        code_flows.append(
+            {
+                "threadFlows": [
+                    {
+                        "locations": [
+                            {
+                                "location": {
+                                    "physicalLocation": {
+                                        "artifactLocation": {"uri": url or "unknown"},
+                                        "region": {"startLine": 1},
+                                    },
+                                    "message": {
+                                        "text": json.dumps(
+                                            evidence, ensure_ascii=False
+                                        )[:1000]
+                                    },
+                                }
                             }
-                        }
-                    ]
-                }
-            ]
-        })
+                        ]
+                    }
+                ]
+            }
+        )
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "ruleId": rule_id,
         "ruleIndex": rule_index,
         "level": level,
@@ -116,7 +132,7 @@ def _finding_to_sarif_result(finding: dict, rule_index_map: dict) -> dict:
     return result
 
 
-def _build_sarif_rules(findings: List[dict]) -> tuple:
+def _build_sarif_rules(findings: list[dict]) -> tuple:
     """从 findings 列表构建 SARIF rules 数组和 rule_index 映射。"""
     rules = []
     rule_index_map = {}
@@ -133,7 +149,7 @@ def _build_sarif_rules(findings: List[dict]) -> tuple:
         owasp = f.get("owasp", f.get("owasp_category", ""))
 
         # 规则元数据
-        rule: Dict[str, Any] = {
+        rule: dict[str, Any] = {
             "id": rule_id,
             "name": vuln_type.replace("_", " ").title()[:100],
             "shortDescription": {
@@ -142,13 +158,19 @@ def _build_sarif_rules(findings: List[dict]) -> tuple:
             "fullDescription": {
                 "text": f.get("summary", f.get("description", ""))[:1000],
             },
-            "helpUri": f"https://cwe.mitre.org/data/definitions/{cwe.replace('CWE-', '')}.html" if cwe else "",
+            "helpUri": f"https://cwe.mitre.org/data/definitions/{cwe.replace('CWE-', '')}.html"
+            if cwe
+            else "",
             "defaultConfiguration": {
-                "level": _SEVERITY_TO_SARIF_LEVEL.get(f.get("severity", "medium"), "warning"),
+                "level": _SEVERITY_TO_SARIF_LEVEL.get(
+                    f.get("severity", "medium"), "warning"
+                ),
             },
             "properties": {
                 "tags": [owasp] if owasp else [],
-                "precision": "high" if f.get("confidence_level", "高") == "高" else "medium",
+                "precision": "high"
+                if f.get("confidence_level", "高") == "高"
+                else "medium",
                 "security-severity": _severity_to_score(f.get("severity", "medium")),
             },
         }
@@ -174,7 +196,9 @@ def _severity_to_score(severity: str) -> str:
     return mapping.get(severity, "5.0")
 
 
-def export_to_sarif(scan_data: dict, tool_name: str = "漏洞哨兵 11-S", tool_version: str = "11-S") -> dict:
+def export_to_sarif(
+    scan_data: dict, tool_name: str = "漏洞哨兵 11-S", tool_version: str = "11-S"
+) -> dict:
     """将扫描结果导出为 SARIF 2.1.0 格式。
 
     Args:
@@ -221,13 +245,13 @@ def export_to_sarif(scan_data: dict, tool_name: str = "漏洞哨兵 11-S", tool_
                     "scanRiskLevel": scan_data.get("risk_level", ""),
                 },
             }
-        ]
+        ],
     }
 
     return sarif_report
 
 
-def import_from_sarif(sarif_data: dict) -> List[dict]:
+def import_from_sarif(sarif_data: dict) -> list[dict]:
     """从 SARIF 2.1.0 格式导入漏洞结果。
 
     Args:
@@ -297,7 +321,12 @@ def import_from_sarif(sarif_data: dict) -> List[dict]:
                 if thread_flows:
                     flow_locs = thread_flows[0].get("locations", [])
                     if flow_locs:
-                        evidence_text = flow_locs[0].get("location", {}).get("message", {}).get("text", "")
+                        evidence_text = (
+                            flow_locs[0]
+                            .get("location", {})
+                            .get("message", {})
+                            .get("text", "")
+                        )
                         if evidence_text:
                             try:
                                 evidence = json.loads(evidence_text)
@@ -315,9 +344,16 @@ def import_from_sarif(sarif_data: dict) -> List[dict]:
                     cwe = tag
 
             finding = {
-                "name": rule.get("shortDescription", {}).get("text", rule.get("name", "未知漏洞")),
+                "name": rule.get("shortDescription", {}).get(
+                    "text", rule.get("name", "未知漏洞")
+                ),
                 "severity": severity,
-                "level": {"critical": "严重", "high": "高风险", "medium": "中风险", "low": "低风险"}.get(severity, "中风险"),
+                "level": {
+                    "critical": "严重",
+                    "high": "高风险",
+                    "medium": "中风险",
+                    "low": "低风险",
+                }.get(severity, "中风险"),
                 "owasp": owasp,
                 "summary": message,
                 "fix": fix_text,
@@ -326,9 +362,13 @@ def import_from_sarif(sarif_data: dict) -> List[dict]:
                 "url": url,
                 "parameter": parameter,
                 "cwe_id": cwe,
-                "confidence_level": "高" if rule.get("properties", {}).get("precision") == "high" else "中",
+                "confidence_level": "高"
+                if rule.get("properties", {}).get("precision") == "high"
+                else "中",
                 "source": "sarif_import",
-                "source_tool": run.get("tool", {}).get("driver", {}).get("name", "unknown"),
+                "source_tool": run.get("tool", {})
+                .get("driver", {})
+                .get("name", "unknown"),
             }
 
             findings.append(finding)

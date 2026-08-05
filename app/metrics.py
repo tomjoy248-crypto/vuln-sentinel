@@ -15,12 +15,11 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any
 
-from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from fastapi import FastAPI
+from prometheus_client import Counter, Gauge, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
-from fastapi import FastAPI, Response
-
 
 # ---------- 自定义业务指标 ----------
 
@@ -89,7 +88,9 @@ def record_scan_start() -> Any:
     return time.time()
 
 
-def record_scan_end(start_time: float, status: str = "success", depth: str = "standard") -> None:
+def record_scan_end(
+    start_time: float, status: str = "success", depth: str = "standard"
+) -> None:
     """记录扫描结束。"""
     active_scans.dec()
     duration = time.time() - start_time
