@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import random
 import time
@@ -24,6 +25,51 @@ from app.services.fuzz_engine import FuzzEngine, fuzz_results_to_findings
 from app.verification.cross_validator import CrossValidator
 
 logger = logging.getLogger("vuln_sentinel.scan_service")
+
+_CV_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_CV_CACHE_TTL = 600.0
+_CV_CACHE_MAX = 256
+
+
+def _cv_cache_key(findings: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for finding in findings:
+        parts.append(
+            "|".join(
+                [
+                    str(finding.get("name", "")),
+                    str(finding.get("severity", "")),
+                    str(finding.get("confidence", "")),
+                    str(finding.get("url", "")),
+                    str(finding.get("parameter", "")),
+                    str(finding.get("location", "")),
+                    str(finding.get("evidence", {}).get("matched_signature", "")),
+                ]
+            )
+        )
+    digest = hashlib.sha256("\n".join(sorted(parts)).encode("utf-8", errors="ignore")).hexdigest()
+    return digest
+
+
+def _get_cached_cv(findings: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    now = time.time()
+    key = _cv_cache_key(findings)
+    cached = _CV_CACHE.get(key)
+    if not cached:
+        return None
+    created_at, payload = cached
+    if now - created_at > _CV_CACHE_TTL:
+        _CV_CACHE.pop(key, None)
+        return None
+    return payload
+
+
+def _set_cached_cv(findings: list[dict[str, Any]], payload: list[dict[str, Any]]) -> None:
+    key = _cv_cache_key(findings)
+    if len(_CV_CACHE) >= _CV_CACHE_MAX:
+        oldest_key = min(_CV_CACHE.items(), key=lambda item: item[1][0])[0]
+        _CV_CACHE.pop(oldest_key, None)
+    _CV_CACHE[key] = (time.time(), payload)
 
 
 def _ensure_plugins_registered() -> None:
@@ -69,6 +115,10 @@ def _calculate_score(findings: list[dict[str, Any]]) -> dict[str, Any]:
 
 async def _run_cross_validation(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """对 findings 执行交叉验证，失败时返回原始结果不阻塞主流程。"""
+    cached = _get_cached_cv(findings)
+    if cached is not None:
+        logger.info("Cross-validation cache hit for %d findings", len(findings))
+        return cached
     validator = CrossValidator()
     try:
         enriched = await validator.validate_finding_batch(findings)
@@ -88,6 +138,7 @@ async def _run_cross_validation(findings: list[dict[str, Any]]) -> list[dict[str
             suspected_count,
             len(enriched),
         )
+        _set_cached_cv(findings, enriched)
         return enriched
     except Exception as exc:
         logger.warning("Cross-validation failed, returning original findings: %s", exc)
