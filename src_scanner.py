@@ -60,3 +60,4 @@ detect_clickjacking_src = _empty
 detect_cors_src = _empty
 detect_rate_limit_src = _empty
 detect_security_headers_src = _empty
+detect_deserialization_src = _empty

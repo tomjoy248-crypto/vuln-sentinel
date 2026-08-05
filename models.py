@@ -266,6 +266,7 @@ class ScanResponse(BaseModel):
     url: str
     score: int
     risk_level: str
+    risk_level_zh: str | None = None
     summary: dict[str, int] = Field(
         default_factory=lambda: {
             "critical": 0,

@@ -469,8 +469,37 @@ class RateLimiter:
         return True
 
 
-_TEST_MODE = os.environ.get("DB_DIR", "").startswith("/tmp")  # nosec B108 - 仅检查路径前缀，非创建临时文件
+def _is_test_db_dir(db_dir: str) -> bool:
+    """Detect ephemeral test DB directories on Unix and Windows."""
+    if not db_dir:
+        return False
+    try:
+        db_path = Path(db_dir).expanduser().resolve()
+        temp_path = Path(tempfile.gettempdir()).expanduser().resolve()
+        return db_path == temp_path or temp_path in db_path.parents
+    except Exception:
+        normalized = db_dir.replace("\\", "/").lower()
+        return normalized.startswith(("/tmp/", "/var/tmp/")) or "/temp/" in normalized
+
+
+_TEST_MODE = _is_test_db_dir(os.environ.get("DB_DIR", ""))
 _SERVICE_START_TIME = time.time()
+
+
+def risk_level_zh(risk_level: str | None) -> str:
+    """Return a stable Chinese label for API responses while preserving raw risk_level."""
+    return {
+        "critical": "严重",
+        "high": "高风险",
+        "medium": "中风险",
+        "low": "低风险",
+        "info": "信息",
+        "严重": "严重",
+        "高风险": "高风险",
+        "中风险": "中风险",
+        "低风险": "低风险",
+    }.get(str(risk_level or "").strip().lower(), str(risk_level or "未知"))
+
 limiter_global = RateLimiter(
     settings.rate_limit_global_per_minute, 60, disabled=_TEST_MODE
 )
@@ -7811,27 +7840,55 @@ async def api_verify_fix(
         headers, is_https, final_url, error = await asyncio.wait_for(
             fetch_headers(url), timeout=30.0
         )
-        if error:
-            return {"success": False, "error": error}
+        if error and not headers:
+            logger.warning("verify-fix headers unavailable for %s, continue with baseline analysis: %s", url, error)
+            headers = {}
+            is_https = parsed.scheme == "https"
+            final_url = url
+        else:
+            headers.pop("_status_code", None)
+            headers.pop("_redirect_location", None)
         waf_list = detect_waf(headers)
-        sensitive_paths = await check_sensitive_paths(host, is_https)
-        ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
-        result = await analyze_security(
-            url, headers, is_https, ssl_info, waf_list, sensitive_paths
-        )
-        # 11-S：11 维交叉验证（降低误报）
         try:
-            cv_result = await cross_validate_findings(
-                url,
-                headers,
-                result["findings"],
-                sensitive_paths=sensitive_paths,
-                cookie_issues=result.get("cookie_issues") or [],
-                is_https=is_https,
-            )
-            apply_cross_validation(result["findings"], cv_result)
+            sensitive_paths = await check_sensitive_paths(host, is_https)
         except Exception as e:
-            logger.warning("Cross-validation failed in verify-fix: %s", e)
+            logger.warning("verify-fix sensitive path scan failed: %s", e)
+            sensitive_paths = []
+        try:
+            ssl_info = await get_ssl_info(host, 443) if is_https else {"has_cert": False}
+        except Exception as e:
+            logger.warning("verify-fix ssl scan failed: %s", e)
+            ssl_info = {"has_cert": False}
+        waf_name = waf_list[0].get("name") if waf_list else None
+        result = await run_plugin_scan(
+            url,
+            headers,
+            is_https,
+            ssl_info,
+            waf=waf_name,
+            deep=False,
+            body="",
+        )
+        try:
+            legacy = await analyze_security(
+                url, headers, is_https, ssl_info, waf_list, sensitive_paths
+            )
+        except Exception as e:
+            logger.warning("verify-fix legacy metadata failed: %s", e)
+            legacy = {}
+        result.update(
+            {
+                "final_url": final_url,
+                "is_https": is_https,
+                "raw_headers": headers,
+                "sensitive_paths": sensitive_paths,
+                "ssl_info": ssl_info,
+                "waf_list": waf_list,
+                "score_breakdown": legacy.get("score_breakdown", []),
+                "improvements": legacy.get("improvements", []),
+                "risk_level_zh": risk_level_zh(result.get("risk_level")),
+            }
+        )
         scan_id = save_scan(
             user["user_id"],
             url,
@@ -8488,6 +8545,7 @@ async def api_scan(
                 "vuln_tests": vuln_tests,
                 "score_breakdown": legacy.get("score_breakdown", []),
                 "improvements": legacy.get("improvements", []),
+                "risk_level_zh": risk_level_zh(src_result.get("risk_level")),
             }
         )
 
@@ -13627,8 +13685,43 @@ async def free_trial_scan(req: FreeTrialRequest, request: Request):
         except Exception as e:
             logger.warning("free_trial check_sensitive_paths failed: %s", e)
             sensitive_paths = []
-        result = await analyze_security(
-            raw_url, headers, is_https, ssl_info, waf_list, sensitive_paths, []
+        waf_name = waf_list[0].get("name") if waf_list else None
+        result = await run_plugin_scan(
+            raw_url,
+            headers,
+            is_https,
+            ssl_info,
+            waf=waf_name,
+            deep=False,
+            body="",
+        )
+        try:
+            legacy = await analyze_security(
+                raw_url, headers, is_https, ssl_info, waf_list, sensitive_paths, []
+            )
+        except Exception as e:
+            logger.warning("free trial legacy metadata failed: %s", e)
+            legacy = {}
+        result.update(
+            {
+                "scan_type": "real",
+                "final_url": final_url,
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "is_https": is_https,
+                "raw_headers": headers,
+                "owasp_coverage": legacy.get("owasp_coverage", []),
+                "header_details": legacy.get("header_details", []),
+                "info_leaks": legacy.get("info_leaks", []),
+                "cors": legacy.get("cors"),
+                "cookie_issues": legacy.get("cookie_issues", []),
+                "ssl_info": ssl_info,
+                "waf_list": waf_list,
+                "sensitive_paths": sensitive_paths,
+                "waf_detected": len(waf_list) > 0,
+                "score_breakdown": legacy.get("score_breakdown", []),
+                "improvements": legacy.get("improvements", []),
+                "risk_level_zh": risk_level_zh(result.get("risk_level")),
+            }
         )
         # 生成修复建议（与登录用户一致）
         fixes = generate_fixes(result.get("findings", []), headers, is_https, host)
