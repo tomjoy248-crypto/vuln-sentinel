@@ -267,6 +267,20 @@ _IS_PRODUCTION = settings.env == "production" or os.environ.get(
 
 _cors_origins_list = parse_cors_origins(settings.cors_origins)
 
+# 开发模式：自动补全本地回环端口，避免 CORS 拦截
+# 覆盖常见前端 dev server 端口和后端端口
+if not _IS_PRODUCTION:
+    _dev_ports = [8000, 8099, 3000, 5173, 4173, 8080, 8888]
+    for _p in _dev_ports:
+        for _origin in (f"http://localhost:{_p}", f"http://127.0.0.1:{_p}"):
+            if _origin not in _cors_origins_list:
+                _cors_origins_list.append(_origin)
+    # 同时允许当前配置的端口
+    _server_port = settings.port
+    for _origin in (f"http://localhost:{_server_port}", f"http://127.0.0.1:{_server_port}"):
+        if _origin not in _cors_origins_list:
+            _cors_origins_list.append(_origin)
+
 # 生产模式强制：禁止通配符 * / 缺失配置
 if _IS_PRODUCTION:
     if not _cors_origins_list:
