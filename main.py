@@ -30,9 +30,15 @@ import socket
 import sqlite3
 import ssl
 import subprocess
+import sys
 import threading
 import time
 import uuid
+
+# 当以 python main.py 方式启动时，模块名为 __main__，而路由文件通过 from main import ... 导入共享函数，
+# 会导致 main.py 被二次加载触发循环导入。将 __main__ 注册为 main 别名可避免此问题。
+if __name__ == "__main__" and "main" not in sys.modules:
+    sys.modules["main"] = sys.modules[__name__]
 from collections import OrderedDict, deque
 from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta
@@ -3169,44 +3175,111 @@ async def get_ssl_info(hostname: str, port: int = 443) -> dict:
 
     # 在线程里跑同步 SSL 操作，并加超时
     def _do_ssl() -> dict:
-        try:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            with socket.create_connection((hostname, port), timeout=5) as sock:
-                with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
-                    cert = ssock.getpeercert(binary_form=False)
-                    cipher = ssock.cipher()
-                    version = ssock.version()
-                    subject = dict(x[0] for x in cert.get("subject", []))
-                    issuer = dict(x[0] for x in cert.get("issuer", []))
-                    not_after = cert.get("notAfter", "")
-                    san = cert.get("subjectAltName", [])
-                    expired, days_left = False, None
-                    if not_after:
-                        try:
-                            expiry = datetime.strptime(
-                                not_after, "%b %d %H:%M:%S %Y %Z"
+        # 优先尝试 CERT_REQUIRED：验证通过时 getpeercert() 返回完整证书字典
+        # 如果验证失败（自签名/过期等），降级到 CERT_NONE + binary_form 手动解析
+        for verify in (ssl.CERT_REQUIRED, ssl.CERT_NONE):
+            try:
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = verify == ssl.CERT_REQUIRED
+                ctx.verify_mode = verify
+                with socket.create_connection((hostname, port), timeout=5) as sock:
+                    with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
+                        cipher = ssock.cipher()
+                        version = ssock.version()
+
+                        if verify == ssl.CERT_REQUIRED:
+                            # 验证通过：getpeercert() 返回完整字典
+                            cert = ssock.getpeercert(binary_form=False)
+                            subject = dict(x[0] for x in cert.get("subject", []))
+                            issuer = dict(x[0] for x in cert.get("issuer", []))
+                            not_after = cert.get("notAfter", "")
+                            san = cert.get("subjectAltName", [])
+                            expired, days_left = False, None
+                            if not_after:
+                                try:
+                                    expiry = datetime.strptime(
+                                        not_after, "%b %d %H:%M:%S %Y %Z"
+                                    )
+                                    days_left = (expiry - datetime.utcnow()).days
+                                    expired = days_left < 0
+                                except ValueError:
+                                    pass
+                            return {
+                                "has_cert": True,
+                                "subject": subject.get("commonName", ""),
+                                "issuer": issuer.get("commonName", ""),
+                                "not_after": not_after,
+                                "days_left": days_left,
+                                "expired": expired,
+                                "version": version,
+                                "cipher": cipher[0] if cipher else "",
+                                "san": [x[1] for x in san if x[0] == "DNS"][:5],
+                                "weak": version in ["TLSv1", "TLSv1.1"]
+                                or (cipher and "RC4" in str(cipher)),
+                            }
+                        else:
+                            # 降级模式：CERT_NONE 时 getpeercert(binary_form=False) 返回空字典，
+                            # 改用 binary_form=True + cryptography 库手动解析证书
+                            cert_der = ssock.getpeercert(binary_form=True)
+                            if not cert_der:
+                                continue
+                            from cryptography import x509
+                            from cryptography.hazmat.backends import default_backend
+
+                            cert_obj = x509.load_der_x509_certificate(
+                                cert_der, default_backend()
                             )
-                            days_left = (expiry - datetime.utcnow()).days
-                            expired = days_left < 0
-                        except ValueError:
-                            pass
-                    return {
-                        "has_cert": True,
-                        "subject": subject.get("commonName", ""),
-                        "issuer": issuer.get("commonName", ""),
-                        "not_after": not_after,
-                        "days_left": days_left,
-                        "expired": expired,
-                        "version": version,
-                        "cipher": cipher[0] if cipher else "",
-                        "san": [x[1] for x in san if x[0] == "DNS"][:5],
-                        "weak": version in ["TLSv1", "TLSv1.1"]
-                        or (cipher and "RC4" in str(cipher)),
-                    }
-        except Exception as e:
-            return {"has_cert": False, "error": str(e)[:100]}
+                            subject_cn = ""
+                            issuer_cn = ""
+                            try:
+                                subject_cn = cert_obj.subject.get_attributes_for_oid(
+                                    x509.NameOID.COMMON_NAME
+                                )[0].value
+                            except Exception:
+                                pass
+                            try:
+                                issuer_cn = cert_obj.issuer.get_attributes_for_oid(
+                                    x509.NameOID.COMMON_NAME
+                                )[0].value
+                            except Exception:
+                                pass
+                            not_after = cert_obj.not_valid_after_utc.isoformat()
+                            days_left = (
+                                cert_obj.not_valid_after_utc - datetime.utcnow()
+                            ).days
+                            san_list = []
+                            try:
+                                ext = cert_obj.extensions.get_extension_for_class(
+                                    x509.SubjectAlternativeName
+                                )
+                                san_list = ext.value.get_values_for_type(
+                                    x509.DNSName
+                                )[:5]
+                            except Exception:
+                                pass
+                            return {
+                                "has_cert": True,
+                                "subject": subject_cn,
+                                "issuer": issuer_cn,
+                                "not_after": not_after,
+                                "days_left": days_left,
+                                "expired": days_left < 0 if days_left is not None else False,
+                                "version": version,
+                                "cipher": cipher[0] if cipher else "",
+                                "san": san_list,
+                                "weak": version in ["TLSv1", "TLSv1.1"]
+                                or (cipher and "RC4" in str(cipher)),
+                            }
+            except ssl.SSLError:
+                # CERT_REQUIRED 失败（自签名/过期等），降级到 CERT_NONE 重试
+                if verify == ssl.CERT_REQUIRED:
+                    continue
+                return {"has_cert": False, "error": "SSL 握手失败（证书验证错误）"}
+            except Exception as e:
+                if verify == ssl.CERT_REQUIRED:
+                    continue
+                return {"has_cert": False, "error": str(e)[:100]}
+        return {"has_cert": False, "error": "SSL 连接失败"}
 
     try:
         result = await asyncio.wait_for(asyncio.to_thread(_do_ssl), timeout=6.0)
