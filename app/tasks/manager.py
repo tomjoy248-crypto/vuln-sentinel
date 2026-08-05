@@ -268,12 +268,21 @@ class ScanTaskManager:
         # 取出用户传入的进度回调（如有），与内部回调串联
         user_progress_cb = kwargs.pop("progress_cb", None)
 
-        def _progress_cb(value: int) -> None:
-            """内部进度回调：更新任务进度，再转发给用户回调。"""
+        def _progress_cb(value: int, message: str = "") -> None:
+            """内部进度回调：更新任务进度，再转发给用户回调。
+
+            兼容两种调用方式：
+              - progress_cb(50)
+              - progress_cb(50, "执行插件检测")
+            """
             self._update_progress(task, value)
             if user_progress_cb is not None:
                 try:
-                    user_progress_cb(value)
+                    try:
+                        user_progress_cb(value, message)
+                    except TypeError:
+                        # 用户回调可能只接受一个参数
+                        user_progress_cb(value)
                 except Exception:
                     logger.warning(
                         "progress_cb: user callback raised, ignored",

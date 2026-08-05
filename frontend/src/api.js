@@ -31,8 +31,22 @@ export function authHeaders() {
 
 export async function authFetch(url, options = {}) {
   options.headers = Object.assign({}, authHeaders(), options.headers || {});
-  const resp = await fetch(API_BASE + url, options);
-  return resp;
+  try {
+    const resp = await fetch(API_BASE + url, options);
+    // 401 过期处理：清除过期 token，抛出友好错误让上层引导用户重新登录
+    if (resp.status === 401) {
+      removeToken();
+      try { localStorage.removeItem('vs_username'); } catch (e) {}
+      throw new Error('登录状态已过期，请重新登录后再使用扫描功能');
+    }
+    return resp;
+  } catch (err) {
+    // 网络层错误（服务器未启动 / DNS 失败 / CORS 等）
+    if (err && err.message && err.message.indexOf('Failed to fetch') >= 0) {
+      throw new Error('无法连接扫描服务，请确认后端服务已启动');
+    }
+    throw err;
+  }
 }
 
 export async function apiPost(url, body) {

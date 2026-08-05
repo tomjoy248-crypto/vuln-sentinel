@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>漏洞哨兵 11-S · 已知漏洞靶场基准对比报告</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial,
+    sans-serif;
+  background: #f8fafc; color: #1e293b; line-height: 1.6; padding: 24px;
+}
+.container { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 28px; color: #0f172a; margin-bottom: 8px; }
+h2 { font-size: 22px; color: #1e293b; margin: 32px 0 16px; padding-bottom: 8px;
+     border-bottom: 2px solid #e2e8f0; }
+h3 { font-size: 18px; color: #334155; margin: 20px 0 12px; }
+.subtitle { color: #64748b; font-size: 14px; margin-bottom: 24px; }
+.card { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 16px; }
+.metric { text-align: center; padding: 20px 12px; border-radius: 10px;
+          background: #f8fafc; border: 1px solid #e2e8f0; }
+.metric .value { font-size: 32px; font-weight: 700; color: #0f172a; }
+.metric .label { font-size: 13px; color: #64748b; margin-top: 4px; }
+.metric.good .value { color: #16a34a; }
+.metric.warn .value { color: #d97706; }
+.metric.bad .value { color: #dc2626; }
+.matrix { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 520px; }
+.matrix-cell { padding: 28px 20px; border-radius: 10px; text-align: center;
+               border: 2px solid; }
+.matrix-cell .count { font-size: 40px; font-weight: 700; }
+.matrix-cell .name { font-size: 14px; margin-top: 6px; font-weight: 600; }
+.matrix-cell .desc { font-size: 12px; margin-top: 4px; opacity: 0.85; }
+.matrix-cell.tp { background: #dcfce7; border-color: #86efac; color: #166534; }
+.matrix-cell.fp { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+.matrix-cell.tn { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+.matrix-cell.fn { background: #fef9c3; border-color: #fde047; color: #854d0e; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { background: #f1f5f9; text-align: left; padding: 10px 12px; font-weight: 600;
+     color: #475569; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+tr:hover td { background: #f8fafc; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px;
+         font-weight: 600; border: 1px solid; }
+.sev { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px;
+       font-weight: 600; }
+.sev-critical { background: #fef2f2; color: #991b1b; }
+.sev-high { background: #fff7ed; color: #9a3412; }
+.sev-medium { background: #fffbeb; color: #92400e; }
+.sev-low { background: #f0fdf4; color: #166534; }
+.sev-info { background: #f1f5f9; color: #475569; }
+.bar-container { background: #e2e8f0; border-radius: 4px; height: 18px; width: 100%;
+                min-width: 80px; overflow: hidden; position: relative; }
+.bar-fill { height: 100%; border-radius: 4px; }
+.bar-label { position: absolute; right: 6px; top: 0; font-size: 11px; line-height: 18px;
+             color: #1e293b; font-weight: 600; }
+.code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 13px; color: #be185d; word-break: break-all; }
+.muted { color: #94a3b8; }
+.error-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
+             padding: 10px 14px; color: #991b1b; font-size: 13px; margin-top: 8px; }
+.tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px;
+       background: #e0e7ff; color: #3730a3; }
+.summary-line { font-size: 15px; color: #475569; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+    <div class="card">
+      <h1>漏洞哨兵 11-S · 已知漏洞靶场基准对比报告</h1>
+      <div class="subtitle">生成时间：2026-08-05 02:35:28 UTC ｜
+        目标数：5 ｜ 成功扫描：5 ｜
+        扫描模式：标准（见各目标详情）</div>
+      <div class="summary-line">
+        本报告基于公开安全测试靶场，评估扫描引擎对已知漏洞的检出能力。
+        下方指标聚合所有靶场的混淆矩阵得出。
+      </div>
+      <div class="metrics-grid">
+        <div class="metric good">
+          <div class="value">100.00%</div>
+          <div class="label">精确率 Precision</div>
+        </div>
+        <div class="metric warn">
+          <div class="value">86.96%</div>
+          <div class="label">召回率 Recall</div>
+        </div>
+        <div class="metric good">
+          <div class="value">93.02%</div>
+          <div class="label">F1 Score</div>
+        </div>
+        <div class="metric warn">
+          <div class="value">89.66%</div>
+          <div class="label">准确率 Accuracy</div>
+        </div>
+        <div class="metric good">
+          <div class="value">0.00%</div>
+          <div class="label">误报率 FPR</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="card">
+      <h2>混淆矩阵</h2>
+      <div class="summary-line">
+        TP+FN = 预期漏洞总数（正例）；FP+TN = 负向检查 + 未预期发现总数（负例）。
+      </div>
+      <div class="matrix">
+        <div class="matrix-cell tp">
+          <div class="count">20</div>
+          <div class="name">TP 真正例</div>
+          <div class="desc">正确检出预期漏洞</div>
+        </div>
+        <div class="matrix-cell fp">
+          <div class="count">0</div>
+          <div class="name">FP 假正例</div>
+          <div class="desc">报告了不存在的漏洞（误报）</div>
+        </div>
+        <div class="matrix-cell fn">
+          <div class="count">3</div>
+          <div class="name">FN 假反例</div>
+          <div class="desc">漏报了预期漏洞</div>
+        </div>
+        <div class="matrix-cell tn">
+          <div class="count">6</div>
+          <div class="name">TN 真反例</div>
+          <div class="desc">正确判定无该漏洞</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="card">
+      <h2>漏洞类型检出率统计</h2>
+      <table>
+        <thead><tr>
+          <th>漏洞类型</th><th>检出 TP</th><th>漏报 FN</th><th>误报 FP</th>
+          <th>预期总数</th><th>检出率</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td>安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td>18</td>
+          <td>0</td>
+          <td>0</td>
+          <td>18</td>
+          <td>
+            <div class="bar-container">
+              <div class="bar-fill" style="width:100.0%;background:#16a34a"></div>
+              <span class="bar-label">100.00%</span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>信息泄露<br><span class="muted code">info_leak</span></td>
+          <td>0</td>
+          <td>1</td>
+          <td>0</td>
+          <td>1</td>
+          <td>
+            <div class="bar-container">
+              <div class="bar-fill" style="width:0.0%;background:#dc2626"></div>
+              <span class="bar-label">0.00%</span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>SQL 注入<br><span class="muted code">sqli</span></td>
+          <td>0</td>
+          <td>1</td>
+          <td>0</td>
+          <td>1</td>
+          <td>
+            <div class="bar-container">
+              <div class="bar-fill" style="width:0.0%;background:#dc2626"></div>
+              <span class="bar-label">0.00%</span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>跨站脚本 (XSS)<br><span class="muted code">xss</span></td>
+          <td>0</td>
+          <td>1</td>
+          <td>0</td>
+          <td>1</td>
+          <td>
+            <div class="bar-container">
+              <div class="bar-fill" style="width:0.0%;background:#dc2626"></div>
+              <span class="bar-label">0.00%</span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>SSL/TLS 配置问题<br><span class="muted code">ssl</span></td>
+          <td>1</td>
+          <td>0</td>
+          <td>0</td>
+          <td>1</td>
+          <td>
+            <div class="bar-container">
+              <div class="bar-fill" style="width:100.0%;background:#16a34a"></div>
+              <span class="bar-label">100.00%</span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>CORS 配置不当<br><span class="muted code">cors_misconfig</span></td>
+          <td>1</td>
+          <td>0</td>
+          <td>0</td>
+          <td>1</td>
+          <td>
+            <div class="bar-container">
+              <div class="bar-fill" style="width:100.0%;background:#16a34a"></div>
+              <span class="bar-label">100.00%</span>
+            </div>
+          </td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+    <h2>逐靶场目标对比详情</h2>
+
+    <div class="card">
+      <h3>目标汇总</h3>
+      <table>
+        <thead><tr>
+          <th>ID</th><th>名称</th><th>URL</th><th>状态</th>
+          <th>TP</th><th>FP</th><th>TN</th><th>FN</th>
+          <th>精确率</th><th>召回率</th><th>F1</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td>vulnweb_home</td>
+          <td>Acunetix 测试站点（首页）</td>
+          <td class="code">http://testphp.vulnweb.com/</td>
+          <td><span class="sev sev-low">成功</span></td>
+          <td>7</td><td>0</td><td>2</td><td>1</td>
+          <td>100.00%</td>
+          <td>87.50%</td>
+          <td>93.33%</td>
+        </tr>
+        <tr>
+          <td>example_com</td>
+          <td>example.com 基线站点</td>
+          <td class="code">https://example.com/</td>
+          <td><span class="sev sev-low">成功</span></td>
+          <td>6</td><td>0</td><td>2</td><td>0</td>
+          <td>100.00%</td>
+          <td>100.00%</td>
+          <td>100.00%</td>
+        </tr>
+        <tr>
+          <td>httpbin_org</td>
+          <td>httpbin.org HTTP 测试服务</td>
+          <td class="code">https://httpbin.org/</td>
+          <td><span class="sev sev-low">成功</span></td>
+          <td>7</td><td>0</td><td>2</td><td>0</td>
+          <td>100.00%</td>
+          <td>100.00%</td>
+          <td>100.00%</td>
+        </tr>
+        <tr>
+          <td>vulnweb_sqli</td>
+          <td>Acunetix 已知 SQL 注入端点</td>
+          <td class="code">http://testphp.vulnweb.com/listproducts.php?cat=1</td>
+          <td><span class="sev sev-low">成功</span></td>
+          <td>0</td><td>0</td><td>0</td><td>1</td>
+          <td>0.00%</td>
+          <td>0.00%</td>
+          <td>0.00%</td>
+        </tr>
+        <tr>
+          <td>vulnweb_xss</td>
+          <td>Acunetix 已知 XSS 端点</td>
+          <td class="code">http://testphp.vulnweb.com/showthread.php?id=1</td>
+          <td><span class="sev sev-low">成功</span></td>
+          <td>0</td><td>0</td><td>0</td><td>1</td>
+          <td>0.00%</td>
+          <td>0.00%</td>
+          <td>0.00%</td>
+        </tr></tbody>
+      </table>
+    </div>
+    
+
+    <div class="card">
+      <h3>Acunetix 测试站点（首页） <span class="muted" style="font-size:14px;font-weight:400">（vulnweb_home）</span></h3>
+      <div class="summary-line">
+        <span class="code">http://testphp.vulnweb.com/</span><br>
+        分类：vuln_lab ｜ 类别：漏洞靶场<br>
+        Acunetix 官方公开测试站点，包含多种已知漏洞。首页本身为 HTTP 明文站点，缺少安全响应头；站点存在 SQL 注入（ListProducts.php?cat=1）与 XSS（showthread.php?id=1），但首页 URL 无注入参数。
+      </div>
+      
+      <div class="metrics-grid" style="margin:12px 0">
+        <div class="metric"><div class="value">7</div><div class="label">TP</div></div>
+        <div class="metric"><div class="value">0</div><div class="label">FP</div></div>
+        <div class="metric"><div class="value">2</div><div class="label">TN</div></div>
+        <div class="metric"><div class="value">1</div><div class="label">FN</div></div>
+        <div class="metric"><div class="value">87.50%</div><div class="label">召回率</div></div>
+        <div class="metric"><div class="value">100.00%</div><div class="label">精确率</div></div>
+      </div>
+      <p class="muted" style="font-size:13px">实际发现 7 项 ｜ 耗时 6506 ms ｜ 扫描时间 2026-08-05T02:34:39</p>
+      <div style="margin-top:12px"><table><thead><tr><th>判定</th><th>检查点</th><th>严重级别</th><th>实际发现</th><th>说明</th></tr></thead><tbody>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-medium">中危</span></td>
+          <td>缺少 Strict-Transport-Security (HSTS) 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-medium">中危</span></td>
+          <td>缺少 Content-Security-Policy (CSP) 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-medium">中危</span></td>
+          <td>缺少 X-Frame-Options 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-low">低危</span></td>
+          <td>缺少 X-Content-Type-Options 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-low">低危</span></td>
+          <td>缺少 Referrer-Policy 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-low">低危</span></td>
+          <td>缺少 Permissions-Policy 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> SSL/TLS 配置问题<br><span class="muted code">ssl</span></td>
+          <td><span class="sev sev-high">高危</span></td>
+          <td>未启用 HTTPS</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#fef9c3;color:#854d0e;border-color:#fde047">FN</span></td>
+          <td><span class="tag">预期</span> 信息泄露<br><span class="muted code">info_leak</span></td>
+          <td><span class="muted">—</span></td>
+          <td>—</td>
+          <td>漏报了预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dbeafe;color:#1e40af;border-color:#93c5fd">TN</span></td>
+          <td><span class="tag">负向</span> SQL 注入<br><span class="muted code">sqli</span></td>
+          <td><span class="muted">—</span></td>
+          <td>—</td>
+          <td>正确判定无该漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dbeafe;color:#1e40af;border-color:#93c5fd">TN</span></td>
+          <td><span class="tag">负向</span> 跨站脚本 (XSS)<br><span class="muted code">xss</span></td>
+          <td><span class="muted">—</span></td>
+          <td>—</td>
+          <td>正确判定无该漏洞</td>
+        </tr></tbody></table></div>
+    </div>
+    
+
+    <div class="card">
+      <h3>example.com 基线站点 <span class="muted" style="font-size:14px;font-weight:400">（example_com）</span></h3>
+      <div class="summary-line">
+        <span class="code">https://example.com/</span><br>
+        分类：baseline ｜ 类别：基线站点<br>
+        IANA 维护的示例域名，作为无注入类漏洞的基线站点。该站点未配置多数安全响应头（HSTS/CSP/X-Frame-Options 等），但不存在 SQL 注入或 XSS。
+      </div>
+      
+      <div class="metrics-grid" style="margin:12px 0">
+        <div class="metric"><div class="value">6</div><div class="label">TP</div></div>
+        <div class="metric"><div class="value">0</div><div class="label">FP</div></div>
+        <div class="metric"><div class="value">2</div><div class="label">TN</div></div>
+        <div class="metric"><div class="value">0</div><div class="label">FN</div></div>
+        <div class="metric"><div class="value">100.00%</div><div class="label">召回率</div></div>
+        <div class="metric"><div class="value">100.00%</div><div class="label">精确率</div></div>
+      </div>
+      <p class="muted" style="font-size:13px">实际发现 6 项 ｜ 耗时 11296 ms ｜ 扫描时间 2026-08-05T02:34:40</p>
+      <div style="margin-top:12px"><table><thead><tr><th>判定</th><th>检查点</th><th>严重级别</th><th>实际发现</th><th>说明</th></tr></thead><tbody>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-medium">中危</span></td>
+          <td>缺少 Strict-Transport-Security (HSTS) 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-medium">中危</span></td>
+          <td>缺少 Content-Security-Policy (CSP) 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-medium">中危</span></td>
+          <td>缺少 X-Frame-Options 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-low">低危</span></td>
+          <td>缺少 X-Content-Type-Options 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-low">低危</span></td>
+          <td>缺少 Referrer-Policy 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-low">低危</span></td>
+          <td>缺少 Permissions-Policy 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dbeafe;color:#1e40af;border-color:#93c5fd">TN</span></td>
+          <td><span class="tag">负向</span> SQL 注入<br><span class="muted code">sqli</span></td>
+          <td><span class="muted">—</span></td>
+          <td>—</td>
+          <td>正确判定无该漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dbeafe;color:#1e40af;border-color:#93c5fd">TN</span></td>
+          <td><span class="tag">负向</span> 跨站脚本 (XSS)<br><span class="muted code">xss</span></td>
+          <td><span class="muted">—</span></td>
+          <td>—</td>
+          <td>正确判定无该漏洞</td>
+        </tr></tbody></table></div>
+    </div>
+    
+
+    <div class="card">
+      <h3>httpbin.org HTTP 测试服务 <span class="muted" style="font-size:14px;font-weight:400">（httpbin_org）</span></h3>
+      <div class="summary-line">
+        <span class="code">https://httpbin.org/</span><br>
+        分类：test_service ｜ 类别：基线站点<br>
+        公开 HTTP 测试服务。该站点缺少部分安全响应头，且其响应中通常携带Access-Control-Allow-Origin: * 的宽松 CORS 配置。
+      </div>
+      
+      <div class="metrics-grid" style="margin:12px 0">
+        <div class="metric"><div class="value">7</div><div class="label">TP</div></div>
+        <div class="metric"><div class="value">0</div><div class="label">FP</div></div>
+        <div class="metric"><div class="value">2</div><div class="label">TN</div></div>
+        <div class="metric"><div class="value">0</div><div class="label">FN</div></div>
+        <div class="metric"><div class="value">100.00%</div><div class="label">召回率</div></div>
+        <div class="metric"><div class="value">100.00%</div><div class="label">精确率</div></div>
+      </div>
+      <p class="muted" style="font-size:13px">实际发现 7 项 ｜ 耗时 42177 ms ｜ 扫描时间 2026-08-05T02:34:46</p>
+      <div style="margin-top:12px"><table><thead><tr><th>判定</th><th>检查点</th><th>严重级别</th><th>实际发现</th><th>说明</th></tr></thead><tbody>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-medium">中危</span></td>
+          <td>缺少 Strict-Transport-Security (HSTS) 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-medium">中危</span></td>
+          <td>缺少 Content-Security-Policy (CSP) 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-medium">中危</span></td>
+          <td>缺少 X-Frame-Options 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-low">低危</span></td>
+          <td>缺少 X-Content-Type-Options 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-low">低危</span></td>
+          <td>缺少 Referrer-Policy 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> 安全响应头缺失<br><span class="muted code">header_missing</span></td>
+          <td><span class="sev sev-low">低危</span></td>
+          <td>缺少 Permissions-Policy 响应头</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dcfce7;color:#166534;border-color:#86efac">TP</span></td>
+          <td><span class="tag">预期</span> CORS 配置不当<br><span class="muted code">cors_misconfig</span></td>
+          <td><span class="sev sev-high">高危</span></td>
+          <td>CORS 配置存在高风险：允许任意来源且携带凭证</td>
+          <td>正确检出预期漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dbeafe;color:#1e40af;border-color:#93c5fd">TN</span></td>
+          <td><span class="tag">负向</span> SQL 注入<br><span class="muted code">sqli</span></td>
+          <td><span class="muted">—</span></td>
+          <td>—</td>
+          <td>正确判定无该漏洞</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:#dbeafe;color:#1e40af;border-color:#93c5fd">TN</span></td>
+          <td><span class="tag">负向</span> 跨站脚本 (XSS)<br><span class="muted code">xss</span></td>
+          <td><span class="muted">—</span></td>
+          <td>—</td>
+          <td>正确判定无该漏洞</td>
+        </tr></tbody></table></div>
+    </div>
+    
+
+    <div class="card">
+      <h3>Acunetix 已知 SQL 注入端点 <span class="muted" style="font-size:14px;font-weight:400">（vulnweb_sqli）</span></h3>
+      <div class="summary-line">
+        <span class="code">http://testphp.vulnweb.com/listproducts.php?cat=1</span><br>
+        分类：vuln_lab ｜ 类别：漏洞靶场<br>
+        Acunetix 测试站点上已知的 SQL 注入端点。参数 ``cat`` 存在基于错误的SQL 注入漏洞，扫描器应能检出。
+      </div>
+      
+      <div class="metrics-grid" style="margin:12px 0">
+        <div class="metric"><div class="value">0</div><div class="label">TP</div></div>
+        <div class="metric"><div class="value">0</div><div class="label">FP</div></div>
+        <div class="metric"><div class="value">0</div><div class="label">TN</div></div>
+        <div class="metric"><div class="value">1</div><div class="label">FN</div></div>
+        <div class="metric"><div class="value">0.00%</div><div class="label">召回率</div></div>
+        <div class="metric"><div class="value">0.00%</div><div class="label">精确率</div></div>
+      </div>
+      <p class="muted" style="font-size:13px">实际发现 7 项（其中 7 项属范围外已排除） ｜ 耗时 5789 ms ｜ 扫描时间 2026-08-05T02:34:51</p>
+      <div style="margin-top:12px"><table><thead><tr><th>判定</th><th>检查点</th><th>严重级别</th><th>实际发现</th><th>说明</th></tr></thead><tbody>
+        <tr>
+          <td><span class="badge" style="background:#fef9c3;color:#854d0e;border-color:#fde047">FN</span></td>
+          <td><span class="tag">预期</span> SQL 注入<br><span class="muted code">sqli</span></td>
+          <td><span class="muted">—</span></td>
+          <td>—</td>
+          <td>漏报了预期漏洞</td>
+        </tr></tbody></table></div>
+    </div>
+    
+
+    <div class="card">
+      <h3>Acunetix 已知 XSS 端点 <span class="muted" style="font-size:14px;font-weight:400">（vulnweb_xss）</span></h3>
+      <div class="summary-line">
+        <span class="code">http://testphp.vulnweb.com/showthread.php?id=1</span><br>
+        分类：vuln_lab ｜ 类别：漏洞靶场<br>
+        Acunetix 测试站点上已知的 XSS 端点。参数 ``id`` 存在反射型 XSS 漏洞，扫描器应能检出。
+      </div>
+      
+      <div class="metrics-grid" style="margin:12px 0">
+        <div class="metric"><div class="value">0</div><div class="label">TP</div></div>
+        <div class="metric"><div class="value">0</div><div class="label">FP</div></div>
+        <div class="metric"><div class="value">0</div><div class="label">TN</div></div>
+        <div class="metric"><div class="value">1</div><div class="label">FN</div></div>
+        <div class="metric"><div class="value">0.00%</div><div class="label">召回率</div></div>
+        <div class="metric"><div class="value">0.00%</div><div class="label">精确率</div></div>
+      </div>
+      <p class="muted" style="font-size:13px">实际发现 7 项（其中 7 项属范围外已排除） ｜ 耗时 5788 ms ｜ 扫描时间 2026-08-05T02:34:57</p>
+      <div style="margin-top:12px"><table><thead><tr><th>判定</th><th>检查点</th><th>严重级别</th><th>实际发现</th><th>说明</th></tr></thead><tbody>
+        <tr>
+          <td><span class="badge" style="background:#fef9c3;color:#854d0e;border-color:#fde047">FN</span></td>
+          <td><span class="tag">预期</span> 跨站脚本 (XSS)<br><span class="muted code">xss</span></td>
+          <td><span class="muted">—</span></td>
+          <td>—</td>
+          <td>漏报了预期漏洞</td>
+        </tr></tbody></table></div>
+    </div>
+    <div class="card"><h2>误报分析</h2><p class="sev sev-low">本次基准测试未产生误报 (FP=0)。</p></div>
+    <div class="card">
+      <h2>漏报分析</h2>
+      <div class="summary-line">
+        共 3 项漏报。召回率 Recall = 86.96%
+        （TP / (TP + FN)）。下表列出所有未检出的预期漏洞。
+      </div>
+      <table>
+        <thead><tr>
+          <th>靶场目标</th><th>漏洞类型</th><th>预期级别</th><th>预期漏洞描述</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td>Acunetix 测试站点（首页）</td>
+          <td>信息泄露</td>
+          <td><span class="sev sev-medium">中危</span></td>
+          <td>测试站点响应中可能包含服务器版本、内部路径等敏感信息。</td>
+        </tr>
+        <tr>
+          <td>Acunetix 已知 SQL 注入端点</td>
+          <td>SQL 注入</td>
+          <td><span class="sev sev-critical">严重</span></td>
+          <td>参数 cat 存在 SQL 注入漏洞（基于错误回显）。</td>
+        </tr>
+        <tr>
+          <td>Acunetix 已知 XSS 端点</td>
+          <td>跨站脚本 (XSS)</td>
+          <td><span class="sev sev-high">高危</span></td>
+          <td>参数 id 存在反射型 XSS 漏洞。</td>
+        </tr></tbody>
+      </table>
+    </div>
+    
+<div class="card" style="text-align:center;color:#94a3b8;font-size:12px">
+  漏洞哨兵 11-S 基准对比系统 ｜ 生成于 2026-08-05 02:35:28 UTC<br>
+  注：真实靶场的安全配置可能随时间变化，结果应结合时间戳解读。
+</div>
+</div>
+</body>
+</html>

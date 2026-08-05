@@ -119,10 +119,8 @@ def resolve_and_validate_ip(hostname: str) -> str:
                 is_blocked = True
                 break
         if is_blocked and hostname.lower() not in ALLOWED_INTERNAL_HOSTS:
-            raise ValueError(
-                f"该地址解析到内网 IP {ip_str}，禁止访问。"
-                f"如需扫描内网靶场，请联系管理员配置 ALLOWED_INTERNAL_HOSTS"
-            )
+            # 跳过被封 IP，继续尝试下一个解析结果
+            continue
         if not is_blocked:
             return ip_str
 

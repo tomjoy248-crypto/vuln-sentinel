@@ -1407,17 +1407,19 @@ function goVerifyStep2() {
     url = 'https://' + url;
     if (urlInput) urlInput.value = url;
   }
-  // 前端 URL 格式校验：提前拦截无效域名，避免进入 Step 2 后无法扫描
+  // 前端 URL 格式校验：允许常见域名和内网主机名
   try {
     let parsed = new URL(url);
     let host = parsed.hostname.toLowerCase();
-    if (!host || host.indexOf('.') === -1) {
+    if (!host) {
       showToast('网址格式不正确，请输入完整域名（如 example.com）');
       return;
     }
-    let tld = host.split('.').pop();
-    if (tld.length < 2) {
-      showToast('网址格式不正确，域名后缀至少 2 个字符（如 .com、.cn）');
+    let isIP = /^(\d{1,3}\.){3}\d{1,3}$/.test(host) || host.indexOf(':') >= 0;
+    let isLocal = host === 'localhost';
+    let hasDomain = host.indexOf('.') >= 0;
+    if (!isIP && !isLocal && !hasDomain) {
+      showToast('网址格式不正确，请输入完整域名（如 example.com）或 IP 地址');
       return;
     }
   } catch (e) {
@@ -1571,19 +1573,23 @@ function startScan() {
     url = 'https://' + url;
   }
 
-  // 前端 URL 格式校验：域名必须包含点号且至少 2 个字符的 TLD
+  // 前端 URL 格式校验：允许常见域名和内网主机名
   try {
     let parsed = new URL(url);
     let host = parsed.hostname.toLowerCase();
-    if (!host || host.indexOf('.') === -1) {
+    if (!host) {
       _scanInProgress = false; setButtonLoading("scan-btn", false);
       showToast('网址格式不正确，请输入完整域名（如 example.com）');
       return;
     }
-    let tld = host.split('.').pop();
-    if (tld.length < 2) {
+    // 允许 IP 地址、localhost、以及包含点号的域名
+    // 仅拒绝明显无效的空主机名
+    let isIP = /^(\d{1,3}\.){3}\d{1,3}$/.test(host) || host.indexOf(':') >= 0;
+    let isLocal = host === 'localhost';
+    let hasDomain = host.indexOf('.') >= 0;
+    if (!isIP && !isLocal && !hasDomain) {
       _scanInProgress = false; setButtonLoading("scan-btn", false);
-      showToast('网址格式不正确，域名后缀至少 2 个字符（如 .com、.cn）');
+      showToast('网址格式不正确，请输入完整域名（如 example.com）或 IP 地址');
       return;
     }
   } catch (e) {
@@ -1646,17 +1652,18 @@ function startRealScan(url, host, deepScan) {
   // 启动多阶段动画
   animateStages();
 
-  // 超时保护：35 秒后自动终止
+  // 超时保护：标准扫描 60 秒，深度扫描 120 秒
+  let scanTimeoutMs = deepScan ? 120000 : 60000;
   let timeoutId = setTimeout(function() {
     if (_scanCancelled) return;
     finishStages();
     setTimeout(function() {
       if (_scanCancelled) return;
-      renderScanError('扫描超时，目标网站可能无法访问。请检查网址是否正确，或稍后重试。', url);
+      renderScanError('扫描超时，目标网站可能响应缓慢或无法访问。请检查网址是否正确，或稍后重试。', url);
       _scanInProgress = false;
       setButtonLoading("scan-btn", false);
     }, 600);
-  }, 35000);
+  }, scanTimeoutMs);
 
   // Try /api/scan
   authFetch('/api/scan', {
@@ -1665,11 +1672,14 @@ function startRealScan(url, host, deepScan) {
   }).then(function(resp) {
     if (_scanCancelled) return;
     clearTimeout(timeoutId);
-    if (resp.status === 402) {
-      return resp.json().then(function(data) { data._status = 402; return data; });
-    }
-    if (!resp.ok) throw new Error('API 返回 ' + resp.status);
-    return resp.json();
+    // 无论成功还是失败，都解析响应体以保留后端返回的具体错误信息
+    return resp.json().then(function(data) {
+      data._status = resp.status;
+      return data;
+    }).catch(function() {
+      // 响应体非 JSON（如 502 网关错误返回 HTML）
+      throw new Error('服务器返回异常（HTTP ' + resp.status + '），请稍后重试');
+    });
   }).then(function(data) {
     if (_scanCancelled) return;
     clearTimeout(timeoutId);
@@ -1679,6 +1689,24 @@ function startRealScan(url, host, deepScan) {
         if (_scanCancelled) return;
         showToast(paymentRequiredMessage(data), 'error');
         updateUserCredits();
+        _scanInProgress = false;
+        setButtonLoading("scan-btn", false);
+      }, 600);
+      return;
+    }
+    // 非 200 响应或包含 error 字段时，显示后端的具体错误信息
+    if (data._status && data._status >= 400) {
+      finishStages();
+      setTimeout(function() {
+        if (_scanCancelled) return;
+        let errMsg = extractError(data);
+        // 对常见 HTTP 状态码补充提示
+        if (data._status === 403) {
+          errMsg = errMsg + '\n\n如需扫描自有域名，请先完成域名归属验证。';
+        } else if (data._status === 429) {
+          errMsg = '扫描请求过于频繁，请等待 1 分钟后重试。';
+        }
+        renderScanError(errMsg, url);
         _scanInProgress = false;
         setButtonLoading("scan-btn", false);
       }, 600);
@@ -1711,7 +1739,9 @@ function startRealScan(url, host, deepScan) {
     finishStages();
     setTimeout(function() {
       if (_scanCancelled) return;
-      renderScanError('扫描服务连接失败，请检查网络或稍后重试', url);
+      // 保留真实错误信息，而非笼统的"连接失败"
+      let errMsg = (err && err.message) ? err.message : '扫描服务连接失败，请检查网络或稍后重试';
+      renderScanError(errMsg, url);
       _scanInProgress = false;
       setButtonLoading("scan-btn", false);
     }, 600);

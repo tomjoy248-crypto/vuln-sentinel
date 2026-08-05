@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import builtins
 import logging
+import time
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -364,33 +365,93 @@ class DetectorRegistry:
     async def run_all(cls, context: ScanContext) -> dict[str, builtins.list[Finding]]:
         """并行运行所有启用的检测器。
 
+        每个检测器的执行耗时和发现数量会被记录到日志中，
+        便于性能分析和故障排查。
+
         Args:
             context: 扫描上下文
 
         Returns:
             字典：检测器名称 -> 发现的问题列表
         """
-        tasks = []
-        names = []
+        # 收集适用的检测器
+        applicable: builtins.list[BaseVulnDetector] = []
         for detector in cls._detectors:
             if not cls.is_enabled(detector.name):
                 continue
             if not await detector.is_applicable(context):
                 continue
-            tasks.append(detector.detect(context))
-            names.append(detector.name)
+            applicable.append(detector)
 
-        if not tasks:
+        if not applicable:
             return {}
 
+        batch_start = time.time()
+        timings: dict[str, float] = {}  # name -> elapsed_ms
+
+        async def _timed(name: str, coro: Any) -> builtins.list[Finding]:
+            """包装检测器协程，记录执行耗时和结果数量。"""
+            t0 = time.time()
+            try:
+                result = await coro
+                elapsed = (time.time() - t0) * 1000
+                timings[name] = elapsed
+                count = len(result) if result else 0
+                if count > 0:
+                    logger.info(
+                        "Plugin '%s' completed: %d finding(s) in %.1fms",
+                        name,
+                        count,
+                        elapsed,
+                    )
+                else:
+                    logger.info(
+                        "Plugin '%s' completed: no findings in %.1fms",
+                        name,
+                        elapsed,
+                    )
+                return result
+            except Exception as exc:
+                elapsed = (time.time() - t0) * 1000
+                timings[name] = elapsed
+                logger.warning(
+                    "Plugin '%s' failed after %.1fms: %s: %s",
+                    name,
+                    elapsed,
+                    type(exc).__name__,
+                    exc,
+                )
+                raise
+
+        # 创建带计时的协程
+        tasks = [_timed(d.name, d.detect(context)) for d in applicable]
+        names = [d.name for d in applicable]
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        total_elapsed = (time.time() - batch_start) * 1000
         findings_map: dict[str, list[Finding]] = {}
+        total_findings = 0
         for name, result in zip(names, results):
             if isinstance(result, Exception):
-                logger.warning("Detector %s failed: %s", name, result)
                 findings_map[name] = []
             else:
                 findings_map[name] = result
+                total_findings += len(result) if result else 0
+
+        # 汇总日志：检测器数量、总发现数、总耗时、最慢的插件
+        slowest_name = max(timings, key=timings.get) if timings else "N/A"
+        slowest_ms = timings.get(slowest_name, 0.0)
+        logger.info(
+            "Plugin batch complete: %d detector(s), %d finding(s), "
+            "total %.1fms, slowest: %s (%.1fms)",
+            len(applicable),
+            total_findings,
+            total_elapsed,
+            slowest_name,
+            slowest_ms,
+        )
+
         return findings_map
 
     @classmethod

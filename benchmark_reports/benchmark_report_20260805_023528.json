@@ -1,0 +1,440 @@
+{
+  "generated_at": "2026-08-05T02:35:28.551011+00:00",
+  "total_targets": 5,
+  "successful_targets": 5,
+  "matrix": {
+    "tp": 20,
+    "fp": 0,
+    "tn": 6,
+    "fn": 3
+  },
+  "metrics": {
+    "precision": 1.0,
+    "recall": 0.8696,
+    "f1": 0.9302,
+    "accuracy": 0.8966,
+    "fpr": 0.0
+  },
+  "targets": [
+    {
+      "target_id": "vulnweb_home",
+      "target_name": "Acunetix 测试站点（首页）",
+      "url": "http://testphp.vulnweb.com/",
+      "category": "vuln_lab",
+      "findings_count": 7,
+      "ignored_count": 0,
+      "matrix": {
+        "tp": 7,
+        "fp": 0,
+        "tn": 2,
+        "fn": 1
+      },
+      "metrics": {
+        "precision": 1.0,
+        "recall": 0.875,
+        "f1": 0.9333,
+        "accuracy": 0.9,
+        "fpr": 0.0
+      },
+      "duration_ms": 6506,
+      "error": null,
+      "scanned_at": "2026-08-05T02:34:39.866426+00:00",
+      "check_results": [
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "medium",
+          "finding_title": "缺少 Strict-Transport-Security (HSTS) 响应头",
+          "finding_severity": "medium",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "medium",
+          "finding_title": "缺少 Content-Security-Policy (CSP) 响应头",
+          "finding_severity": "medium",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "medium",
+          "finding_title": "缺少 X-Frame-Options 响应头",
+          "finding_severity": "medium",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "low",
+          "finding_title": "缺少 X-Content-Type-Options 响应头",
+          "finding_severity": "low",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "low",
+          "finding_title": "缺少 Referrer-Policy 响应头",
+          "finding_severity": "low",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "low",
+          "finding_title": "缺少 Permissions-Policy 响应头",
+          "finding_severity": "low",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "ssl",
+          "description": "目标使用 HTTP 明文传输，扫描器应报告未启用 HTTPS。",
+          "severity": "critical",
+          "finding_title": "未启用 HTTPS",
+          "finding_severity": "high",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "FN",
+          "vuln_type": "info_leak",
+          "description": "测试站点响应中可能包含服务器版本、内部路径等敏感信息。",
+          "severity": "medium",
+          "finding_title": "",
+          "finding_severity": "",
+          "note": "漏报了预期漏洞"
+        },
+        {
+          "kind": "negative",
+          "verdict": "TN",
+          "vuln_type": "sqli",
+          "description": "靶场不应存在 SQL 注入",
+          "severity": "",
+          "finding_title": "",
+          "finding_severity": "",
+          "note": "正确判定无该漏洞"
+        },
+        {
+          "kind": "negative",
+          "verdict": "TN",
+          "vuln_type": "xss",
+          "description": "靶场不应存在 XSS",
+          "severity": "",
+          "finding_title": "",
+          "finding_severity": "",
+          "note": "正确判定无该漏洞"
+        }
+      ]
+    },
+    {
+      "target_id": "example_com",
+      "target_name": "example.com 基线站点",
+      "url": "https://example.com/",
+      "category": "baseline",
+      "findings_count": 6,
+      "ignored_count": 0,
+      "matrix": {
+        "tp": 6,
+        "fp": 0,
+        "tn": 2,
+        "fn": 0
+      },
+      "metrics": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "accuracy": 1.0,
+        "fpr": 0.0
+      },
+      "duration_ms": 11296,
+      "error": null,
+      "scanned_at": "2026-08-05T02:34:40.617691+00:00",
+      "check_results": [
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "medium",
+          "finding_title": "缺少 Strict-Transport-Security (HSTS) 响应头",
+          "finding_severity": "medium",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "medium",
+          "finding_title": "缺少 Content-Security-Policy (CSP) 响应头",
+          "finding_severity": "medium",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "medium",
+          "finding_title": "缺少 X-Frame-Options 响应头",
+          "finding_severity": "medium",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "low",
+          "finding_title": "缺少 X-Content-Type-Options 响应头",
+          "finding_severity": "low",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "low",
+          "finding_title": "缺少 Referrer-Policy 响应头",
+          "finding_severity": "low",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "low",
+          "finding_title": "缺少 Permissions-Policy 响应头",
+          "finding_severity": "low",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "negative",
+          "verdict": "TN",
+          "vuln_type": "sqli",
+          "description": "靶场不应存在 SQL 注入",
+          "severity": "",
+          "finding_title": "",
+          "finding_severity": "",
+          "note": "正确判定无该漏洞"
+        },
+        {
+          "kind": "negative",
+          "verdict": "TN",
+          "vuln_type": "xss",
+          "description": "靶场不应存在 XSS",
+          "severity": "",
+          "finding_title": "",
+          "finding_severity": "",
+          "note": "正确判定无该漏洞"
+        }
+      ]
+    },
+    {
+      "target_id": "httpbin_org",
+      "target_name": "httpbin.org HTTP 测试服务",
+      "url": "https://httpbin.org/",
+      "category": "test_service",
+      "findings_count": 7,
+      "ignored_count": 0,
+      "matrix": {
+        "tp": 7,
+        "fp": 0,
+        "tn": 2,
+        "fn": 0
+      },
+      "metrics": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "accuracy": 1.0,
+        "fpr": 0.0
+      },
+      "duration_ms": 42177,
+      "error": null,
+      "scanned_at": "2026-08-05T02:34:46.373323+00:00",
+      "check_results": [
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "medium",
+          "finding_title": "缺少 Strict-Transport-Security (HSTS) 响应头",
+          "finding_severity": "medium",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "medium",
+          "finding_title": "缺少 Content-Security-Policy (CSP) 响应头",
+          "finding_severity": "medium",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "medium",
+          "finding_title": "缺少 X-Frame-Options 响应头",
+          "finding_severity": "medium",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "low",
+          "finding_title": "缺少 X-Content-Type-Options 响应头",
+          "finding_severity": "low",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "low",
+          "finding_title": "缺少 Referrer-Policy 响应头",
+          "finding_severity": "low",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "header_missing",
+          "description": "目标未配置对应安全响应头，应被检出为缺失。",
+          "severity": "low",
+          "finding_title": "缺少 Permissions-Policy 响应头",
+          "finding_severity": "low",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "expected",
+          "verdict": "TP",
+          "vuln_type": "cors_misconfig",
+          "description": "httpbin.org 通常返回 Access-Control-Allow-Origin: *，允许任意来源跨域访问。",
+          "severity": "low",
+          "finding_title": "CORS 配置存在高风险：允许任意来源且携带凭证",
+          "finding_severity": "high",
+          "note": "正确检出预期漏洞"
+        },
+        {
+          "kind": "negative",
+          "verdict": "TN",
+          "vuln_type": "sqli",
+          "description": "靶场不应存在 SQL 注入",
+          "severity": "",
+          "finding_title": "",
+          "finding_severity": "",
+          "note": "正确判定无该漏洞"
+        },
+        {
+          "kind": "negative",
+          "verdict": "TN",
+          "vuln_type": "xss",
+          "description": "靶场不应存在 XSS",
+          "severity": "",
+          "finding_title": "",
+          "finding_severity": "",
+          "note": "正确判定无该漏洞"
+        }
+      ]
+    },
+    {
+      "target_id": "vulnweb_sqli",
+      "target_name": "Acunetix 已知 SQL 注入端点",
+      "url": "http://testphp.vulnweb.com/listproducts.php?cat=1",
+      "category": "vuln_lab",
+      "findings_count": 7,
+      "ignored_count": 7,
+      "matrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 1
+      },
+      "metrics": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "accuracy": 0.0,
+        "fpr": 0.0
+      },
+      "duration_ms": 5789,
+      "error": null,
+      "scanned_at": "2026-08-05T02:34:51.914821+00:00",
+      "check_results": [
+        {
+          "kind": "expected",
+          "verdict": "FN",
+          "vuln_type": "sqli",
+          "description": "参数 cat 存在 SQL 注入漏洞（基于错误回显）。",
+          "severity": "critical",
+          "finding_title": "",
+          "finding_severity": "",
+          "note": "漏报了预期漏洞"
+        }
+      ]
+    },
+    {
+      "target_id": "vulnweb_xss",
+      "target_name": "Acunetix 已知 XSS 端点",
+      "url": "http://testphp.vulnweb.com/showthread.php?id=1",
+      "category": "vuln_lab",
+      "findings_count": 7,
+      "ignored_count": 7,
+      "matrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 1
+      },
+      "metrics": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "accuracy": 0.0,
+        "fpr": 0.0
+      },
+      "duration_ms": 5788,
+      "error": null,
+      "scanned_at": "2026-08-05T02:34:57.704910+00:00",
+      "check_results": [
+        {
+          "kind": "expected",
+          "verdict": "FN",
+          "vuln_type": "xss",
+          "description": "参数 id 存在反射型 XSS 漏洞。",
+          "severity": "high",
+          "finding_title": "",
+          "finding_severity": "",
+          "note": "漏报了预期漏洞"
+        }
+      ]
+    }
+  ]
+}

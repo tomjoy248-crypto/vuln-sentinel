@@ -107,6 +107,7 @@ async def run_plugin_scan(
 
     _ensure_plugins_registered()
     start_ts = time.time()
+    phase_timings: dict[str, float] = {}  # phase_name -> elapsed_ms
 
     store = EvidenceStore(max_entries=50)
     src_scanner.set_evidence_store(store)
@@ -122,13 +123,23 @@ async def run_plugin_scan(
     )
 
     # 1. 插件检测器并行执行（首页上下文）
+    _phase_start = time.time()
     results = await DetectorRegistry.run_all(context)
     plugin_findings: list[Any] = []
     for detector_findings in results.values():
         plugin_findings.extend(detector_findings)
+    phase_timings["plugin_detection"] = (time.time() - _phase_start) * 1000
+    logger.info(
+        "Scan phase [1] plugin_detection: %.1fms, %d raw finding(s) from %d detector(s)",
+        phase_timings["plugin_detection"],
+        len(plugin_findings),
+        len(results),
+    )
 
     # 1.5 端点发现：扩大覆盖面（仅在 deep 模式下开启，避免 standard 超时）
+    endpoints: list[Any] = []
     if deep:
+        _phase_start = time.time()
         try:
             crawler = DiscoveryCrawler(
                 max_pages=15 if deep else 8,
@@ -174,9 +185,16 @@ async def run_plugin_scan(
                         logger.warning("Endpoint detection error: %s", res)
         except Exception as exc:
             logger.warning("Endpoint discovery disabled or failed: %s", exc)
+        phase_timings["endpoint_discovery"] = (time.time() - _phase_start) * 1000
+        logger.info(
+            "Scan phase [2] endpoint_discovery: %.1fms, %d endpoint(s) found",
+            phase_timings["endpoint_discovery"],
+            len(endpoints),
+        )
 
     # 2. 参数 fuzz：对发现的端点执行定向注入测试（deep 模式启用）
     if deep:
+        _phase_start = time.time()
         try:
             fuzzer = FuzzEngine(
                 techniques=[
@@ -212,31 +230,43 @@ async def run_plugin_scan(
                 logger.info("Fuzzing found %d potential injection issues", fuzz_count)
         except Exception as exc:
             logger.warning("Fuzzing engine failed: %s", exc)
+        phase_timings["fuzzing"] = (time.time() - _phase_start) * 1000
+        logger.info(
+            "Scan phase [3] fuzzing: %.1fms, %d injection issue(s) found",
+            phase_timings["fuzzing"],
+            fuzz_count,
+        )
 
     findings = findings_to_old_list(plugin_findings)
 
     # 2. 误报控制
+    _phase_start = time.time()
     fp_controller = FalsePositiveControl(threshold=0.3)
     findings = fp_controller.analyze_batch(findings)
     fp_marked = sum(1 for f in findings if f.get("is_likely_fp"))
-    if fp_marked > 0:
-        logger.info(
-            "FP control: %d findings flagged as likely false positive", fp_marked
-        )
+    phase_timings["fp_control"] = (time.time() - _phase_start) * 1000
+    logger.info(
+        "Scan phase [4] fp_control: %.1fms, %d/%d flagged as likely FP",
+        phase_timings["fp_control"],
+        fp_marked,
+        len(findings),
+    )
 
     # 3. Finding 去重与关联
+    _phase_start = time.time()
     deduper = FindingDeduplicator()
     findings, dedup_stats = deduper.deduplicate(findings)
-    if dedup_stats.duplicate_count > 0:
-        logger.info(
-            "Dedup: %d -> %d findings (%d duplicates removed, %d correlation groups)",
-            dedup_stats.original_count,
-            dedup_stats.deduplicated_count,
-            dedup_stats.duplicate_count,
-            dedup_stats.correlation_groups,
-        )
+    phase_timings["dedup"] = (time.time() - _phase_start) * 1000
+    logger.info(
+        "Scan phase [5] dedup: %.1fms, %d -> %d findings (%d duplicates removed)",
+        phase_timings["dedup"],
+        dedup_stats.original_count,
+        dedup_stats.deduplicated_count,
+        dedup_stats.duplicate_count,
+    )
 
     # 4. 交叉验证（standard/deep 默认开启，quick 可关闭）
+    _phase_start = time.time()
     verification_stats = {
         "enabled": False,
         "confirmed": 0,
@@ -255,8 +285,17 @@ async def run_plugin_scan(
         verification_stats["suspected"] = sum(
             1 for f in findings if f.get("verification_status") == "suspected"
         )
+    phase_timings["cross_validation"] = (time.time() - _phase_start) * 1000
+    logger.info(
+        "Scan phase [6] cross_validation: %.1fms, confirmed=%d probable=%d suspected=%d",
+        phase_timings["cross_validation"],
+        verification_stats["confirmed"],
+        verification_stats["probable"],
+        verification_stats["suspected"],
+    )
 
     # 5. 质量评估
+    _phase_start = time.time()
     duration_ms = int((time.time() - start_ts) * 1000)
     quality = assess_scan_quality(
         findings=findings,
@@ -264,6 +303,7 @@ async def run_plugin_scan(
         depth="deep" if deep else "standard",
         target_url=url,
     )
+    phase_timings["quality_assessment"] = (time.time() - _phase_start) * 1000
 
     stats = _calculate_score(findings)
 
@@ -273,6 +313,22 @@ async def run_plugin_scan(
     )
 
     src_scanner.clear_evidence_store()
+
+    # 最终汇总日志：各阶段耗时 breakdown
+    _total_ms = time.time() - start_ts
+    _breakdown = " ".join(
+        f"{k}={v:.0f}ms" for k, v in sorted(phase_timings.items(), key=lambda x: -x[1])
+    )
+    logger.info(
+        "Scan complete: url=%s depth=%s total=%.0fms findings=%d score=%d risk=%s | %s",
+        url,
+        "deep" if deep else "standard",
+        _total_ms * 1000,
+        len(findings),
+        stats["score"],
+        stats["risk_level"],
+        _breakdown,
+    )
 
     return {
         "success": True,
@@ -292,4 +348,5 @@ async def run_plugin_scan(
         "quality": quality.to_dict(),
         "dedup_stats": dedup_stats.to_dict(),
         "verification_stats": verification_stats,
+        "phase_timings_ms": phase_timings,
     }

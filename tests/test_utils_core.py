@@ -302,8 +302,9 @@ def test_resolve_and_validate_ip_returns_safe_ip(monkeypatch):
 
 
 def test_resolve_and_validate_ip_blocks_private_ip(monkeypatch):
+    # 非白名单主机解析到纯内网 IP 时，所有 IP 被跳过后抛出"均被封锁"错误
     monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo("10.0.0.5"))
-    with pytest.raises(ValueError, match="解析到内网 IP"):
+    with pytest.raises(ValueError, match="所有解析 IP 均被封锁"):
         utils.resolve_and_validate_ip("evil.example.com")
 
 

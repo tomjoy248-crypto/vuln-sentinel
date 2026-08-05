@@ -1912,6 +1912,843 @@ async def _verify_header_missing(
     )
 
 
+# ---------- XXE 交叉验证 ----------
+
+
+@register_strategy("xxe")
+async def _verify_xxe(
+    validator: CrossValidator, finding: dict[str, Any]
+) -> VerificationResult:
+    """XXE 交叉验证：XML 端点复测 + 实体注入验证。"""
+    url = finding.get("url", "")
+    evidence = finding.get("evidence") or {}
+    techniques: list[dict[str, Any]] = []
+    score = 0
+
+    # 技术 1：原始证据中是否包含文件泄露内容
+    response_text = (evidence.get("response") or "").lower()
+    file_indicators = ["root:", "/bin/", "/etc/passwd", "daemon:", "[fonts]"]
+    if any(ind in response_text for ind in file_indicators):
+        score += 55
+        techniques.append({
+            "name": "file_leak_evidence",
+            "passed": True,
+            "note": "原始响应中包含系统文件内容特征",
+        })
+    else:
+        techniques.append({
+            "name": "file_leak_evidence",
+            "passed": False,
+            "note": "原始响应中未检测到文件泄露",
+        })
+
+    # 技术 2：重发 XXE payload 复测
+    xxe_payload = '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><foo>&xxe;</foo>'
+    if url:
+        try:
+            resp = await validator._safe_request(
+                "post", url, content=xxe_payload,
+                headers={"Content-Type": "application/xml"},
+                timeout=10.0, follow_redirects=False,
+            )
+            body = await validator._safe_read_body(resp)
+            # hostname 通常是短字符串且不含 HTML 标签
+            if resp and resp.status_code == 200:
+                body_stripped = body.strip()
+                if 1 <= len(body_stripped) <= 255 and "<" not in body_stripped:
+                    score += 40
+                    techniques.append({
+                        "name": "xxe_refetch",
+                        "passed": True,
+                        "note": f"重发 XXE payload 成功读取 hostname: {body_stripped[:50]}",
+                    })
+                else:
+                    # 检查是否有错误信息表明解析了 XML
+                    if any(kw in body.lower() for kw in ["entity", "dtd", "xml", "parse"]):
+                        score += 25
+                        techniques.append({
+                            "name": "xxe_refetch",
+                            "passed": True,
+                            "note": "响应包含 XML 解析相关特征，端点可能存在 XXE",
+                        })
+                    else:
+                        techniques.append({
+                            "name": "xxe_refetch",
+                            "passed": False,
+                            "note": "重发 payload 未确认文件泄露",
+                        })
+            else:
+                techniques.append({
+                    "name": "xxe_refetch",
+                    "passed": False,
+                    "note": f"重发请求返回状态码 {resp.status_code if resp else 'N/A'}",
+                })
+        except Exception as exc:
+            techniques.append({
+                "name": "xxe_refetch",
+                "passed": False,
+                "note": f"请求异常: {exc}",
+            })
+    else:
+        techniques.append({
+            "name": "xxe_refetch",
+            "passed": False,
+            "note": "缺少 url",
+        })
+
+    # 技术 3：Content-Type 验证
+    original_headers = evidence.get("headers") or {}
+    if isinstance(original_headers, dict):
+        ct = (original_headers.get("content-type") or original_headers.get("Content-Type", "")).lower()
+        if "xml" in ct:
+            score += 15
+            techniques.append({
+                "name": "xml_content_type",
+                "passed": True,
+                "note": "端点 Content-Type 为 XML 类型，XXE 风险更高",
+            })
+        else:
+            techniques.append({
+                "name": "xml_content_type",
+                "passed": False,
+                "note": "端点 Content-Type 非 XML",
+            })
+    else:
+        techniques.append({
+            "name": "xml_content_type",
+            "passed": False,
+            "note": "无响应头信息",
+        })
+
+    verified = score >= validator.VERIFIED_THRESHOLD
+    return VerificationResult(
+        finding_id=finding.get("id", ""),
+        vuln_type="xxe",
+        verified=verified,
+        verification_score=min(100, score),
+        techniques=techniques,
+        summary=f"XXE 验证得分 {score}/100",
+    )
+
+
+# ---------- 反序列化交叉验证 ----------
+
+
+@register_strategy("deserialization")
+async def _verify_deserialization(
+    validator: CrossValidator, finding: dict[str, Any]
+) -> VerificationResult:
+    """不安全反序列化交叉验证：异常响应 + 多语言 payload。"""
+    url = finding.get("url", "")
+    evidence = finding.get("evidence") or {}
+    techniques: list[dict[str, Any]] = []
+    score = 0
+
+    # 技术 1：原始证据中是否包含反序列化异常
+    response_text = (evidence.get("response") or "").lower()
+    deserial_indicators = [
+        "objectinputstream", "invalidclassexception", "classnotfound",
+        "unpickling", "yaml.constructor", "php unserialize",
+        "serialization", "deserialize", "__wakeup",
+    ]
+    has_deserial_error = any(ind in response_text for ind in deserial_indicators)
+    if has_deserial_error:
+        score += 50
+        techniques.append({
+            "name": "deserial_error",
+            "passed": True,
+            "note": "原始响应中包含反序列化异常特征",
+        })
+    else:
+        techniques.append({
+            "name": "deserial_error",
+            "passed": False,
+            "note": "原始响应中未检测到反序列化异常",
+        })
+
+    # 技术 2：HTTP 状态码异常（500/502 通常意味着后端处理出错）
+    status_code = evidence.get("status_code", 0)
+    if status_code in (500, 502, 503):
+        score += 25
+        techniques.append({
+            "name": "server_error",
+            "passed": True,
+            "note": f"服务器返回 {status_code}，可能触发了反序列化异常",
+        })
+    else:
+        techniques.append({
+            "name": "server_error",
+            "passed": False,
+            "note": f"服务器返回 {status_code}，无明显异常",
+        })
+
+    # 技术 3：端点特征验证
+    if url:
+        parsed = urlparse(url)
+        path_lower = parsed.path.lower()
+        deserial_endpoints = ["/api", "/deserialize", "/object", "/serialize", "/rpc", "/invoke"]
+        is_likely_endpoint = any(ep in path_lower for ep in deserial_endpoints)
+        if is_likely_endpoint:
+            score += 25
+            techniques.append({
+                "name": "endpoint_indicator",
+                "passed": True,
+                "note": f"URL 路径 '{path_lower}' 暗示为反序列化端点",
+            })
+        else:
+            techniques.append({
+                "name": "endpoint_indicator",
+                "passed": False,
+                "note": "URL 路径无明显反序列化端点特征",
+            })
+    else:
+        techniques.append({
+            "name": "endpoint_indicator",
+            "passed": False,
+            "note": "缺少 url",
+        })
+
+    verified = score >= validator.VERIFIED_THRESHOLD
+    return VerificationResult(
+        finding_id=finding.get("id", ""),
+        vuln_type="deserialization",
+        verified=verified,
+        verification_score=min(100, score),
+        techniques=techniques,
+        summary=f"反序列化验证得分 {score}/100",
+    )
+
+
+# ---------- IDOR 交叉验证 ----------
+
+
+@register_strategy("idor")
+async def _verify_idor(
+    validator: CrossValidator, finding: dict[str, Any]
+) -> VerificationResult:
+    """IDOR 交叉验证：ID 遍历 + 响应差异分析。"""
+    url = finding.get("url", "")
+    param = finding.get("parameter", "")
+    evidence = finding.get("evidence") or {}
+    techniques: list[dict[str, Any]] = []
+    score = 0
+
+    # 技术 1：原始证据中是否包含其他用户数据
+    response_text = (evidence.get("response") or "").lower()
+    user_data_indicators = ["email", "phone", "username", "order", "amount", "balance", "address"]
+    has_user_data = any(ind in response_text for ind in user_data_indicators)
+    if has_user_data:
+        score += 40
+        techniques.append({
+            "name": "user_data_leak",
+            "passed": True,
+            "note": "响应中包含用户敏感数据特征",
+        })
+    else:
+        techniques.append({
+            "name": "user_data_leak",
+            "passed": False,
+            "note": "响应中未检测到用户敏感数据",
+        })
+
+    # 技术 2：ID 遍历验证
+    if url and param:
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query, keep_blank_values=True)
+        original_value = qs.get(param, [""])[0]
+        if original_value.isdigit():
+            original_id = int(original_value)
+            test_id = original_id + 1
+            test_url = _build_test_url(url, param, str(test_id))
+            try:
+                resp = await validator._safe_request(
+                    "get", test_url, timeout=10.0, follow_redirects=True
+                )
+                if resp and resp.status_code == 200:
+                    body = await validator._safe_read_body(resp)
+                    # 检查是否能通过遍历 ID 访问其他数据
+                    if any(ind in body.lower() for ind in user_data_indicators):
+                        score += 35
+                        techniques.append({
+                            "name": "id_traversal",
+                            "passed": True,
+                            "note": f"遍历 ID {original_id} → {test_id} 仍可访问用户数据",
+                        })
+                    else:
+                        techniques.append({
+                            "name": "id_traversal",
+                            "passed": False,
+                            "note": "遍历 ID 后未检测到用户数据",
+                        })
+                else:
+                    techniques.append({
+                        "name": "id_traversal",
+                        "passed": False,
+                        "note": f"遍历 ID 返回状态码 {resp.status_code if resp else 'N/A'}",
+                    })
+            except Exception as exc:
+                techniques.append({
+                    "name": "id_traversal",
+                    "passed": False,
+                    "note": f"请求异常: {exc}",
+                })
+        else:
+            techniques.append({
+                "name": "id_traversal",
+                "passed": False,
+                "note": "参数值非数字，无法遍历",
+            })
+    else:
+        techniques.append({
+            "name": "id_traversal",
+            "passed": False,
+            "note": "缺少 url 或 parameter",
+        })
+
+    # 技术 3：响应内容差异
+    original_response = evidence.get("response") or ""
+    if url and original_response and param:
+        try:
+            resp = await validator._safe_request(
+                "get", url, timeout=10.0, follow_redirects=True
+            )
+            current_body = await validator._safe_read_body(resp)
+            if original_response and current_body:
+                similarity = _response_similarity(original_response, current_body)
+                if similarity >= 0.8:
+                    score += 25
+                    techniques.append({
+                        "name": "response_consistency",
+                        "passed": True,
+                        "note": f"两次请求响应相似度 {similarity:.0%}，数据稳定可复现",
+                    })
+                else:
+                    techniques.append({
+                        "name": "response_consistency",
+                        "passed": False,
+                        "note": f"两次请求响应相似度仅 {similarity:.0%}，数据不稳定",
+                    })
+            else:
+                techniques.append({
+                    "name": "response_consistency",
+                    "passed": False,
+                    "note": "无法获取有效响应进行对比",
+                })
+        except Exception:
+            techniques.append({
+                "name": "response_consistency",
+                "passed": False,
+                "note": "请求异常",
+            })
+    else:
+        techniques.append({
+            "name": "response_consistency",
+            "passed": False,
+            "note": "缺少必要数据",
+        })
+
+    verified = score >= validator.VERIFIED_THRESHOLD
+    return VerificationResult(
+        finding_id=finding.get("id", ""),
+        vuln_type="idor",
+        verified=verified,
+        verification_score=min(100, score),
+        techniques=techniques,
+        summary=f"IDOR 验证得分 {score}/100",
+    )
+
+
+# ---------- 文件上传交叉验证 ----------
+
+
+@register_strategy("file_upload")
+async def _verify_file_upload(
+    validator: CrossValidator, finding: dict[str, Any]
+) -> VerificationResult:
+    """文件上传交叉验证：表单存在性 + 上传端点验证。"""
+    url = finding.get("url", "")
+    evidence = finding.get("evidence") or {}
+    techniques: list[dict[str, Any]] = []
+    score = 0
+
+    # 技术 1：原始证据中是否包含文件上传表单
+    response_text = evidence.get("response") or ""
+    upload_indicators = [
+        'type="file"', "enctype=\"multipart/form-data\"",
+        "input type=\"file\"", "fileupload", "upload",
+    ]
+    has_upload_form = any(ind in response_text.lower() for ind in upload_indicators)
+    if has_upload_form:
+        score += 45
+        techniques.append({
+            "name": "upload_form",
+            "passed": True,
+            "note": "页面中检测到文件上传表单",
+        })
+    else:
+        techniques.append({
+            "name": "upload_form",
+            "passed": False,
+            "note": "页面中未检测到文件上传表单",
+        })
+
+    # 技术 2：URL 路径暗示上传端点
+    if url:
+        parsed = urlparse(url)
+        path_lower = parsed.path.lower()
+        upload_paths = ["/upload", "/file", "/attach", "/media", "/image", "/avatar"]
+        is_upload_path = any(p in path_lower for p in upload_paths)
+        if is_upload_path:
+            score += 30
+            techniques.append({
+                "name": "upload_endpoint",
+                "passed": True,
+                "note": f"URL 路径 '{path_lower}' 暗示为上传端点",
+            })
+        else:
+            techniques.append({
+                "name": "upload_endpoint",
+                "passed": False,
+                "note": "URL 路径无明显上传端点特征",
+            })
+    else:
+        techniques.append({
+            "name": "upload_endpoint",
+            "passed": False,
+            "note": "缺少 url",
+        })
+
+    # 技术 3：上传请求复测
+    if url:
+        try:
+            # 发送一个简单的 multipart 请求测试端点是否接受文件
+            resp = await validator._safe_request(
+                "post", url,
+                files={"file": ("test.txt", b"test content", "text/plain")},
+                timeout=10.0, follow_redirects=False,
+            )
+            if resp and resp.status_code in (200, 201, 202):
+                score += 25
+                techniques.append({
+                    "name": "upload_accepted",
+                    "passed": True,
+                    "note": f"端点接受文件上传请求（HTTP {resp.status_code}）",
+                })
+            elif resp and resp.status_code == 415:
+                techniques.append({
+                    "name": "upload_accepted",
+                    "passed": False,
+                    "note": "端点拒绝此文件类型（415），但确实处理了上传",
+                })
+            else:
+                techniques.append({
+                    "name": "upload_accepted",
+                    "passed": False,
+                    "note": f"端点返回 {resp.status_code if resp else 'N/A'}",
+                })
+        except Exception:
+            techniques.append({
+                "name": "upload_accepted",
+                "passed": False,
+                "note": "请求异常",
+            })
+    else:
+        techniques.append({
+            "name": "upload_accepted",
+            "passed": False,
+            "note": "缺少 url",
+        })
+
+    verified = score >= validator.VERIFIED_THRESHOLD
+    return VerificationResult(
+        finding_id=finding.get("id", ""),
+        vuln_type="file_upload",
+        verified=verified,
+        verification_score=min(100, score),
+        techniques=techniques,
+        summary=f"文件上传验证得分 {score}/100",
+    )
+
+
+# ---------- CORS 配置交叉验证 ----------
+
+
+@register_strategy("cors_misconfig")
+async def _verify_cors_misconfig(
+    validator: CrossValidator, finding: dict[str, Any]
+) -> VerificationResult:
+    """CORS 配置交叉验证：响应头复检 + Origin 反射测试。"""
+    url = finding.get("url", "")
+    techniques: list[dict[str, Any]] = []
+    score = 0
+
+    # 技术 1：重新请求并检查 CORS 头
+    if url:
+        try:
+            # 带恶意 Origin 请求
+            resp = await validator._safe_request(
+                "get", url,
+                headers={"Origin": "https://evil.example.com"},
+                timeout=10.0, follow_redirects=True,
+            )
+            if resp:
+                resp_headers = {k.lower(): v for k, v in resp.headers.items()}
+                acao = resp_headers.get("access-control-allow-origin", "")
+                acac = resp_headers.get("access-control-allow-credentials", "")
+
+                if acao == "*":
+                    if acac.lower() == "true":
+                        score += 60
+                        techniques.append({
+                            "name": "wildcard_with_credentials",
+                            "passed": True,
+                            "note": "ACAO: * 与 ACAC: true 同时存在，高风险配置",
+                        })
+                    else:
+                        score += 35
+                        techniques.append({
+                            "name": "wildcard_origin",
+                            "passed": True,
+                            "note": "ACAO: * 允许任意来源",
+                        })
+                elif "evil.example.com" in acao:
+                    score += 55
+                    techniques.append({
+                        "name": "origin_reflection",
+                        "passed": True,
+                        "note": "服务端反射了恶意 Origin，存在 Origin 白名单绕过",
+                    })
+                elif "null" in acao.lower():
+                    score += 40
+                    techniques.append({
+                        "name": "null_origin",
+                        "passed": True,
+                        "note": "ACAO 允许 null Origin",
+                    })
+                else:
+                    techniques.append({
+                        "name": "cors_header_check",
+                        "passed": False,
+                        "note": f"ACAO 值为 '{acao}'，配置正常",
+                    })
+            else:
+                techniques.append({
+                    "name": "cors_header_check",
+                    "passed": False,
+                    "note": "请求失败",
+                })
+        except Exception as exc:
+            techniques.append({
+                "name": "cors_header_check",
+                "passed": False,
+                "note": f"请求异常: {exc}",
+            })
+    else:
+        techniques.append({
+            "name": "cors_header_check",
+            "passed": False,
+            "note": "缺少 url",
+        })
+
+    # 技术 2：不带 Origin 请求对比
+    if url:
+        try:
+            resp_no_origin = await validator._safe_request(
+                "get", url, timeout=10.0, follow_redirects=True,
+            )
+            if resp_no_origin:
+                resp_headers = {k.lower(): v for k, v in resp_no_origin.headers.items()}
+                acao_no_origin = resp_headers.get("access-control-allow-origin", "")
+                if not acao_no_origin:
+                    score += 20
+                    techniques.append({
+                        "name": "origin_dependent",
+                        "passed": True,
+                        "note": "不带 Origin 时不返回 ACAO，说明 CORS 配置依赖 Origin",
+                    })
+                else:
+                    techniques.append({
+                        "name": "origin_dependent",
+                        "passed": False,
+                        "note": "不带 Origin 仍返回 ACAO，配置可能为静态",
+                    })
+            else:
+                techniques.append({
+                    "name": "origin_dependent",
+                    "passed": False,
+                    "note": "请求失败",
+                })
+        except Exception:
+            techniques.append({
+                "name": "origin_dependent",
+                "passed": False,
+                "note": "请求异常",
+            })
+    else:
+        techniques.append({
+            "name": "origin_dependent",
+            "passed": False,
+            "note": "缺少 url",
+        })
+
+    verified = score >= validator.VERIFIED_THRESHOLD
+    return VerificationResult(
+        finding_id=finding.get("id", ""),
+        vuln_type="cors_misconfig",
+        verified=verified,
+        verification_score=min(100, score),
+        techniques=techniques,
+        summary=f"CORS 验证得分 {score}/100",
+    )
+
+
+# ---------- Cookie 安全交叉验证 ----------
+
+
+@register_strategy("cookie_security")
+async def _verify_cookie_security(
+    validator: CrossValidator, finding: dict[str, Any]
+) -> VerificationResult:
+    """Cookie 安全属性交叉验证：重新请求检查 Set-Cookie 头。"""
+    url = finding.get("url", "")
+    evidence = finding.get("evidence") or {}
+    techniques: list[dict[str, Any]] = []
+    score = 0
+
+    # 技术 1：原始证据中已标记的问题
+    issues = evidence.get("issues", [])
+    if issues:
+        score += 30
+        techniques.append({
+            "name": "original_issues",
+            "passed": True,
+            "note": f"原始扫描发现 {len(issues)} 个 Cookie 安全问题: {', '.join(issues)}",
+        })
+    else:
+        techniques.append({
+            "name": "original_issues",
+            "passed": False,
+            "note": "原始证据中无 Cookie 安全问题",
+        })
+
+    # 技术 2：重新请求验证 Set-Cookie 头
+    if url:
+        try:
+            resp = await validator._safe_request(
+                "get", url, timeout=10.0, follow_redirects=True,
+            )
+            if resp:
+                set_cookie = resp.headers.get("set-cookie", "") or resp.headers.get("Set-Cookie", "")
+                if set_cookie:
+                    missing_attrs = []
+                    if "secure" not in set_cookie.lower():
+                        missing_attrs.append("Secure")
+                    if "httponly" not in set_cookie.lower():
+                        missing_attrs.append("HttpOnly")
+                    if "samesite" not in set_cookie.lower():
+                        missing_attrs.append("SameSite")
+
+                    if missing_attrs:
+                        score += 40
+                        techniques.append({
+                            "name": "set_cookie_refetch",
+                            "passed": True,
+                            "note": f"重新请求确认 Cookie 缺少: {', '.join(missing_attrs)}",
+                        })
+                    else:
+                        techniques.append({
+                            "name": "set_cookie_refetch",
+                            "passed": False,
+                            "note": "重新请求发现 Cookie 安全属性完整，可能为误报",
+                        })
+                else:
+                    score += 20
+                    techniques.append({
+                        "name": "set_cookie_refetch",
+                        "passed": True,
+                        "note": "重新请求未返回 Set-Cookie，保持原始判定",
+                    })
+            else:
+                techniques.append({
+                    "name": "set_cookie_refetch",
+                    "passed": False,
+                    "note": "请求失败",
+                })
+        except Exception:
+            techniques.append({
+                "name": "set_cookie_refetch",
+                "passed": False,
+                "note": "请求异常",
+            })
+    else:
+        techniques.append({
+            "name": "set_cookie_refetch",
+            "passed": False,
+            "note": "缺少 url",
+        })
+
+    # 技术 3：HTTPS 上下文验证
+    parsed = urlparse(url) if url else None
+    if parsed and parsed.scheme == "https":
+        score += 15
+        techniques.append({
+            "name": "https_context",
+            "passed": True,
+            "note": "HTTPS 站点下 Cookie 缺少 Secure 属性风险更高",
+        })
+    else:
+        techniques.append({
+            "name": "https_context",
+            "passed": False,
+            "note": "HTTP 站点下 Secure 属性本身不适用",
+        })
+
+    verified = score >= validator.VERIFIED_THRESHOLD
+    return VerificationResult(
+        finding_id=finding.get("id", ""),
+        vuln_type="cookie_security",
+        verified=verified,
+        verification_score=min(100, score),
+        techniques=techniques,
+        summary=f"Cookie 安全验证得分 {score}/100",
+    )
+
+
+# ---------- 敏感路径交叉验证 ----------
+
+
+@register_strategy("sensitive_path")
+async def _verify_sensitive_path(
+    validator: CrossValidator, finding: dict[str, Any]
+) -> VerificationResult:
+    """敏感路径交叉验证：路径可访问性复检 + 响应内容验证。"""
+    url = finding.get("url", "")
+    evidence = finding.get("evidence") or {}
+    techniques: list[dict[str, Any]] = []
+    score = 0
+
+    # 技术 1：重新请求该路径验证可访问性
+    if url:
+        try:
+            resp = await validator._safe_request(
+                "get", url, timeout=10.0, follow_redirects=False,
+            )
+            if resp:
+                if resp.status_code == 200:
+                    score += 45
+                    techniques.append({
+                        "name": "path_accessible",
+                        "passed": True,
+                        "note": f"敏感路径返回 HTTP 200，确认可访问",
+                    })
+                elif resp.status_code in (301, 302, 307):
+                    score += 25
+                    techniques.append({
+                        "name": "path_accessible",
+                        "passed": True,
+                        "note": f"敏感路径返回 {resp.status_code} 重定向，可能存在",
+                    })
+                elif resp.status_code == 401:
+                    score += 30
+                    techniques.append({
+                        "name": "path_accessible",
+                        "passed": True,
+                        "note": "敏感路径返回 401，路径存在但需认证",
+                    })
+                elif resp.status_code == 403:
+                    score += 20
+                    techniques.append({
+                        "name": "path_accessible",
+                        "passed": True,
+                        "note": "敏感路径返回 403，路径存在但被禁止",
+                    })
+                else:
+                    techniques.append({
+                        "name": "path_accessible",
+                        "passed": False,
+                        "note": f"敏感路径返回 {resp.status_code}，可能不存在",
+                    })
+            else:
+                techniques.append({
+                    "name": "path_accessible",
+                    "passed": False,
+                    "note": "请求失败",
+                })
+        except Exception:
+            techniques.append({
+                "name": "path_accessible",
+                "passed": False,
+                "note": "请求异常",
+            })
+    else:
+        techniques.append({
+            "name": "path_accessible",
+            "passed": False,
+            "note": "缺少 url",
+        })
+
+    # 技术 2：响应内容敏感信息检测
+    response_text = (evidence.get("response") or "").lower()
+    sensitive_indicators = [
+        "password", "secret", "key", "token", "config",
+        "database", "admin", "backup", "dump", "credentials",
+    ]
+    has_sensitive_content = any(ind in response_text for ind in sensitive_indicators)
+    if has_sensitive_content:
+        score += 35
+        techniques.append({
+            "name": "sensitive_content",
+            "passed": True,
+            "note": "响应内容中包含敏感关键词",
+        })
+    else:
+        techniques.append({
+            "name": "sensitive_content",
+            "passed": False,
+            "note": "响应内容中未检测到敏感关键词",
+        })
+
+    # 技术 3：路径模式验证
+    parsed = urlparse(url) if url else None
+    if parsed:
+        path_lower = parsed.path.lower()
+        known_sensitive_patterns = [
+            "/admin", "/backup", "/config", "/.git", "/.env",
+            "/wp-admin", "/phpmyadmin", "/console", "/debug",
+            "/api/v1/users", "/internal", "/secret",
+        ]
+        matches_pattern = any(p in path_lower for p in known_sensitive_patterns)
+        if matches_pattern:
+            score += 20
+            techniques.append({
+                "name": "path_pattern",
+                "passed": True,
+                "note": f"路径匹配已知敏感路径模式",
+            })
+        else:
+            techniques.append({
+                "name": "path_pattern",
+                "passed": False,
+                "note": "路径不匹配已知敏感路径模式",
+            })
+    else:
+        techniques.append({
+            "name": "path_pattern",
+            "passed": False,
+            "note": "无法解析路径",
+        })
+
+    verified = score >= validator.VERIFIED_THRESHOLD
+    return VerificationResult(
+        finding_id=finding.get("id", ""),
+        vuln_type="sensitive_path",
+        verified=verified,
+        verification_score=min(100, score),
+        techniques=techniques,
+        summary=f"敏感路径验证得分 {score}/100",
+    )
+
+
 # ---------- 工具函数 ----------
 
 
