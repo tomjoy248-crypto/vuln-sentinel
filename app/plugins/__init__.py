@@ -361,12 +361,15 @@ class DetectorRegistry:
         """检测器是否启用。"""
         return cls._enabled.get(name, True)
 
+    # 插件耗时阈值（毫秒）：超过此值才打印详细日志
+    _SLOW_PLUGIN_THRESHOLD_MS = 2000.0
+
     @classmethod
     async def run_all(cls, context: ScanContext) -> dict[str, builtins.list[Finding]]:
         """并行运行所有启用的检测器。
 
-        每个检测器的执行耗时和发现数量会被记录到日志中，
-        便于性能分析和故障排查。
+        仅在插件出错或耗时超过阈值时打印详细日志，
+        批次结束后始终打印汇总信息。
 
         Args:
             context: 扫描上下文
@@ -388,32 +391,31 @@ class DetectorRegistry:
 
         batch_start = time.time()
         timings: dict[str, float] = {}  # name -> elapsed_ms
+        counts: dict[str, int] = {}  # name -> finding_count
 
         async def _timed(name: str, coro: Any) -> builtins.list[Finding]:
-            """包装检测器协程，记录执行耗时和结果数量。"""
+            """包装检测器协程，仅慢或出错时记录详细日志。"""
             t0 = time.time()
             try:
                 result = await coro
                 elapsed = (time.time() - t0) * 1000
                 timings[name] = elapsed
                 count = len(result) if result else 0
-                if count > 0:
-                    logger.info(
-                        "Plugin '%s' completed: %d finding(s) in %.1fms",
+                counts[name] = count
+                # 仅超过阈值时打印详细日志
+                if elapsed > cls._SLOW_PLUGIN_THRESHOLD_MS:
+                    logger.warning(
+                        "Plugin '%s' SLOW: %d finding(s) in %.1fms (threshold %.0fms)",
                         name,
                         count,
                         elapsed,
-                    )
-                else:
-                    logger.info(
-                        "Plugin '%s' completed: no findings in %.1fms",
-                        name,
-                        elapsed,
+                        cls._SLOW_PLUGIN_THRESHOLD_MS,
                     )
                 return result
             except Exception as exc:
                 elapsed = (time.time() - t0) * 1000
                 timings[name] = elapsed
+                counts[name] = 0
                 logger.warning(
                     "Plugin '%s' failed after %.1fms: %s: %s",
                     name,
@@ -439,7 +441,7 @@ class DetectorRegistry:
                 findings_map[name] = result
                 total_findings += len(result) if result else 0
 
-        # 汇总日志：检测器数量、总发现数、总耗时、最慢的插件
+        # 汇总日志：检测器数量、总发现数、总耗时、最慢的插件（始终打印）
         slowest_name = max(timings, key=timings.get) if timings else "N/A"
         slowest_ms = timings.get(slowest_name, 0.0)
         logger.info(
