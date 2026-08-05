@@ -1,6 +1,7 @@
 """漏洞哨兵 11-S - 工具函数模块"""
 
 import ipaddress
+import logging
 import re
 import socket
 from urllib.parse import urlparse
@@ -16,8 +17,10 @@ from constants import (
     BLOCKED_NETWORKS,
 )
 
+logger = logging.getLogger("vuln_sentinel.utils")
 
 # ---------- 输入验证与清理 ----------
+
 
 def sanitize_username(value: str) -> str:
     value = value.strip()
@@ -79,6 +82,85 @@ def sanitize_url(value: str) -> str:
     return value
 
 
+def resolve_and_validate_ip(hostname: str) -> str:
+    """解析主机名并验证 IP 安全性，返回第一个安全 IP。
+
+    安全最佳实践（SSRF 防护 - DNS Pinning）：
+    在校验阶段解析 DNS 得到 IP 后，将此 IP 固定传递给后续 HTTP 请求，
+    消除 check-then-use 时间窗口（DNS 重绑定攻击）。
+
+    Args:
+        hostname: 要解析的主机名
+
+    Returns:
+        解析到的第一个安全 IP 地址字符串
+
+    Raises:
+        ValueError: 如果主机名解析失败或解析到被封锁的内网 IP
+    """
+    if hostname.lower() in BLOCKED_HOSTS and hostname.lower() not in ALLOWED_INTERNAL_HOSTS:
+        raise ValueError(f"被封锁的主机名: {hostname}")
+
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as exc:
+        raise ValueError(f"DNS 解析失败: {hostname}") from exc
+
+    for info in infos:
+        ip_str = info[4][0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        # 检查是否落入被封锁网段
+        is_blocked = False
+        for network in BLOCKED_NETWORKS:
+            if ip in network:
+                is_blocked = True
+                break
+        if is_blocked and hostname.lower() not in ALLOWED_INTERNAL_HOSTS:
+            raise ValueError(
+                f"该地址解析到内网 IP {ip_str}，禁止访问。"
+                f"如需扫描内网靶场，请联系管理员配置 ALLOWED_INTERNAL_HOSTS"
+            )
+        if not is_blocked:
+            return ip_str
+
+    raise ValueError(f"所有解析 IP 均被封锁: {hostname}")
+
+
+def build_pinned_url(original_url: str, pinned_ip: str) -> tuple[str, str]:
+    """构建使用固定 IP 的请求 URL，同时返回原始主机名用于 Host 头和 SNI。
+
+    安全最佳实践（SSRF 防护 - DNS Pinning）：
+    将 URL 中的域名替换为已验证的 IP，防止 httpx 再次解析 DNS 时遭受重绑定攻击。
+    对于 HTTPS，通过保留原始主机名用于 SNI/TLS 验证。
+
+    Args:
+        original_url: 原始 URL（如 https://example.com/path）
+        pinned_ip: 已验证的 IP 地址（如 93.184.216.34）
+
+    Returns:
+        (pinned_url, original_hostname) 元组
+        pinned_url: 使用 IP 的 URL（如 https://93.184.216.34/path）
+        original_hostname: 原始主机名（如 example.com，用于 Host 头和 SNI）
+    """
+    parsed = urlparse(original_url)
+    original_hostname = parsed.hostname or ""
+    # 用 IP 替换主机名构建新 URL
+    netloc = pinned_ip
+    if parsed.port:
+        netloc = f"{pinned_ip}:{parsed.port}"
+    elif parsed.scheme == "https":
+        netloc = f"{pinned_ip}:443"
+    elif parsed.scheme == "http":
+        netloc = f"{pinned_ip}:80"
+    pinned_url = f"{parsed.scheme}://{netloc}{parsed.path}"
+    if parsed.query:
+        pinned_url += f"?{parsed.query}"
+    return pinned_url, original_hostname
+
+
 def sanitize_email(value: str) -> str:
     value = value.strip()
     if not value:
@@ -98,6 +180,7 @@ def sanitize_password(value: str) -> str:
 
 # ---------- CORS 白名单解析 ----------
 
+
 def parse_cors_origins(raw: str) -> list[str]:
     """解析逗号分隔的 CORS 白名单，去空白去空项。"""
     if not raw:
@@ -106,6 +189,7 @@ def parse_cors_origins(raw: str) -> list[str]:
 
 
 # ---------- 通用工具 ----------
+
 
 def _html_escape(text: str) -> str:
     """HTML 转义，防止 XSS。"""

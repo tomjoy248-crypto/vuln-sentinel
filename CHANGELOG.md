@@ -4,6 +4,41 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [未发布] - 2026-08-01
+
+### 新增 - 生产化基础设施（阶段二）
+- **Docker 生产化**：`Dockerfile` 使用非 root 用户、健康检查与多阶段构建；`docker-compose.prod.yml` 集成 PostgreSQL 与 Redis
+- **CI/CD**：`.github/workflows/ci.yml` 自动执行 ruff 检查、安全基线扫描、依赖漏洞扫描、前端构建与 Docker 镜像构建
+- **计费系统**：`app/services/billing_service.py` 提供套餐管理、充值记录、管理员充值、模拟支付与 Stripe 真实收款
+- **Redis 分布式限流**：`app/core/rate_limiter.py` 支持多实例共享计数，失败后自动降级到内存令牌桶
+- **Redis 异步扫描队列**：`app/services/scan_queue.py` 支持任务提交、状态查询、列表与单任务取消，替代内存队列适配生产横向扩展
+- **Sentry 错误追踪**：`main.py` 集成 Sentry FastAPI 中间件，异常自动上报
+- **SQLite 生产优化**：`app/db/session.py` 启用 WAL 模式、busy timeout、外键与缓存大小调优
+- **支付宝/微信支付骨架**：计费服务支持创建 `alipay` / `wechat` 订单并返回支付参数占位；回调接口保留 SDK 签名验证扩展点
+
+### 改进
+- `/api/scan/tasks/{task_id}/cancel` 在 Redis 队列模式下也可正常取消任务
+- `.env.example` 补充支付网关、Sentry、Redis、TLS 等生产配置示例
+- `requirements.txt` 新增 `redis`、`sentry-sdk[fastapi]`、`pytest-asyncio` 等依赖
+- `docs/deployment.md` 增加 Docker Compose、支付网关、Redis 与 Sentry 部署说明
+
+## [未发布] - 2026-07-28
+
+### 新增 - 专业化基础设施（阶段一）
+- **app/ 模块化包**：创建 `app/core/`（config, logging, security）、`app/db/`（session）、`app/health.py`、`app/metrics.py`、`app/middleware.py`，为后续路由拆分打基础
+- **结构化日志**：引入 `structlog`，支持 JSON 格式输出和 `request_id` 链路追踪
+- **request_id 中间件**：每个请求自动生成唯一 ID，注入日志上下文和响应头 `X-Request-ID`
+- **健康检查三端点**：`/health/live`（存活探针）、`/health/ready`（就绪探针，检查 DB）、`/health/version`（版本信息）
+- **Prometheus 指标**：`/metrics` 端点，自定义业务指标（scans_total, scan_duration_seconds, active_scans, findings_total, scan_cache_hits/misses）
+- **配置扩展**：Settings 新增 `database_url`、`redis_url`、`sentry_dsn`、`enable_metrics`、`enable_structlog`、`log_level` 等生产级配置项
+- **数据库连接抽象**：`app/db/session.py` 提供 `get_db_connection()` 上下文管理器和 `check_db_health()` 健康检查
+
+### 改进
+- `/api/health` 兼容端点现在也返回 `request_id`
+- 请求日志现在包含 `request_id` 标记
+- `.env.example` 新增生产级基础设施配置示例
+- `requirements.txt` 新增 `structlog` 和 `prometheus-fastapi-instrumentator` 依赖
+
 ## [11-S] - 2026-06-27
 
 ### 新增

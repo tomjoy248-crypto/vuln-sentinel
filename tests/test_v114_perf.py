@@ -4,8 +4,9 @@
 - gzip 压缩有效
 - 关键查询走索引
 """
-import time
 import sqlite3
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -145,7 +146,6 @@ def test_gzip_middleware_effective(client):
     # 所以这里只能验证响应头里有 content-encoding OR 响应被压缩
     # TestClient 收到的是解码后内容，所以判断 "gzip 真的工作" 用真实 HTTP 服务
     # 这里只检查中间件栈里有 GZip 类
-    from starlette.middleware.gzip import GZipMiddleware
     found = False
     for m in M.app.user_middleware:
         if "gzip" in str(m).lower():

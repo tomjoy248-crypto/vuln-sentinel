@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# 前端开发依赖
+frontend/node_modules/
+frontend/dist/
+
+# 测试与本地数据
+.pytest_cache/
+.coverage
+htmlcov/
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 版本控制
+.git/
+.gitignore
+
+# 敏感配置：切勿将真实密钥/环境变量打包进镜像
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# 文档与图片（构建产物不需要）
+docs/screenshots/
+docs/*.png
+*.md
+
+# 本地脚本
+start.bat
+start.command
+push-helper.bat
+
+# CI / 测试缓存
+.github/
+.pytest_cache/
+.ruff_cache/
+
+# 本地数据库与日志
+*.db
+*.sqlite
+*.sqlite3
+*.log
+data/

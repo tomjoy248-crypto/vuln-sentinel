@@ -1,0 +1,87 @@
+version: "3.8"
+
+# 漏洞哨兵 11-S - 生产环境编排
+# 前置条件：
+#   1. 复制 .env.example 为 .env 并填写真实值（JWT_SECRET、ALLOWED_ORIGINS、SENTRY_DSN 等）
+#   2. 确保 .env 中 ENV=production / PRODUCTION=1
+# 启动：docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  vuln-sentinel:
+    build: .
+    container_name: vuln-sentinel
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PORT=8000
+      - DATABASE_URL=postgresql://vulnuser:${POSTGRES_PASSWORD:-vuln_pass}@postgres:5432/vuln_sentinel
+      - REDIS_URL=redis://redis:6379/0
+      - ENABLE_METRICS=1
+      - TLS_VERIFY=1
+    volumes:
+      - vuln-sentinel-data:/data
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: vuln-sentinel-postgres
+    environment:
+      - POSTGRES_USER=vulnuser
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-vuln_pass}
+      - POSTGRES_DB=vuln_sentinel
+    volumes:
+      - vuln-sentinel-postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vulnuser -d vuln_sentinel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  redis:
+    image: redis:7-alpine
+    container_name: vuln-sentinel-redis
+    volumes:
+      - vuln-sentinel-redis:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+volumes:
+  vuln-sentinel-data:
+  vuln-sentinel-postgres:
+  vuln-sentinel-redis:

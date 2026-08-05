@@ -1,0 +1,86 @@
+# 漏洞哨兵 11-S 自定义检测规则示例
+#
+# 将此文件放在 rules/ 目录下，应用启动时会自动加载。
+# 支持多个 YAML 文件，按文件名排序加载。
+
+rules:
+  # 示例1: 检测含调试参数的接口
+  - id: debug-param-exposure
+    name: 调试参数暴露
+    severity: medium
+    type: info_leak
+    cwe_id: CWE-200
+    owasp_category: A01 访问控制失效
+    description: 检测 URL 中包含调试参数（debug/test/dev），可能泄露敏感信息
+    match:
+      param_names: ["debug", "test", "dev", "verbose", "trace"]
+      response_status: [200]
+    fix_suggestion: 移除生产环境中的调试参数和调试端点
+    confidence: high
+    supported_depths: [quick, standard, deep]
+
+  # 示例2: 检测暴露的管理端点
+  - id: admin-endpoint-exposure
+    name: 管理端点暴露
+    severity: high
+    type: broken_access_control
+    cwe_id: CWE-538
+    owasp_category: A01 访问控制失效
+    description: 检测响应中包含管理端点路径，可能存在未授权访问
+    match:
+      response_patterns:
+        - "/admin"
+        - "/manage"
+        - "/console"
+        - "/actuator"
+      response_status: [200]
+    fix_suggestion: 限制管理端点的访问权限，添加认证和 IP 白名单
+    confidence: medium
+    supported_depths: [standard, deep]
+
+  # 示例3: 检测弱密码策略
+  - id: weak-password-policy
+    name: 弱密码策略检测
+    severity: low
+    type: logic_bypass
+    cwe_id: CWE-521
+    owasp_category: A07 认证失败
+    description: 登录页面的密码字段未设置最小长度要求
+    match:
+      response_patterns:
+        - 'type="password"'
+        - 'minlength="0"'
+      response_status: [200]
+    fix_suggestion: 设置密码最小长度为 8 位以上，包含大小写字母、数字和特殊字符
+    confidence: low
+    supported_depths: [standard, deep]
+
+  # 示例4: 检测内部 IP 泄露
+  - id: internal-ip-leak
+    name: 内网 IP 地址泄露
+    severity: medium
+    type: info_leak
+    cwe_id: CWE-200
+    owasp_category: A05 安全配置错误
+    description: 响应体中包含内网 IP 地址，可能泄露网络拓扑
+    match:
+      body_regex:
+        - '(?:10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|172\\.(?:1[6-9]|2[0-9]|3[01])\\.\\d{1,3}\\.\\d{1,3}|192\\.168\\.\\d{1,3}\\.\\d{1,3})'
+    fix_suggestion: 移除响应体中的内网 IP 地址，使用域名代替
+    confidence: high
+    supported_depths: [standard, deep]
+
+  # 示例5: 检测 JavaScript 敏感信息
+  - id: js-sensitive-info
+    name: JavaScript 中泄露敏感信息
+    severity: high
+    type: info_leak
+    cwe_id: CWE-312
+    owasp_category: A02 加密机制失效
+    description: JavaScript 代码中包含 API Key、Token 或密码等敏感信息
+    match:
+      body_regex:
+        - '(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token|password|passwd|secret)["\']?\s*[:=]\s*["\'][a-zA-Z0-9+/=]{16,}'
+    fix_suggestion: 将敏感信息移至服务端环境变量，前端通过 API 获取
+    confidence: high
+    supported_depths: [deep]

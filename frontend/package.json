@@ -1,0 +1,19 @@
+{
+  "name": "vuln-sentinel-frontend",
+  "private": true,
+  "version": "11-S",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:prod": "VITE_API_BASE=/api/v1 vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vite": "^6.4.3",
+    "vitest": "^3.0.0",
+    "jsdom": "^25.0.0"
+  }
+}

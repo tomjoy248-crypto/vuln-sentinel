@@ -1,0 +1,2 @@
+# 占位文件，确保 alembic/versions/ 目录被纳入版本控制。
+# Alembic 生成的迁移脚本将存放于此目录。

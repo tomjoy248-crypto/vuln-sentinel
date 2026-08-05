@@ -1,5 +1,4 @@
 """V11.4 实战验证：扫描真实漏洞站 + 模拟修复"""
-import json
 import os
 import sys
 
@@ -9,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 def test_simulate_fix_generates_nginx_config():
     """模拟修复必须生成可执行的 Nginx 配置代码（不只是评分变化）"""
     from fastapi.testclient import TestClient
+
     from main import app
     client = TestClient(app)
     findings = [
@@ -39,6 +39,7 @@ def test_simulate_fix_generates_nginx_config():
 def test_scan_real_vuln_site_has_findings():
     """扫描真实漏洞站 demo.testfire.net（Altoro Mutual）必须能扫出问题"""
     from fastapi.testclient import TestClient
+
     from main import app
     client = TestClient(app)
     # 先登录
@@ -65,6 +66,7 @@ def test_scan_real_vuln_site_has_findings():
 def test_real_vuln_site_findings_have_actionable_fix():
     """扫描出的每个问题必须有可执行的修复代码（fix 字段）"""
     from fastapi.testclient import TestClient
+
     from main import app
     client = TestClient(app)
     login = client.post("/api/login", json={"username": "demo", "password": "demo123"})

@@ -3,8 +3,8 @@
 确认所有面向用户的版本标识都已从 V11.4 → 11-S,
 并且 11-S 新增的能力(LLM/auto-patrol/trusted domains/AI 顾问优化)都还在。
 """
-import re
 from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -50,13 +50,12 @@ def test_health_endpoint_works():
 
 
 # ============================================================
-# 2) index.html 用户可见标识必须都是 11-S
+# 2) 前端产物用户可见标识必须都是 11-S
 # ============================================================
 def test_index_html_title_is_v11_5():
+    """生产环境入口 static/index.html 标题保持 11-S"""
     html = open(str(ROOT / "static/index.html")).read()
     assert "<title>漏洞哨兵 11-S" in html
-    # 离线 /api/version 返回的 title 也得是 11-S
-    assert '漏洞哨兵 11-S (离线演示模式)' in html
 
 
 def test_index_html_meta_description_is_v11_5():
@@ -64,26 +63,22 @@ def test_index_html_meta_description_is_v11_5():
     assert 'name="description" content="漏洞哨兵 11-S' in html
 
 
-def test_index_html_user_facing_v11_5_strings():
-    """卡片/页脚中的 11-S 字样"""
-    html = open(str(ROOT / "static/index.html")).read()
-    # 进化页面 h3
-    assert ">漏洞哨兵 11-S<" in html
-    # 我的页面段落
-    assert "<strong>漏洞哨兵 11-S</strong>" in html
-    # AI 顾问话术: "你好！我是漏洞哨兵 11-S"
-    assert "我是漏洞哨兵 11-S" in html
-    # 评分公式回复提到 11-S
-    assert "11-S 评分公式" in html
-    # 版本更新回复提到 11-S
-    assert "11-S 主要改进" in html
+def test_frontend_source_has_11_s_strings():
+    """前后端分离后，11-S 标识位于前端源码中"""
+    main_js = (ROOT / "frontend/src/main.js").read_text(encoding="utf-8")
+    templates_js = (ROOT / "frontend/src/templates.js").read_text(encoding="utf-8")
+    # AI 顾问话术
+    assert "我是漏洞哨兵 11-S" in main_js
+    # 扫描深度档位还在
+    assert "scan-depth-opt" in templates_js
 
 
-def test_index_html_offline_version_11_s():
-    """离线模式 /api/health, /api/version 返回 11-S"""
-    html = open(str(ROOT / "static/index.html")).read()
-    assert 'version: "11-S"' in html
-    assert 'build_time: "2026-06-28"' in html
+def test_frontend_source_has_ai_chat_optimization():
+    """AI 顾问手机端优化 CSS 类还在"""
+    css = (ROOT / "frontend/src/style.css").read_text(encoding="utf-8")
+    assert ".ai-chat" in css
+    assert "opacity: 1 !important" in css or "opacity:1 !important" in css
+    assert "WQY MicroHei" in css
 
 
 # ============================================================
@@ -112,13 +107,14 @@ def test_v115_has_auto_patrol():
 
 
 def test_v115_has_ai_advisor_optimization():
-    """AI 顾问手机端优化还在"""
-    html = open(str(ROOT / "static/index.html")).read()
+    """AI 顾问手机端优化还在（前后端分离后源码在前端项目）"""
+    css = (ROOT / "frontend/src/style.css").read_text(encoding="utf-8")
+    templates_js = (ROOT / "frontend/src/templates.js").read_text(encoding="utf-8")
     # fullscreen CSS 还在
-    assert ".ai-chat" in html
+    assert ".ai-chat" in css
     # !important 强制 opacity
-    assert "opacity: 1 !important" in html or "opacity:1 !important" in html
+    assert "opacity: 1 !important" in css or "opacity:1 !important" in css
     # WQY 字体还在
-    assert "WQY MicroHei" in html
+    assert "WQY MicroHei" in css
     # 扫描深度档位修复还在
-    assert "scan-depth-opt" in html
+    assert "scan-depth-opt" in templates_js
