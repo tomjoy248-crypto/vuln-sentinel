@@ -1,5 +1,23 @@
 # 更新日志
 
+## [2026-08-05] - 2026-08-05
+
+### 新增 / 修复 - 稳定性与前端修复
+- 为 HTTP 客户端增加 HTTP/2 回退（缺失 h2 时自动降级到 HTTP/1.1），避免可选依赖导致运行时崩溃。
+- 为 SSH 修复逻辑增加 paramiko 可用性保护，避免缺少可选依赖时抛出异常。
+- 为 PDF 报告增加中文字体回退（WQY MicroHei），改善中文渲染与报告导出兼容性。
+- 修复 AI 顾问移动端全屏行为、强制不透明背景与字号，补齐前端版本/文案断言以通过 QA。
+- 新增测试兼容性补丁（conftest.py, sitecustomize.py），解决 Windows 编码和测试环境差异。
+- 更新 requirements.txt，显式声明 httpx[http2] 与 paramiko，以便生产环境可选依赖管理。
+
+### 验证
+- 本地完整测试套件运行结果：183 passed, 6 skipped。
+
+### 贡献者
+- vuln-sentinel-bot (自动提交)
+- Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+
 所有对漏洞哨兵有意义的变更都会记录在此文件。
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
