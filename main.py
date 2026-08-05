@@ -267,6 +267,19 @@ _IS_PRODUCTION = settings.env == "production" or os.environ.get(
 
 _cors_origins_list = parse_cors_origins(settings.cors_origins)
 
+# 自动将 PUBLIC_BASE_URL 加入 CORS 白名单（生产模式同样生效）
+# 这样用户只需配置 PUBLIC_BASE_URL=https://my-domain.com 即可自动放行
+_public_base_url = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+if _public_base_url and _public_base_url not in _cors_origins_list:
+    _cors_origins_list.append(_public_base_url)
+
+# 自动将服务器自身的 HOST:PORT 加入白名单
+# 适用于前后端同源部署（本架构的默认模式：前端静态文件由 FastAPI 提供）
+_server_port = settings.port
+for _origin in (f"http://localhost:{_server_port}", f"http://127.0.0.1:{_server_port}"):
+    if _origin not in _cors_origins_list:
+        _cors_origins_list.append(_origin)
+
 # 开发模式：自动补全本地回环端口，避免 CORS 拦截
 # 覆盖常见前端 dev server 端口和后端端口
 if not _IS_PRODUCTION:
@@ -275,11 +288,6 @@ if not _IS_PRODUCTION:
         for _origin in (f"http://localhost:{_p}", f"http://127.0.0.1:{_p}"):
             if _origin not in _cors_origins_list:
                 _cors_origins_list.append(_origin)
-    # 同时允许当前配置的端口
-    _server_port = settings.port
-    for _origin in (f"http://localhost:{_server_port}", f"http://127.0.0.1:{_server_port}"):
-        if _origin not in _cors_origins_list:
-            _cors_origins_list.append(_origin)
 
 # 生产模式强制：禁止通配符 * / 缺失配置
 if _IS_PRODUCTION:

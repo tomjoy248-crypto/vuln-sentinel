@@ -191,7 +191,7 @@ export const APP_TEMPLATE = `</head>
         <button onclick="navigateTo('profile')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 18px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:500">立即登录 / 注册</button>
       </div>
       <label class="scan-checkbox" style="margin-bottom:12px">
-        <input id="auth-check-step1" type="checkbox" />
+        <input id="auth-check-step1" type="checkbox" onchange="document.getElementById('scan-btn-step1').disabled=!this.checked" />
         <span>我已确认拥有该域名或已获得授权扫描</span>
       </label>
       <button class="scan-btn" id="scan-btn-step1" onclick="startScanDirect()" disabled>开始安全扫描</button>
@@ -245,7 +245,7 @@ export const APP_TEMPLATE = `</head>
           <input id="scan-url-confirmed" type="url" readonly aria-label="已确认的目标网址" />
         </div>
         <label class="scan-checkbox">
-          <input id="auth-check" type="checkbox" />
+          <input id="auth-check" type="checkbox" onchange="document.getElementById('scan-btn').disabled=!this.checked" />
           <span>我已确认拥有该域名或已获得授权扫描</span>
         </label>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
@@ -842,13 +842,13 @@ export const APP_TEMPLATE = `</head>
       <label for="batch-deep" style="cursor:pointer;color:var(--text-secondary)">深度扫描（含 XSS/SQLi 注入测试）</label>
     </div>
     <label class="scan-checkbox" style="margin-bottom:10px">
-      <input id="batch-auth-check" type="checkbox" />
+      <input id="batch-auth-check" type="checkbox" onchange="document.getElementById('batch-go-btn').disabled=!this.checked" />
       <span>我已确认拥有上述域名或已获得授权扫描</span>
     </label>
     <div id="batch-results" style="margin-top:12px"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button onclick="closeBatchScanModal()" style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:10px;border-radius:2px;cursor:pointer">关闭</button>
-      <button onclick="doBatchScan()" id="batch-go-btn" style="flex:1;background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:10px;border-radius:2px;cursor:pointer;font-weight:500">开始批量扫描</button>
+      <button onclick="doBatchScan()" id="batch-go-btn" disabled style="flex:1;background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:10px;border-radius:2px;cursor:pointer;font-weight:500">开始批量扫描</button>
     </div>
   </div>
 </div>

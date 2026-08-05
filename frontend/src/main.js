@@ -46,24 +46,26 @@ function safeSetValue(id, value) { let el = safeGetElement(id); if (el) el.value
 function safeSetDisplay(id, display) { let el = safeGetElement(id); if (el) el.style.display = display; }
 
 // ===== 授权复选框联动按钮状态 =====
-(function initAuthCheckboxBinding() {
-  function bindCheckboxToButton(checkboxId, buttonId) {
-    let cb = document.getElementById(checkboxId);
-    let btn = document.getElementById(buttonId);
-    if (!cb || !btn) return;
-    cb.addEventListener('change', function() {
-      btn.disabled = !cb.checked;
-    });
-    // 初始化时同步状态（处理 restoreAuthCheckbox 可能提前设置的情况）
-    if (cb.checked) btn.disabled = false;
-  }
-  document.addEventListener('DOMContentLoaded', function() {
-    bindCheckboxToButton('auth-check-step1', 'scan-btn-step1');
-    bindCheckboxToButton('auth-check', 'scan-btn');
-    // 11-S: 自动恢复授权勾选状态 + checkbox 联动
-    try { restoreAuthCheckbox(); } catch(e) { console.warn('restoreAuthCheckbox error:', e); }
+// 11-S fix: 原来在 DOMContentLoaded 时绑定，但此时 APP_TEMPLATE 尚未渲染到 DOM，
+// 导致 getElementById 返回 null，绑定静默失败，按钮永远 disabled。
+// 现改为导出函数，在模板渲染完成后调用。
+function bindCheckboxToButton(checkboxId, buttonId) {
+  let cb = document.getElementById(checkboxId);
+  let btn = document.getElementById(buttonId);
+  if (!cb || !btn) return;
+  cb.addEventListener('change', function() {
+    btn.disabled = !cb.checked;
   });
-})();
+  // 初始化时同步状态（处理 restoreAuthCheckbox 可能提前设置的情况）
+  if (cb.checked) btn.disabled = false;
+}
+
+function initAuthCheckboxBinding() {
+  bindCheckboxToButton('auth-check-step1', 'scan-btn-step1');
+  bindCheckboxToButton('auth-check', 'scan-btn');
+  // 11-S: 自动恢复授权勾选状态 + checkbox 联动
+  try { restoreAuthCheckbox(); } catch(e) { console.warn('restoreAuthCheckbox error:', e); }
+}
 
 // 11-S: 授权 checkbox 联动 + 持久化
 var _updatingAuthCheckbox = false;
@@ -80,8 +82,13 @@ function restoreAuthCheckbox() {
     if (c2) { c2.checked = true; }
     if (c3) { c3.checked = true; }
     _updatingAuthCheckbox = false;
-    // 手动触发一次按钮状态更新
-    if (c1) c1.dispatchEvent(new Event('change'));
+    // 11-S fix: 直接启用对应按钮，不依赖 change 事件（避免事件绑定时序问题）
+    let b1 = document.getElementById('scan-btn-step1');
+    let b2 = document.getElementById('scan-btn');
+    let b3 = document.getElementById('batch-go-btn');
+    if (b1) b1.disabled = false;
+    if (b2) b2.disabled = false;
+    if (b3) b3.disabled = false;
   }
   // 绑定联动：勾一个，全部自动勾（使用标志位防止循环）
   function linkCheckboxes(source, targets) {
@@ -92,6 +99,13 @@ function restoreAuthCheckbox() {
       _updatingAuthCheckbox = true;
       targets.forEach(function(t) { if (t) { t.checked = checked; } });
       _updatingAuthCheckbox = false;
+      // 同步按钮状态
+      let b1 = document.getElementById('scan-btn-step1');
+      let b2 = document.getElementById('scan-btn');
+      let b3 = document.getElementById('batch-go-btn');
+      if (b1) b1.disabled = !checked;
+      if (b2) b2.disabled = !checked;
+      if (b3) b3.disabled = !checked;
       try { localStorage.setItem('vs_auth_checked', checked ? 'true' : 'false'); } catch(e) {}
     });
   }
@@ -2193,6 +2207,11 @@ document.addEventListener('DOMContentLoaded', function() {
     app.innerHTML = APP_TEMPLATE;
   }
 
+  // 11-S fix: 模板渲染完成后，立即绑定复选框与按钮联动
+  // 原来在另一个 DOMContentLoaded 监听器中绑定，但那个监听器先于此处执行，
+  // 导致元素尚未渲染，绑定静默失败，扫描按钮永远 disabled
+  try { initAuthCheckboxBinding(); } catch(e) { console.warn('initAuthCheckboxBinding error:', e); }
+
   // 加载公开运行时配置（Stripe 公钥等）
   publicConfig().then(function(cfg) {
     let data = (cfg && cfg.data) || cfg || {};
@@ -2301,7 +2320,16 @@ document.addEventListener('DOMContentLoaded', function() {
   if (regPass) { regPass.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
   if (regConfirm) { regConfirm.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
   let scanUrl = safeGetElement('scan-url');
-  if (scanUrl) { scanUrl.addEventListener('keydown', function(e) { if (e.key === 'Enter') { if (typeof window.goVerifyStep2 === 'function') window.goVerifyStep2(); } }); }
+  if (scanUrl) { scanUrl.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    // 11-S: 如果已勾选授权且已登录，直接开始扫描（与点击按钮行为一致）
+    let authCb = document.getElementById('auth-check-step1');
+    if (authCb && authCb.checked && isLoggedIn()) {
+      if (typeof window.startScanDirect === 'function') window.startScanDirect();
+    } else if (typeof window.goVerifyStep2 === 'function') {
+      window.goVerifyStep2();
+    }
+  }); }
 
   // 全局键盘快捷键
   document.addEventListener('keydown', function(e) {
@@ -2385,6 +2413,18 @@ document.addEventListener('DOMContentLoaded', function() {
   window.scanAsset = scanAsset;
   window.extractError = extractError;
   window.friendlyError = friendlyError;
+  // 11-S fix: 补全遗漏的 window 暴露，修复对应 onclick 失效问题
+  window.showToast = showToast;
+  window.isLoggedIn = isLoggedIn;
+  window.toggleAISetting = toggleAISetting;
+  window.editAsset = editAsset;
+  window.deleteAsset = deleteAsset;
+  window.createMonitor = createMonitor;
+  window.aiSend = aiSend;
+  window.aiAsk = aiAsk;
+  window.createTeam = createTeam;
+  window.markAlertRead = markAlertRead;
+  window.loadEvolution = loadEvolution;
   // loadTrendChart 实际实现在 pages/home.js 中
 
   // 初始化计费页面模块
