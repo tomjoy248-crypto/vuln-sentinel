@@ -9,7 +9,10 @@ uvicorn[standard]>=0.23
 gunicorn>=21.0
 
 # HTTP 客户端（异步扫描用）
-httpx>=0.25
+httpx[http2]>=0.25
+
+# SSH 修复（可选但推荐）
+paramiko>=3.4
 
 # 数据验证与配置
 pydantic>=2.0

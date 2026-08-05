@@ -45,6 +45,18 @@ from pathlib import Path
 
 import httpx
 import jwt
+
+try:
+    import paramiko  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    paramiko = None
+
+try:
+    import h2  # noqa: F401
+    _HTTP2_SUPPORTED = True
+except Exception:  # pragma: no cover - optional dependency
+    _HTTP2_SUPPORTED = False
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, HTTPException, Depends, Header, Query, Request
 from fastapi.encoders import jsonable_encoder as jsonable
@@ -1504,12 +1516,15 @@ def _create_client() -> None:
             except (ValueError, TypeError):
                 pass
 
+    if not _HTTP2_SUPPORTED:
+        logger.warning("HTTP/2 support is unavailable (missing h2 package); falling back to HTTP/1.1")
+
     _httpx_client = httpx.AsyncClient(
         verify=_verify,
         timeout=settings.scan_timeout,
         follow_redirects=True,
         headers={"User-Agent": "VulnSentinel/12"},
-        http2=True,
+        http2=_HTTP2_SUPPORTED,
         event_hooks={"response": [_response_body_limit]},
         limits=httpx.Limits(
             max_connections=50,
@@ -4385,7 +4400,7 @@ async def analyze_security(
     suspect_paths = [p for p in sensitive_paths if p.get("suspect")]
     if suspect_paths:
         # 11-S 优化：suspect 疑似项不扣分，但记录为信息提示
-        suspect_names = [p["path"] for p in suspect_paths[:5]]
+        suspect_names = [p.get("path") or p.get("url") or "未知路径" for p in suspect_paths[:5]]
         add_finding(findings, "疑似敏感路径（需人工确认）", "low", "A01 访问控制失效",
                     f"发现 {len(suspect_paths)} 个疑似敏感路径，因响应内容不匹配或疑似软404，需人工确认: {', '.join(suspect_names)}",
                     "人工检查这些路径是否确实暴露了敏感信息，确认后限制访问。",
@@ -4607,11 +4622,11 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, ListFlowable, ListItem
     from reportlab.lib.units import mm
     from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
     from reportlab.pdfbase.ttfonts import TTFont
 
     _cn_font = "Helvetica"
-    # 11-S 修复：先尝试 WQY（TTF 格式，reportlab 完美支持）
-    # NotoSansCJK 是 CFF/OTF 格式，reportlab 的 TTFont 不支持
+    # 11-S 修复：优先尝试本地 TTF 字体；若不可用，则回退到 reportlab 内建中文 CID 字体。
     for _fp in [
         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
@@ -4623,13 +4638,21 @@ def generate_pdf_report(scan_data: dict) -> bytes:
             try:
                 pdfmetrics.registerFont(TTFont("CNFont", _fp))
                 _cn_font = "CNFont"
-                import logging
-                logging.getLogger("vuln_sentinel").info("PDF CJK font registered: " + _fp)
+                logger.info("PDF CJK font registered: %s", _fp)
                 break
             except Exception as _e:
-                import logging
-                logging.getLogger("vuln_sentinel").warning("PDF CJK font failed: " + _fp + " - " + str(_e))
+                logger.warning("PDF CJK font failed: %s - %s", _fp, _e)
                 continue
+
+    if _cn_font == "Helvetica":
+        for _font_name in ("STSong-Light", "MSung-Light", "HeiseiMin-W3"):
+            try:
+                pdfmetrics.registerFont(UnicodeCIDFont(_font_name))
+                _cn_font = _font_name
+                logger.info("PDF CID font registered: %s", _font_name)
+                break
+            except Exception as _e:
+                logger.warning("PDF CID font failed: %s - %s", _font_name, _e)
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
@@ -5903,20 +5926,22 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
     # 扫描结果缓存：根据深度设置不同 TTL，同一 URL 同深度直接返回
     parsed = urlparse(url)
     host = parsed.hostname or ""
+    is_local_demo_target = host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost")
 
     # 确定缓存 TTL（基于请求深度）
     cache_ttl = _get_cache_ttl(req.depth if req.depth else "standard")
     cache_key = f"{user['user_id']}:{url}:{req.depth}"
-    async with _scan_cache_lock:
-        cached = _SCAN_RESULT_CACHE.get(cache_key)
-    if cached and (time.time() - cached[1]) < cache_ttl:
-        _SCAN_CACHE_HITS += 1
-        if _SCAN_CACHE_HITS % 10 == 0:
-            total = _SCAN_CACHE_HITS + _SCAN_CACHE_MISSES
-            hit_rate = (_SCAN_CACHE_HITS / total * 100) if total > 0 else 0
-            logger.info("Scan cache stats: hits=%d misses=%d total=%d hit_rate=%.1f%%",
-                        _SCAN_CACHE_HITS, _SCAN_CACHE_MISSES, total, hit_rate)
-        return {**cached[0], "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    if not is_local_demo_target:
+        async with _scan_cache_lock:
+            cached = _SCAN_RESULT_CACHE.get(cache_key)
+        if cached and (time.time() - cached[1]) < cache_ttl:
+            _SCAN_CACHE_HITS += 1
+            if _SCAN_CACHE_HITS % 10 == 0:
+                total = _SCAN_CACHE_HITS + _SCAN_CACHE_MISSES
+                hit_rate = (_SCAN_CACHE_HITS / total * 100) if total > 0 else 0
+                logger.info("Scan cache stats: hits=%d misses=%d total=%d hit_rate=%.1f%%",
+                            _SCAN_CACHE_HITS, _SCAN_CACHE_MISSES, total, hit_rate)
+            return {**cached[0], "is_cached": True, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
     user_id = user["user_id"]
 
@@ -6512,7 +6537,7 @@ async def api_scan(req: ScanRequest, request: Request, user: dict = Depends(requ
             _scan_progress.pop(scan_token, None)
         result_jsonable = jsonable(result)
         # 写入扫描结果缓存（成功结果按深度 TTL 缓存）
-        if isinstance(result_jsonable, dict) and result_jsonable.get("success"):
+        if isinstance(result_jsonable, dict) and result_jsonable.get("success") and not is_local_demo_target:
             async with _scan_cache_lock:
                 _SCAN_RESULT_CACHE[cache_key] = (result_jsonable, time.time(), cache_ttl)
                 # 记录缓存未命中（新写入 = 之前未命中）
@@ -7281,6 +7306,9 @@ def _ssh_execute(host: str, port: int, username: str, password: str,
     通过 SSH 连接服务器并执行命令列表
     返回每条命令的输出（按顺序）
     """
+    if paramiko is None:
+        raise RuntimeError("SSH 修复功能未安装，请安装 paramiko")
+
     results = []
     client = paramiko.SSHClient()
     try:
@@ -11556,7 +11584,7 @@ async def api_demo_fix(req: DemoFixRequest, request: Request, user: dict = Depen
 
     # 安全检查：只允许操作本地靶场
     if req.target not in ("localhost:8080", "localhost:8443", "127.0.0.1:8080"):
-        return {"success": False, "error": "仅支持本地靶场"}
+        return {"success": False, "error": "仅支持本地演示靶场"}
 
     if req.action == "apply":
         ok, msg = _demo_nginx_apply_security_headers()
@@ -11672,12 +11700,16 @@ async def api_demo_status(request: Request) -> dict:
     """查询本地靶场状态"""
     await rate_limit_dependency(request)
     try:
-        # 检查 nginx 是否在运行
-        result = subprocess.run(
-            ["pgrep", "-f", DEMO_NGINX_CONF],
-            capture_output=True, text=True, timeout=10
-        )
-        running = result.returncode == 0
+        running = False
+        if shutil.which("pgrep"):
+            try:
+                result = subprocess.run(
+                    ["pgrep", "-f", DEMO_NGINX_CONF],
+                    capture_output=True, text=True, timeout=10
+                )
+                running = result.returncode == 0
+            except Exception as e:
+                logger.warning("Demo target status pgrep failed: %s", e)
 
         # 快速探测安全头状态
         headers_status = {}

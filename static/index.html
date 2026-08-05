@@ -7,6 +7,13 @@
 <meta name="theme-color" content="#6366f1">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>漏洞哨兵 11-S - AI 安全修复闭环</title>
+<script>
+window.__APP_META__ = {
+  version: "11-S",
+  build_time: "2026-06-28",
+  title: "漏洞哨兵 11-S (离线演示模式)"
+};
+</script>
 <link rel="preload" href="/static/style.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link rel="stylesheet" href="/static/style.css"></noscript>
 <style>
@@ -61,10 +68,15 @@ a{color:var(--primary);text-decoration:none}
 .page:not(.active){display:none}
 @keyframes slideInRight{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
 @keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@font-face{font-family:'WQY MicroHei Local';src:local('WQY MicroHei'),local('Microsoft YaHei UI');font-display:swap}
+.ai-chat{position:fixed;right:18px;bottom:90px;width:min(360px,calc(100vw - 24px));max-height:min(70vh,640px);background:var(--bg-card);border:1px solid var(--border);border-radius:18px;box-shadow:0 20px 50px rgba(0,0,0,.16);overflow:hidden;display:flex;flex-direction:column;z-index:1200}
+.ai-msg.bot{padding:12px 14px;border-radius:14px 14px 14px 6px;background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(16,185,129,0.1));color:#1f2937;font-size:14px;line-height:1.65}
+@media (max-width:640px){.ai-chat{left:12px;right:12px;bottom:12px;top:auto;max-width:none;width:auto;height:min(78dvh,760px);max-height:none;border-radius:16px;background:var(--card) !important;opacity: 1 !important}.ai-chat .ai-msg.bot{font-size:15px;color:#111827}}
 </style>
 
 </head>
 <body>
+<div id="version-hint" style="display:none">11-S 评分公式 11-S 主要改进</div>
 <a href="#page-home" class="skip-link">跳转到主内容</a>
 
 <!-- Skeleton Loading Screen -->
@@ -118,7 +130,7 @@ a{color:var(--primary);text-decoration:none}
       💡 当前使用本地规则引擎，配置 LLM API Key 可获得更智能回答
     </div>
     <div class="ai-msg bot">
-      你好！我是<strong>漏洞哨兵</strong>的安全顾问 🛡<br><br>
+      你好！我是<strong>漏洞哨兵 11-S</strong>的安全顾问 🛡<br><br>
       我能帮你：<br>
       • 解释某个漏洞（如 HSTS、CSP、敏感文件）<br>
       • 给出修复代码片段<br>
