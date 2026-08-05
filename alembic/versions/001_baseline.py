@@ -10,7 +10,8 @@ ALTER TABLE 迁移追加的列）以 SQLAlchemy ``op.create_table()`` 的方式
 
 users, scans, targets, domain_verifications, fix_tickets,
 ticket_events, alerts, usage_logs, pricing_plans, recharge_records,
-assets, finding_feedback, audit_logs
+assets, finding_feedback, audit_logs,
+monitors, monitor_alerts, ai_conversations, teams, team_members, scan_comments
 
 注意：
 - 原 init_db() 使用 ``CREATE TABLE IF NOT EXISTS``，本 baseline 迁移
@@ -316,12 +317,116 @@ def upgrade() -> None:
     op.create_index("idx_audit_logs_action", "audit_logs", ["action"])
     op.create_index("idx_audit_logs_created_at", "audit_logs", ["created_at"])
 
+    # ------------------------------------------------------------------
+    # 14. monitors：资产监控表（11-S 新增）
+    # ------------------------------------------------------------------
+    op.create_table(
+        "monitors",
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("user_id", sa.Integer, nullable=False),
+        sa.Column("url", sa.Text, nullable=False),
+        sa.Column("frequency_hours", sa.Integer, server_default=sa.text("24")),
+        sa.Column("last_score", sa.Integer, nullable=True),
+        sa.Column("last_risk", sa.Text, nullable=True),
+        sa.Column("last_scan_at", sa.Text, nullable=True),
+        sa.Column("last_patrol_at", sa.Text, nullable=True),
+        sa.Column("is_active", sa.Integer, server_default=sa.text("1")),
+        sa.Column("created_at", sa.Text, nullable=True),
+        sa.UniqueConstraint("user_id", "url", name="uq_monitors_user_id_url"),
+        sqlite_autoincrement=True,
+    )
+    op.create_index("idx_monitors_user_id", "monitors", ["user_id"])
+    op.create_index("idx_monitors_is_active", "monitors", ["is_active"])
+
+    # ------------------------------------------------------------------
+    # 15. monitor_alerts：监控告警表（11-S 新增）
+    # ------------------------------------------------------------------
+    op.create_table(
+        "monitor_alerts",
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("monitor_id", sa.Integer, nullable=False),
+        sa.Column("user_id", sa.Integer, nullable=False),
+        sa.Column("alert_type", sa.Text, nullable=False),
+        sa.Column("message", sa.Text, nullable=True),
+        sa.Column("old_score", sa.Integer, nullable=True),
+        sa.Column("new_score", sa.Integer, nullable=True),
+        sa.Column("created_at", sa.Text, nullable=True),
+        sa.Column("is_read", sa.Integer, server_default=sa.text("0")),
+        sqlite_autoincrement=True,
+    )
+    op.create_index("idx_monitor_alerts_monitor_id", "monitor_alerts", ["monitor_id"])
+    op.create_index("idx_monitor_alerts_user_id", "monitor_alerts", ["user_id"])
+    op.create_index("idx_monitor_alerts_is_read", "monitor_alerts", ["is_read"])
+
+    # ------------------------------------------------------------------
+    # 16. ai_conversations：AI 顾问对话历史表（11-S 新增）
+    # ------------------------------------------------------------------
+    op.create_table(
+        "ai_conversations",
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("user_id", sa.Integer, nullable=False),
+        sa.Column("role", sa.Text, nullable=False),
+        sa.Column("content", sa.Text, nullable=True),
+        sa.Column("context_json", sa.Text, nullable=True),
+        sa.Column("created_at", sa.Text, nullable=True),
+        sqlite_autoincrement=True,
+    )
+    op.create_index("idx_ai_conversations_user_id", "ai_conversations", ["user_id"])
+
+    # ------------------------------------------------------------------
+    # 17. teams：团队表（11-S 新增）
+    # ------------------------------------------------------------------
+    op.create_table(
+        "teams",
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("name", sa.Text, nullable=False),
+        sa.Column("owner_id", sa.Integer, nullable=False),
+        sa.Column("created_at", sa.Text, nullable=True),
+        sqlite_autoincrement=True,
+    )
+    op.create_index("idx_teams_owner_id", "teams", ["owner_id"])
+
+    # ------------------------------------------------------------------
+    # 18. team_members：团队成员表（11-S 新增）
+    # ------------------------------------------------------------------
+    op.create_table(
+        "team_members",
+        sa.Column("team_id", sa.Integer, nullable=False),
+        sa.Column("user_id", sa.Integer, nullable=False),
+        sa.Column("role", sa.Text, server_default=sa.text("'member'")),
+        sa.Column("joined_at", sa.Text, nullable=True),
+        sa.PrimaryKeyConstraint("team_id", "user_id", name="pk_team_members"),
+    )
+    op.create_index("idx_team_members_team_id", "team_members", ["team_id"])
+    op.create_index("idx_team_members_user_id", "team_members", ["user_id"])
+
+    # ------------------------------------------------------------------
+    # 19. scan_comments：扫描评论表（11-S 新增）
+    # ------------------------------------------------------------------
+    op.create_table(
+        "scan_comments",
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("scan_id", sa.Integer, nullable=False),
+        sa.Column("user_id", sa.Integer, nullable=False),
+        sa.Column("comment", sa.Text, nullable=True),
+        sa.Column("created_at", sa.Text, nullable=True),
+        sqlite_autoincrement=True,
+    )
+    op.create_index("idx_scan_comments_scan_id", "scan_comments", ["scan_id"])
+    op.create_index("idx_scan_comments_user_id", "scan_comments", ["user_id"])
+
 
 def downgrade() -> None:
     """按 upgrade 的逆序删除所有表。
 
     说明：删除表时其上的索引会自动随之删除，故无需单独 drop index。
     """
+    op.drop_table("scan_comments")
+    op.drop_table("team_members")
+    op.drop_table("teams")
+    op.drop_table("ai_conversations")
+    op.drop_table("monitor_alerts")
+    op.drop_table("monitors")
     op.drop_table("audit_logs")
     op.drop_table("finding_feedback")
     op.drop_table("assets")

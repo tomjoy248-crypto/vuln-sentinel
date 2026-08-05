@@ -36,6 +36,35 @@ apscheduler>=3.10
 # 加密（SSO 凭证存储 / Fernet）
 cryptography>=41.0
 
+# 结构化日志（app/core/logging.py 无条件导入）
+structlog>=24.0
+
+# Prometheus 指标（app/metrics.py 无条件导入）
+prometheus-client>=0.19
+prometheus-fastapi-instrumentator>=6.1
+
+# 数据库 ORM 与迁移（app/db/session.py、alembic/）
+SQLAlchemy>=2.0
+alembic>=1.13
+
+# PostgreSQL 驱动（生产环境使用 PostgreSQL 时必需）
+psycopg2-binary>=2.9
+
+# Redis（分布式限流与扫描队列，可选但生产环境推荐）
+redis>=5.0
+
+# Sentry 错误追踪（可选，生产环境推荐）
+sentry-sdk[fastapi]>=2.0
+
+# Stripe 支付（可选，配置后启用真实收款）
+stripe>=8.0
+
 # 单元测试（开发用）
 pytest>=7.0
+pytest-cov>=4.0
+pytest-asyncio>=0.23
+
+# 代码质量检查（开发用）
+ruff>=0.4
+bandit>=1.7
 

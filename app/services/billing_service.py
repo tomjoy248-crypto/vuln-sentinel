@@ -532,6 +532,29 @@ def _is_mock_enabled(name: str) -> bool:
     return os.environ.get(f"{name}_MOCK", "false").lower() in ("1", "true", "yes")
 
 
+def _verify_mock_signature(payload: dict[str, Any]) -> None:
+    """mock 模式安全校验：要求请求携带与 MOCK_WEBHOOK_SECRET 环境变量匹配的签名。
+
+    生产环境不应开启 MOCK 模式。若开启，必须设置 MOCK_WEBHOOK_SECRET
+    防止未授权的充值请求。
+    """
+    secret = os.environ.get("MOCK_WEBHOOK_SECRET", "")
+    if not secret:
+        raise BusinessException(
+            "MOCK 模式已开启但未设置 MOCK_WEBHOOK_SECRET，"
+            "请设置环境变量或关闭 MOCK 模式",
+            code="MOCK_SECRET_MISSING",
+            status_code=503,
+        )
+    provided = payload.get("_mock_secret") or payload.get("mock_secret", "")
+    if provided != secret:
+        raise BusinessException(
+            "mock 签名校验失败",
+            code="MOCK_SIGNATURE_INVALID",
+            status_code=403,
+        )
+
+
 def _parse_transaction_id(payload: dict[str, Any]) -> str | None:
     """从支付网关回调中解析本地交易号。"""
     for key in ("out_trade_no", "outTradeNo", "transaction_id", "transactionId"):
@@ -568,6 +591,7 @@ def handle_alipay_notify(payload: dict[str, Any]) -> dict[str, Any]:
         raise BusinessException("支付宝支付尚未接入", code="NOT_IMPLEMENTED", status_code=501)
 
     if _is_mock_enabled("ALIPAY"):
+        _verify_mock_signature(payload)
         trade_status = payload.get("trade_status") or payload.get("tradeStatus")
         if trade_status not in ("TRADE_SUCCESS", "TRADE_FINISHED"):
             return {
@@ -597,6 +621,7 @@ def handle_wechat_notify(payload: dict[str, Any]) -> dict[str, Any]:
         raise BusinessException("微信支付尚未接入", code="NOT_IMPLEMENTED", status_code=501)
 
     if _is_mock_enabled("WECHAT"):
+        _verify_mock_signature(payload)
         trade_state = payload.get("trade_state") or payload.get("tradeState") or payload.get("result_code")
         if trade_state not in ("SUCCESS",):
             return {

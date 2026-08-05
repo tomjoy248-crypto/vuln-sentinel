@@ -26,6 +26,24 @@ router = APIRouter(prefix="/health", tags=["health"])
 _SERVICE_START_TIME = time.time()
 
 
+def _check_redis_health() -> bool:
+    """检查 Redis 连通性。未配置 Redis 时返回 True（跳过检查）。"""
+    redis_url = os.environ.get("REDIS_URL", "")
+    if not redis_url:
+        return True
+    try:
+        import redis
+
+        r = redis.from_url(redis_url, socket_timeout=2, socket_connect_timeout=2)
+        r.ping()
+        return True
+    except ImportError:
+        # redis 库未安装，跳过检查
+        return True
+    except Exception:
+        return False
+
+
 @router.get("/live")
 async def health_live() -> dict[str, Any]:
     """存活探针：只要进程在跑就返回 200。
@@ -37,18 +55,21 @@ async def health_live() -> dict[str, Any]:
 
 @router.get("/ready")
 async def health_ready(response: Response) -> JSONResponse:
-    """就绪探针：检查数据库等依赖是否就绪。
+    """就绪探针：检查数据库和 Redis 等依赖是否就绪。
 
     用于 K8s readinessProbe：失败则不接入流量。
     """
     db_ok = check_db_health()
-    status_code = 200 if db_ok else 503
+    redis_ok = _check_redis_health()
+    all_ok = db_ok and redis_ok
+    status_code = 200 if all_ok else 503
     return JSONResponse(
         status_code=status_code,
         content={
-            "status": "ready" if db_ok else "not_ready",
+            "status": "ready" if all_ok else "not_ready",
             "checks": {
                 "database": "ok" if db_ok else "error",
+                "redis": "ok" if redis_ok else "skip",
             },
             "uptime_sec": int(time.time() - _SERVICE_START_TIME),
         },

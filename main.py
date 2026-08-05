@@ -83,7 +83,7 @@ from app.core.response import success_response
 from app.db.session import init_db_path
 from app.health import get_health_summary
 from app.health import router as health_router
-from app.metrics import setup_metrics
+from app.metrics import setup_metrics, record_scan_start, record_scan_end, record_cache_hit, record_cache_miss, record_findings
 from app.middleware import request_id_middleware
 from app.plugins import Finding
 from app.plugins.builtin import register_builtin_detectors
@@ -8171,6 +8171,7 @@ async def api_scan(
         cached = _SCAN_RESULT_CACHE.get(cache_key)
     if cached and (time.time() - cached[1]) < cache_ttl:
         _SCAN_CACHE_HITS += 1
+        record_cache_hit()
         if _SCAN_CACHE_HITS % 10 == 0:
             total = _SCAN_CACHE_HITS + _SCAN_CACHE_MISSES
             hit_rate = (_SCAN_CACHE_HITS / total * 100) if total > 0 else 0
@@ -8190,6 +8191,7 @@ async def api_scan(
     # 阶段事件：写入内存字典（带 asyncio.Lock），不再写文件，避免并发覆盖。
     import secrets as _secrets
 
+    _metrics_timer = record_scan_start()
     scan_token = f"{user_id}_{int(datetime.now().timestamp())}_{_secrets.token_hex(4)}"
     progress = {
         "stages": [
@@ -8703,6 +8705,7 @@ async def api_scan(
                 )
                 # 记录缓存未命中（新写入 = 之前未命中）
                 _SCAN_CACHE_MISSES += 1
+                record_cache_miss()
                 # 缓存淘汰：超过硬上限时按时间戳淘汰最旧的 20%
                 if len(_SCAN_RESULT_CACHE) > _SCAN_CACHE_MAX_SIZE:
                     sorted_items = sorted(
@@ -8711,11 +8714,15 @@ async def api_scan(
                     evict_count = max(1, int(_SCAN_CACHE_MAX_SIZE * 0.2))
                     for k, _ in sorted_items[:evict_count]:
                         _SCAN_RESULT_CACHE.pop(k, None)
+        # 记录 Prometheus 业务指标
+        record_scan_end(_metrics_timer, status="success", depth=req.depth or "standard")
+        record_findings(result_jsonable.get("findings", []))
         return JSONResponse(
             content=result_jsonable,
             headers={"X-Scan-Token": scan_token},
         )
     except asyncio.TimeoutError:
+        record_scan_end(_metrics_timer, status="timeout", depth=req.depth or "standard")
         async with _scan_progress_lock:
             _scan_progress.pop(scan_token, None)
         # 扫描超时退还积分
@@ -8826,6 +8833,7 @@ async def api_scan(
         raise
     except Exception as e:
         # 11-S: 通用异常兜底，避免返回 500
+        record_scan_end(_metrics_timer, status="error", depth=req.depth or "standard")
         logger.error("Scan failed with unexpected error: %s", e, exc_info=True)
         try:
             async with _scan_progress_lock:
