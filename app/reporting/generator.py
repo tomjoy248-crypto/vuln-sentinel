@@ -74,11 +74,11 @@ def _get_risk_level(score: int) -> str:
     """根据综合评分返回风险等级。"""
     if score >= 90:
         return "Critical"
-    if score >= 70:
+    if score >= 75:
         return "High"
-    if score >= 40:
+    if score >= 50:
         return "Medium"
-    if score >= 10:
+    if score >= 20:
         return "Low"
     return "Informational"
 
@@ -117,17 +117,17 @@ def _build_summary_from_scan_data(scan_data: dict[str, Any]) -> ScanExecutiveSum
         verified_count = sum(
             1
             for f in findings
-            if f.get("verification_status", "").lower() == "verified"
+            if f.get("verification_status", "").lower() in {"verified", "confirmed"}
         )
         unverified_count = sum(
             1
             for f in findings
-            if f.get("verification_status", "").lower() == "unverified"
+            if f.get("verification_status", "").lower() in {"unverified", "probable"}
         )
         false_positive_count = sum(
             1
             for f in findings
-            if f.get("verification_status", "").lower() == "false positive"
+            if f.get("verification_status", "").lower() in {"false positive", "suspected"}
         )
 
     return ScanExecutiveSummary(

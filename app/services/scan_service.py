@@ -33,25 +33,37 @@ def _ensure_plugins_registered() -> None:
 
 
 def _calculate_score(findings: list[dict[str, Any]]) -> dict[str, Any]:
-    """根据 findings 计算评分与汇总。"""
+    """根据 findings 计算参考评分与汇总。
+
+    评分偏保守：高置信度高危项影响更大，低置信度项影响更小，
+    避免单条弱证据把结果拉得过低。"""
     score = 100
     summary = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0}
-    severity_weights = {"critical": 25, "high": 15, "medium": 8, "low": 3, "info": 0}
-    for f in findings:
-        sev = f.get("severity", "info")
+    severity_weights = {"critical": 28, "high": 16, "medium": 8, "low": 3, "info": 0}
+    confidence_multipliers = {"high": 1.0, "medium": 0.7, "low": 0.4}
+    for finding in findings:
+        sev = str(finding.get("severity", "info")).lower()
+        conf = str(finding.get("confidence", "medium")).lower()
         summary[sev] = summary.get(sev, 0) + 1
         summary["total"] += 1
-        score -= severity_weights.get(sev, 0)
-    score = max(10, min(100, score))
-    risk_level = (
-        "critical"
-        if score < 40
-        else "high"
-        if score < 60
-        else "medium"
-        if score < 80
-        else "low"
-    )
+        weight = severity_weights.get(sev, 0)
+        multiplier = confidence_multipliers.get(conf, 0.7)
+        if finding.get("is_likely_fp"):
+            multiplier *= 0.5
+        score -= int(round(weight * multiplier))
+    if summary["total"] == 0:
+        risk_level = "low"
+    else:
+        score = max(15, min(100, score))
+        risk_level = (
+            "critical"
+            if score < 40
+            else "high"
+            if score < 60
+            else "medium"
+            if score < 80
+            else "low"
+        )
     return {"score": score, "risk_level": risk_level, "summary": summary}
 
 
@@ -228,6 +240,8 @@ async def run_plugin_scan(
     fp_controller = FalsePositiveControl(threshold=0.3)
     findings = fp_controller.analyze_batch(findings)
     fp_marked = sum(1 for f in findings if f.get("is_likely_fp"))
+    if fp_marked:
+        logger.info("False-positive control marked %d findings", fp_marked)
     phase_timings["fp_control"] = (time.time() - _phase_start) * 1000
 
     # 3. Finding 去重与关联
@@ -244,7 +258,7 @@ async def run_plugin_scan(
         "probable": 0,
         "suspected": 0,
     }
-    if enable_verification:
+    if enable_verification and findings:
         findings = await _run_cross_validation(findings)
         verification_stats["enabled"] = True
         verification_stats["confirmed"] = sum(
