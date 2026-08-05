@@ -117,13 +117,13 @@ SECURITY_HEADERS: dict[str, dict[str, str]] = {
 # ---------- WAF 签名 ----------
 
 WAF_SIGNATURES: dict[str, list[str]] = {
-    "cloudflare": ["CF-RAY", "__cfduid", "cf-browser-verification", "cloudflare"],
-    "aliyun": ["X-Alibaba-WAF", "X-Alibaba-WAF-Action", "aliyun"],
-    "aws": ["X-AMZ-CF-ID", "X-Cache", "awselb", "aws"],
-    "baidu": ["X-Bd-WAF", "X-Bd-Id", "bfe"],
-    "qcloud": ["X-Qcloud-Edge", "X-Tencent-Ua", "qcloud"],
-    "imperva": ["X-Iinfo", "incap_ses", "imperva"],
-    "akamai": ["X-Akamai-Request-BC", "Akamai-Origin-Hop", "akamai"],
+    "cloudflare": ["CF-RAY", "__cfduid", "cf-browser-verification"],
+    "aliyun": ["X-Alibaba-WAF", "X-Alibaba-WAF-Action"],
+    "aws": ["X-AMZ-CF-ID", "awselb"],
+    "baidu": ["X-Bd-WAF", "X-Bd-Id"],
+    "qcloud": ["X-Qcloud-Edge", "X-Tencent-Ua"],
+    "imperva": ["X-Iinfo", "incap_ses"],
+    "akamai": ["X-Akamai-Request-BC", "Akamai-Origin-Hop"],
 }
 
 # ---------- 敏感路径 ----------

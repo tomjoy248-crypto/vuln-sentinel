@@ -572,6 +572,10 @@ export const APP_TEMPLATE = `</head>
       <span>额度与使用记录</span>
       <span class="settings-arrow">&#x203A;</span>
     </div>
+    <div class="settings-row" onclick="navigateTo('assets')">
+      <span>资产管理</span>
+      <span class="settings-arrow">&#x203A;</span>
+    </div>
     <div class="settings-row" onclick="navigateTo('billing')">
       <span>购买积分套餐</span>
       <span class="settings-arrow">&#x203A;</span>
@@ -598,10 +602,10 @@ export const APP_TEMPLATE = `</head>
   <div class="settings-group">
     <div class="settings-group-title">API Token</div>
     <div class="settings-row-static">
-      <input type="text" id="api-token-input" readonly value="登录后生成 Token" style="flex:1;background:#2b2b2b;color:var(--text-secondary)" />
-      <button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px" onclick="var el=document.getElementById('api-token-input');if(el && el.value && el.value.indexOf('登录')===-1){navigator.clipboard.writeText(el.value).then(function(){showToast('Token 已复制','success')}).catch(function(){showToast('复制失败','error')});}else{showToast('请先登录','error');}">复制</button>
-      <button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px" onclick="if(!isLoggedIn()){showToast('请先登录','error');return;}var el=document.getElementById('api-token-input');if(el){el.value='vs_' + Array.from({length:32},function(){return 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random()*36)];}).join('');showToast('Token 已刷新','success');}">刷新</button>
+      <input type="text" id="api-token-input" readonly value="登录后显示 Token" style="flex:1;background:#2b2b2b;color:var(--text-secondary);font-family:monospace;font-size:11px" />
+      <button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px" onclick="copyApiToken()">复制</button>
     </div>
+    <p style="font-size:11px;color:var(--text-secondary);margin-top:6px">此 Token 用于 API 调用身份认证，登录后自动生成。Token 会在服务端密钥变更或过期后失效。</p>
   </div>
 
   <!-- 扫描历史面板 -->

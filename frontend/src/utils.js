@@ -45,14 +45,14 @@ export function getScoreGradient(score) {
 }
 
 export function getRiskClass(level) {
-  if (level === '高风险' || level === 'high') return 'high';
+  if (level === '严重' || level === 'critical' || level === '高风险' || level === 'high') return 'high';
   if (level === '中风险' || level === 'medium') return 'medium';
   return 'low';
 }
 
 export function getRiskColor(level) {
   if (!level) return 'var(--text-secondary)';
-  if (level.indexOf('高') >= 0 || level.indexOf('critical') >= 0) return '#c75450';
+  if (level.indexOf('严重') >= 0 || level.indexOf('高') >= 0 || level.indexOf('critical') >= 0) return '#c75450';
   if (level.indexOf('中') >= 0 || level.indexOf('medium') >= 0) return '#f0a732';
   if (level.indexOf('低') >= 0 || level.indexOf('low') >= 0) return '#16a34a';
   return 'var(--text-secondary)';

@@ -84,8 +84,10 @@ function updateAuthUI() {
     let name = getUsername();
     let displayName = document.getElementById('auth-display-name');
     if (displayName) displayName.textContent = name || '用户';
-    if (tokenInput && (!tokenInput.value || tokenInput.value.indexOf('登录') !== -1)) {
-      tokenInput.value = 'vs_' + Array.from({length:32},function(){return 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random()*36)];}).join('');
+    // 显示真实的 JWT token，不再生成假 token
+    if (tokenInput) {
+      let realToken = getToken();
+      tokenInput.value = realToken || 'Token 不可用';
     }
   } else {
     if (guest) guest.style.display = 'block';
@@ -93,7 +95,7 @@ function updateAuthUI() {
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'none';
     if (scanLoginTip) scanLoginTip.style.display = 'block';
-    if (tokenInput) tokenInput.value = '登录后生成 Token';
+    if (tokenInput) tokenInput.value = '登录后显示 Token';
   }
 }
 

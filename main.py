@@ -1582,24 +1582,7 @@ async def _run_scan_task(
     ssl_info = {}
     if is_https:
         try:
-            import socket as _socket
-            import ssl as _ssl
-
-            ctx = _ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = _ssl.CERT_NONE
-            with _socket.create_connection(
-                (parsed.hostname, 443), timeout=5
-            ) as sock:
-                with ctx.wrap_socket(sock, server_hostname=parsed.hostname) as ssock:
-                    cert = ssock.getpeercert()
-                    if cert:
-                        ssl_info = {
-                            "issuer": dict(x[0] for x in cert.get("issuer", [])),
-                            "subject": dict(x[0] for x in cert.get("subject", [])),
-                            "version": cert.get("version"),
-                            "notAfter": cert.get("notAfter"),
-                        }
+            ssl_info = await get_ssl_info(parsed.hostname, 443)
         except Exception:
             pass
     if progress_cb:
@@ -3243,6 +3226,7 @@ def detect_waf(headers: dict) -> list[dict]:
     detected: list[dict] = []
     for waf_name, signatures in WAF_SIGNATURES.items():
         for sig in signatures:
+            # 仅匹配 header 名称，避免 header 值中包含关键词导致误报
             if sig.lower() in headers_lower:
                 detected.append(
                     {
@@ -3252,9 +3236,9 @@ def detect_waf(headers: dict) -> list[dict]:
                     }
                 )
                 break
-            for hk, hv in headers_lower.items():
-                if sig.lower() in hk.lower() or sig.lower() in hv.lower():
-                    detected.append({"name": waf_name, "signature": sig, "value": hv})
+            for hk in headers_lower:
+                if sig.lower() == hk.lower():
+                    detected.append({"name": waf_name, "signature": sig, "value": headers_lower[hk]})
                     break
     return detected
 
@@ -3619,7 +3603,7 @@ async def check_sensitive_paths(host: str, is_https: bool) -> list[dict]:
 
     try:
         tasks = []
-        for p in SENSITIVE_PATHS[:5]:
+        for p in SENSITIVE_PATHS:
             tasks.append(check(p, is_info=False))
         for p in INFO_PATHS[:2]:
             tasks.append(check(p, is_info=True))
@@ -6187,7 +6171,7 @@ async def analyze_security(
             waf_bonus = 3
     score = score + waf_bonus
     score = max(10, min(100, score))
-    risk_level = "高风险" if score < 50 else "中风险" if score < 75 else "低风险"
+    risk_level = "严重" if score < 40 else "高风险" if score < 60 else "中风险" if score < 80 else "低风险"
     improvements: list[str] = []
     for f in findings:
         improvements.append(f.get("fix", ""))

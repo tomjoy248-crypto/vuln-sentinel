@@ -1,6 +1,28 @@
 # 更新日志
 
-## [2026-08-05] - 2026-08-05
+## [2026-08-05] - 产品上架前修复
+
+### 修复 - 账号登录问题
+- **登录用户名大小写不敏感**：注册时使用 `COLLATE NOCASE` 检查，登录时也改为 `COLLATE NOCASE`，修复大小写不一致导致登录失败要求重建账号的问题。
+- **401 错误处理降级**：`authFetch` 收到 401 时不再强制 `doLogout()`（弹窗+跳转），改为静默清除 token 并更新 UI，避免页面加载时的探测请求导致用户被意外登出。
+- **loadTrendChart 守卫**：仅在 `isLoggedIn()` 时调用 `loadTrendChart`，避免未登录时触发 401。
+
+### 修复 - 扫描准确性
+- **敏感路径全覆盖**：`check_sensitive_paths` 从仅检查前 5 条改为检查全部 24 条敏感路径。
+- **统一评分系统**：主扫描流程从 3 级评分（50/75 阈值）改为 4 级评分（40/60/80 阈值），与插件扫描服务对齐，新增"严重"风险级别。
+- **WAF 检测精准化**：移除过于宽泛的字符串签名（如 "aws"、"cloudflare" 等），仅保留特定 HTTP 头签名；`detect_waf` 仅匹配 header 名称不再匹配 header 值，降低误报率。
+- **SSL 信息获取统一**：`_run_scan_task` 中的内联 SSL 代码（CERT_NONE）替换为调用 `get_ssl_info`，统一使用带证书过期/弱协议检测的实现。
+
+### 修复 - 前端 UX
+- **移除假 API Token 刷新按钮**：原"刷新"按钮客户端随机生成假 token，现改为显示真实 JWT token 并支持复制。
+- **资产管理页面可达**：在个人中心设置页新增"资产管理"入口，修复页面存在但无法导航的问题。
+- **通知开关持久化**：扫描完成提醒开关状态保存到 localStorage，页面刷新后恢复。
+
+### 文档精简
+- 删除内部开发规划文档（DEEPENING_PLAN.md、PROFESSIONAL_EVOLUTION_PLAN.md、PACKAGE_AUDIT.md）。
+- README 项目结构从 150+ 行精简为 15 行概览，API 端点列表改为指向 /docs。
+
+## [2026-08-05] - 扫描功能修复与端到端测试
 
 ### 新增 - 扫描功能修复与端到端测试
 - **修复扫描按钮永远 disabled 的关键 Bug**：`bindCheckboxToButton` 在 `DOMContentLoaded` 时执行，但模板尚未渲染，导致 checkbox-button 绑定静默失败。改为在 HTML 模板中内联 `onchange` 事件直接绑定，并在模板渲染后补充初始化。

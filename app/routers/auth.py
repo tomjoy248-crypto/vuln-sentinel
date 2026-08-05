@@ -82,7 +82,7 @@ async def api_register(req: RegisterRequest, request: Request) -> dict:
         )
         conn.commit()
         user_row = conn.execute(
-            "SELECT * FROM users WHERE username=?", (req.username,)
+            "SELECT * FROM users WHERE username COLLATE NOCASE=?", (req.username,)
         ).fetchone()
         user = dict(user_row)
         token = create_token(
@@ -117,7 +117,7 @@ async def api_login(req: LoginRequest, request: Request) -> dict:
     conn = get_db()
     try:
         user_row = conn.execute(
-            "SELECT * FROM users WHERE username=?", (req.username,)
+            "SELECT * FROM users WHERE username COLLATE NOCASE=?", (req.username,)
         ).fetchone()
         if not user_row:
             raise UnauthorizedException("用户名或密码错误")

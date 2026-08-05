@@ -326,7 +326,11 @@ function authFetch(url, options) {
   let fullUrl = (url.indexOf('http') === 0) ? url : (API_BASE + url);
   return fetch(fullUrl, options).then(function(resp) {
     if (resp.status === 401) {
-      if (!_authFetchInLogout) { _authFetchInLogout = true; doLogout(); _authFetchInLogout = false; }
+      // 温和处理 401：仅清除过期 token 并更新 UI，不强制跳转或弹窗
+      // 避免页面加载时的探测请求导致用户被意外登出
+      removeToken();
+      try { localStorage.removeItem('vs_username'); } catch(e) {}
+      if (typeof updateAuthUI === 'function') updateAuthUI();
       throw new Error('登录已过期，请重新登录');
     }
     return resp;
@@ -381,8 +385,10 @@ function updateAuthUI() {
     let name = getUsername();
     let displayName = document.getElementById('auth-display-name');
     if (displayName) displayName.textContent = name || '用户';
-    if (tokenInput && (!tokenInput.value || tokenInput.value.indexOf('登录') !== -1)) {
-      tokenInput.value = 'vs_' + Array.from({length:32},function(){return 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random()*36)];}).join('');
+    // 显示真实的 JWT token，不再生成假 token
+    if (tokenInput) {
+      let realToken = getToken();
+      tokenInput.value = realToken || 'Token 不可用';
     }
   } else {
     if (guest) guest.style.display = 'block';
@@ -390,7 +396,25 @@ function updateAuthUI() {
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'none';
     if (scanLoginTip) scanLoginTip.style.display = 'block';
-    if (tokenInput) tokenInput.value = '登录后生成 Token';
+    if (tokenInput) tokenInput.value = '登录后显示 Token';
+  }
+}
+
+function copyApiToken() {
+  if (!isLoggedIn()) { showToast('请先登录', 'error'); return; }
+  let el = document.getElementById('api-token-input');
+  if (!el || !el.value || el.value.indexOf('登录') !== -1 || el.value === 'Token 不可用') {
+    showToast('Token 不可用，请重新登录', 'error');
+    return;
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(el.value).then(function() {
+      showToast('Token 已复制', 'success');
+    }).catch(function() {
+      showToast('复制失败', 'error');
+    });
+  } else {
+    showToast('浏览器不支持自动复制，请手动选择文本复制', 'error');
   }
 }
 
@@ -1462,7 +1486,7 @@ function getScoreGradient(score) {
 }
 
 function getRiskClass(level) {
-  if (level === '高风险' || level === 'high') return 'high';
+  if (level === '严重' || level === 'critical' || level === '高风险' || level === 'high') return 'high';
   if (level === '中风险' || level === 'medium') return 'medium';
   return 'low';
 }
@@ -1520,7 +1544,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function getRiskColor(level) {
   if (!level) return 'var(--text-secondary)';
-  if (level.indexOf('高') >= 0 || level.indexOf('critical') >= 0) return '#c75450';
+  if (level.indexOf('严重') >= 0 || level.indexOf('高') >= 0 || level.indexOf('critical') >= 0) return '#c75450';
   if (level.indexOf('中') >= 0 || level.indexOf('medium') >= 0) return '#f0a732';
   if (level.indexOf('低') >= 0 || level.indexOf('low') >= 0) return '#16a34a';
   return 'var(--text-secondary)';
@@ -2007,6 +2031,10 @@ function toggleSetting(el, key) {
   if (key === 'autoSave') {
     (function(){try{localStorage.setItem('vs_autosave',newState?'1':'0');}catch(e){}})();
   }
+  // Real notify toggle: persist to localStorage
+  if (key === 'notify') {
+    (function(){try{localStorage.setItem('vs_notify',newState?'1':'0');}catch(e){}})();
+  }
   showToast('设置已更新');
 }
 
@@ -2258,14 +2286,23 @@ document.addEventListener('DOMContentLoaded', function() {
   try { updateProfileStats(); } catch(e) { console.warn('updateProfileStats error:', e); }
   try { updateAuthUI(); } catch(e) { console.warn('updateAuthUI error:', e); }
   try { renderAIConfig(); } catch(e) { console.warn('renderAIConfig error:', e); }
+  // 恢复 notify 开关状态
+  try {
+    let notifyEl = document.getElementById('setting-notify');
+    if (notifyEl) {
+      let notifyOn = localStorage.getItem('vs_notify') !== '0';
+      notifyEl.dataset.enabled = notifyOn ? 'true' : 'false';
+      notifyEl.classList.toggle('on', notifyOn);
+    }
+  } catch(e) {}
   // 11-S：默认不自动跑真实扫描，避免与 step1 步骤冲突
   // 用户点"重新扫描"或 combobox 变化时再触发
-  if (typeof window.loadTrendChart === 'function') window.loadTrendChart(30);
+  if (isLoggedIn() && typeof window.loadTrendChart === 'function') window.loadTrendChart(30);
   // 验证已保存的 token 是否仍有效（后端 secret 可能已变）
   if (isLoggedIn()) {
     authFetch('/api/history?limit=1').then(function(r) {
       if (r.status === 401) {
-        // authFetch 内部已 doLogout
+        // authFetch 内部已清除 token 并更新 UI
         if (typeof showToast === 'function') showToast('登录已过期，请重新登录');
       }
     }).catch(function() { /* 静默处理 */ });
@@ -2399,6 +2436,7 @@ document.addEventListener('DOMContentLoaded', function() {
   window.doLogin = doLogin;
   window.doRegister = doRegister;
   window.doLogout = doLogout;
+  window.copyApiToken = copyApiToken;
   window.doResetPassword = doResetPassword;
   window.toggleAuthForm = toggleAuthForm;
   window.showProfileTab = showProfileTab;

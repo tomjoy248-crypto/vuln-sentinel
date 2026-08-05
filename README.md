@@ -39,7 +39,7 @@
 | 能力 | 说明 |
 |---|---|
 | **OWASP Top 10 扫描** | 全 10 大类风险覆盖，15 个检测维度，多维交叉验证降低误报 |
-| **智能评分** | 100 分制安全评分 + WAF 加权，风险等级一目了然 |
+| **智能评分** | 100 分制安全评分 + WAF 加权，四级风险等级（严重/高风险/中风险/低风险）|
 | **多平台修复配置** | 一键生成 Nginx / Apache / Express / Flask / Spring Boot / Cloudflare 配置 |
 | **AI 安全顾问** | 基于扫描结果给出修复位置、上线风险、修复优先级 |
 | **修复前后对比** | 重新扫描后自动对比差异，验证修复效果 |
@@ -143,150 +143,18 @@ start.bat
 
 ```
 vuln-sentinel/
-├── main.py                      # FastAPI 后端主程序（110+ API）
-├── src_scanner.py               # SRC 级扫描引擎
-├── models.py                    # Pydantic 数据模型
-├── constants.py                 # 全局常量与安全配置
-├── utils.py                     # 工具函数（SSRF 防护、DNS pinning）
-├── alembic/                     # 数据库迁移
-│   ├── env.py
-│   └── versions/
-│       └── 001_baseline.py      # 基线迁移（13 表、27 索引）
-├── app/
-│   ├── core/                    # 核心基础设施
-│   │   ├── config.py            # 配置管理
-│   │   ├── exceptions.py        # 统一异常处理
-│   │   ├── response.py          # 统一响应格式
-│   │   ├── security.py          # 安全工具
-│   │   ├── security_headers.py  # CSP/安全头配置
-│   │   ├── rate_limiter.py      # IP 限流器
-│   │   ├── input_validation.py  # 输入校验
-│   │   ├── sanitization.py      # 输出消毒
-│   │   ├── compliance.py        # 合规校验
-│   │   ├── resilience.py        # 弹性容错
-│   │   ├── secrets_manager.py   # 密钥管理
-│   │   └── logging.py           # 结构化日志
-│   ├── routers/                 # 领域路由（从 main.py 拆分）
-│   │   ├── auth.py              # 认证（注册/登录/邮箱验证/密码重置）
-│   │   ├── user.py              # 用户信息与积分
-│   │   ├── billing.py           # 计费套餐与支付
-│   │   ├── gdpr.py              # 数据合规
-│   │   ├── team.py              # 团队管理
-│   │   └── admin.py             # 审计日志
-│   ├── schemas/
-│   │   └── responses.py         # Pydantic 响应模型（OpenAPI 文档）
-│   ├── services/                # 业务服务层
-│   │   ├── billing_service.py   # 套餐购买与支付订单
-│   │   ├── credits_service.py   # 积分管理
-│   │   ├── gdpr_service.py      # 数据导出/删除/匿名化
-│   │   ├── data_retention.py    # 数据保留策略
-│   │   ├── scan_service.py      # 扫描服务
-│   │   ├── scan_queue.py        # 异步扫描队列
-│   │   ├── email_service.py     # 邮件发送
-│   │   ├── user_lifecycle.py    # 用户生命周期
-│   │   ├── vuln_intel_service.py # 漏洞情报
-│   │   ├── discovery_crawler.py # 资产发现
-│   │   ├── fuzz_engine.py       # 模糊测试
-│   │   └── cve_sources.py       # CVE 数据源
-│   ├── repositories/            # 数据访问层
-│   │   ├── scan_repository.py
-│   │   └── ticket_repository.py
-│   ├── db/
-│   │   └── session.py           # SQLAlchemy 会话（SQLite/PostgreSQL）
-│   ├── knowledge/               # 检测知识库
-│   │   ├── components.py        # 组件指纹
-│   │   ├── payloads.py          # Payload 库
-│   │   └── signatures.py        # 漏洞签名
-│   ├── verification/            # 交叉验证引擎
-│   │   ├── cross_validator.py
-│   │   └── diff_engine.py
-│   ├── quality/                 # 质量控制
-│   │   ├── fp_control.py        # 误报控制
-│   │   ├── quality_assessment.py # 质量评估
-│   │   └── feedback_loop.py     # 反馈闭环
-│   ├── dedup/
-│   │   └── finding_dedup.py     # 去重引擎
-│   ├── remediation/
-│   │   └── template_engine.py   # 修复模板引擎
-│   ├── reporting/
-│   │   ├── generator.py         # 报告生成
-│   │   ├── templates.py         # 报告模板
-│   │   └── models.py            # 报告数据模型
-│   ├── plugins/                 # 插件系统
-│   │   ├── builtin.py
-│   │   ├── rule_engine.py
-│   │   └── detectors/
-│   ├── tasks/
-│   │   └── manager.py           # 异步任务管理
-│   ├── audit.py                 # 审计日志
-│   ├── health.py                # 健康检查
-│   ├── metrics.py               # 指标采集
-│   ├── middleware.py            # 中间件
-│   └── sarif.py                 # SARIF 输出
-├── frontend/                    # 前端（Vite + 原生 JS）
-│   ├── src/
-│   │   ├── main.js              # 应用入口
-│   │   ├── api.js               # API 封装
-│   │   ├── store.js             # 状态管理
-│   │   ├── utils.js             # 工具函数
-│   │   ├── templates.js         # 模板
-│   │   ├── style.css            # Burp Suite 暗色主题
-│   │   ├── pages/               # 页面模块
-│   │   │   ├── home.js
-│   │   │   ├── scan.js
-│   │   │   ├── result.js
-│   │   │   ├── fixer.js
-│   │   │   ├── tickets.js
-│   │   │   ├── assets.js
-│   │   │   ├── profile.js
-│   │   │   ├── billing.js
-│   │   │   └── evolution.js
-│   │   ├── components/          # 可复用组件
-│   │   └── services/
-│   ├── index.html
-│   ├── package.json
-│   └── vite.config.js
-├── tests/                       # pytest 测试套件（1206 用例）
-│   ├── conftest.py              # 测试夹具
-│   ├── test_main.py             # 主程序端点
-│   ├── test_routers.py          # 路由模块
-│   ├── test_services.py         # 服务层
-│   ├── test_billing.py          # 计费
-│   ├── test_gdpr.py             # GDPR
-│   ├── test_credits.py          # 积分
-│   ├── test_verification.py     # 验证引擎
-│   ├── test_scan_services.py    # 扫描服务
-│   ├── test_scan_probes.py      # 扫描探针
-│   ├── test_scan_queue.py       # 扫描队列
-│   ├── test_utils_core.py       # 工具函数
-│   ├── test_main_endpoints.py   # 端点扩展
-│   ├── test_main_extended.py    # 主程序扩展
-│   ├── test_sanitization.py     # 消毒
-│   ├── test_user_lifecycle.py   # 用户生命周期
-│   ├── test_data_retention.py   # 数据保留
-│   ├── test_api_versioning.py   # API 版本
-│   ├── locustfile.py            # 性能测试
-│   └── test_v11*.py             # 历史回归测试
-├── scripts/                     # 运维脚本
-│   ├── backup_db.py             # 数据库备份
-│   ├── dependency_security_scan.py
-│   ├── security_baseline_check.py
-│   └── e2e_scan_test.py         # 端到端扫描功能测试（13 用例）
-├── docs/                        # 文档 + 截图 + 架构图
-├── rules/                       # 自定义检测规则
-├── .github/workflows/           # CI 配置
-├── Dockerfile                   # Docker 镜像构建
-├── docker-compose.yml           # 开发环境编排
-├── docker-compose.prod.yml      # 生产环境编排（PostgreSQL）
-├── alembic.ini                  # 数据库迁移配置
-├── Makefile                     # 构建/测试/部署命令
-├── pyproject.toml               # 项目配置
-├── .pre-commit-config.yaml      # 预提交钩子
-├── render.yaml                  # Render 部署配置
-├── requirements.txt             # Python 依赖
-├── pytest.ini                   # pytest 配置
-├── start.sh / start.command / start.bat  # 一键启动脚本
-└── README.md                    # 本文件
+├── main.py              # FastAPI 后端主程序
+├── src_scanner.py       # SRC 级扫描引擎
+├── constants.py         # 全局常量与安全配置
+├── app/                 # 模块化后端（routers/services/core/db/plugins）
+├── frontend/            # 前端（Vite + 原生 JS）
+├── tests/               # pytest 测试套件
+├── alembic/             # 数据库迁移
+├── scripts/             # 运维脚本
+├── docs/                # 文档与截图
+├── Dockerfile           # Docker 镜像构建
+├── docker-compose.yml   # 开发环境编排
+└── docker-compose.prod.yml  # 生产环境编排（PostgreSQL）
 ```
 
 ---
@@ -328,78 +196,9 @@ vuln-sentinel/
 
 ## API 端点
 
-### 认证（`app/routers/auth.py`）
+完整 OpenAPI 文档：启动服务后访问 `/docs` (Swagger UI)
 
-| 端点 | 方法 | 说明 |
-|---|---|---|
-| `/api/register` | POST | 用户注册 |
-| `/api/login` | POST | 用户登录 |
-| `/api/auth/verify-email` | POST | 邮箱验证 |
-| `/api/auth/resend-verification` | POST | 重发验证邮件 |
-| `/api/auth/password-reset/request` | POST | 密码重置请求 |
-| `/api/auth/password-reset/confirm` | POST | 密码重置确认 |
-
-### 用户（`app/routers/user.py`）
-
-| 端点 | 方法 | 说明 |
-|---|---|---|
-| `/api/me` | GET | 当前用户信息 |
-| `/api/me/credits` | GET | 积分余额 |
-| `/api/usage` | GET | 积分使用日志 |
-
-### 计费（`app/routers/billing.py`）
-
-| 端点 | 方法 | 说明 |
-|---|---|---|
-| `/api/billing/plans` | GET | 套餐列表 |
-| `/api/billing/purchase` | POST | 购买套餐 |
-| `/api/billing/recharges` | GET | 充值记录 |
-| `/api/billing/order` | POST | 创建支付订单 |
-| `/api/billing/order/{id}` | GET | 查询订单状态 |
-| `/api/billing/webhook/{provider}` | POST | 支付回调（Stripe/支付宝/微信）|
-| `/api/admin/recharge` | POST | 管理员充值 |
-
-### GDPR 合规（`app/routers/gdpr.py`）
-
-| 端点 | 方法 | 说明 |
-|---|---|---|
-| `/api/me/export` | GET | 导出个人数据 |
-| `/api/me/account` | DELETE | 删除账号 |
-| `/api/me/anonymize` | POST | 匿名化数据 |
-| `/api/admin/data-retention/run` | POST | 触发保留策略清理 |
-
-### 团队（`app/routers/team.py`）
-
-| 端点 | 方法 | 说明 |
-|---|---|---|
-| `/api/team` | GET | 团队成员列表 |
-| `/api/team/create` | POST | 创建团队 |
-| `/api/team/join` | POST | 加入团队 |
-| `/api/team/{id}/role` | POST | 修改成员角色 |
-
-### 管理员（`app/routers/admin.py`）
-
-| 端点 | 方法 | 说明 |
-|---|---|---|
-| `/api/admin/audit-logs` | GET | 审计日志查询 |
-
-### 扫描与报告（`main.py`）
-
-| 端点 | 方法 | 说明 |
-|---|---|---|
-| `/api/scan` | POST | 执行安全扫描 |
-| `/api/history` | GET | 扫描历史 |
-| `/api/dashboard` | GET | 用户统计 |
-| `/api/fix` | POST | 生成修复配置 |
-| `/api/ai-advisor` | POST | AI 安全顾问 |
-| `/api/report/{id}` | GET | 下载 PDF 报告 |
-| `/api/share/{id}` | GET | 公开分享结果 |
-| `/api/batch-scan` | POST | 批量扫描（最多 5 URL）|
-| `/api/compare` | POST | 两次扫描对比 |
-| `/api/public-demo-scan` | POST | 免费试用扫描 |
-| `/api/health` | GET | 健康检查 |
-
-完整 OpenAPI 文档：访问 `/docs` (Swagger UI)
+主要端点分类：认证、用户、扫描、修复、报告、计费、GDPR、团队、管理员。
 
 ---
 
@@ -427,10 +226,7 @@ bandit -r . -q --exclude './tests,./.venv,./htmlcov,./alembic'
 
 | 指标 | 数值 |
 |---|---|
-| 测试用例总数 | 1206 |
-| 通过 | 809 |
-| 失败 | 360（多为环境依赖差异，非功能缺陷）|
-| 跳过 | 30 |
+| 测试用例总数 | 1200+ |
 | 端到端扫描测试 | 13/13 全部通过 |
 | Ruff 检查 | 0 errors |
 | Bandit 安全扫描 | 0 medium / 0 high |
