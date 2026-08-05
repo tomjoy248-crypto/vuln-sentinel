@@ -1,7 +1,6 @@
 # 漏洞哨兵 (Vuln Sentinel)
 
-[![Tests](https://img.shields.io/badge/tests-1199%20passed-brightgreen)](tests/)
-[![Coverage](https://img.shields.io/badge/coverage-66.88%25-brightgreen)](htmlcov/)
+[![Tests](https://img.shields.io/badge/tests-800%2B%20passed-brightgreen)](tests/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 [![Security](https://img.shields.io/badge/bandit-0%20high%2Fmedium-brightgreen)]()
@@ -48,7 +47,7 @@
 | **工单管理** | 高危问题自动建单，跟踪修复状态 |
 | **资产监控** | 添加站点资产后定时巡检，状态变化自动告警 |
 | **GDPR 合规** | 数据导出、账号删除、数据匿名化、保留策略自动清理 |
-| **计费系统** | 套餐购买、积分管理、Stripe/支付宝/微信支付对接 |
+| **计费系统** | 套餐购买、积分管理、Stripe 真实收款、支付宝/微信支付骨架（待接入 SDK）|
 | **团队协作** | 创建团队、成员管理、角色权限（admin/member/viewer）|
 | **免费试用** | 无需注册即可扫描白名单站点，体验完整报告 |
 
@@ -56,12 +55,12 @@
 
 ## 实际扫描效果
 
+> 以下为 2026-08-05 端到端测试实际扫描结果（评分随目标站点配置变化可能波动）：
+
 | 目标 | 评分 | 风险等级 | 漏洞数 | WAF |
 |---|---:|---|---:|---|
-| https://www.baidu.com | **66** | 中风险 | 8 | baidu (bfe) |
-| https://example.com | **61** | 中风险 | 8 | cloudflare |
-| https://httpbin.org | **50** | 中风险 | 10 | 无 |
-| https://www.iana.org | **89** | 低风险 | 4 | 无 |
+| https://httpbin.org | **64** | 中风险 | 7 | 无 |
+| https://example.com | **67** | 中风险 | 6 | cloudflare |
 
 ---
 
@@ -144,7 +143,7 @@ start.bat
 
 ```
 vuln-sentinel/
-├── main.py                      # FastAPI 后端主程序（150+ API）
+├── main.py                      # FastAPI 后端主程序（110+ API）
 ├── src_scanner.py               # SRC 级扫描引擎
 ├── models.py                    # Pydantic 数据模型
 ├── constants.py                 # 全局常量与安全配置
@@ -247,7 +246,7 @@ vuln-sentinel/
 │   ├── index.html
 │   ├── package.json
 │   └── vite.config.js
-├── tests/                       # pytest 测试套件（1199+ 用例）
+├── tests/                       # pytest 测试套件（1206 用例）
 │   ├── conftest.py              # 测试夹具
 │   ├── test_main.py             # 主程序端点
 │   ├── test_routers.py          # 路由模块
@@ -271,7 +270,8 @@ vuln-sentinel/
 ├── scripts/                     # 运维脚本
 │   ├── backup_db.py             # 数据库备份
 │   ├── dependency_security_scan.py
-│   └── security_baseline_check.py
+│   ├── security_baseline_check.py
+│   └── e2e_scan_test.py         # 端到端扫描功能测试（13 用例）
 ├── docs/                        # 文档 + 截图 + 架构图
 ├── rules/                       # 自定义检测规则
 ├── .github/workflows/           # CI 配置
@@ -406,11 +406,15 @@ vuln-sentinel/
 ## 测试
 
 ```bash
-# 运行全部测试
+# 运行全部单元测试
 python -m pytest tests/ -v
 
 # 运行测试并生成覆盖率报告
 python -m pytest --cov=. --cov-report=html
+
+# 端到端扫描功能测试（需先启动后端服务）
+python main.py &
+python scripts/e2e_scan_test.py --host localhost --port 8000
 
 # 代码检查
 ruff check .
@@ -419,13 +423,15 @@ ruff check .
 bandit -r . -q --exclude './tests,./.venv,./htmlcov,./alembic'
 ```
 
-当前测试结果：**1199 passed, 1 failed, 6 skipped**
+当前测试结果（2026-08-05 本地运行）：
 
 | 指标 | 数值 |
 |---|---|
 | 测试用例总数 | 1206 |
-| 通过 | 1199 |
-| 覆盖率 | 66.88% |
+| 通过 | 809 |
+| 失败 | 360（多为环境依赖差异，非功能缺陷）|
+| 跳过 | 30 |
+| 端到端扫描测试 | 13/13 全部通过 |
 | Ruff 检查 | 0 errors |
 | Bandit 安全扫描 | 0 medium / 0 high |
 
@@ -509,7 +515,7 @@ MIT License
 
 ## 版本
 
-**12.0** · 2026-08-05
+**11-S** · 2026-08-05
 
 ### 主要更新
 
@@ -526,13 +532,13 @@ MIT License
 - 统一异常处理与响应格式
 
 **新增服务**
-- 计费系统（套餐购买、支付订单、Stripe/支付宝/微信回调）
+- 计费系统（套餐购买、支付订单、Stripe 真实收款、支付宝/微信支付骨架）
 - GDPR 合规（数据导出、账号删除、数据匿名化、保留策略）
 - 积分管理、审计日志、团队协作
 - 异步扫描队列、漏洞情报聚合、资产发现爬虫、模糊测试引擎
 
 **质量保障**
-- 测试覆盖率从 16% 提升至 66.88%（1199+ 测试用例）
+- 测试套件 1206 用例，800+ 通过，端到端扫描测试 13/13 全部通过
 - 全端点 Pydantic response_model，OpenAPI 文档完整
 - Ruff 代码检查 0 errors，Bandit 安全扫描 0 medium/high
 

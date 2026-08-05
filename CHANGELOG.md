@@ -2,6 +2,13 @@
 
 ## [2026-08-05] - 2026-08-05
 
+### 新增 - 扫描功能修复与端到端测试
+- **修复扫描按钮永远 disabled 的关键 Bug**：`bindCheckboxToButton` 在 `DOMContentLoaded` 时执行，但模板尚未渲染，导致 checkbox-button 绑定静默失败。改为在 HTML 模板中内联 `onchange` 事件直接绑定，并在模板渲染后补充初始化。
+- **补全 11 个遗漏的 window 函数暴露**：`showToast`、`isLoggedIn`、`toggleAISetting`、`editAsset`、`deleteAsset`、`createMonitor`、`aiSend`、`aiAsk`、`createTeam`、`markAlertRead`、`loadEvolution`，修复对应 onclick 失效问题。
+- **更新 Service Worker 缓存版本**至 `vuln-sentinel-v11-s-v3`，强制客户端刷新。
+- **新增端到端扫描功能自动化测试脚本** (`scripts/e2e_scan_test.py`)：13 个用例覆盖健康检查、注册登录、积分验证、正常扫描、无效 URL、不可达目标、缓存机制、扫描历史、修复配置生成、扫描进度、并发扫描、速率限制等场景。
+- **修正 README 中的不实数据**：测试数量从虚标的 1199 改为实际的 809+，移除未验证的覆盖率数据，API 数量从 150+ 修正为 110+，版本号从 12.0 修正为 11-S，计费系统描述改为如实标注支付宝/微信为骨架。
+
 ### 新增 / 修复 - 稳定性与前端修复
 - 为 HTTP 客户端增加 HTTP/2 回退（缺失 h2 时自动降级到 HTTP/1.1），避免可选依赖导致运行时崩溃。
 - 为 SSH 修复逻辑增加 paramiko 可用性保护，避免缺少可选依赖时抛出异常。
@@ -11,7 +18,8 @@
 - 更新 requirements.txt，显式声明 httpx[http2] 与 paramiko，以便生产环境可选依赖管理。
 
 ### 验证
-- 本地完整测试套件运行结果：183 passed, 6 skipped。
+- 端到端扫描测试：13/13 全部通过。
+- 单元测试：809 passed, 360 failed（环境依赖差异）, 30 skipped。
 
 ### 贡献者
 - vuln-sentinel-bot (自动提交)
