@@ -31,10 +31,11 @@ export function authHeaders() {
 
 export async function authFetch(url, options = {}) {
   options.headers = Object.assign({}, authHeaders(), options.headers || {});
+  const skipAuthExpiry = !!options.skipAuthExpiry;
   try {
     const resp = await fetch(API_BASE + url, options);
     // 401 过期处理：清除过期 token，抛出友好错误让上层引导用户重新登录
-    if (resp.status === 401) {
+    if (resp.status === 401 && !skipAuthExpiry) {
       removeToken();
       try { localStorage.removeItem('vs_username'); } catch (e) {}
       throw new Error('登录状态已过期，请重新登录后再使用扫描功能');
@@ -51,6 +52,7 @@ export async function authFetch(url, options = {}) {
 
 export async function apiPost(url, body) {
   const resp = await authFetch(url, {
+    skipAuthExpiry: true,
     method: 'POST',
     body: JSON.stringify(body)
   });
