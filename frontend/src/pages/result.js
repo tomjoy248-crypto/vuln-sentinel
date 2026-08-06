@@ -655,7 +655,7 @@ async function onFindingAction(e) {
       const res = await verifyReproduce({ scan_id: _currentScanId, finding_id: findingId, url: finding.url || _currentUrl });
       if (res && res.success) {
         const status = res.reproducible === true ? '仍可复现' : (res.reproducible === false ? '已无法复现' : '需人工复核');
-        showToast(`验证结果：${status}`);
+        showToast(`验证完成：${status}`);
       } else {
         showToast('验证失败：' + (res && res.error ? res.error : '未知错误'));
       }
@@ -668,6 +668,10 @@ async function onFindingAction(e) {
     return;
   }
 
+  const loadingText = action === 'fp' ? '标记中...' : '提交中...';
+  const idleText = action === 'fp' ? '标记误报' : '确认有效';
+  btn.textContent = loadingText;
+  btn.disabled = true;
   try {
     const res = await findingFeedback({
       scan_id: _currentScanId,
@@ -677,12 +681,15 @@ async function onFindingAction(e) {
       is_confirmed: action === 'confirm',
     });
     if (res && res.success) {
-      showToast(action === 'fp' ? '已标记为误报' : '已确认漏洞');
+      showToast(action === 'fp' ? '已标记为误报，后续会用于优化检测' : '已确认漏洞，已记录到反馈闭环');
     } else {
       showToast('反馈提交失败：' + (res && res.error ? res.error : '未知错误'));
     }
   } catch (e) {
     showToast('反馈请求失败');
+  } finally {
+    btn.textContent = idleText;
+    btn.disabled = false;
   }
 }
 
