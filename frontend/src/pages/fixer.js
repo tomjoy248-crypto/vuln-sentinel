@@ -357,6 +357,7 @@ export function downloadRepairReport() {
   report += '生成时间：' + new Date().toLocaleString('zh-CN') + '\n';
   if (lastTicketContext) {
     report += '来源工单：#' + (lastTicketContext.ticket_id || '') + ' · ' + (lastTicketContext.finding_name || '') + '\n';
+    report += '来源扫描：#' + (lastTicketContext.scan_id || '') + ' · ' + (lastTicketContext.finding_type || '') + '\n';
   }
   report += '\n--- 原始风险 ---\n';
   r.issues.forEach(function(issue, i) {
