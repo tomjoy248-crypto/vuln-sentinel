@@ -48,19 +48,26 @@ def _init_default_plans() -> None:
     conn = get_db()
     try:
         row = conn.execute("SELECT COUNT(*) FROM pricing_plans").fetchone()
-        if row and row[0] > 0:
-            return
         default_plans = [
-            ("体验包", "适合个人开发者小批量测试", 10, 990, "CNY"),
-            ("标准包", "适合中小团队日常使用", 100, 8990, "CNY"),
-            ("专业包", "适合企业高频扫描与修复", 500, 39900, "CNY"),
-            ("企业包", "大型团队不限量使用", 2000, 149900, "CNY"),
+            ("体验包", "适合个人开发者小批量测试", 20, 990, "CNY"),
+            ("标准包", "适合中小团队日常使用", 120, 6990, "CNY"),
+            ("专业包", "适合企业高频扫描与修复", 600, 29900, "CNY"),
+            ("企业包", "大型团队不限量使用", 2400, 99900, "CNY"),
         ]
-        conn.executemany(
-            """INSERT INTO pricing_plans (name, description, credits, price_cents, currency, active, created_at)
-               VALUES (?, ?, ?, ?, ?, 1, ?)""",
-            [(n, d, c, p, cur, _now()) for n, d, c, p, cur in default_plans],
-        )
+        if row and row[0] > 0:
+            for name, description, credits, price_cents, currency in default_plans:
+                conn.execute(
+                    """UPDATE pricing_plans
+                       SET description=?, credits=?, price_cents=?, currency=?, active=1
+                       WHERE name=?""",
+                    (description, credits, price_cents, currency, name),
+                )
+        else:
+            conn.executemany(
+                """INSERT INTO pricing_plans (name, description, credits, price_cents, currency, active, created_at)
+                   VALUES (?, ?, ?, ?, ?, 1, ?)""",
+                [(n, d, c, p, cur, _now()) for n, d, c, p, cur in default_plans],
+            )
         conn.commit()
     finally:
         conn.close()
