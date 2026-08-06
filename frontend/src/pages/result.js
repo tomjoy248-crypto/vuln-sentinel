@@ -186,11 +186,25 @@ function bindQualityPanelEvents() {
 
 function sortFindings(findings) {
   return findings.slice().sort((a, b) => {
+    const av = verificationRank(a.verification_status);
+    const bv = verificationRank(b.verification_status);
+    if (av !== bv) return av - bv;
+    const afp = a.is_likely_fp ? 1 : 0;
+    const bfp = b.is_likely_fp ? 1 : 0;
+    if (afp !== bfp) return afp - bfp;
     const sa = SEVERITY_ORDER[(a.severity || '').toLowerCase()] ?? 99;
     const sb = SEVERITY_ORDER[(b.severity || '').toLowerCase()] ?? 99;
     if (sa !== sb) return sa - sb;
     return (b.severity_score || 0) - (a.severity_score || 0);
   });
+}
+
+function verificationRank(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'confirmed') return 0;
+  if (normalized === 'probable') return 1;
+  if (normalized === 'suspected') return 2;
+  return 3;
 }
 
 function renderHeader(score, riskLevel, summary, url, data) {
@@ -233,7 +247,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可做基线留存并继续监控。';
   const actionHint = data.scan_id
-    ? '<div class="src-report-action-hint">建议导出报告、验证复现结果，并在修复后重新扫描。</div>'
+    ? '<div class="src-report-action-hint">建议优先处理“已验证”和“可能存在”项，误报项可先隐藏；修复后重新扫描复核。</div>'
     : '';
 
   return `
@@ -268,7 +282,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
         </div>
         <div class="src-report-next-step">
           <div class="src-report-next-step-title">下一步建议</div>
-          <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已自动识别 ' + fpCount + ' 项潜在误报，可用筛选按钮隐藏。' : ''}</div>
+          <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已自动识别 ' + fpCount + ' 项潜在误报，当前默认优先显示更可信的结果。' : ''}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <button class="src-filter-btn" onclick="navigateTo('tickets')">去工单</button>
             <button class="src-filter-btn" onclick="navigateTo('fixer')">去修复器</button>
@@ -299,7 +313,7 @@ function renderFindingList(findings, selectedIndex) {
       const typeLabel = f.type ? `<span class="src-list-type">${escapeHtml(f.type.toUpperCase())}</span>` : '';
       const host = f.url ? new URL(f.url, window.location.href).hostname : '';
       const path = f.url ? new URL(f.url, window.location.href).pathname : '';
-      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag" title="潜在误报">FP</span>' : '';
+      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag" title="潜在误报">待复核</span>' : '';
       const corrGroup = f.correlation_group ? `<span class="src-list-corr" title="关联组 ${escapeAttr(f.correlation_group)}（${f.correlation_size || 0} 个相关）">${escapeHtml(f.correlation_group)}</span>` : '';
       const mergedCount = f.merged_count > 1 ? `<span class="src-list-merged" title="合并了 ${f.merged_count} 个重复项">×${f.merged_count}</span>` : '';
       const vStatus = f.verification_status;
@@ -360,7 +374,7 @@ function renderFindingDetail(finding, index) {
       ${finding.severity_score ? `<span class="src-detail-score">评分 ${finding.severity_score}/10</span>` : ''}
       <span class="src-detail-confidence">置信度 ${escapeHtml(finding.adjusted_confidence || finding.confidence || 'medium')}</span>
       ${finding.verification_status ? `<span class="src-detail-verify-badge ${finding.verification_status}">${finding.verification_status === 'confirmed' ? '已验证' : finding.verification_status === 'probable' ? '可能存在' : '存疑'}</span>` : ''}
-      ${finding.is_likely_fp ? '<span class="src-detail-fp-badge">潜在误报</span>' : ''}
+      ${finding.is_likely_fp ? '<span class="src-detail-fp-badge">待复核</span>' : ''}
       ${finding.user_feedback ? (finding.user_feedback.is_false_positive ? '<span class="src-detail-fp-badge" title="您已标记为误报">已标记误报</span>' : '<span class="src-detail-verify-badge verified" title="您已确认有效">您已确认</span>') : ''}
     </div>
   </div>`;
