@@ -3375,13 +3375,13 @@ function renderResult(data) {
   html += '<div style="margin-top:4px">不进行：破坏性攻击、密码爆破、权限绕过、漏洞利用、主动渗透测试。</div>';
   html += '<div style="margin-top:4px;color:var(--text-light)">如需全面安全评估，建议配合专业渗透测试服务。</div>';
   html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
-  html += '<div>每个发现项都附有验证步骤，你可以通过命令行 curl 或浏览器 F12 开发者工具自行确认。修复后重新扫描，对比评分变化即可验证效果。</div>';
-  html += '<div style="margin-top:8px;font-weight:600">置信度说明</div>';
-  html += '<div>标记为「高」的发现项为确定性结果（如响应头缺失、证书过期）。标记为「中」的发现项需要人工复核（如敏感路径检测）。标记「建议人工复核」的项可能存在误报。</div>';
-  html += '<div style="margin-top:8px;font-weight:600">误报说明</div>';
-  html += '<div>安全扫描可能存在误报。建议结合专业安全评估综合判断。如认为某项为误报，可在修复建议中忽略该条目。</div>';
+  html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据摘要，再用 curl 或浏览器 F12 确认；修复后重新扫描，对比评分和证据变化即可验证效果。</div>';
+  html += '<div style="margin-top:8px;font-weight:600">证据分层</div>';
+  html += '<div>「已验证」表示已完成交叉验证或用户确认；「可能存在」表示有较强线索但建议人工复核；「存疑」表示证据较弱，建议优先复核后再进入工单。</div>';
+  html += '<div style="margin-top:8px;font-weight:600">审计范围</div>';
+  html += '<div>本报告覆盖 HTTP/TLS 配置、安全响应头、Cookie 标记、CORS、敏感路径和 WAF 识别，不包含破坏性利用或深度渗透动作。</div>';
   html += '<div style="margin-top:8px;font-weight:600">免责声明</div>';
-  html += '<div>本报告由漏洞哨兵智能规则引擎自动生成，仅反映扫描时刻的目标配置状况，不构成完整安全审计。建议降低风险而非追求"完全安全"。</div>';
+  html += '<div>本报告由漏洞哨兵自动生成，仅反映扫描时刻的目标配置状况，可用于演示、内测和修复跟踪，不构成完整安全审计结论。</div>';
   html += '</div>';
 
   let resultContent = document.getElementById('result-content');
