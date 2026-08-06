@@ -1881,7 +1881,7 @@ function renderScanError(errorMsg, url) {
     html += '<p style="color:var(--text-secondary);margin:0 0 20px;font-size:14px;line-height:1.6">' + escapeHtml(errorMsg) + '</p>';
     html += '<p style="color:var(--text-secondary);margin:0 0 20px;font-size:13px">为了符合安全要求，深度扫描（爬虫 + 漏洞探测）需要先证明您拥有该域名。</p>';
     html += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">';
-    html += '<button onclick="document.getElementById(\'verify-domain\').value=\'' + safeUrl + '\'; goVerifyStep2();" class="btn-primary" style="padding:10px 20px;border-radius:2px;border:none;background:#4b6eaf;color:white;cursor:pointer;font-size:14px">立即验证域名</button>';
+    html += '<button onclick="document.getElementById(\'scan-url\').value=\'' + safeUrl + '\'; goVerifyStep2();" class="btn-primary" style="padding:10px 20px;border-radius:2px;border:none;background:#4b6eaf;color:white;cursor:pointer;font-size:14px">立即验证域名</button>';
     html += '<button onclick="startScanDirect(\'' + safeUrl + '\', false)" class="btn-secondary" style="padding:10px 20px;border-radius:2px;border:1px solid var(--border);background:transparent;color:var(--text-primary);cursor:pointer;font-size:14px">改用普通扫描</button>';
     html += '</div></div>';
     container.innerHTML = html;
