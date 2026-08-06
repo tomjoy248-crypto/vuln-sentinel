@@ -33,6 +33,38 @@ function formatCredits(num) {
   return n.toLocaleString('zh-CN');
 }
 
+function formatValueScore(plan) {
+  let credits = parseInt(plan && plan.credits, 10);
+  let price = parseInt(plan && plan.price_cents, 10);
+  if (!credits || !price) return '--';
+  return (price / credits / 100).toFixed(2);
+}
+
+function getRecommendedPlanId(plans) {
+  if (!plans || !plans.length) return null;
+  let best = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  plans.forEach(function(plan) {
+    let credits = parseInt(plan.credits, 10);
+    let price = parseInt(plan.price_cents, 10);
+    if (!credits || !price) return;
+    let score = price / credits;
+    if (score < bestScore) {
+      bestScore = score;
+      best = plan.id;
+    }
+  });
+  return best;
+}
+
+function getPlanBadge(plan, recommendedPlanId) {
+  if (plan.id === recommendedPlanId) return '最划算';
+  if ((plan.name || '').includes('企业')) return '企业级';
+  if ((plan.name || '').includes('专业')) return '高频使用';
+  if ((plan.name || '').includes('体验')) return '先试用';
+  return '';
+}
+
 function getProviderLabel(provider) {
   const map = { mock: '模拟支付', stripe: 'Stripe', alipay: '支付宝', wechat: '微信支付' };
   return map[provider] || provider;
@@ -65,16 +97,36 @@ function loadPlans() {
       container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">暂无可用套餐</div>';
       return;
     }
-    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">';
+    let recommendedPlanId = getRecommendedPlanId(plans);
+    let html = '<div style="display:flex;flex-direction:column;gap:12px">';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
+    html += '<div>• 所有订单都会进入充值记录，便于财务对账</div>';
+    html += '<div>• 支持模拟支付、Stripe，以及预留的支付宝/微信通道</div>';
+    html += '<div>• 建议优先选择标记为“最划算”的套餐</div>';
+    html += '</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">';
     plans.forEach(function(plan) {
-      html += '<div style="background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:14px;display:flex;flex-direction:column;gap:8px">';
+      let isRecommended = plan.id === recommendedPlanId;
+      let badge = getPlanBadge(plan, recommendedPlanId);
+      let borderColor = isRecommended ? 'var(--warning)' : 'var(--border)';
+      let shadow = isRecommended ? '0 0 0 1px rgba(240,167,50,0.35)' : 'none';
+      html += '<div style="background:var(--bg);border:1px solid ' + borderColor + ';box-shadow:' + shadow + ';border-radius:2px;padding:14px;display:flex;flex-direction:column;gap:8px;position:relative">';
+      if (badge) {
+        html += '<div style="position:absolute;top:10px;right:10px;background:' + (isRecommended ? 'var(--warning)' : 'var(--primary)') + ';color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px">' + escapeHtml(badge) + '</div>';
+      }
       html += '<div style="font-size:15px;font-weight:700">' + escapeHtml(plan.name) + '</div>';
       html += '<div style="font-size:12px;color:var(--text-secondary);min-height:34px">' + escapeHtml(plan.description || '') + '</div>';
       html += '<div style="font-size:22px;font-weight:700;color:var(--warning)">' + formatPrice(plan.price_cents) + '</div>';
       html += '<div style="font-size:13px;color:var(--text-secondary)">含 <strong style="color:var(--text)">' + formatCredits(plan.credits) + '</strong> 积分</div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary)">约 <strong style="color:var(--text)">' + formatValueScore(plan) + ' 元/积分</strong></div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary)">适合：' + escapeHtml(plan.name || '通用场景') + '</div>';
       html += '<button class="fixer-btn primary" style="width:100%;margin-top:auto" onclick="buyPlan(' + plan.id + ', event)">立即购买</button>';
       html += '</div>';
     });
+    html += '</div>';
+    html += '<div style="padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary);line-height:1.7">';
+    html += '<div style="font-weight:700;color:var(--text);margin-bottom:4px">购买后流程</div>';
+    html += '<div>1. 选择套餐并完成支付 → 2. 积分立即到账 → 3. 在扫描、修复和验证流程中消耗积分 → 4. 所有订单和余额变动可在充值记录中追踪。</div>';
     html += '</div>';
     container.innerHTML = html;
   }).catch(function(e) {
