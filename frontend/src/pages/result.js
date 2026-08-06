@@ -260,6 +260,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
         </div>
         <div class="src-report-actions">
           ${exportBtn}
+          <button class="src-export-btn" id="src-copy-summary" title="复制当前报告摘要">复制摘要</button>
         </div>
         <div class="src-report-next-step">
           <div class="src-report-next-step-title">下一步建议</div>
@@ -654,7 +655,11 @@ function bindFindingListEvents() {
   });
 
   document.querySelectorAll('.src-export-btn').forEach((btn) => {
-    btn.addEventListener('click', onExportSRCReport);
+    if (btn.id === 'src-copy-summary') {
+      btn.addEventListener('click', onCopyReportSummary);
+    } else {
+      btn.addEventListener('click', onExportSRCReport);
+    }
   });
 
   document.querySelectorAll('.src-filter-btn').forEach((btn) => {
@@ -673,6 +678,24 @@ function bindFindingListEvents() {
   document.querySelectorAll('.src-action-btn').forEach((btn) => {
     btn.addEventListener('click', onFindingAction);
   });
+}
+
+
+async function onCopyReportSummary() {
+  if (!_currentScanId) return;
+  const scoreEl = document.querySelector('.src-score-value');
+  const totalEl = document.querySelector('.src-stat.total .num');
+  const actionableEl = document.querySelector(".src-stat[style*=\'rgba(115,201,144,0.08)\'] .num");
+  const summaryText = [
+    '报告摘要',
+    'URL: ' + _currentUrl,
+    '安全评分: ' + (scoreEl ? scoreEl.textContent : ''),
+    '总计: ' + (totalEl ? totalEl.textContent : ''),
+    '待处理: ' + (actionableEl ? actionableEl.textContent : ''),
+    '建议: 优先处理高危和严重项，修复后复测。'
+  ].join(String.fromCharCode(10));
+  await copyToClipboard(summaryText);
+  showToast('报告摘要已复制');
 }
 
 async function onExportSRCReport() {
