@@ -1761,6 +1761,10 @@ function startRealScan(url, host, deepScan) {
       setTimeout(function() {
         if (_scanCancelled) return;
         showToast(paymentRequiredMessage(data), 'error');
+        let rc = document.getElementById('result-content');
+        if (rc) {
+          rc.innerHTML = '<div class="card" style="text-align:center;padding:36px 20px"><div style="font-size:44px;margin-bottom:12px">额度不足</div><h3 style="margin:0 0 8px;color:var(--warning)">当前额度不够继续扫描</h3><p style="color:var(--text-secondary);font-size:13px;line-height:1.7;margin:0 0 16px">' + escapeHtml(paymentRequiredMessage(data)) + '</p><button class="btn btn-primary" onclick="navigateTo(\'billing\')">去充值</button> <button class="btn btn-secondary" onclick="navigateTo(\'profile\')">查看额度</button></div>';
+        }
         updateUserCredits();
         _scanInProgress = false;
         setButtonLoading("scan-btn", false);
