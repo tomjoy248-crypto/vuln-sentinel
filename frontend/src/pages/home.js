@@ -442,6 +442,32 @@ function closeReportDropdownOutside(e) {
   }
 }
 
+function shouldShowHomeOnboarding() {
+  try {
+    return localStorage.getItem('vs_home_onboarding_seen') !== '1';
+  } catch (e) {
+    return true;
+  }
+}
+
+function dismissHomeOnboarding() {
+  try {
+    localStorage.setItem('vs_home_onboarding_seen', '1');
+  } catch (e) {}
+  let banner = document.getElementById('home-onboarding-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+function showHomeOnboarding() {
+  let banner = document.getElementById('home-onboarding-banner');
+  if (!banner) return;
+  if (shouldShowHomeOnboarding()) {
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
 // ----- loadDashboard -----
 function loadDashboard() {
   let overview = document.getElementById('dashboard-overview');
@@ -450,6 +476,7 @@ function loadDashboard() {
     return;
   }
   if (overview) overview.style.display = 'grid';
+  showHomeOnboarding();
   authFetch('/api/dashboard').then(function(r) { return r.json(); }).then(function(data) {
     let el1 = document.getElementById('stat-total');
     let el2 = document.getElementById('stat-high');
@@ -4275,4 +4302,6 @@ export {
   simulateCSRF,
   simulateXSS,
   simulateClickjacking,
+  dismissHomeOnboarding,
+  showHomeOnboarding,
 };
