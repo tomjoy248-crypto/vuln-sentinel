@@ -1522,6 +1522,9 @@ function skipVerification() {
   if (!confirm('跳过域名归属验证将直接进入扫描阶段。该选项仅适用于您已确认拥有该目标网站或正在测试环境使用的场景。\n\n继续吗？')) return;
   let confirmedInput = document.getElementById('scan-url-confirmed');
   if (confirmedInput) confirmedInput.value = url;
+  let authStep3 = document.getElementById('auth-check');
+  if (authStep3) authStep3.checked = true;
+  updateScanStartState();
   let step2 = document.getElementById('verify-step-2');
   let step3 = document.getElementById('verify-step-3');
   if (step2) step2.style.display = 'none';
@@ -1551,6 +1554,9 @@ function confirmVerification() {
     if (data.success) {
       let confirmedInput = document.getElementById('scan-url-confirmed');
       if (confirmedInput) confirmedInput.value = url;
+      let authStep3 = document.getElementById('auth-check');
+      if (authStep3) authStep3.checked = true;
+      updateScanStartState();
       let step2 = document.getElementById('verify-step-2');
       let step3 = document.getElementById('verify-step-3');
       if (step2) step2.style.display = 'none';
