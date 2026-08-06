@@ -55,7 +55,7 @@ export const APP_TEMPLATE = `</head>
       当前使用本地规则引擎；配置 LLM API Key 后回答更精准。
     </div>
     <div class="ai-msg bot">
-      安全顾问随时在线，可以帮你分析漏洞、生成修复建议、解读扫描报告。<br><br>
+      安全顾问随时在线，可以帮你分析漏洞、生成修复建议、解读扫描证据，并提示哪些结果需要复核。<br><br>
       快捷问题
     </div>
   </div>
@@ -77,13 +77,13 @@ export const APP_TEMPLATE = `</head>
   <div class="workbench-header">
     <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
       <div style="min-width:280px;flex:1">
-        <h1 class="workbench-title">工作台 / Dashboard</h1>
-        <span class="workbench-subtitle">从输入网址到修复闭环，一次完成扫描、验证、报告和复测，适合演示、试用和后续售卖</span>
+        <h1 class="workbench-title">漏洞扫描与修复平台</h1>
+        <span class="workbench-subtitle">输入网址后自动完成扫描、证据收集、修复建议、复扫验证和审计留痕，面向上线前自查与交付场景</span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button onclick="navigateTo('scan')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">开始扫描</button>
-        <button onclick="navigateTo('result')" style="background:rgba(75,110,175,0.12);color:var(--primary);border:1px solid rgba(75,110,175,0.35);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">查看报告</button>
-        <button onclick="navigateTo('audit')" style="background:rgba(115,201,144,0.12);color:#73c990;border:1px solid rgba(115,201,144,0.35);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">上线审计</button>
+        <button onclick="navigateTo('result')" style="background:rgba(75,110,175,0.12);color:var(--primary);border:1px solid rgba(75,110,175,0.35);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">查看证据</button>
+        <button onclick="navigateTo('audit')" style="background:rgba(115,201,144,0.12);color:#73c990;border:1px solid rgba(115,201,144,0.35);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">审计闭环</button>
         <button onclick="navigateTo('profile')" style="background:transparent;color:var(--text-secondary);border:1px solid var(--border);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px">账号设置</button>
       </div>
     </div>
@@ -227,7 +227,7 @@ export const APP_TEMPLATE = `</head>
         <input id="scan-url" type="url" placeholder="例如：https://example.com" aria-label="目标网址" oninput="updateScanStartState()" />
       </div>
       <div id="scan-login-tip" style="background:#313335;border:1px solid #555555;border-radius:2px;padding:10px 14px;margin-bottom:10px;text-align:center;display:none">
-        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">登录后即可开始扫描</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">登录后即可开始扫描，结果会进入报告、工单和审计记录</div>
         <button onclick="navigateTo('profile')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 18px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:500">立即登录 / 注册</button>
       </div>
       <div id="scan-credits-hint" style="display:none;background:rgba(75,110,175,0.08);border:1px solid rgba(75,110,175,0.25);border-radius:2px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--text-secondary);line-height:1.6">
@@ -244,7 +244,7 @@ export const APP_TEMPLATE = `</head>
         <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">快速跳过验证仅适用于自有测试环境</div>
       </div>
       <div style="text-align:center;margin-top:8px">
-        <button onclick="showBatchScanModal()" style="background:none;border:1px dashed var(--border);color:var(--text-secondary);padding:8px 16px;border-radius:2px;cursor:pointer;font-size:12px;width:100%">批量扫描（一次最多 5 个 URL）</button>
+        <button onclick="showBatchScanModal()" style="background:none;border:1px dashed var(--border);color:var(--text-secondary);padding:8px 16px;border-radius:2px;cursor:pointer;font-size:12px;width:100%">批量扫描（一次最多 5 个 URL，适合交付前巡检）</button>
       </div>
     </div>
 
@@ -901,7 +901,7 @@ export const APP_TEMPLATE = `</head>
 <div class="page" id="page-audit">
   <div class="workbench-header">
     <h1 class="workbench-title">上线前审计 / Audit</h1>
-    <span class="workbench-subtitle">用于对外售卖前的内部检查：权限、证据、计费、导出和审计留痕</span>
+    <span class="workbench-subtitle">用于对外交付前的内部检查：权限、证据、计费、导出、复扫与审计留痕</span>
   </div>
 
   <div class="card" style="margin-bottom:16px">
