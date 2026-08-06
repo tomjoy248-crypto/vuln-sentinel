@@ -4,6 +4,8 @@ import { escapeHtml, escapeAttr, getScoreColor, getScoreGradient, getRiskColor, 
 import { showToast } from '../components/Toast.js';
 import { exportSRCReport, verifyReproduce, findingFeedback, createTicket, isLoggedIn } from '../api.js';
 
+const navigateTo = (...args) => typeof window.navigateTo === 'function' && window.navigateTo(...args);
+
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 const SEVERITY_LABEL = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' };
 const SEVERITY_ZH_CLASS = { critical: 'high', high: 'high', medium: 'medium', low: 'low', info: 'info' };
@@ -707,6 +709,7 @@ async function onFindingAction(e) {
       });
       if (res && res.success) {
         showToast('工单已创建，已进入修复列表');
+        setTimeout(function () { navigateTo('tickets'); }, 300);
       } else {
         showToast('工单创建失败：' + (res && res.error ? res.error : '未知错误'));
       }
