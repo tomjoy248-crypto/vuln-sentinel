@@ -244,7 +244,18 @@ function renderFixerResult(result, original) {
     });
 
     html += '<div class="card fade-in-up">';
-    html += '<div class="card-title">检测结果</div>';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">';
+    html += '<div class="card-title" style="margin:0">检测结果</div>';
+    if (lastTicketContext) {
+      html += '<div style="font-size:12px;color:var(--text-secondary)">来源工单 #' + escapeHtml(String(lastTicketContext.ticket_id || '')) + ' · ' + escapeHtml(lastTicketContext.finding_name || '') + '</div>';
+    }
+    html += '</div>';
+    if (lastTicketContext) {
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px 0">';
+      html += '<button class="fixer-btn secondary" style="padding:6px 12px" onclick="navigateTo('tickets')">返回工单</button>';
+      html += '<button class="fixer-btn secondary" style="padding:6px 12px" onclick="localStorage.removeItem('vs_fixer_ticket'); showToast('已清除工单来源')">清除来源</button>';
+      html += '</div>';
+    }
     html += '<div class="risk-stats" style="margin-bottom:0">';
     html += '<div class="risk-stat high"><div class="num">' + highCount + '</div><div class="label">高严重</div></div>';
     html += '<div class="risk-stat medium"><div class="num">' + medCount + '</div><div class="label">中严重</div></div>';
