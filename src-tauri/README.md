@@ -10,12 +10,12 @@
 
 ## 当前结构
 
-- `Cargo.toml`：Rust 包配置占位
+- `Cargo.toml`：Rust 包配置与构建入口
 - `build.rs`：构建触发占位
 - `tauri.conf.json`：Tauri 应用配置
 - `capabilities.json`：权限能力占位
 - `src/main.rs`：桌面壳入口占位
-- `icons/`：桌面图标目录占位
+- `icons/`：桌面图标目录
 
 ## 还没做的事
 
