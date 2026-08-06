@@ -914,7 +914,7 @@ async function doPublicDemoFix() {
     showToast('没有发现需要修复的问题');
     return;
   }
-  // 11-S：先调用后端把试用扫描保存为用户的扫描记录
+  // 先调用后端把试用扫描保存为用户的扫描记录
   try {
     if (isLoggedIn() && window._lastScanId) {
       // 已经有 scan_id，不需要重新保存
@@ -3446,7 +3446,7 @@ function generateFixFromFindings(findings, config) {
       let before = fixed.substring(0, insertPos);
       let after = fixed.substring(insertPos);
       if (headers.length > 0) {
-        before += '\n    # === 安全响应头（由漏洞哨兵 11-S 生成） ===\n';
+        before += '\n    # === 安全响应头（由漏洞哨兵生成） ===\n';
         headers.forEach(function(h) {
           let lines = h.split('\n');
           lines.forEach(function(line) {
@@ -3455,7 +3455,7 @@ function generateFixFromFindings(findings, config) {
         });
       }
       if (rules.length > 0) {
-        before += '\n    # === 拦截规则（由漏洞哨兵 11-S 生成） ===\n';
+        before += '\n    # === 拦截规则（由漏洞哨兵生成） ===\n';
         rules.forEach(function(r) {
           before += '    ' + r + '\n';
         });
@@ -3667,7 +3667,7 @@ function downloadAllFixes() {
   if (!fixes) { showToast('暂无可导出的修复配置'); return; }
   let platformNames = { nginx: 'Nginx', apache: 'Apache', express: 'Express', flask: 'Flask/FastAPI', spring_boot: 'Spring Boot', cloudflare: 'Cloudflare' };
   let platformOrder = ['nginx', 'apache', 'express', 'flask', 'spring_boot', 'cloudflare'];
-  let lines = ['# 漏洞哨兵 11-S 修复配置包', '# 目标: ' + (lastScanResult.url || ''), '# 生成时间: ' + new Date().toLocaleString(), ''];
+  let lines = ['# 漏洞哨兵修复配置包', '# 目标: ' + (lastScanResult.url || ''), '# 生成时间: ' + new Date().toLocaleString(), ''];
   platformOrder.forEach(function(p) {
     let arr = fixes[p] || [];
     if (arr.length === 0) return;
