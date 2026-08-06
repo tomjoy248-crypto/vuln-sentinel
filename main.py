@@ -6881,21 +6881,42 @@ def generate_src_markdown_report(
     if finding_ids:
         findings = [f for f in findings if f.get("id") in finding_ids]
 
+    severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+    for finding in findings:
+        sev = str(finding.get("severity", "info")).lower()
+        if sev in severity_counts:
+            severity_counts[sev] += 1
+        else:
+            severity_counts["info"] += 1
+
+    score = scan_data.get("score", 0)
+    risk_level = scan_data.get("risk_level", "")
+    if severity_counts["critical"] or severity_counts["high"]:
+        priority_line = f"- **优先级建议**: 优先处理 {severity_counts['critical']} 个严重项和 {severity_counts['high']} 个高危项。"
+    elif severity_counts["medium"]:
+        priority_line = f"- **优先级建议**: 重点处理 {severity_counts['medium']} 个中危项，再复测验证。"
+    else:
+        priority_line = "- **优先级建议**: 当前以低危/信息项为主，建议持续监控并保留基线。"
+
     lines = [
         f"# {url} 安全漏洞报告",
         "",
+        "## 执行摘要",
+        "",
+        priority_line,
         f"- **扫描时间**: {scan_data.get('time', '')}",
-        f"- **安全评分**: {scan_data.get('score', 0)} / 100（{scan_data.get('risk_level', '')}）",
+        f"- **安全评分**: {score} / 100（{risk_level}）",
         f"- **漏洞总数**: {len(findings)} 个",
+        f"- **严重/高危/中危/低危/信息**: {severity_counts['critical']}/{severity_counts['high']}/{severity_counts['medium']}/{severity_counts['low']}/{severity_counts['info']}",
         "",
         "## 漏洞汇总",
         "",
-        "| 序号 | 漏洞名称 | 严重度 | CWE | OWASP | CVSS |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| 序号 | 漏洞名称 | 严重度 | 评分 | CWE | OWASP | CVSS |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for i, f in enumerate(findings, 1):
         lines.append(
-            f"| {i} | {f.get('title', '')} | {f.get('severity', '')} | "
+            f"| {i} | {f.get('title', '')} | {f.get('severity', '')} | {f.get('severity_score', '-')}/10 | "
             f"{f.get('cwe_id', '')} | {f.get('owasp_category', '')} | "
             f"{f.get('cvss_score', '-')} ({f.get('cvss_vector', '')}) |"
         )
@@ -6903,6 +6924,8 @@ def generate_src_markdown_report(
 
     for i, f in enumerate(findings, 1):
         ev = f.get("evidence", {})
+        steps = f.get("reproduce_steps", [])
+        fix = f.get("fix_suggestion", "")
         lines.extend(
             [
                 f"## {i}. {f.get('title', '')}",
@@ -6926,7 +6949,6 @@ def generate_src_markdown_report(
                 "",
             ]
         )
-        steps = f.get("reproduce_steps", [])
         if steps:
             lines.extend(["### 复现步骤", ""])
             for idx, step in enumerate(steps, 1):
@@ -6942,10 +6964,21 @@ def generate_src_markdown_report(
             [
                 "### 修复建议",
                 "",
-                f.get("fix_suggestion", ""),
+                fix,
                 "",
             ]
         )
+        if fix:
+            lines.extend(
+                [
+                    "### 建议验证动作",
+                    "",
+                    "- 修复后重新扫描同一地址，确认问题已消失。",
+                    "- 检查安全头、Cookie、权限控制或输入处理是否符合预期。",
+                    "- 将该项纳入回归测试或上线前安全检查。",
+                    "",
+                ]
+            )
         refs = f.get("references", [])
         if refs:
             lines.extend(["### 参考链接", ""])
@@ -6962,7 +6995,6 @@ def generate_src_markdown_report(
         ]
     )
     return "\n".join(lines)
-
 
 def generate_html_report(scan_data: dict) -> str:
     """生成精美的 HTML 格式安全报告（可直接在浏览器打开/打印）"""
