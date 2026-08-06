@@ -83,6 +83,7 @@ export const APP_TEMPLATE = `</head>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button onclick="navigateTo('scan')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">开始扫描</button>
         <button onclick="navigateTo('result')" style="background:rgba(75,110,175,0.12);color:var(--primary);border:1px solid rgba(75,110,175,0.35);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">查看报告</button>
+        <button onclick="navigateTo('audit')" style="background:rgba(115,201,144,0.12);color:#73c990;border:1px solid rgba(115,201,144,0.35);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">上线审计</button>
         <button onclick="navigateTo('profile')" style="background:transparent;color:var(--text-secondary);border:1px solid var(--border);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px">账号设置</button>
       </div>
     </div>
@@ -98,6 +99,7 @@ export const APP_TEMPLATE = `</head>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="navigateTo('scan')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">开始扫描</button>
         <button onclick="navigateTo('profile')" style="background:rgba(75,110,175,0.12);color:var(--primary);border:1px solid rgba(75,110,175,0.35);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">账号设置</button>
+        <button onclick="navigateTo('audit')" style="background:rgba(115,201,144,0.12);color:#73c990;border:1px solid rgba(115,201,144,0.35);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">上线审计</button>
         <button onclick="dismissHomeOnboarding()" style="background:transparent;color:var(--text-secondary);border:1px solid var(--border);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px">不再提示</button>
       </div>
     </div>
@@ -896,6 +898,38 @@ export const APP_TEMPLATE = `</head>
   </div>
 </div>
 
+<div class="page" id="page-audit">
+  <div class="workbench-header">
+    <h1 class="workbench-title">上线前审计 / Audit</h1>
+    <span class="workbench-subtitle">用于对外售卖前的内部检查：权限、证据、计费、导出和审计留痕</span>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">客户闭环</div>
+    <p class="card-desc" style="margin-bottom:14px">客户输入网址后，系统应该稳定完成扫描、证据展示、工单、修复、复测和报告导出。</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+      <div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><strong>1. 扫描入口</strong><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">检查登录、授权、额度和目标地址是否能顺利进入扫描。</div></div>
+      <div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><strong>2. 证据展示</strong><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">检查请求、响应、命中签名、摘要和可信度是否清晰。</div></div>
+      <div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><strong>3. 工单修复</strong><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">检查工单、修复器、复测和报告是否形成闭环。</div></div>
+      <div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><strong>4. 商业化</strong><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">检查套餐、额度、支付回调、导出权限和审计留痕。</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">上线前检查清单</div>
+    <div style="margin-top:12px;display:grid;gap:10px;font-size:13px;line-height:1.7;color:var(--text-secondary)">
+      <div>☐ 登录 / 注册 / 退出是否稳定</div>
+      <div>☐ 输入网址后能否顺利开始扫描</div>
+      <div>☐ 额度不足是否能明确提示并引导充值</div>
+      <div>☐ 扫描结果是否区分“已验证 / 可能存在 / 存疑”</div>
+      <div>☐ 工单是否能发起、流转、复测并关闭</div>
+      <div>☐ 修复报告和扫描报告是否便于交付客户</div>
+      <div>☐ 支付回调、积分扣减、导出权限是否有日志</div>
+      <div>☐ 结果页和套餐页是否有适合客户看的说明</div>
+    </div>
+  </div>
+</div>
+
 <!-- Batch Scan Modal -->
 <div class="modal" id="batch-scan-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center">
   <div class="modal-content" style="background:var(--card);border:1px solid var(--border);border-radius:2px;padding:20px;max-width:520px;width:92vw;max-height:85vh;overflow-y:auto">
@@ -941,6 +975,10 @@ export const APP_TEMPLATE = `</head>
   <button class="nav-item" data-page="billing" onclick="navigateTo('billing')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
     <span>计费</span>
+  </button>
+  <button class="nav-item" data-page="audit" onclick="navigateTo('audit')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l7 4v6c0 5-3.8 9.7-7 10-3.2-.3-7-5-7-10V6l7-4z"/><path d="M9 12l2 2 4-4"/></svg>
+    <span>审计</span>
   </button>
   <button class="nav-item" data-page="profile" onclick="navigateTo('profile')">
     <div style="position:relative">
