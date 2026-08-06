@@ -216,7 +216,14 @@ def _escape_md_table_cell(text: str) -> str:
 def generate_executive_summary(scan_data: dict[str, Any]) -> str:
     """生成 Markdown 执行摘要章节。"""
     summary = _build_summary_from_scan_data(scan_data)
-    return EXECUTIVE_SUMMARY_TEMPLATE.format(
+    intro = (
+        f"本报告面向上线前自查、客户交付与复扫留档。"
+        f"本次扫描共发现 {summary.total_findings} 项安全问题，"
+        f"建议优先处理已验证与高危项。"
+    )
+    return intro + "
+
+" + EXECUTIVE_SUMMARY_TEMPLATE.format(
         target_url=_escape_md_table_cell(summary.target_url),
         total_findings=summary.total_findings,
         verified_count=summary.verified_count,
