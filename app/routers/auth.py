@@ -26,6 +26,7 @@ from main import (
     create_token,
     get_db,
     hash_password,
+    _initial_user_credits,
     limiter_login,
     limiter_password_reset,
     limiter_password_reset_confirm,
@@ -77,7 +78,7 @@ async def api_register(req: RegisterRequest, request: Request) -> dict:
                 req.email,
                 "member",
                 0,
-                10,
+                _initial_user_credits(),
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             ),
         )

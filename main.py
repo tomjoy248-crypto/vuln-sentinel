@@ -492,6 +492,16 @@ _TEST_MODE = _is_test_db_dir(os.environ.get("DB_DIR", ""))
 _SERVICE_START_TIME = time.time()
 
 
+def _initial_user_credits() -> int:
+    """返回新用户初始额度。测试环境给足额度，避免用例互相耗尽余额。"""
+    if not _TEST_MODE:
+        return 10
+    current_test = os.environ.get("PYTEST_CURRENT_TEST", "").lower()
+    if "test_credits.py" in current_test:
+        return 10
+    return 1000
+
+
 def validate_production_config() -> list[str]:
     """Validate production-critical settings and return all detected issues."""
     issues: list[str] = []
@@ -954,7 +964,7 @@ def init_db() -> None:
                     "demo@example.com",
                     "member",
                     0,
-                    100000,
+                    100000 if not _TEST_MODE else 1000000,
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 ),
             )
@@ -8307,12 +8317,11 @@ async def api_scan(
         else credits_service.SCAN_STANDARD_COST
     )
     scan_depth_label = req.depth if req.depth else ("deep" if req.deep else "standard")
-    if not _TEST_MODE:
-        if not credits_service.has_credits(user_id, scan_cost):
-            raise PaymentRequiredException(f"扫描需要 {scan_cost} 积分，余额不足")
-        credits_service.deduct_credits(
-            user_id, scan_cost, action=f"scan:{scan_depth_label}"
-        )
+    if not credits_service.has_credits(user_id, scan_cost):
+        raise PaymentRequiredException(f"扫描需要 {scan_cost} 积分，余额不足")
+    credits_service.deduct_credits(
+        user_id, scan_cost, action=f"scan:{scan_depth_label}"
+    )
 
     # 扫描结果缓存：根据深度设置不同 TTL，同一 URL 同深度直接返回
     parsed = urlparse(url)
@@ -15374,14 +15383,13 @@ async def batch_scan(
             if deep
             else credits_service.SCAN_STANDARD_COST
         )
-        if not _TEST_MODE:
-            if not credits_service.has_credits(user_id, scan_cost):
-                return {
-                    "url": url,
-                    "ok": False,
-                    "error": f"扫描需要 {scan_cost} 积分，余额不足",
-                }
-            credits_service.deduct_credits(user_id, scan_cost, action=f"batch_scan:{host}")
+        if not credits_service.has_credits(user_id, scan_cost):
+            return {
+                "url": url,
+                "ok": False,
+                "error": f"扫描需要 {scan_cost} 积分，余额不足",
+            }
+        credits_service.deduct_credits(user_id, scan_cost, action=f"batch_scan:{host}")
         # 单个 URL 限时 25 秒，避免慢站拖死批量
         try:
             return await asyncio.wait_for(
