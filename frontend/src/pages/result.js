@@ -246,6 +246,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
     : mediumCount > 0
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
+  const reportSummary = '本次扫描共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
   const actionHint = data.scan_id
     ? '<div class="src-report-action-hint">建议优先处理“已验证”和“可能存在”项；“待复核”项请结合业务上下文判断，修复后再复扫确认。</div>'
     : '';
@@ -280,6 +281,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
           ${exportBtn}
           <button class="src-export-btn" id="src-copy-summary" title="复制当前报告摘要">复制摘要</button>
         </div>
+        <div class="src-report-summary">${escapeHtml(reportSummary)}</div>
         <div class="src-report-next-step">
           <div class="src-report-next-step-title">交付建议</div>
           <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已自动识别 ' + fpCount + ' 项潜在误报，系统默认优先显示更可信的结果。' : ''}</div>
