@@ -2360,6 +2360,27 @@ function renderResult(data) {
   html += '<span class="risk-badge ' + riskClass + '">' + (data.risk_level || '未知') + '</span>';
   html += '</div>';
 
+  let managementSummary = '';
+  if (highCount + medCount > 0) {
+    managementSummary = '当前结果显示存在 ' + highCount + ' 个高风险和 ' + medCount + ' 个中风险项，建议优先修复对外暴露面并在发布前复测。';
+  } else if (lowCount > 0) {
+    managementSummary = '当前风险以低危和信息项为主，建议保持修复节奏并持续监控。';
+  } else {
+    managementSummary = '当前未发现明显风险，可作为基线结果保留并持续监控后续变化。';
+  }
+  html += '<div class="card fade-in-up" style="animation-delay:0.05s;padding:14px;margin-top:12px;border:1px solid rgba(75,110,175,0.25);background:rgba(60,63,65,0.9)">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">';
+  html += '<div style="font-size:13px;font-weight:700;color:var(--text-primary)">管理层摘要</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary)">' + (data.restricted ? '受限扫描，结论需人工确认' : '可直接进入修复闭环') + '</div>';
+  html += '</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.8">' + escapeHtml(managementSummary) + '</div>';
+  html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-secondary)">';
+  html += '<span>总发现：' + (data.findings.length || 0) + '</span>';
+  html += '<span>高/中风险：' + highCount + '/' + medCount + '</span>';
+  html += '<span>最近评分：' + data.score + '</span>';
+  html += '</div>';
+  html += '</div>';
+
   // Risk Stats
   html += '<div class="risk-stats fade-in-up" style="animation-delay:0.1s">';
   html += '<div class="risk-stat high"><div class="num">' + highCount + '</div><div class="label">高风险</div></div>';
