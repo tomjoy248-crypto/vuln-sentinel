@@ -656,9 +656,11 @@ function bindFindingListEvents() {
   document.querySelectorAll('.src-filter-btn').forEach((btn) => {
     btn.addEventListener('click', function() {
       _hideLikelyFp = !_hideLikelyFp;
+      const visibleFindings = _hideLikelyFp ? _currentFindings.filter((item) => !item.is_likely_fp) : _currentFindings;
+      _selectedIndex = 0;
       const detail = document.getElementById('src-detail-panel');
       if (detail) {
-        detail.innerHTML = renderFindingDetail(_currentFindings[_selectedIndex], _selectedIndex);
+        detail.innerHTML = renderFindingDetail(visibleFindings[0], 0);
       }
       bindFindingListEvents();
     });
