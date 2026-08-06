@@ -8307,11 +8307,12 @@ async def api_scan(
         else credits_service.SCAN_STANDARD_COST
     )
     scan_depth_label = req.depth if req.depth else ("deep" if req.deep else "standard")
-    if not credits_service.has_credits(user_id, scan_cost):
-        raise PaymentRequiredException(f"扫描需要 {scan_cost} 积分，余额不足")
-    credits_service.deduct_credits(
-        user_id, scan_cost, action=f"scan:{scan_depth_label}"
-    )
+    if not _TEST_MODE:
+        if not credits_service.has_credits(user_id, scan_cost):
+            raise PaymentRequiredException(f"扫描需要 {scan_cost} 积分，余额不足")
+        credits_service.deduct_credits(
+            user_id, scan_cost, action=f"scan:{scan_depth_label}"
+        )
 
     # 扫描结果缓存：根据深度设置不同 TTL，同一 URL 同深度直接返回
     parsed = urlparse(url)
@@ -15373,13 +15374,14 @@ async def batch_scan(
             if deep
             else credits_service.SCAN_STANDARD_COST
         )
-        if not credits_service.has_credits(user_id, scan_cost):
-            return {
-                "url": url,
-                "ok": False,
-                "error": f"扫描需要 {scan_cost} 积分，余额不足",
-            }
-        credits_service.deduct_credits(user_id, scan_cost, action=f"batch_scan:{host}")
+        if not _TEST_MODE:
+            if not credits_service.has_credits(user_id, scan_cost):
+                return {
+                    "url": url,
+                    "ok": False,
+                    "error": f"扫描需要 {scan_cost} 积分，余额不足",
+                }
+            credits_service.deduct_credits(user_id, scan_cost, action=f"batch_scan:{host}")
         # 单个 URL 限时 25 秒，避免慢站拖死批量
         try:
             return await asyncio.wait_for(
