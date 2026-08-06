@@ -75,8 +75,17 @@ export const APP_TEMPLATE = `</head>
 <div class="page active" id="page-home" role="main">
   <!-- Workbench Header -->
   <div class="workbench-header">
-    <h1 class="workbench-title">工作台 / Dashboard</h1>
-    <span class="workbench-subtitle">安全扫描、修复与报告中心</span>
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      <div style="min-width:280px;flex:1">
+        <h1 class="workbench-title">工作台 / Dashboard</h1>
+        <span class="workbench-subtitle">从输入网址到修复闭环，一次完成扫描、验证、报告和复测</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button onclick="navigateTo('scan')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">开始扫描</button>
+        <button onclick="navigateTo('result')" style="background:rgba(75,110,175,0.12);color:var(--primary);border:1px solid rgba(75,110,175,0.35);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">查看报告</button>
+        <button onclick="navigateTo('profile')" style="background:transparent;color:var(--text-secondary);border:1px solid var(--border);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px">账号设置</button>
+      </div>
+    </div>
   </div>
 
   <div id="home-onboarding-banner" class="card fade-in-up" style="display:none;margin-top:14px;padding:14px;border:1px solid rgba(75,110,175,0.35);background:linear-gradient(135deg, rgba(75,110,175,0.12), rgba(115,201,144,0.08))">
@@ -90,6 +99,20 @@ export const APP_TEMPLATE = `</head>
         <button onclick="navigateTo('scan')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">开始扫描</button>
         <button onclick="navigateTo('profile')" style="background:rgba(75,110,175,0.12);color:var(--primary);border:1px solid rgba(75,110,175,0.35);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">账号设置</button>
         <button onclick="dismissHomeOnboarding()" style="background:transparent;color:var(--text-secondary);border:1px solid var(--border);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px">不再提示</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:14px">
+      <div style="padding:10px 12px;background:rgba(60,63,65,0.7);border:1px solid var(--border);border-radius:2px">
+        <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">适合谁</div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">安全团队、研发、运维、甲方安全负责人</div>
+      </div>
+      <div style="padding:10px 12px;background:rgba(60,63,65,0.7);border:1px solid var(--border);border-radius:2px">
+        <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">产出什么</div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">可直接给老板、研发和客户看的结果报告</div>
+      </div>
+      <div style="padding:10px 12px;background:rgba(60,63,65,0.7);border:1px solid var(--border);border-radius:2px">
+        <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">闭环能力</div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">扫描、修复、验证、工单、复测一条线打通</div>
       </div>
     </div>
   </div>
