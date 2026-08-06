@@ -78,7 +78,7 @@ export const APP_TEMPLATE = `</head>
     <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
       <div style="min-width:280px;flex:1">
         <h1 class="workbench-title">漏洞扫描与交付平台</h1>
-        <span class="workbench-subtitle">输入网址后自动完成扫描、证据收集、修复建议、复扫验证和审计留痕，面向上线前自查、客户交付和持续安全运营</span>
+        <span class="workbench-subtitle">输入网址后自动完成扫描、证据收集、修复建议、复扫验证和审计留痕，面向上线前自查、客户交付和持续安全运营，可直接作为收费产品对外使用</span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button onclick="navigateTo('scan')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">开始扫描</button>
