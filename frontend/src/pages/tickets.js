@@ -392,9 +392,7 @@ export function verifyTicket(id) {
       updateUserCredits();
       if (data.status === 'fixed') {
         setTimeout(function () {
-          if (confirm('修复已验证，是否前往修复器继续生成补丁并保存报告？')) {
-            openTicketFixer(id);
-          }
+          openTicketFixer(id);
         }, 300);
       }
       return loadTickets().then(function () { showTicketDetail(id); });
