@@ -2234,6 +2234,54 @@ function renderAIConfig() {
   }
 }
 
+let _deferredInstallPrompt = null;
+
+function initInstallBanner() {
+  if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return;
+  if (document.getElementById('pwa-install-banner')) return;
+  let banner = document.createElement('div');
+  banner.id = 'pwa-install-banner';
+  banner.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;z-index:9998;background:#1e293b;color:#fff;border:1px solid rgba(115,201,144,0.35);border-radius:12px;padding:12px 14px;box-shadow:0 14px 32px rgba(0,0,0,0.28);display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap';
+  banner.innerHTML = '<div style=\"min-width:220px;flex:1\"><div style=\"font-size:13px;font-weight:700;margin-bottom:2px\">安装为桌面应用</div><div style=\"font-size:12px;color:#cbd5e1;line-height:1.5\">把漏洞哨兵加入桌面或开始菜单，像 App 一样直接打开。</div></div><div style=\"display:flex;gap:8px;flex-wrap:wrap\"><button id=\"pwa-install-btn\" style=\"background:#73c990;color:#0f172a;border:none;padding:8px 14px;border-radius:8px;font-weight:700;cursor:pointer\">立即安装</button><button id=\"pwa-install-close\" style=\"background:transparent;color:#cbd5e1;border:1px solid rgba(203,213,225,0.28);padding:8px 14px;border-radius:8px;cursor:pointer\">稍后</button></div>';
+  document.body.appendChild(banner);
+  var closeBtn = document.getElementById('pwa-install-close');
+  var installBtn = document.getElementById('pwa-install-btn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', function() {
+      banner.remove();
+      try { localStorage.setItem('vs_pwa_banner_hidden', 'true'); } catch (e) {}
+    });
+  }
+  if (installBtn) {
+    installBtn.addEventListener('click', async function() {
+      if (_deferredInstallPrompt) {
+        _deferredInstallPrompt.prompt();
+        await _deferredInstallPrompt.userChoice;
+        _deferredInstallPrompt = null;
+      } else {
+        showToast('浏览器未准备好安装提示，可在菜单里选择“安装应用”。', 'info');
+      }
+      banner.remove();
+      try { localStorage.setItem('vs_pwa_banner_hidden', 'true'); } catch (e) {}
+    });
+  }
+}
+
+window.addEventListener('beforeinstallprompt', function(event) {
+  event.preventDefault();
+  _deferredInstallPrompt = event;
+  try {
+    if (localStorage.getItem('vs_pwa_banner_hidden') === 'true') return;
+  } catch (e) {}
+  initInstallBanner();
+});
+
+window.addEventListener('appinstalled', function() {
+  _deferredInstallPrompt = null;
+  const banner = document.getElementById('pwa-install-banner');
+  if (banner) banner.remove();
+});
+
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
   // Mount full application template into the root container
@@ -2248,6 +2296,11 @@ document.addEventListener('DOMContentLoaded', function() {
   try { initAuthCheckboxBinding(); } catch(e) { console.warn('initAuthCheckboxBinding error:', e); }
 
   // 加载公开运行时配置（Stripe 公钥等）
+  try {
+    if (_deferredInstallPrompt && localStorage.getItem('vs_pwa_banner_hidden') !== 'true') {
+      initInstallBanner();
+    }
+  } catch (e) {}
   publicConfig().then(function(cfg) {
     let data = (cfg && cfg.data) || cfg || {};
     if (data.stripe_publishable_key) {
