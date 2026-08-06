@@ -264,6 +264,10 @@ function renderHeader(score, riskLevel, summary, url, data) {
         <div class="src-report-next-step">
           <div class="src-report-next-step-title">下一步建议</div>
           <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已自动识别 ' + fpCount + ' 项潜在误报，可用筛选按钮隐藏。' : ''}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <button class="src-filter-btn" onclick="navigateTo('tickets')">去工单</button>
+            <button class="src-filter-btn" onclick="navigateTo('fixer')">去修复器</button>
+          </div>
           ${actionHint}
         </div>
       </div>
