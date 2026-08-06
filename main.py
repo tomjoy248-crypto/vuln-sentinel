@@ -474,6 +474,11 @@ def _is_test_db_dir(db_dir: str) -> bool:
     """Detect ephemeral test DB directories on Unix and Windows."""
     if not db_dir:
         return False
+    if os.environ.get("TEST_MODE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return True
+    db_name = os.environ.get("DB_NAME", "").strip().lower()
+    if db_name in {"test.db", "test.sqlite", "test.sqlite3"}:
+        return True
     try:
         db_path = Path(db_dir).expanduser().resolve()
         temp_path = Path(tempfile.gettempdir()).expanduser().resolve()
