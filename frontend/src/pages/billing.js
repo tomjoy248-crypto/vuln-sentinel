@@ -59,26 +59,28 @@ function getRecommendedPlanId(plans) {
 
 function getPlanBadge(plan, recommendedPlanId) {
   if (plan.id === recommendedPlanId) return '最划算';
-  if ((plan.name || '').includes('企业')) return '企业级';
-  if ((plan.name || '').includes('专业')) return '高频使用';
-  if ((plan.name || '').includes('体验')) return '先试用';
+  if ((plan.name || '').includes('企业')) return '企业版';
+  if ((plan.name || '').includes('专业')) return '专业版';
+  if ((plan.name || '').includes('标准')) return '标准版';
+  if ((plan.name || '').includes('体验')) return '体验版';
   return '';
 }
 
 function getPlanTarget(plan) {
   const name = (plan.name || '').toLowerCase();
-  if (name.includes('企业')) return '团队 / 企业';
-  if (name.includes('专业')) return '日常扫描 / 复测';
+  if (name.includes('企业')) return '大型团队 / 采购';
+  if (name.includes('专业')) return '安全运营 / 复测';
+  if (name.includes('标准')) return '日常扫描 / 验证';
   if (name.includes('体验')) return '试用 / 演示';
   return '个人 / 轻量使用';
 }
 
 function getPlanPermission(plan) {
   const credits = parseInt(plan && plan.credits, 10) || 0;
-  if (credits >= 1000) return '团队协作与高频复测';
-  if (credits >= 500) return '高频扫描 + 多次复核';
-  if (credits >= 100) return '日常扫描 + 修复验证';
-  return '试用与演示';
+  if (credits >= 1000) return '企业采购';
+  if (credits >= 500) return '专业运营';
+  if (credits >= 100) return '标准使用';
+  return '试用体验';
 }
 
 function getProviderLabel(provider) {
@@ -118,7 +120,7 @@ function loadPlans() {
     html += '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
     html += '<div>• 所有订单都会进入充值记录，便于财务对账</div>';
     html += '<div>• 支持模拟支付、Stripe，以及支付宝/微信测试回调与骨架通道</div>';
-    html += '<div>• 20 credits 更适合试用；标准扫描消耗 1，深度扫描消耗 3</div>';
+    html += '<div>• 20 credits 适合试用；100+ credits 更适合持续扫描与复核</div>';
     html += '</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">';
     plans.forEach(function(plan) {
