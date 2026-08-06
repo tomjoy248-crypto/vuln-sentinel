@@ -7,6 +7,7 @@ import sqlite3
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from app.core.rate_limiter import get_client_ip
 from pydantic import BaseModel, Field
 
 from app.core.exceptions import (
@@ -54,7 +55,7 @@ class PasswordResetConfirmModel(BaseModel):
 
 @router.post("/api/register", response_model=RegisterResponse)
 async def api_register(req: RegisterRequest, request: Request) -> dict:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     if not await limiter_register.is_allowed(client_ip):
         raise HTTPException(
             status_code=429,
@@ -107,7 +108,7 @@ async def api_register(req: RegisterRequest, request: Request) -> dict:
 
 @router.post("/api/login", response_model=LoginResponse)
 async def api_login(req: LoginRequest, request: Request) -> dict:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     if not await limiter_login.is_allowed(client_ip):
         raise HTTPException(
             status_code=429,
@@ -185,7 +186,7 @@ async def api_password_reset_request(
 ) -> dict:
     """请求密码重置（发送重置邮件）。"""
     # 安全最佳实践：对密码重置请求限流，防止邮件轰炸攻击
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     if not await limiter_password_reset.is_allowed(client_ip):
         raise HTTPException(
             status_code=429,
@@ -216,7 +217,7 @@ async def api_password_reset_confirm(
 ) -> dict:
     """确认密码重置。"""
     # 安全最佳实践：限流防止重置令牌暴力破解
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     if not await limiter_password_reset_confirm.is_allowed(client_ip):
         raise HTTPException(
             status_code=429,

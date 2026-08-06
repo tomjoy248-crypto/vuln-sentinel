@@ -77,6 +77,7 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 # ---------- 代码拆分模块导入 ----------
 import src_scanner
 from app.core.compliance import get_compliance_summary, validate_scan_target_full
+from app.core.rate_limiter import get_client_ip
 from app.core.exceptions import (
     BusinessException,
     NotFoundException,
@@ -486,6 +487,25 @@ _TEST_MODE = _is_test_db_dir(os.environ.get("DB_DIR", ""))
 _SERVICE_START_TIME = time.time()
 
 
+def validate_production_config() -> list[str]:
+    """Validate production-critical settings and return all detected issues."""
+    issues: list[str] = []
+    if not _IS_PRODUCTION:
+        return issues
+    if not settings.jwt_secret or len(settings.jwt_secret.strip()) < 32:
+        issues.append("JWT_SECRET 长度不足，生产环境至少需要 32 位随机密钥")
+    if settings.cors_origins.strip() == "*":
+        issues.append("CORS_ORIGINS 不允许在生产环境使用通配符 *")
+    public_base_url = os.environ.get("PUBLIC_BASE_URL", "").strip()
+    if settings.public_demo_enabled and not public_base_url:
+        issues.append("PUBLIC_BASE_URL 为空时不建议开启公开试用")
+    if not settings.database_url and settings.db_dir.strip() in {"/tmp", "/var/tmp", "/dev/shm"}:
+        issues.append("生产环境不能使用临时目录作为 DB_DIR")
+    if settings.enable_metrics and settings.env == "production" and not settings.sentry_dsn and not settings.redis_url:
+        issues.append("建议在生产环境配置监控/告警或明确关闭 metrics 暴露")
+    return issues
+
+
 def risk_level_zh(risk_level: str | None) -> str:
     """Return a stable Chinese label for API responses while preserving raw risk_level."""
     return {
@@ -518,14 +538,14 @@ limiter_free_trial = RateLimiter(10, 60, disabled=_TEST_MODE)
 
 async def rate_limit_dependency(request: Request) -> None:
     """全局速率限制（单次调用，不重复扣分）。"""
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     if not await limiter_global.is_allowed(client_ip):
         raise HTTPException(429, "请求过于频繁，请稍后再试")
 
 
 def _rate_limit_check(limiter: RateLimiter, request: Request) -> None:
     """辅助函数：检查指定限流器，超限则抛 429 并带 Retry-After 头。"""
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     if not limiter.is_allowed_sync(client_ip):
         raise HTTPException(
             status_code=429,
@@ -1656,6 +1676,17 @@ async def lifespan(app: FastAPI):
         init_db()
     except Exception as e:
         logger.error("Database initialization failed: %s", e, exc_info=True)
+    try:
+        prod_issues = validate_production_config()
+        if prod_issues:
+            message = "; ".join(prod_issues)
+            if _IS_PRODUCTION:
+                raise RuntimeError(message)
+            logger.warning("Production config warnings: %s", message)
+    except Exception as e:
+        logger.error("Production config validation failed: %s", e, exc_info=True)
+        if _IS_PRODUCTION:
+            raise
     # 11-S+: 多 worker 部署时可通过 ENABLE_SCHEDULER=false 关闭定时任务，避免重复执行
     _enable_scheduler = os.environ.get(
         "ENABLE_SCHEDULER", "true"
@@ -1875,7 +1906,7 @@ async def request_logging_middleware(
     request: Request, call_next: Callable[[Request], Coroutine[Any, Any, Any]]
 ):
     start = time.time()
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     response = await call_next(request)
     duration = time.time() - start
     rid = get_request_id()
@@ -8118,7 +8149,7 @@ async def api_scan(
     global _SCAN_CACHE_HITS, _SCAN_CACHE_MISSES
     await rate_limit_dependency(request)
     # 深度模式额外速率限制：深度扫描资源消耗大，限制更严格
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     if req.depth == "deep" or req.deep:
         if not await limiter_scan_deep.is_allowed(client_ip):
             raise HTTPException(
@@ -11066,7 +11097,7 @@ async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> 
         return {"success": False, "error": "JSON 解析失败"}
 
     # 限流(防被刷爆 LLM token)
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     if not await limiter_ai.is_allowed(client_ip):
         return {"success": False, "error": "AI 顾问调用太频繁，请稍后再试"}
 
@@ -13636,7 +13667,7 @@ async def api_cancel_scan_task(
 @app.post("/api/public-demo-scan", response_model=None)
 async def free_trial_scan(req: FreeTrialRequest, request: Request):
     """免费试用扫描：允许未登录用户扫描白名单站点，体验产品能力。"""
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     if not await limiter_free_trial.is_allowed(client_ip):
         raise HTTPException(
             status_code=429,
@@ -15077,7 +15108,7 @@ async def ai_advisor(
     req: AIAdvisorRequest, request: Request, user=Depends(get_current_user)
 ):
     """11-S 升级版 AI 安全顾问：智能匹配 + 上下文感知 + 多轮对话"""
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     if not await limiter_ai.is_allowed(client_ip):
         raise HTTPException(
             status_code=429,
@@ -15244,7 +15275,7 @@ async def batch_scan(
 ):
     """批量扫描：一次提交多个 URL（最多 5 个），并发执行后返回对比摘要。"""
     await rate_limit_dependency(request)
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     if not await limiter_batch.is_allowed(client_ip):
         raise HTTPException(
             status_code=429,

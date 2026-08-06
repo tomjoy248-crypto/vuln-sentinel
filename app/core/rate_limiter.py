@@ -387,6 +387,19 @@ def create_rate_limiter(
 rate_limiter = create_rate_limiter()
 
 
+def get_client_ip(request: Request) -> str:
+    """Best-effort client IP extraction with reverse-proxy support."""
+    forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
+    if forwarded_for:
+        candidate = forwarded_for.split(",", 1)[0].strip()
+        if candidate:
+            return candidate
+    forwarded = request.headers.get("X-Real-IP", "").strip()
+    if forwarded:
+        return forwarded
+    return request.client.host if request.client else "unknown"
+
+
 def get_identifier(request: Request) -> str:
     """从请求中提取限流标识。
 
@@ -396,7 +409,7 @@ def get_identifier(request: Request) -> str:
     user_id = _extract_user_id(request)
     if user_id is not None:
         return f"user:{user_id}"
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     return f"ip:{client_ip}"
 
 

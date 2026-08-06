@@ -14,6 +14,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from fastapi import Request
+from app.core.rate_limiter import get_client_ip
 from fastapi.responses import Response
 
 from app.core.logging import (
@@ -63,7 +64,7 @@ async def structured_request_logging_middleware(
 
     logger = structlog.get_logger("vuln_sentinel.http")
     start = time.time()
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     method = request.method
     path = request.url.path
 
@@ -213,7 +214,7 @@ async def audit_logging_middleware(
         return await call_next(request)
 
     user_id = _parse_user_id_from_request(request)
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     resource_type = _infer_resource_type(path)
     resource_id = _extract_resource_id(path)
     action = f"{method.lower()}_{resource_type}"

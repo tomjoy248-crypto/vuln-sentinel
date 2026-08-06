@@ -1,20 +1,39 @@
-# Render 部署配置文件（免费套餐版）
-# 使用方法：
-# 1. 把代码 push 到 GitHub
-# 2. 在 Render dashboard 点击 "New +" -> "Blueprint"
-# 3. 选择包含此文件的仓库，Render 会自动读取配置
+# Render deployment blueprint
+# Use as a starting point for production. Fill in environment variables in the dashboard.
 
 services:
   - type: web
-    name: vuln-sentinel-v11-s
+    name: vuln-sentinel
     runtime: docker
-    plan: free
+    plan: starter
+    healthCheckPath: /health/live
+    autoDeploy: true
     envVars:
+      - key: ENV
+        value: production
+      - key: PRODUCTION
+        value: "1"
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRE_SECONDS
         value: "86400"
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
       - key: DB_DIR
-        value: "/tmp"
+        value: "/data"
+      - key: ENABLE_SCHEDULER
+        value: "true"
+      - key: PUBLIC_DEMO_ENABLED
+        value: "1"
+      - key: FREE_TRIAL_ENABLED
+        value: "1"
+      - key: ENABLE_METRICS
+        value: "1"
       - key: PYTHONUNBUFFERED
         value: "1"

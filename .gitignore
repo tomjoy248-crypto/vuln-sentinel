@@ -5,6 +5,7 @@ data/
 docs/coverage_html/
 *.egg-info/
 .env
+.env.docker
 .pytest_cache/
 .vscode/
 .idea/
