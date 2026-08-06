@@ -120,7 +120,7 @@ function loadPlans() {
     html += '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
     html += '<div>• 所有订单都会进入充值记录，便于财务对账</div>';
     html += '<div>• 支持模拟支付、Stripe，以及支付宝/微信测试回调与骨架通道</div>';
-    html += '<div>• 20 credits 适合试用；100+ credits 更适合持续扫描与复核</div>';
+    html += '<div>• 适合先试用，再按项目/团队规模升级到更高档位</div>';
     html += '</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">';
     plans.forEach(function(plan) {
@@ -145,7 +145,7 @@ function loadPlans() {
     html += '</div>';
     html += '<div style="padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary);line-height:1.7">';
     html += '<div style="font-weight:700;color:var(--text);margin-bottom:4px">购买后流程</div>';
-    html += '<div>1. 选择套餐并完成支付 → 2. 积分立即到账 → 3. 在扫描、修复和验证流程中消耗积分 → 4. 所有订单、回调和余额变动可在充值记录中追踪。</div>';
+    html += '<div>1. 选择套餐并完成支付 → 2. 积分立即到账 → 3. 在扫描、修复和验证流程中消耗积分 → 4. 所有订单、回调和余额变动可在充值记录中追踪 → 5. 需要时升级到更高档位。</div>';
     html += '</div>';
     html += '<div style="margin-top:12px;padding:12px 14px;background:rgba(75,110,175,0.08);border:1px solid rgba(75,110,175,0.2);border-radius:2px;font-size:12px;color:var(--text-secondary);line-height:1.7">';
     html += '<div style="font-weight:700;color:var(--primary);margin-bottom:4px">上线前审计提醒</div>';
