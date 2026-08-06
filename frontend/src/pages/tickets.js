@@ -1,5 +1,5 @@
 // ========== Fix Tickets (store + service layer) ==========
-import { escapeHtml, safeSetHtml, safeSetDisplay, isPaymentRequired, paymentRequiredMessage } from '../utils.js';
+import { escapeHtml, safeSetHtml, safeSetDisplay, copyToClipboard, isPaymentRequired, paymentRequiredMessage } from '../utils.js';
 import { showToast } from '../components/Toast.js';
 import { isLoggedIn, apiGet } from '../api.js';
 import { appStore } from '../store.js';
@@ -72,6 +72,9 @@ function handleTicketClick(e) {
       break;
     case 'open-report':
       if (id) openTicketReport(id);
+      break;
+    case 'copy-summary':
+      if (id) copyTicketSummary(id);
       break;
     case 'delete':
       if (id) deleteTicket(id);
@@ -238,6 +241,7 @@ export function showTicketDetail(id) {
   html += '<button class="ticket-btn primary" data-action="verify" data-id="' + ticket.id + '">复测验证</button>';
   html += '<button class="ticket-btn secondary" data-action="open-fixer" data-id="' + ticket.id + '">去修复器</button>';
   html += '<button class="ticket-btn secondary" data-action="open-report" data-id="' + ticket.id + '">回到报告</button>';
+  html += '<button class="ticket-btn secondary" data-action="copy-summary" data-id="' + ticket.id + '">复制摘要</button>';
   html += '<button class="ticket-btn secondary" data-action="edit-notes" data-id="' + ticket.id + '">备注</button>';
   html += '<button class="ticket-btn danger" data-action="delete" data-id="' + ticket.id + '">删除</button>';
   html += '</div>';
@@ -354,6 +358,22 @@ export function openTicketReport(id) {
   } else {
     window.location.hash = '#page-home';
   }
+}
+
+export function copyTicketSummary(id) {
+  let ticket = ticketService.getTicketById(id);
+  if (!ticket) return;
+  let summary = [
+    '工单 #' + ticket.id,
+    '名称: ' + (ticket.finding_name || ''),
+    '等级: ' + (TicketHelpers.severityLabel(ticket.severity) || ticket.severity || ''),
+    '状态: ' + (TicketHelpers.statusLabel(ticket.status) || ticket.status || ''),
+    '来源 URL: ' + (ticket.url || ''),
+    '备注: ' + (ticket.notes || '')
+  ].join('\n');
+  copyToClipboard(summary).then(function () {
+    showToast('工单摘要已复制');
+  });
 }
 
 export function loadTicketTimeline(id) {
