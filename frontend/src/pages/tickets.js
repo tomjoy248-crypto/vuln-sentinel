@@ -374,7 +374,7 @@ export function loadTicketTimeline(id) {
 }
 
 export function verifyTicket(id) {
-  if (!confirm('确定对工单 #' + id + ' 复测验证？这将重新扫描目标并对比修复效果。')) return;
+  if (!confirm('确定对工单 #' + id + ' 复测验证？系统会重新扫描并对比修复效果。')) return;
   let btn = document.querySelector('.ticket-detail-actions [data-action="verify"][data-id="' + id + '"]');
   if (btn) {
     btn.textContent = '验证中...';
@@ -392,7 +392,7 @@ export function verifyTicket(id) {
       updateUserCredits();
       if (data.status === 'fixed') {
         setTimeout(function () {
-          if (confirm('是否前往修复器生成补丁并保存报告？')) {
+          if (confirm('修复已验证，是否前往修复器继续生成补丁并保存报告？')) {
             openTicketFixer(id);
           }
         }, 300);
