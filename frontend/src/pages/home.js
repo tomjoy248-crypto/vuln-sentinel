@@ -476,6 +476,25 @@ function showHomeOnboarding() {
   }
 }
 
+function updateScanCreditsHint() {
+  let hint = document.getElementById('scan-credits-hint');
+  let value = document.getElementById('scan-credits-value');
+  if (!hint || !value) return;
+  if (!isLoggedIn()) {
+    hint.style.display = 'none';
+    return;
+  }
+  hint.style.display = 'block';
+  authFetch('/api/me/credits').then(function(r) { return r.json(); }).then(function(data) {
+    let credits = data && data.data && typeof data.data.credits === 'number'
+      ? data.data.credits
+      : (data && typeof data.credits === 'number' ? data.credits : null);
+    value.textContent = credits === null ? '--' : String(credits);
+  }).catch(function() {
+    value.textContent = '--';
+  });
+}
+
 // ----- loadDashboard -----
 function loadDashboard() {
   let overview = document.getElementById('dashboard-overview');
@@ -485,6 +504,7 @@ function loadDashboard() {
   }
   if (overview) overview.style.display = 'grid';
   showHomeOnboarding();
+  updateScanCreditsHint();
   authFetch('/api/dashboard').then(function(r) { return r.json(); }).then(function(data) {
     let el1 = document.getElementById('home-stat-scan-count');
     let el2 = document.getElementById('home-stat-high-risk');
@@ -4160,6 +4180,7 @@ window.finishStages = finishStages;
 window.startProgressAnimation = startProgressAnimation;
 window.stopProgressAnimation = stopProgressAnimation;
 window.setScanProgress = setScanProgress;
+window.updateScanCreditsHint = updateScanCreditsHint;
 window.loadTrendChart = function(days) {
   days = days || 30;
   let container = document.getElementById('trend-chart');

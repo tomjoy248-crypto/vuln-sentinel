@@ -228,6 +228,10 @@ export const APP_TEMPLATE = `</head>
         <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">登录后即可开始扫描</div>
         <button onclick="navigateTo('profile')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 18px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:500">立即登录 / 注册</button>
       </div>
+      <div id="scan-credits-hint" style="display:none;background:rgba(75,110,175,0.08);border:1px solid rgba(75,110,175,0.25);border-radius:2px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--text-secondary);line-height:1.6">
+        <strong style="color:var(--primary)">额度提示</strong><br/>
+        当前额度：<span id="scan-credits-value">--</span> · 标准扫描消耗 1 · 深度扫描消耗 3
+      </div>
       <label class="scan-checkbox" style="margin-bottom:12px">
         <input id="auth-check-step1" type="checkbox" onchange="updateScanStartState()" />
         <span>我已确认拥有该域名或已获得授权扫描</span>

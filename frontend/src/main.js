@@ -466,6 +466,7 @@ function doLogin() {
       updateAuthUI();
       updateAlertBadge();
       updateUserCredits();
+      if (typeof window.updateScanCreditsHint === 'function') window.updateScanCreditsHint();
       showToast('登录成功，欢迎 ' + (data.username || username));
       navigateTo('scan');
     } else {
@@ -506,6 +507,7 @@ function doRegister() {
       updateAuthUI();
       updateAlertBadge();
       updateUserCredits();
+      if (typeof window.updateScanCreditsHint === 'function') window.updateScanCreditsHint();
       showToast('注册成功，欢迎 ' + (data.username || username));
       navigateTo('scan');
     } else {
