@@ -196,14 +196,12 @@ function renderHeader(score, riskLevel, summary, url, data) {
     ? `<button class="src-export-btn" id="src-export-markdown" title="导出 SRC 格式 Markdown 报告">导出 SRC 报告</button>`
     : '';
 
-  // 扫描质量评分
   const quality = data.quality || {};
   const qScore = quality.overall_score || 0;
   const qBadge = qScore > 0
     ? `<span class="meta-item" style="color:${qScore >= 80 ? '#73c990' : qScore >= 60 ? '#f0a732' : '#c75450'}">质量 ${qScore}分</span>`
     : '';
 
-  // 交叉验证统计
   const vStats = data.verification_stats || {};
   const vBadge = vStats.enabled
     ? `<span class="meta-item verification-badge">
@@ -211,6 +209,21 @@ function renderHeader(score, riskLevel, summary, url, data) {
         <span class="v-probable" title="可能存在">${vStats.probable || 0}</span>
         <span class="v-suspected" title="存疑">${vStats.suspected || 0}</span>
        </span>`
+    : '';
+
+  const severityTotal = summary.total || 0;
+  const criticalCount = summary.critical || 0;
+  const highCount = summary.high || 0;
+  const mediumCount = summary.medium || 0;
+  const lowCount = summary.low || 0;
+  const infoCount = summary.info || 0;
+  const nextStep = criticalCount + highCount > 0
+    ? '优先处理严重与高危项，先关闭外部暴露面。'
+    : mediumCount > 0
+      ? '先处理中危项，再复扫验证修复是否生效。'
+      : '当前结果偏健康，可做基线留存并继续监控。';
+  const actionHint = data.scan_id
+    ? '<div class="src-report-action-hint">建议导出报告、验证复现结果，并在修复后重新扫描。</div>'
     : '';
 
   return `
@@ -227,12 +240,12 @@ function renderHeader(score, riskLevel, summary, url, data) {
           <span class="src-report-url">${escapeHtml(url)}</span>
         </div>
         <div class="src-report-stats">
-          <div class="src-stat critical"><div class="num">${summary.critical || 0}</div><div class="label">严重</div></div>
-          <div class="src-stat high"><div class="num">${summary.high || 0}</div><div class="label">高危</div></div>
-          <div class="src-stat medium"><div class="num">${summary.medium || 0}</div><div class="label">中危</div></div>
-          <div class="src-stat low"><div class="num">${summary.low || 0}</div><div class="label">低危</div></div>
-          <div class="src-stat info"><div class="num">${summary.info || 0}</div><div class="label">信息</div></div>
-          <div class="src-stat total"><div class="num">${summary.total || 0}</div><div class="label">总计</div></div>
+          <div class="src-stat critical"><div class="num">${criticalCount}</div><div class="label">严重</div></div>
+          <div class="src-stat high"><div class="num">${highCount}</div><div class="label">高危</div></div>
+          <div class="src-stat medium"><div class="num">${mediumCount}</div><div class="label">中危</div></div>
+          <div class="src-stat low"><div class="num">${lowCount}</div><div class="label">低危</div></div>
+          <div class="src-stat info"><div class="num">${infoCount}</div><div class="label">信息</div></div>
+          <div class="src-stat total"><div class="num">${severityTotal}</div><div class="label">总计</div></div>
         </div>
         <div class="src-report-submeta">
           ${scanId}${duration}${reportId}${qBadge}${vBadge}
@@ -240,6 +253,11 @@ function renderHeader(score, riskLevel, summary, url, data) {
         </div>
         <div class="src-report-actions">
           ${exportBtn}
+        </div>
+        <div class="src-report-next-step">
+          <div class="src-report-next-step-title">下一步建议</div>
+          <div class="src-report-next-step-text">${escapeHtml(nextStep)}</div>
+          ${actionHint}
         </div>
       </div>
     </div>
