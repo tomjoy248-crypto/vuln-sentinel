@@ -3975,7 +3975,7 @@ function renderScanHistory(page) {
   authFetch('/api/history?limit=50').then(function(resp) { return resp.json(); }).then(function(data) {
     let history = data.history || [];
     if (history.length === 0) {
-      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:13px">暂无扫描记录</div><div style="font-size:12px;margin-top:6px">点首页「开始扫描」试试</div></div>';
+      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:13px">暂无扫描记录</div><div style="font-size:12px;margin-top:6px">点首页「开始扫描」试试</div><div style="margin-top:12px"><button class="fixer-btn primary" onclick="navigateTo(\'scan\')">开始扫描</button></div></div>';
       safeSetDisplay('history-pagination', 'none');
       let tw = document.getElementById('history-trend-wrap');
       if (tw) tw.style.display = 'none';
