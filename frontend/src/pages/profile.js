@@ -136,6 +136,7 @@ function doLogin() {
   if (!username || !password) { if (errEl) errEl.textContent = '请输入用户名和密码'; return; }
 
   authFetch('/api/login', {
+    skipAuthExpiry: true,
     method: 'POST',
     body: JSON.stringify({ username: username, password: password })
   }).then(function(resp) { return resp.json(); }).then(function(data) {
@@ -146,6 +147,7 @@ function doLogin() {
       updateAlertBadge();
       updateUserCredits();
       showToast('登录成功，欢迎 ' + (data.username || username));
+      navigateTo('scan');
     } else {
       if (errEl) errEl.textContent = extractError(data) || '登录失败';
     }
@@ -174,6 +176,7 @@ function doRegister() {
   if (email) { payload.email = email; }
 
   authFetch('/api/register', {
+    skipAuthExpiry: true,
     method: 'POST',
     body: JSON.stringify(payload)
   }).then(function(resp) { return resp.json(); }).then(function(data) {
@@ -184,6 +187,7 @@ function doRegister() {
       updateAlertBadge();
       updateUserCredits();
       showToast('注册成功，欢迎 ' + (data.username || username));
+      navigateTo('scan');
     } else {
       if (errEl) errEl.textContent = extractError(data) || '注册失败';
     }

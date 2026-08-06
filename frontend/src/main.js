@@ -319,13 +319,14 @@ function authHeaders() {
 function authFetch(url, options) {
   options = options || {};
   options.headers = options.headers || {};
+  let skipAuthExpiry = !!options.skipAuthExpiry;
   let token = getToken();
   if (token) options.headers['Authorization'] = 'Bearer ' + token;
   if (!options.headers['Content-Type'] && options.body) options.headers['Content-Type'] = 'application/json';
   // 线上模式：自动补全 base URL（防 file:// 被混用）
   let fullUrl = (url.indexOf('http') === 0) ? url : (API_BASE + url);
   return fetch(fullUrl, options).then(function(resp) {
-    if (resp.status === 401) {
+    if (resp.status === 401 && !skipAuthExpiry) {
       // 温和处理 401：仅清除过期 token 并更新 UI，不强制跳转或弹窗
       // 避免页面加载时的探测请求导致用户被意外登出
       removeToken();
@@ -455,6 +456,7 @@ function doLogin() {
   if (!username || !password) { if (errEl) errEl.textContent = '请输入用户名和密码'; return; }
 
   authFetch('/api/login', {
+    skipAuthExpiry: true,
     method: 'POST',
     body: JSON.stringify({ username: username, password: password })
   }).then(function(resp) { return resp.json(); }).then(function(data) {
@@ -465,6 +467,7 @@ function doLogin() {
       updateAlertBadge();
       updateUserCredits();
       showToast('登录成功，欢迎 ' + (data.username || username));
+      navigateTo('scan');
     } else {
       if (errEl) errEl.textContent = extractError(data) || '登录失败';
     }
@@ -493,6 +496,7 @@ function doRegister() {
   if (email) { payload.email = email; }
 
   authFetch('/api/register', {
+    skipAuthExpiry: true,
     method: 'POST',
     body: JSON.stringify(payload)
   }).then(function(resp) { return resp.json(); }).then(function(data) {
@@ -503,6 +507,7 @@ function doRegister() {
       updateAlertBadge();
       updateUserCredits();
       showToast('注册成功，欢迎 ' + (data.username || username));
+      navigateTo('scan');
     } else {
       if (errEl) errEl.textContent = extractError(data) || '注册失败';
     }
