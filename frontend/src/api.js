@@ -102,6 +102,10 @@ export function publicConfig() { return apiGet('/api/config'); }
 export function register(body) { return apiPost('/api/register', body); }
 export function login(body) { return apiPost('/api/login', body); }
 export function resetPassword(body) { return apiPost('/api/reset-password', body); }
+export function requestPasswordReset(body) { return apiPost('/api/auth/password-reset/request', body); }
+export function confirmPasswordReset(body) { return apiPost('/api/auth/password-reset/confirm', body); }
+export function resendVerification() { return apiPost('/api/auth/resend-verification', {}); }
+export function verifyEmailToken(body) { return apiPost('/api/auth/verify-email', body); }
 export function me() { return apiGet('/api/me'); }
 export function credits() { return apiGet('/api/me/credits'); }
 export function usage(limit = 20, offset = 0) {

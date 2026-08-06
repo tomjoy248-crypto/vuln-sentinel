@@ -457,7 +457,7 @@ export const APP_TEMPLATE = `</head>
     <div id="auth-guest" style="display:none">
       <div class="card auth-form">
         <h3>账号登录</h3>
-        <div class="auth-form-error" id="login-error"></div>
+        <div class="auth-form-error" id="login-error"></div><div id="auth-status-message" class="auth-form-hint" style="margin-top:8px;color:var(--text-secondary)"></div>
         <div class="auth-form-row">
           <input type="text" id="login-username" placeholder="用户名" aria-label="用户名" />
         </div>
@@ -467,8 +467,11 @@ export const APP_TEMPLATE = `</head>
         <div class="auth-form-row">
           <button class="auth-form-btn" style="flex:1" onclick="doLogin()">登 录</button>
         </div>
+        <div class="auth-form-row">
+          <button class="auth-form-btn secondary" style="flex:1" onclick="toggleAuthForm('reset')">找回密码</button>
+        </div>
         <div class="auth-form-switch">
-          还没有账号？<a onclick="toggleAuthForm('register')">立即注册</a>
+          <a onclick="toggleAuthForm('reset')">找回密码</a> · <a onclick="toggleAuthForm('register')">立即注册</a>
         </div>
       </div>
     </div>
@@ -485,7 +488,13 @@ export const APP_TEMPLATE = `</head>
           <input type="password" id="reset-new-password2" placeholder="确认新密码" aria-label="确认新密码" />
         </div>
         <div class="auth-form-row">
-          <button class="auth-form-btn" style="flex:1" onclick="doResetPassword()">修改密码</button>
+          <input type="text" id="reset-token-input" placeholder="重置 token" aria-label="重置 token" />
+        </div>
+        <div class="auth-form-row">
+          <button class="auth-form-btn" style="flex:1" onclick="doPasswordResetConfirm()">确认重置</button>
+        </div>
+        <div class="auth-form-row">
+          <button class="auth-form-btn secondary" style="flex:1" onclick="toggleAuthForm('login')">返回登录</button>
         </div>
         <div class="auth-form-switch">
           <a onclick="toggleAuthForm('login')">返回登录</a>
@@ -511,7 +520,16 @@ export const APP_TEMPLATE = `</head>
           <input type="password" id="reg-password2" placeholder="确认密码" aria-label="确认密码" />
         </div>
         <div class="auth-form-row">
+          <button class="auth-form-btn secondary" style="flex:1" onclick="doResendVerification()">重新发送验证邮件</button>
+        </div>
+        <div class="auth-form-row">
           <button class="auth-form-btn" style="flex:1" onclick="doRegister()">注 册</button>
+        </div>
+        <div class="auth-form-row">
+          <input type="text" id="verify-email-token" placeholder="邮箱验证 token（收到邮件后填写）" aria-label="邮箱验证 token" />
+        </div>
+        <div class="auth-form-row">
+          <button class="auth-form-btn secondary" style="flex:1" onclick="doVerifyEmailFromToken()">验证邮箱</button>
         </div>
         <div class="auth-form-switch">
           已有账号？<a onclick="toggleAuthForm('login')">去登录</a>
