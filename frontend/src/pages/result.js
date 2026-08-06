@@ -298,7 +298,7 @@ function renderFindingList(findings, selectedIndex) {
   let visibleFindings = _hideLikelyFp ? findings.filter((item) => !item.is_likely_fp) : findings;
   let hiddenCount = findings.length - visibleFindings.length;
   let html = '<div class="src-list-header">漏洞列表 <span class="src-list-count">' + visibleFindings.length + '</span>';
-  html += '<button class="src-filter-btn" data-action="toggle-fp-filter" title="切换误报显示">' + (_hideLikelyFp ? '显示全部' : '仅看真实问题') + '</button>';
+  html += '<button class="src-filter-btn" data-action="toggle-fp-filter" title="切换可疑项显示">' + (_hideLikelyFp ? '显示全部' : '优先可信项') + '</button>';
   if (hiddenCount > 0) html += '<span class="src-filter-note">已隐藏 ' + hiddenCount + ' 项</span>';
   html += '</div>';
   html += '<div class="src-list-items">';

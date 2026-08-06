@@ -163,7 +163,7 @@ export const APP_TEMPLATE = `</head>
       </div>
       <div style="padding:12px 10px;background:#3c3f41;text-align:center">
         <div style="font-size:12px;font-weight:600;color:#bbbbbb;margin-bottom:4px">反馈闭环</div>
-        <div style="font-size:11px;color:#808080;line-height:1.5">用户标记误报<br>持续优化检测模型</div>
+          <div style="font-size:11px;color:#808080;line-height:1.5">用户反馈结果<br>持续优化检测模型</div>
       </div>
       <div style="padding:12px 10px;background:#3c3f41;text-align:center">
         <div style="font-size:12px;font-weight:600;color:#bbbbbb;margin-bottom:4px">安全闭环</div>
