@@ -253,6 +253,7 @@ function renderFixerResult(result, original) {
     if (lastTicketContext) {
       html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px 0">';
       html += '<button class="fixer-btn secondary" style="padding:6px 12px" onclick="navigateTo(\'tickets\')">返回工单</button>';
+      html += '<button class="fixer-btn secondary" style="padding:6px 12px" onclick="navigateTo(\'home\')">回到报告</button>';
       html += '<button class="fixer-btn secondary" style="padding:6px 12px" onclick="localStorage.removeItem(\'vs_fixer_ticket\'); showToast(\'已清除工单来源\')">清除来源</button>';
       html += '</div>';
     }
