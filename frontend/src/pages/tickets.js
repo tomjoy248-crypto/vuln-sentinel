@@ -70,6 +70,9 @@ function handleTicketClick(e) {
     case 'open-fixer':
       if (id) openTicketFixer(id);
       break;
+    case 'open-report':
+      if (id) openTicketReport(id);
+      break;
     case 'delete':
       if (id) deleteTicket(id);
       break;
@@ -234,6 +237,7 @@ export function showTicketDetail(id) {
   html += '</select>';
   html += '<button class="ticket-btn primary" data-action="verify" data-id="' + ticket.id + '">复测验证</button>';
   html += '<button class="ticket-btn secondary" data-action="open-fixer" data-id="' + ticket.id + '">去修复器</button>';
+  html += '<button class="ticket-btn secondary" data-action="open-report" data-id="' + ticket.id + '">回到报告</button>';
   html += '<button class="ticket-btn secondary" data-action="edit-notes" data-id="' + ticket.id + '">备注</button>';
   html += '<button class="ticket-btn danger" data-action="delete" data-id="' + ticket.id + '">删除</button>';
   html += '</div>';
@@ -339,6 +343,16 @@ export function openTicketFixer(id) {
     window.navigateTo('fixer');
   } else {
     window.location.hash = '#page-fixer';
+  }
+}
+
+export function openTicketReport(id) {
+  let ticket = ticketService.getTicketById(id);
+  if (!ticket) return;
+  if (typeof window.navigateTo === 'function') {
+    window.navigateTo('home');
+  } else {
+    window.location.hash = '#page-home';
   }
 }
 
