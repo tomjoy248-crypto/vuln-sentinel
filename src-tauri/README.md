@@ -13,6 +13,7 @@
 - `Cargo.toml`：Rust 包配置占位
 - `build.rs`：构建触发占位
 - `tauri.conf.json`：Tauri 应用配置
+- `capabilities.json`：权限能力占位
 - `src/main.rs`：桌面壳入口占位
 - `icons/`：桌面图标目录占位
 
@@ -31,3 +32,7 @@
 3. 初始化 `src-tauri` 依赖
 4. 让桌面壳加载 `frontend/dist`
 5. 打包 `msi`
+
+## 说明
+
+当前目录是为了把 Windows 客户端路径先占住，后面安装依赖后可继续补成真正可编译工程。
