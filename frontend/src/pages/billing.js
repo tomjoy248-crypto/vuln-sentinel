@@ -65,6 +65,22 @@ function getPlanBadge(plan, recommendedPlanId) {
   return '';
 }
 
+function getPlanTarget(plan) {
+  const name = (plan.name || '').toLowerCase();
+  if (name.includes('企业')) return '团队 / 企业';
+  if (name.includes('专业')) return '日常扫描 / 复测';
+  if (name.includes('体验')) return '试用 / 演示';
+  return '个人 / 轻量使用';
+}
+
+function getPlanPermission(plan) {
+  const credits = parseInt(plan && plan.credits, 10) || 0;
+  if (credits >= 1000) return '高频授权扫描与复测';
+  if (credits >= 200) return '日常扫描 + 修复验证';
+  if (credits >= 50) return '有限次数扫描';
+  return '体验级权限';
+}
+
 function getProviderLabel(provider) {
   const map = { mock: '模拟支付', stripe: 'Stripe', alipay: '支付宝', wechat: '微信支付' };
   return map[provider] || provider;
@@ -119,7 +135,8 @@ function loadPlans() {
       html += '<div style="font-size:22px;font-weight:700;color:var(--warning)">' + formatPrice(plan.price_cents) + '</div>';
       html += '<div style="font-size:13px;color:var(--text-secondary)">含 <strong style="color:var(--text)">' + formatCredits(plan.credits) + '</strong> 积分</div>';
       html += '<div style="font-size:12px;color:var(--text-secondary)">约 <strong style="color:var(--text)">' + formatValueScore(plan) + ' 元/积分</strong></div>';
-      html += '<div style="font-size:12px;color:var(--text-secondary)">适合：' + escapeHtml(plan.name || '通用场景') + '</div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary)">适合：' + escapeHtml(getPlanTarget(plan)) + '</div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary)">权限：' + escapeHtml(getPlanPermission(plan)) + '</div>';
       html += '<button class="fixer-btn primary" style="width:100%;margin-top:auto" onclick="buyPlan(' + plan.id + ', event)">立即购买</button>';
       html += '</div>';
     });
@@ -127,6 +144,10 @@ function loadPlans() {
     html += '<div style="padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary);line-height:1.7">';
     html += '<div style="font-weight:700;color:var(--text);margin-bottom:4px">购买后流程</div>';
     html += '<div>1. 选择套餐并完成支付 → 2. 积分立即到账 → 3. 在扫描、修复和验证流程中消耗积分 → 4. 所有订单和余额变动可在充值记录中追踪。</div>';
+    html += '</div>';
+    html += '<div style="margin-top:12px;padding:12px 14px;background:rgba(75,110,175,0.08);border:1px solid rgba(75,110,175,0.2);border-radius:2px;font-size:12px;color:var(--text-secondary);line-height:1.7">';
+    html += '<div style="font-weight:700;color:var(--primary);margin-bottom:4px">上线前审计提醒</div>';
+    html += '<div>建议上线前重点确认：支付回调签名、积分扣减日志、权限分层、导出权限、审计日志留存，以及真实客户场景下的扫描额度策略。</div>';
     html += '</div>';
     container.innerHTML = html;
   }).catch(function(e) {

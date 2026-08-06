@@ -527,6 +527,8 @@ function renderEvidenceSection(evidence, finding) {
   const hasScreenshot = !!evidence.screenshot;
   const hasNotes = !!evidence.notes;
   const hasSignature = !!evidence.matched_signature;
+  const requestSummary = summarizeHttpMessage(evidence.request);
+  const responseSummary = summarizeHttpMessage(evidence.response);
 
   let html = `<div class="src-detail-section">`;
 
@@ -554,6 +556,18 @@ function renderEvidenceSection(evidence, finding) {
     }
     html += `</div>`;
   }
+
+  html += `<div class="src-section-title">证据摘要</div>
+    <div class="src-section-body src-evidence-meta">`;
+  html += `<div class="src-evidence-row"><span class="src-evidence-label">可信度</span><span>${escapeHtml(finding.verification_status || (finding.is_likely_fp ? 'suspected' : 'probable'))}</span></div>`;
+  html += `<div class="src-evidence-row"><span class="src-evidence-label">误报概率</span><span>${finding.fp_score !== undefined ? ((finding.fp_score * 100).toFixed(0) + '%') : '—'}</span></div>`;
+  if (requestSummary) {
+    html += `<div class="src-evidence-row"><span class="src-evidence-label">请求摘要</span><span>${escapeHtml(requestSummary)}</span></div>`;
+  }
+  if (responseSummary) {
+    html += `<div class="src-evidence-row"><span class="src-evidence-label">响应摘要</span><span>${escapeHtml(responseSummary)}</span></div>`;
+  }
+  html += `</div>`;
 
   if (hasRequest || hasResponse) {
     html += `<div class="src-section-title">HTTP 流量</div>
@@ -593,6 +607,21 @@ function renderEvidenceSection(evidence, finding) {
 
   html += `</div>`;
   return html;
+}
+
+function summarizeHttpMessage(text) {
+  if (!text) return '';
+  const lines = String(text).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return '';
+  const statusLine = lines.find((line) => /^HTTP\/\d/i.test(line));
+  const methodLine = lines.find((line) => /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/i.test(line));
+  const targetLine = methodLine ? methodLine.split(/\s+/).slice(0, 2).join(' ') : '';
+  const headerLines = lines.filter((line) => /^[A-Za-z0-9\-]+:\s*/.test(line)).slice(0, 3);
+  const parts = [];
+  if (statusLine) parts.push(statusLine.replace(/^HTTP\/\d\.\d\s*/i, 'HTTP '));
+  if (targetLine) parts.push(targetLine);
+  if (headerLines.length) parts.push(headerLines.join(' | '));
+  return parts.join(' · ').slice(0, 220);
 }
 
 function renderFixCodeSection(fixCode) {
