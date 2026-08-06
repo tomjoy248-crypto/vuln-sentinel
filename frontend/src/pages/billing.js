@@ -118,7 +118,7 @@ function loadPlans() {
     html += '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
     html += '<div>• 所有订单都会进入充值记录，便于财务对账</div>';
     html += '<div>• 支持模拟支付、Stripe，以及支付宝/微信测试回调与骨架通道</div>';
-    html += '<div>• 建议优先选择标记为“最划算”的套餐</div>';
+    html += '<div>• 20 credits 更适合试用；标准扫描消耗 1，深度扫描消耗 3</div>';
     html += '</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">';
     plans.forEach(function(plan) {
