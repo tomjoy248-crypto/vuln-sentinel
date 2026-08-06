@@ -183,6 +183,11 @@ export function showTicketDetail(id) {
   html += '<div class="ticket-detail-badges"><span class="ticket-severity ' + severityClass + '">' + severityLabel + '</span><span class="ticket-status-badge">' + statusLabel + '</span></div>';
   html += '</div>';
   html += '<div class="ticket-detail-meta">工单 #' + ticket.id + (ticket.scan_id ? ' · 扫描 #' + ticket.scan_id : '') + ' · ' + (ticket.created_at || '') + '</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
+  html += '<div style="background:rgba(75,110,175,0.12);color:var(--primary-light);border:1px solid rgba(75,110,175,0.28);padding:4px 10px;border-radius:999px;font-size:12px">建议：' + (ticket.status === 'fixed' ? '尽快复测确认' : ticket.status === 'failed' ? '回看失败原因并回滚' : ticket.status === 'applying' ? '等待变更生效后复测' : '推进修复并保留变更记录') + '</div>';
+  html += '<div style="background:rgba(75,110,175,0.12);color:var(--primary-light);border:1px solid rgba(75,110,175,0.28);padding:4px 10px;border-radius:999px;font-size:12px">优先级：' + severityLabel + '</div>';
+  if (ticket.finding_type) html += '<div style="background:rgba(75,110,175,0.12);color:var(--primary-light);border:1px solid rgba(75,110,175,0.28);padding:4px 10px;border-radius:999px;font-size:12px">类型：' + escapeHtml(ticket.finding_type) + '</div>';
+  html += '</div>';
 
   // 闭环时间线
   html += '<div class="ticket-detail-section"><div class="ticket-detail-label">修复闭环</div>';
@@ -214,7 +219,7 @@ export function showTicketDetail(id) {
     } catch (e) {}
   }
   html += '<div class="ticket-detail-actions">';
-  html += '<select class="ticket-status-select" data-action="change-status" data-id="' + ticket.id + '">';
+  html += '<select class="ticket-status-select" data-action="change-status" data-id="' + ticket.id + '" title="选择当前修复进度">';
   html += '<option value="pending"' + (ticket.status === 'pending' ? ' selected' : '') + '>待修复</option>';
   html += '<option value="confirmed"' + (ticket.status === 'confirmed' ? ' selected' : '') + '>已确认</option>';
   html += '<option value="applying"' + (ticket.status === 'applying' ? ' selected' : '') + '>应用中</option>';
