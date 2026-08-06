@@ -222,14 +222,14 @@ export const APP_TEMPLATE = `</head>
         <span>输入目标网址</span>
       </div>
       <div class="scan-input-wrap">
-        <input id="scan-url" type="url" placeholder="例如：https://example.com" aria-label="目标网址" />
+        <input id="scan-url" type="url" placeholder="例如：https://example.com" aria-label="目标网址" oninput="updateScanStartState()" />
       </div>
       <div id="scan-login-tip" style="background:#313335;border:1px solid #555555;border-radius:2px;padding:10px 14px;margin-bottom:10px;text-align:center;display:none">
         <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">登录后即可开始扫描</div>
         <button onclick="navigateTo('profile')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 18px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:500">立即登录 / 注册</button>
       </div>
       <label class="scan-checkbox" style="margin-bottom:12px">
-        <input id="auth-check-step1" type="checkbox" onchange="document.getElementById('scan-btn-step1').disabled=!this.checked" />
+        <input id="auth-check-step1" type="checkbox" onchange="updateScanStartState()" />
         <span>我已确认拥有该域名或已获得授权扫描</span>
       </label>
       <button class="scan-btn" id="scan-btn-step1" onclick="startScanDirect()" disabled>开始安全扫描</button>
@@ -283,7 +283,7 @@ export const APP_TEMPLATE = `</head>
           <input id="scan-url-confirmed" type="url" readonly aria-label="已确认的目标网址" />
         </div>
         <label class="scan-checkbox">
-          <input id="auth-check" type="checkbox" onchange="document.getElementById('scan-btn').disabled=!this.checked" />
+          <input id="auth-check" type="checkbox" onchange="updateScanStartState()" />
           <span>我已确认拥有该域名或已获得授权扫描</span>
         </label>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">

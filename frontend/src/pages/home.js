@@ -1361,6 +1361,18 @@ function startScanDirect() {
   }
 }
 
+function updateScanStartState() {
+  let urlInput = document.getElementById('scan-url');
+  let url = urlInput ? urlInput.value.trim() : '';
+  let hasUrl = !!url;
+  let authStep1 = document.getElementById('auth-check-step1');
+  let authStep3 = document.getElementById('auth-check');
+  let step1Btn = document.getElementById('scan-btn-step1');
+  let step3Btn = document.getElementById('scan-btn');
+  if (step1Btn) step1Btn.disabled = !(hasUrl && authStep1 && authStep1.checked);
+  if (step3Btn) step3Btn.disabled = !(hasUrl && authStep3 && authStep3.checked);
+}
+
 // ----- copyFixCode -----
 function copyFixCode(textareaId) {
   let ta = document.getElementById(textareaId);
@@ -4075,6 +4087,7 @@ function updateProfileStats() {
 // ===== Window exports for inline onclick =====
 window.startScanDirect = startScanDirect;
 window.startScan = startScan;
+window.updateScanStartState = updateScanStartState;
 window.goVerifyStep2 = goVerifyStep2;
 window.cancelScan = cancelScan;
 window.quickDemo = quickDemo;
