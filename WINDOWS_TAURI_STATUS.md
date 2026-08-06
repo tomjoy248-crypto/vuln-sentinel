@@ -1,22 +1,18 @@
-# Windows 桌面壳当前状态
+# Tauri 桌面壳状态补充
 
-## 已完成
+## 当前进展
 
-- 已创建 `src-tauri/` 骨架目录
-- 已放入 Tauri 配置文件
-- 已放入最小 Rust 入口
-- 已写好桌面壳说明
+- 已有 `src-tauri/` 骨架
+- 已有默认窗口标题
+- 已有 Tauri build 配置
+- 已有桌面壳启动说明
 
-## 仍需完成
+## 当前阻塞
 
-- 安装 Rust 运行环境
-- 安装 Tauri CLI
-- 生成完整 `src-tauri` 依赖
-- 让桌面壳真正打开 `frontend/dist`
-- 配置图标、版本、更新与打包
+- 还需要完整的 Visual C++ Build Tools
+- 目前 `cargo check` 只差链接器 `link.exe`
 
-## 开工顺序
+## 下一步
 
-1. 先补齐可编译的 Tauri 项目文件
-2. 再接入前端构建产物
-3. 最后处理 Windows 安装包
+- 装好 MSVC 工具链后再次执行 `cargo check`
+- 通过后再做 `cargo tauri build`
