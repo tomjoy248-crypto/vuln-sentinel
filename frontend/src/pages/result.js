@@ -15,6 +15,7 @@ let _selectedIndex = 0;
 let _currentFixTab = 'generic';
 let _currentScanId = null;
 let _currentUrl = '';
+let _hideLikelyFp = false;
 
 /**
  * 判断数据是否符合 SRC 级报告格式
@@ -34,6 +35,7 @@ export function renderSRCResult(data) {
   _currentFindings = sortFindings(data.findings || []);
   _selectedIndex = 0;
   _currentFixTab = 'generic';
+  _hideLikelyFp = false;
   _currentScanId = data.scan_id || null;
   _currentUrl = data.url || '';
 
@@ -267,12 +269,17 @@ function renderHeader(score, riskLevel, summary, url, data) {
 }
 
 function renderFindingList(findings, selectedIndex) {
-  let html = '<div class="src-list-header">漏洞列表 <span class="src-list-count">' + findings.length + '</span></div>';
+  let visibleFindings = _hideLikelyFp ? findings.filter((item) => !item.is_likely_fp) : findings;
+  let hiddenCount = findings.length - visibleFindings.length;
+  let html = '<div class="src-list-header">漏洞列表 <span class="src-list-count">' + visibleFindings.length + '</span>';
+  html += '<button class="src-filter-btn" data-action="toggle-fp-filter" title="隐藏潜在误报">' + (_hideLikelyFp ? '显示误报' : '隐藏误报') + '</button>';
+  if (hiddenCount > 0) html += '<span class="src-filter-note">已隐藏 ' + hiddenCount + ' 项</span>';
+  html += '</div>';
   html += '<div class="src-list-items">';
   if (findings.length === 0) {
-    html += '<div class="src-empty">未发现漏洞</div>';
+    html += '<div class="src-empty">' + (_hideLikelyFp ? '当前筛选下没有结果' : '未发现漏洞') + '</div>';
   } else {
-    findings.forEach((f, i) => {
+    visibleFindings.forEach((f, i) => {
       const sev = (f.severity || 'info').toLowerCase();
       const cls = SEVERITY_ZH_CLASS[sev] || 'info';
       const active = i === selectedIndex ? 'active' : '';
@@ -641,6 +648,17 @@ function bindFindingListEvents() {
 
   document.querySelectorAll('.src-export-btn').forEach((btn) => {
     btn.addEventListener('click', onExportSRCReport);
+  });
+
+  document.querySelectorAll('.src-filter-btn').forEach((btn) => {
+    btn.addEventListener('click', function() {
+      _hideLikelyFp = !_hideLikelyFp;
+      const detail = document.getElementById('src-detail-panel');
+      if (detail) {
+        detail.innerHTML = renderFindingDetail(_currentFindings[_selectedIndex], _selectedIndex);
+      }
+      bindFindingListEvents();
+    });
   });
 
   document.querySelectorAll('.src-action-btn').forEach((btn) => {
