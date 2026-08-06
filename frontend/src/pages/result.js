@@ -320,7 +320,7 @@ function renderFindingList(findings, selectedIndex) {
       const vIcon = vStatus === 'confirmed' ? '<span class="src-list-v confirmed" title="已验证">✓</span>' :
                     vStatus === 'probable' ? '<span class="src-list-v probable" title="可能存在">?</span>' :
                     vStatus === 'suspected' ? '<span class="src-list-v suspected" title="存疑">!</span>' : '';
-      const fbIcon = f.user_feedback ? (f.user_feedback.is_false_positive ? '<span class="src-list-fb fp" title="您已标记为误报">FP</span>' : '<span class="src-list-fb confirmed" title="您已确认有效">✓</span>') : '';
+      const fbIcon = f.user_feedback ? (f.user_feedback.is_false_positive ? '<span class="src-list-fb fp" title="您已标记为误报">误报</span>' : '<span class="src-list-fb confirmed" title="您已确认有效">确认</span>') : '';
       const confidence = escapeHtml(f.adjusted_confidence || f.confidence || 'medium');
       html += `
         <div class="src-list-item ${active} ${cls}" data-index="${i}">
