@@ -245,7 +245,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
     ? '优先处理严重与高危项，先关闭外部暴露面。'
     : mediumCount > 0
       ? '先处理中危项，再复扫验证修复是否生效。'
-      : '当前结果偏健康，可作为基线留存并持续监控。';
+      : '当前结果偏健康，可作为客户基线留存并持续监控。';
   const actionHint = data.scan_id
     ? '<div class="src-report-action-hint">建议优先处理“已验证”和“可能存在”项；“待复核”项请结合业务上下文判断，修复后再复扫确认。</div>'
     : '';

@@ -71,7 +71,7 @@ function getPlanTarget(plan) {
   if (name.includes('企业')) return '大型团队 / 采购';
   if (name.includes('专业')) return '安全运营 / 复测';
   if (name.includes('标准')) return '日常扫描 / 验证';
-  if (name.includes('体验')) return '试用 / 演示';
+  if (name.includes('体验')) return '入门试用';
   return '个人 / 轻量使用';
 }
 
@@ -80,7 +80,7 @@ function getPlanPermission(plan) {
   if (credits >= 1000) return '企业采购';
   if (credits >= 500) return '专业运营';
   if (credits >= 100) return '标准使用';
-  return '试用体验';
+  return '入门试用';
 }
 
 function getProviderLabel(provider) {
@@ -138,7 +138,7 @@ function loadPlans() {
       html += '<div style="font-size:13px;color:var(--text-secondary)">含 <strong style="color:var(--text)">' + formatCredits(plan.credits) + '</strong> 积分</div>';
       html += '<div style="font-size:12px;color:var(--text-secondary)">约 <strong style="color:var(--text)">' + formatValueScore(plan) + ' 元/积分</strong></div>';
       html += '<div style="font-size:12px;color:var(--text-secondary)">适合：' + escapeHtml(getPlanTarget(plan)) + '</div>';
-      html += '<div style="font-size:12px;color:var(--text-secondary)">可用于：扫描 / 复扫 / 报告 / 工单</div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary)">可用于：扫描 / 复扫 / 报告 / 工单 / 审计</div>';
       html += '<div style="font-size:12px;color:var(--text-secondary)">权限：' + escapeHtml(getPlanPermission(plan)) + '</div>';
       html += '<button class="fixer-btn primary" style="width:100%;margin-top:auto" onclick="buyPlan(' + plan.id + ', event)">立即购买</button>';
       html += '</div>';
@@ -146,7 +146,7 @@ function loadPlans() {
     html += '</div>';
     html += '<div style="padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary);line-height:1.7">';
     html += '<div style="font-weight:700;color:var(--text);margin-bottom:4px">购买后流程</div>';
-    html += '<div>1. 选择套餐并完成支付 → 2. 积分立即到账 → 3. 直接进入扫描或复扫 → 4. 结果会进入报告和审计 → 5. 需要时升级到更高档位。</div>';
+    html += '<div>1. 选择套餐并完成支付 → 2. 积分立即到账 → 3. 直接进入扫描或复扫 → 4. 结果会进入报告、工单和审计 → 5. 需要时升级到更高档位。</div>';
     html += '</div>';
     html += '<div style="margin-top:12px;padding:12px 14px;background:rgba(75,110,175,0.08);border:1px solid rgba(75,110,175,0.2);border-radius:2px;font-size:12px;color:var(--text-secondary);line-height:1.7">';
     html += '<div style="font-weight:700;color:var(--primary);margin-bottom:4px">上线前审计提醒</div>';

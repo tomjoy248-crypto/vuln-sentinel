@@ -77,8 +77,8 @@ export const APP_TEMPLATE = `</head>
   <div class="workbench-header">
     <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
       <div style="min-width:280px;flex:1">
-        <h1 class="workbench-title">漏洞扫描与修复平台</h1>
-        <span class="workbench-subtitle">输入网址后自动完成扫描、证据收集、修复建议、复扫验证和审计留痕，面向上线前自查、交付和持续安全运营</span>
+        <h1 class="workbench-title">漏洞扫描与交付平台</h1>
+        <span class="workbench-subtitle">输入网址后自动完成扫描、证据收集、修复建议、复扫验证和审计留痕，面向上线前自查、客户交付和持续安全运营</span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button onclick="navigateTo('scan')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">开始扫描</button>
@@ -94,7 +94,7 @@ export const APP_TEMPLATE = `</head>
       <div style="min-width:240px;flex:1">
         <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:6px">3 步开始你的第一次扫描</div>
         <div style="font-size:12px;color:var(--text-secondary);line-height:1.7">① 输入网址并确认授权 → ② 查看风险、证据与修复建议 → ③ 创建工单、复测并导出报告。
-        试用模式可先体验公开站点，正式账号可保存记录、发工单、看审计信息和复测。</div>
+        试用模式可先体验公开站点，正式账号可保存记录、发工单、看审计信息和复测，适合做成可收费交付版本。</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="navigateTo('scan')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">开始扫描</button>
