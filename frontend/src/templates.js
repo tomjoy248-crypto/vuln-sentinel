@@ -121,24 +121,24 @@ export const APP_TEMPLATE = `</head>
   <div class="card fade-in-up dashboard-stats" style="margin-top:14px;padding:12px;background:#3c3f41;border:1px solid #555555">
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
       <div class="stat-cell">
-        <div class="stat-value" style="color:#73c990">15</div>
-        <div class="stat-label">检测维度</div>
-        <div class="stat-sub">含强度评估</div>
+        <div class="stat-value" style="color:#73c990" id="home-stat-scan-count">-</div>
+        <div class="stat-label">总扫描次数</div>
+        <div class="stat-sub">真实运行记录</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-value" style="color:#4b6eaf">6</div>
-        <div class="stat-label">修复平台</div>
-        <div class="stat-sub">Nginx/Apache...</div>
+        <div class="stat-value" style="color:#4b6eaf" id="home-stat-high-risk">-</div>
+        <div class="stat-label">高风险发现</div>
+        <div class="stat-sub">需要优先处理</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-value" style="color:#f0a732">101</div>
-        <div class="stat-label">测试通过</div>
-        <div class="stat-sub">pytest</div>
+        <div class="stat-value" style="color:#f0a732" id="home-stat-fixed-count">-</div>
+        <div class="stat-label">已修复项</div>
+        <div class="stat-sub">复测确认关闭</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-value" style="color:#c75450">3</div>
-        <div class="stat-label">置信度等级</div>
-        <div class="stat-sub">高/中/低</div>
+        <div class="stat-value" style="color:#c75450" id="home-stat-score">-</div>
+        <div class="stat-label">最近评分</div>
+        <div class="stat-sub">最近一次扫描</div>
       </div>
     </div>
   </div>

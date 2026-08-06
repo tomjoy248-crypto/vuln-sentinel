@@ -478,10 +478,10 @@ function loadDashboard() {
   if (overview) overview.style.display = 'grid';
   showHomeOnboarding();
   authFetch('/api/dashboard').then(function(r) { return r.json(); }).then(function(data) {
-    let el1 = document.getElementById('stat-total');
-    let el2 = document.getElementById('stat-high');
-    let el3 = document.getElementById('stat-fixed');
-    let el4 = document.getElementById('stat-score');
+    let el1 = document.getElementById('home-stat-scan-count');
+    let el2 = document.getElementById('home-stat-high-risk');
+    let el3 = document.getElementById('home-stat-fixed-count');
+    let el4 = document.getElementById('home-stat-score');
     if (el1) el1.textContent = data.total_scans || 0;
     if (el2) el2.textContent = data.high_risk_count || 0;
     if (el3) el3.textContent = data.fixed_count || 0;
