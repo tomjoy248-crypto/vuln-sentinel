@@ -216,6 +216,8 @@ function renderHeader(score, riskLevel, summary, url, data) {
     : '';
 
   const severityTotal = summary.total || 0;
+  const fpCount = summary.fp_count || 0;
+  const actionableCount = Math.max(0, severityTotal - fpCount);
   const criticalCount = summary.critical || 0;
   const highCount = summary.high || 0;
   const mediumCount = summary.medium || 0;
@@ -250,6 +252,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
           <div class="src-stat low"><div class="num">${lowCount}</div><div class="label">低危</div></div>
           <div class="src-stat info"><div class="num">${infoCount}</div><div class="label">信息</div></div>
           <div class="src-stat total"><div class="num">${severityTotal}</div><div class="label">总计</div></div>
+          <div class="src-stat" style="background:rgba(115,201,144,0.08)"><div class="num" style="color:#73c990">${actionableCount}</div><div class="label">待处理</div></div>
         </div>
         <div class="src-report-submeta">
           ${scanId}${duration}${reportId}${qBadge}${vBadge}
@@ -260,7 +263,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
         </div>
         <div class="src-report-next-step">
           <div class="src-report-next-step-title">下一步建议</div>
-          <div class="src-report-next-step-text">${escapeHtml(nextStep)}</div>
+          <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已自动识别 ' + fpCount + ' 项潜在误报，可用筛选按钮隐藏。' : ''}</div>
           ${actionHint}
         </div>
       </div>
