@@ -1,1 +1,5 @@
-{ "identifier": "main", "windows": [] }
+{
+  "identifier": "main",
+  "description": "Main window capabilities placeholder",
+  "windows": ["main"]
+}
