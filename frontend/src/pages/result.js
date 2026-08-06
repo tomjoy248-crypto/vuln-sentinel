@@ -2,7 +2,7 @@
 
 import { escapeHtml, escapeAttr, getScoreColor, getScoreGradient, getRiskColor, getRiskClass, formatDate, copyToClipboard } from '../utils.js';
 import { showToast } from '../components/Toast.js';
-import { exportSRCReport, verifyReproduce, findingFeedback, isLoggedIn } from '../api.js';
+import { exportSRCReport, verifyReproduce, findingFeedback, createTicket, isLoggedIn } from '../api.js';
 
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 const SEVERITY_LABEL = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' };
@@ -469,9 +469,10 @@ function renderFindingDetail(finding, index) {
   // 操作按钮
   if (_currentScanId && isLoggedIn()) {
     html += `<div class="src-detail-actions">
-      <button class="src-action-btn verify" data-action="verify" data-finding-id="${escapeAttr(finding.id || '')}">验证复现</button>
-      <button class="src-action-btn false-positive" data-action="fp" data-finding-id="${escapeAttr(finding.id || '')}">标记误报</button>
-      <button class="src-action-btn confirm" data-action="confirm" data-finding-id="${escapeAttr(finding.id || '')}">确认漏洞</button>
+      <button class="src-action-btn verify" data-action="verify" data-finding-id="${escapeAttr(finding.id || '')}" title="重新请求目标并尝试验证是否仍可复现">验证复现</button>
+      <button class="src-action-btn false-positive" data-action="fp" data-finding-id="${escapeAttr(finding.id || '')}" title="如果你判断该项不是实际漏洞，可标记为误报">标记误报</button>
+      <button class="src-action-btn confirm" data-action="confirm" data-finding-id="${escapeAttr(finding.id || '')}" title="如果你确认该项真实存在，可标记为有效漏洞">确认有效</button>
+      <button class="src-action-btn ticket" data-action="ticket" data-finding-id="${escapeAttr(finding.id || '')}" title="将该漏洞转为修复工单">创建工单</button>
     </div>`;
   }
 
@@ -691,25 +692,40 @@ async function onFindingAction(e) {
     return;
   }
 
-  const loadingText = action === 'fp' ? '标记中...' : '提交中...';
-  const idleText = action === 'fp' ? '标记误报' : '确认有效';
+  const loadingText = action === 'fp' ? '标记中...' : action === 'ticket' ? '创建中...' : '提交中...';
+  const idleText = action === 'fp' ? '标记误报' : action === 'ticket' ? '创建工单' : '确认有效';
   btn.textContent = loadingText;
   btn.disabled = true;
   try {
-    const res = await findingFeedback({
-      scan_id: _currentScanId,
-      finding_name: finding.title || findingId,
-      finding_type: finding.type || '',
-      is_false_positive: action === 'fp',
-      is_confirmed: action === 'confirm',
-    });
-    if (res && res.success) {
-      showToast(action === 'fp' ? '已标记为误报，后续会用于优化检测' : '已确认漏洞，已记录到反馈闭环');
+    if (action === 'ticket') {
+      const res = await createTicket({
+        scan_id: _currentScanId,
+        finding_name: finding.title || findingId,
+        severity: finding.severity || 'low',
+        fix_code: finding.fix_code && finding.fix_code.generic ? finding.fix_code.generic : '',
+        notes: finding.fix_suggestion || finding.description || '',
+      });
+      if (res && res.success) {
+        showToast('工单已创建，已进入修复列表');
+      } else {
+        showToast('工单创建失败：' + (res && res.error ? res.error : '未知错误'));
+      }
     } else {
-      showToast('反馈提交失败：' + (res && res.error ? res.error : '未知错误'));
+      const res = await findingFeedback({
+        scan_id: _currentScanId,
+        finding_name: finding.title || findingId,
+        finding_type: finding.type || '',
+        is_false_positive: action === 'fp',
+        is_confirmed: action === 'confirm',
+      });
+      if (res && res.success) {
+        showToast(action === 'fp' ? '已标记为误报，后续会用于优化检测' : '已确认漏洞，已记录到反馈闭环');
+      } else {
+        showToast('反馈提交失败：' + (res && res.error ? res.error : '未知错误'));
+      }
     }
   } catch (e) {
-    showToast('反馈请求失败');
+    showToast(action === 'ticket' ? '工单创建失败' : '反馈请求失败');
   } finally {
     btn.textContent = idleText;
     btn.disabled = false;
@@ -923,6 +939,7 @@ export function injectSRCStyles() {
     .src-action-btn.verify { background:rgba(75,110,175,0.12); color:var(--primary-light); border-color:rgba(75,110,175,0.3); }
     .src-action-btn.false-positive { background:rgba(115,201,144,0.12); color:#73c990; border-color:rgba(115,201,144,0.3); }
     .src-action-btn.confirm { background:rgba(199,84,80,0.12); color:#c75450; border-color:rgba(199,84,80,0.3); }
+    .src-action-btn.ticket { background:rgba(75,110,175,0.12); color:var(--primary-light); border-color:rgba(75,110,175,0.3); }
     .src-detail-footer { font-size:12px; color:var(--text-secondary); border-top:1px solid var(--border-light); padding:12px 18px; }
     .src-empty { padding:30px; text-align:center; color:var(--text-secondary); }
     .src-empty-detail { padding:40px; text-align:center; color:var(--text-secondary); background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); }
