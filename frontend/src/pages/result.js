@@ -16,6 +16,8 @@ let _currentFixTab = 'generic';
 let _currentScanId = null;
 let _currentUrl = '';
 let _hideLikelyFp = false;
+let _currentScore = 0;
+let _currentSummary = { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0, fp_count: 0 };
 
 /**
  * 判断数据是否符合 SRC 级报告格式
@@ -43,6 +45,8 @@ export function renderSRCResult(data) {
   const summary = data.summary || { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0 };
   const riskLevel = data.risk_level || '未知';
   const url = data.url || '';
+  _currentScore = score;
+  _currentSummary = summary;
 
   const container = document.getElementById('result-content') || document.getElementById('result-container');
   if (!container) {
@@ -683,9 +687,6 @@ function bindFindingListEvents() {
 
 async function onCopyReportSummary() {
   if (!_currentScanId) return;
-  const scoreEl = document.querySelector('.src-score-value');
-  const totalEl = document.querySelector('.src-stat.total .num');
-  const actionableEl = document.querySelector(".src-stat[style*=\'rgba(115,201,144,0.08)\'] .num");
   const findingCards = Array.from(document.querySelectorAll('.finding-card'));
   const topFindings = findingCards
     .slice(0, 3)
@@ -695,13 +696,14 @@ async function onCopyReportSummary() {
       return `${index + 1}. ${title ? title.textContent.trim() : '未命名项'}${severity ? `（${severity.textContent.trim()}）` : ''}`;
     })
     .filter(Boolean);
+  const actionableCount = Math.max(0, (_currentSummary.total || 0) - (_currentSummary.fp_count || 0));
   const summaryText = [
     '报告摘要',
     '扫描 ID: ' + _currentScanId,
     'URL: ' + _currentUrl,
-    '安全评分: ' + (scoreEl ? scoreEl.textContent : ''),
-    '总计: ' + (totalEl ? totalEl.textContent : ''),
-    '待处理: ' + (actionableEl ? actionableEl.textContent : ''),
+    '安全评分: ' + _currentScore,
+    '总计: ' + (_currentSummary.total || 0),
+    '待处理: ' + actionableCount,
     topFindings.length ? '重点项:\n' + topFindings.join('\n') : '重点项: 无',
     '建议: 优先处理高危和严重项，修复后复测。'
   ].join(String.fromCharCode(10));
