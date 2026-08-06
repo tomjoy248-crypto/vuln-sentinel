@@ -119,8 +119,8 @@ function loadPlans() {
     let html = '<div style="display:flex;flex-direction:column;gap:12px">';
     html += '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
     html += '<div>• 所有订单都会进入充值记录，便于财务对账</div>';
+    html += '<div>• 充值后可立即用于扫描、复扫、修复验证和报告导出</div>';
     html += '<div>• 支持模拟支付、Stripe，以及支付宝/微信测试回调与骨架通道</div>';
-    html += '<div>• 适合先试用，再按项目/团队规模升级到更高档位</div>';
     html += '</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">';
     plans.forEach(function(plan) {
@@ -138,6 +138,7 @@ function loadPlans() {
       html += '<div style="font-size:13px;color:var(--text-secondary)">含 <strong style="color:var(--text)">' + formatCredits(plan.credits) + '</strong> 积分</div>';
       html += '<div style="font-size:12px;color:var(--text-secondary)">约 <strong style="color:var(--text)">' + formatValueScore(plan) + ' 元/积分</strong></div>';
       html += '<div style="font-size:12px;color:var(--text-secondary)">适合：' + escapeHtml(getPlanTarget(plan)) + '</div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary)">可用于：扫描 / 复扫 / 报告 / 工单</div>';
       html += '<div style="font-size:12px;color:var(--text-secondary)">权限：' + escapeHtml(getPlanPermission(plan)) + '</div>';
       html += '<button class="fixer-btn primary" style="width:100%;margin-top:auto" onclick="buyPlan(' + plan.id + ', event)">立即购买</button>';
       html += '</div>';
@@ -145,11 +146,11 @@ function loadPlans() {
     html += '</div>';
     html += '<div style="padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary);line-height:1.7">';
     html += '<div style="font-weight:700;color:var(--text);margin-bottom:4px">购买后流程</div>';
-    html += '<div>1. 选择套餐并完成支付 → 2. 积分立即到账 → 3. 在扫描、修复和验证流程中消耗积分 → 4. 所有订单、回调和余额变动可在充值记录中追踪 → 5. 需要时升级到更高档位。</div>';
+    html += '<div>1. 选择套餐并完成支付 → 2. 积分立即到账 → 3. 直接进入扫描或复扫 → 4. 结果会进入报告和审计 → 5. 需要时升级到更高档位。</div>';
     html += '</div>';
     html += '<div style="margin-top:12px;padding:12px 14px;background:rgba(75,110,175,0.08);border:1px solid rgba(75,110,175,0.2);border-radius:2px;font-size:12px;color:var(--text-secondary);line-height:1.7">';
     html += '<div style="font-weight:700;color:var(--primary);margin-bottom:4px">上线前审计提醒</div>';
-    html += '<div>建议上线前重点确认：支付回调签名、积分扣减日志、权限分层、导出权限、审计日志留存，以及真实客户场景下的扫描额度策略。</div>';
+    html += '<div>建议上线前重点确认：支付回调签名、积分扣减日志、权限分层、导出权限、审计日志留存，以及客户能否看懂套餐价值与结果证据。</div>';
     html += '</div>';
     container.innerHTML = html;
   }).catch(function(e) {
