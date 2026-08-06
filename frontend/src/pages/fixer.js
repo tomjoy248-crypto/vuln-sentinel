@@ -1,16 +1,5 @@
-import {
-  escapeHtml,
-  safeGetElement,
-  safeSetHtml,
-  safeSetValue,
-  safeSetDisplay,
-  copyToClipboard,
-  setButtonLoading
-} from '../utils.js';
-import { showToast } from '../components/Toast.js';
-
-
 let lastFixerResult = null;
+let lastTicketContext = null;
 
 function loadTicketContextFromStorage() {
   try {
@@ -18,14 +7,11 @@ function loadTicketContextFromStorage() {
     if (!raw) return;
     let ticket = JSON.parse(raw);
     if (!ticket || !ticket.url) return;
+    lastTicketContext = ticket;
     let inp = document.getElementById('fixer-input');
-    if (!inp || inp.value.trim()) return;
-    inp.value = ticket.url + '
-
-# 来源工单
-# ' + (ticket.ticket_id || '') + '
-# ' + (ticket.finding_name || '') + '
-# ' + (ticket.finding_type || '');
+    if (inp && !inp.value.trim()) {
+      inp.value = ticket.url + '\n\n# 来源工单\n# ' + (ticket.ticket_id || '') + '\n# ' + (ticket.finding_name || '') + '\n# ' + (ticket.finding_type || '');
+    }
     let prompt = document.getElementById('fixer-scan-prompt');
     if (prompt) {
       prompt.innerHTML = '<div class="card-title">已接收工单上下文</div>' +
@@ -35,8 +21,6 @@ function loadTicketContextFromStorage() {
     localStorage.removeItem('vs_fixer_ticket');
   } catch (e) {}
 }
-
-
 export function loadSampleConfig() {
   try {
     let sample = 'server {\n    listen 80;\n    server_name example.com www.example.com;\n    root /var/www/html;\n    index index.html index.php;\n\n    location / {\n        try_files $uri $uri/ =404;\n    }\n\n    location ~ \\.php$ {\n        fastcgi_pass unix:/run/php/php-fpm.sock;\n        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n        include fastcgi_params;\n    }\n\n    access_log /var/log/nginx/access.log;\n    error_log /var/log/nginx/error.log;\n}';
@@ -358,8 +342,11 @@ export function downloadRepairReport() {
   if (!lastFixerResult) { showToast('请先分析配置'); return; }
   let r = lastFixerResult;
   let report = '=== 漏洞哨兵修复报告 ===\n';
-  report += '生成时间：' + new Date().toLocaleString('zh-CN') + '\n\n';
-  report += '--- 原始风险 ---\n';
+  report += '生成时间：' + new Date().toLocaleString('zh-CN') + '\n';
+  if (lastTicketContext) {
+    report += '来源工单：#' + (lastTicketContext.ticket_id || '') + ' · ' + (lastTicketContext.finding_name || '') + '\n';
+  }
+  report += '\n--- 原始风险 ---\n';
   r.issues.forEach(function(issue, i) {
     report += (i + 1) + '. [' + issue.severity.toUpperCase() + '] ' + issue.name + '\n';
     report += '   原因：' + issue.reason + '\n';
@@ -399,3 +386,4 @@ if (typeof window !== 'undefined') {
 if (typeof window !== 'undefined') {
   setTimeout(loadTicketContextFromStorage, 0);
 }
+
