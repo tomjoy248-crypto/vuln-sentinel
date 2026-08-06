@@ -245,9 +245,9 @@ function renderHeader(score, riskLevel, summary, url, data) {
     ? '优先处理严重与高危项，先关闭外部暴露面。'
     : mediumCount > 0
       ? '先处理中危项，再复扫验证修复是否生效。'
-      : '当前结果偏健康，可做基线留存并继续监控。';
+      : '当前结果偏健康，可作为基线留存并持续监控。';
   const actionHint = data.scan_id
-    ? '<div class="src-report-action-hint">建议优先处理“已验证”和“可能存在”项；“待复核”项可先隐藏，修复后再复扫确认。</div>'
+    ? '<div class="src-report-action-hint">建议优先处理“已验证”和“可能存在”项；“待复核”项请结合业务上下文判断，修复后再复扫确认。</div>'
     : '';
 
   return `
@@ -281,8 +281,8 @@ function renderHeader(score, riskLevel, summary, url, data) {
           <button class="src-export-btn" id="src-copy-summary" title="复制当前报告摘要">复制摘要</button>
         </div>
         <div class="src-report-next-step">
-          <div class="src-report-next-step-title">下一步建议</div>
-          <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已自动识别 ' + fpCount + ' 项潜在误报，当前默认优先显示更可信的结果。' : ''}</div>
+          <div class="src-report-next-step-title">交付建议</div>
+          <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已自动识别 ' + fpCount + ' 项潜在误报，系统默认优先显示更可信的结果。' : ''}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <button class="src-filter-btn" onclick="navigateTo('tickets')">去工单</button>
             <button class="src-filter-btn" onclick="navigateTo('fixer')">去修复器</button>
@@ -321,7 +321,8 @@ function renderFindingList(findings, selectedIndex) {
                     vStatus === 'probable' ? '<span class="src-list-v probable" title="可能存在">?</span>' :
                     vStatus === 'suspected' ? '<span class="src-list-v suspected" title="存疑">!</span>' : '';
       const fbIcon = f.user_feedback ? (f.user_feedback.is_false_positive ? '<span class="src-list-fb fp" title="您已标记为误报">误报</span>' : '<span class="src-list-fb confirmed" title="您已确认有效">确认</span>') : '';
-      const confidence = escapeHtml(f.adjusted_confidence || f.confidence || 'medium');
+      const rawConfidence = String(f.adjusted_confidence || f.confidence || 'medium');
+      const confidenceLabel = rawConfidence === 'high' ? '高可信' : rawConfidence === 'medium' ? '中可信' : rawConfidence === 'low' ? '低可信' : rawConfidence;
       html += `
         <div class="src-list-item ${active} ${cls}" data-index="${i}">
           <div class="src-list-row top">
@@ -333,7 +334,7 @@ function renderFindingList(findings, selectedIndex) {
             ${typeLabel}
             ${param}
             <span class="src-list-host" title="${escapeAttr(f.url || '')}">${escapeHtml(host)}${escapeHtml(path)}</span>
-            <span class="src-list-confidence ${confidence}">${confidence}</span>
+            <span class="src-list-confidence ${escapeHtml(rawConfidence)}">${escapeHtml(confidenceLabel)}</span>
             ${corrGroup}
           </div>
         </div>
@@ -559,7 +560,9 @@ function renderEvidenceSection(evidence, finding) {
 
   html += `<div class="src-section-title">证据摘要</div>
     <div class="src-section-body src-evidence-meta">`;
-  html += `<div class="src-evidence-row"><span class="src-evidence-label">可信度</span><span>${escapeHtml((finding.verification_status || (finding.is_likely_fp ? 'suspected' : 'probable')).replace('confirmed', '已验证').replace('probable', '可能存在').replace('suspected', '待复核'))}</span></div>`;
+  const confidenceState = finding.verification_status || (finding.is_likely_fp ? 'suspected' : 'probable');
+  const confidenceText = confidenceState === 'confirmed' ? '已验证' : confidenceState === 'probable' ? '可能存在' : '待复核';
+  html += `<div class="src-evidence-row"><span class="src-evidence-label">可信度</span><span>${escapeHtml(confidenceText)}</span></div>`;
   html += `<div class="src-evidence-row"><span class="src-evidence-label">误报概率</span><span>${finding.fp_score !== undefined ? ((finding.fp_score * 100).toFixed(0) + '%') : '—'}</span></div>`;
   if (requestSummary) {
     html += `<div class="src-evidence-row"><span class="src-evidence-label">请求摘要</span><span>${escapeHtml(requestSummary)}</span></div>`;
