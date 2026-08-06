@@ -348,10 +348,12 @@ function downloadReport(fmt) {
   if (!lastScanResult) { showToast('暂无扫描结果'); return; }
   let format = fmt || 'pdf';
   let formatName = format === 'html' ? 'HTML' : 'PDF';
-  showToast('正在生成 ' + formatName + ' 报告...');
+  let fileExt = format === 'html' ? 'html' : 'pdf';
+  showToast('正在生成 ' + formatName + ' 报告，请稍候...');
 
   function doDownload(scanId) {
     let url = '/api/report/' + encodeURIComponent(scanId) + '?format=' + format;
+    let filename = buildReportFilename(lastScanResult.url, fileExt);
     if (format === 'html') {
       authFetch(url)
         .then(function(resp) {
@@ -363,12 +365,12 @@ function downloadReport(fmt) {
           let blobUrl = URL.createObjectURL(blob);
           let a = document.createElement('a');
           a.href = blobUrl;
-          a.download = 'security-report-' + getHost(lastScanResult.url) + '.html';
+          a.download = filename;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(blobUrl);
-          showToast('HTML 报告已下载');
+          showToast('HTML 报告已下载：' + filename);
         })
         .catch(function(e) {
           showToast('报告下载失败: ' + e.message);
@@ -383,12 +385,12 @@ function downloadReport(fmt) {
           let blobUrl = URL.createObjectURL(blob);
           let a = document.createElement('a');
           a.href = blobUrl;
-          a.download = 'security-report-' + getHost(lastScanResult.url) + '.pdf';
+          a.download = filename;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(blobUrl);
-          showToast('PDF 报告已下载');
+          showToast('PDF 报告已下载：' + filename);
         })
         .catch(function(e) {
           showToast('PDF 下载失败: ' + e.message);
@@ -419,6 +421,12 @@ function downloadReport(fmt) {
 
 // ----- downloadPdfReport -----
 function downloadPdfReport() { downloadReport('pdf'); }
+
+function buildReportFilename(scanUrl, format) {
+  let host = getHost(scanUrl || 'report');
+  let safeHost = (host || 'report').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'report';
+  return 'security-report-' + safeHost + '.' + format;
+}
 
 // ----- toggleReportDropdown,closeReportDropdownOutside -----
 function toggleReportDropdown() {
