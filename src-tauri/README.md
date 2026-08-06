@@ -8,6 +8,12 @@
 - 后续可直接接入 `Tauri`
 - 先把配置、启动命令和打包目标放好
 
+## 当前结构
+
+- `Cargo.toml`：Rust 包配置占位
+- `tauri.conf.json`：Tauri 应用配置
+- `src/main.rs`：桌面壳入口占位
+
 ## 还没做的事
 
 - Rust / Tauri 依赖安装
