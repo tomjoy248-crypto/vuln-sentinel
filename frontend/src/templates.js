@@ -479,7 +479,11 @@ export const APP_TEMPLATE = `</head>
   <div id="ticket-empty" class="ticket-empty" style="display:none">
     <div class="ticket-empty-icon"></div>
     <p>该状态下暂无工单</p>
-    <p class="ticket-empty-hint">完成扫描后，高危问题会自动创建工单</p>
+    <p class="ticket-empty-hint">完成扫描后，高危/严重问题会自动创建工单，也可以从结果页手动转工单。</p>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px">
+      <button class="fixer-btn primary" onclick="navigateTo('home')">去看报告</button>
+      <button class="fixer-btn secondary" onclick="navigateTo('scan')">开始扫描</button>
+    </div>
   </div>
 </div>
 
