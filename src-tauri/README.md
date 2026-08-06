@@ -1,38 +1,11 @@
-# Tauri 桌面壳骨架
+# Vuln Sentinel 桌面壳启动说明
 
-这是 `Vuln Sentinel` 的 Windows 桌面壳最小目录。
+## 默认启动体验
 
-## 作用
-
-- 复用现有 `frontend/` Web 版
-- 后续可直接接入 `Tauri`
-- 先把配置、启动命令和打包目标放好
-
-## 当前结构
-
-- `Cargo.toml`：Rust 包配置与构建入口
-- `build.rs`：构建触发占位
-- `tauri.conf.json`：Tauri 应用配置
-- `capabilities.json`：权限能力占位
-- `src/main.rs`：桌面壳入口占位
-- `icons/`：桌面图标目录
-
-## 还没做的事
-
-- Rust / Tauri 依赖安装
-- 实际桌面窗口事件
-- 自动更新
-- 系统托盘
-- 文件选择和本地存储增强
-
-## 下一步
-
-1. 安装 Rust
-2. 安装 `tauri-cli`
-3. 初始化 `src-tauri` 依赖
-4. 让桌面壳加载 `frontend/dist`
-5. 打包 `msi`
+- 窗口标题：`Vuln Sentinel - 安全扫描与交付平台`
+- 默认进入 Web 版首页
+- 保持与 Web 版一致的扫描、结果、套餐和审计入口
 
 ## 说明
 
-当前目录是为了把 Windows 客户端路径先占住，后面安装依赖后可继续补成真正可编译工程。
+Tauri 官方推荐的结构里，`src-tauri/` 负责 Rust 与打包配置，前端则通过 `devUrl` 和 `frontendDist` 接入。
