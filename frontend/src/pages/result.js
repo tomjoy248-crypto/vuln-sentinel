@@ -686,12 +686,23 @@ async function onCopyReportSummary() {
   const scoreEl = document.querySelector('.src-score-value');
   const totalEl = document.querySelector('.src-stat.total .num');
   const actionableEl = document.querySelector(".src-stat[style*=\'rgba(115,201,144,0.08)\'] .num");
+  const findingCards = Array.from(document.querySelectorAll('.finding-card'));
+  const topFindings = findingCards
+    .slice(0, 3)
+    .map((card, index) => {
+      const title = card.querySelector('.finding-title');
+      const severity = card.querySelector('.finding-severity');
+      return `${index + 1}. ${title ? title.textContent.trim() : '未命名项'}${severity ? `（${severity.textContent.trim()}）` : ''}`;
+    })
+    .filter(Boolean);
   const summaryText = [
     '报告摘要',
+    '扫描 ID: ' + _currentScanId,
     'URL: ' + _currentUrl,
     '安全评分: ' + (scoreEl ? scoreEl.textContent : ''),
     '总计: ' + (totalEl ? totalEl.textContent : ''),
     '待处理: ' + (actionableEl ? actionableEl.textContent : ''),
+    topFindings.length ? '重点项:\n' + topFindings.join('\n') : '重点项: 无',
     '建议: 优先处理高危和严重项，修复后复测。'
   ].join(String.fromCharCode(10));
   await copyToClipboard(summaryText);

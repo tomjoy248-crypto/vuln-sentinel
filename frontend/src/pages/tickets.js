@@ -363,13 +363,19 @@ export function openTicketReport(id) {
 export function copyTicketSummary(id) {
   let ticket = ticketService.getTicketById(id);
   if (!ticket) return;
+  let actionHints = [];
+  if ((ticket.status || '').toLowerCase() !== 'done') actionHints.push('优先复测并确认修复效果');
+  if ((ticket.severity || '').toLowerCase() === 'critical' || (ticket.severity || '').toLowerCase() === 'high') {
+    actionHints.push('先处理暴露面和高危配置');
+  }
   let summary = [
     '工单 #' + ticket.id,
     '名称: ' + (ticket.finding_name || ''),
     '等级: ' + (TicketHelpers.severityLabel(ticket.severity) || ticket.severity || ''),
     '状态: ' + (TicketHelpers.statusLabel(ticket.status) || ticket.status || ''),
     '来源 URL: ' + (ticket.url || ''),
-    '备注: ' + (ticket.notes || '')
+    '备注: ' + (ticket.notes || ''),
+    '下一步: ' + (actionHints.length ? actionHints.join('；') : '当前工单可直接进入复测')
   ].join('\n');
   copyToClipboard(summary).then(function () {
     showToast('工单摘要已复制');
