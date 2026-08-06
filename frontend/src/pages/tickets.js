@@ -67,6 +67,9 @@ function handleTicketClick(e) {
     case 'edit-notes':
       if (id) editTicketNotes(id);
       break;
+    case 'open-fixer':
+      if (id) openTicketFixer(id);
+      break;
     case 'delete':
       if (id) deleteTicket(id);
       break;
@@ -230,6 +233,7 @@ export function showTicketDetail(id) {
   html += '<option value="ignored"' + (ticket.status === 'ignored' ? ' selected' : '') + '>已忽略</option>';
   html += '</select>';
   html += '<button class="ticket-btn primary" data-action="verify" data-id="' + ticket.id + '">复测验证</button>';
+  html += '<button class="ticket-btn secondary" data-action="open-fixer" data-id="' + ticket.id + '">去修复器</button>';
   html += '<button class="ticket-btn secondary" data-action="edit-notes" data-id="' + ticket.id + '">备注</button>';
   html += '<button class="ticket-btn danger" data-action="delete" data-id="' + ticket.id + '">删除</button>';
   html += '</div>';
@@ -314,6 +318,28 @@ export function editTicketNotes(id) {
   }).catch(function (e) {
     showToast('保存失败: ' + e.message, 'error');
   });
+}
+
+export function openTicketFixer(id) {
+  let ticket = ticketService.getTicketById(id);
+  if (!ticket) return;
+  try {
+    if (ticket.url && window.localStorage) {
+      localStorage.setItem('vs_fixer_ticket', JSON.stringify({
+        ticket_id: ticket.id,
+        scan_id: ticket.scan_id || null,
+        url: ticket.url,
+        finding_name: ticket.finding_name || '',
+        finding_type: ticket.finding_type || '',
+        severity: ticket.severity || 'low'
+      }));
+    }
+  } catch (e) {}
+  if (typeof window.navigateTo === 'function') {
+    window.navigateTo('fixer');
+  } else {
+    window.location.hash = '#page-fixer';
+  }
 }
 
 export function loadTicketTimeline(id) {
