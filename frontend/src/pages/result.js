@@ -423,10 +423,33 @@ function renderFindingDetail(finding, index) {
 
   // 修复面板
   html += `<div class="src-detail-panel" data-panel="fix">`;
-  // 修复建议
+  const fixText = finding.fix_suggestion || '暂无修复建议';
+  const fixLines = fixText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const fixLead = fixLines[0] || '暂无修复建议';
+  const fixSteps = fixLines.slice(1, 4);
   html += `<div class="src-detail-section">
-    <div class="src-section-title">修复建议</div>
-    <div class="src-section-body">${escapeHtml(finding.fix_suggestion || '暂无修复建议')}</div>
+    <div class="src-section-title">修复结论</div>
+    <div class="src-section-body">
+      <div style="font-weight:700;margin-bottom:6px;color:var(--text-primary)">${escapeHtml(fixLead)}</div>
+      <div style="font-size:12px;color:var(--text-secondary);line-height:1.7">${escapeHtml(fixText)}</div>
+    </div>
+  </div>`;
+  if (fixSteps.length > 0) {
+    html += `<div class="src-detail-section">
+      <div class="src-section-title">执行步骤</div>
+      <div class="src-section-body"><ol style="margin:0;padding-left:18px;line-height:1.8;color:var(--text-secondary)">`;
+    fixSteps.forEach((step) => {
+      html += `<li>${escapeHtml(step)}</li>`;
+    });
+    html += `</ol></div></div>`;
+  }
+  html += `<div class="src-detail-section">
+    <div class="src-section-title">修复完成后的检查</div>
+    <div class="src-section-body"><ul style="margin:0;padding-left:18px;line-height:1.8;color:var(--text-secondary)">
+      <li>重新扫描同一地址，确认对应漏洞已消失。</li>
+      <li>核对安全头、Cookie、重定向或页面响应是否符合预期。</li>
+      <li>如果为高危项，建议先在测试环境验证再发布到生产。</li>
+    </ul></div>
   </div>`;
   // 修复代码 tabs
   html += renderFixCodeSection(finding.fix_code || {});
