@@ -390,6 +390,13 @@ export function verifyTicket(id) {
       let msg = data.status === 'fixed' ? '复测通过：漏洞已修复！' : '复测完成：漏洞仍存在';
       showToast(msg, data.status === 'fixed' ? 'success' : 'warning');
       updateUserCredits();
+      if (data.status === 'fixed') {
+        setTimeout(function () {
+          if (confirm('是否前往修复器生成补丁并保存报告？')) {
+            openTicketFixer(id);
+          }
+        }, 300);
+      }
       return loadTickets().then(function () { showTicketDetail(id); });
     } else {
       showToast('验证失败：' + (data && data.error ? data.error : '未知错误'), 'error');
