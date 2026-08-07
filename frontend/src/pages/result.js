@@ -394,10 +394,10 @@ function renderFindingDetail(finding, index) {
   // 概览面板
   html += `<div class="src-detail-panel active" data-panel="overview">`;
 
-  // 误报分析与验证信息
+  // 误报判断与验证信息
   if (finding.fp_score !== undefined || finding.verification_score !== undefined || (finding.fp_reasons && finding.fp_reasons.length > 0)) {
     html += `<div class="src-detail-section">
-      <div class="src-section-title">可信度分析</div>
+      <div class="src-section-title">可信度判断</div>
       <div class="src-section-body">`;
     if (finding.fp_score !== undefined) {
       const fpPct = (finding.fp_score * 100).toFixed(0);

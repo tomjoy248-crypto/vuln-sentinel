@@ -311,7 +311,7 @@ powershell -ExecutionPolicy Bypass -File scripts\package_windows_release.ps1
 
 
 
-1. **注册账号** 或使用受控体验模式扫描白名单站点
+1. **注册账号** 或使用受控访问模式扫描白名单站点
 
 2. 输入目标 URL（如 `https://example.com`），勾选授权确认
 
@@ -605,7 +605,7 @@ alembic downgrade -1
 
 | SSH 应用修复配置 | 可选 | 需安装 paramiko，配置服务器凭证 |
 
-| 受控体验扫描 | 已实现 | 白名单站点可直接体验 |
+| 受控访问扫描 | 已实现 | 白名单站点可直接体验 |
 
 
 
