@@ -142,6 +142,9 @@ class FuzzEngine:
             "traversal",
             "ssrf",
             "open_redirect",
+            "ssti",
+            "crlf",
+            "xxe",
         ]
         self.request_timeout = request_timeout
         self.max_params = max_params
@@ -267,6 +270,9 @@ def fuzz_results_to_findings(
         "traversal": "high",
         "ssrf": "high",
         "open_redirect": "medium",
+        "ssti": "high",
+        "crlf": "medium",
+        "xxe": "high",
     }
     title_map = {
         "sqli": "参数 fuzz 发现 SQL 注入",
@@ -275,6 +281,9 @@ def fuzz_results_to_findings(
         "traversal": "参数 fuzz 发现路径遍历",
         "ssrf": "参数 fuzz 发现 SSRF",
         "open_redirect": "参数 fuzz 发现开放重定向",
+        "ssti": "参数 fuzz 发现模板注入",
+        "crlf": "参数 fuzz 发现响应拆分",
+        "xxe": "参数 fuzz 发现 XXE",
     }
     for r in fuzz_results:
         finding_id = hashlib.sha256(
