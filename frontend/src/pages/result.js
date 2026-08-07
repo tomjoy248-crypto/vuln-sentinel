@@ -229,7 +229,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
     ? `<span class="meta-item verification-badge">
         <span class="v-confirmed" title="已验证">${vStats.confirmed || 0}</span>
         <span class="v-probable" title="待确认">${vStats.probable || 0}</span>
-        <span class="v-suspected" title="待复核">${vStats.suspected || 0}</span>
+        <span class="v-suspected" title="需要复测">${vStats.suspected || 0}</span>
        </span>`
     : '';
 
@@ -247,9 +247,9 @@ function renderHeader(score, riskLevel, summary, url, data) {
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
   const reportSummary = '本次扫描共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
-  const reportIntro = '报告适用于上线前自查、客户交付和复扫留档，重点展示已验证、待确认和待复核结果，可直接作为交付附件和复测底稿。';
+  const reportIntro = '报告适用于上线前自查、客户交付和复扫留档，重点展示已验证、待确认和需要复测的结果，可直接作为交付附件和复测底稿。';
   const actionHint = data.scan_id
-    ? '<div class="src-report-action-hint">建议优先处理“已验证”和“待确认”项；“待复核”项通常表示证据不足或环境干扰，请先复测或人工确认后再进入工单。</div>'
+    ? '<div class="src-report-action-hint">建议优先处理“已验证”和“待确认”项；“需要复测”项通常表示证据不足或环境干扰，请先复测或人工确认后再进入工单。</div>'
     : '';
 
   return `
@@ -498,7 +498,7 @@ function renderFindingDetail(finding, index) {
   // 参考链接
   if (Array.isArray(finding.references) && finding.references.length > 0) {
     html += `<div class="src-detail-section">
-      <div class="src-section-title">参考链接</div>
+      <div class="src-section-title">参考资料</div>
       <ul class="src-references">`;
     finding.references.forEach((ref) => {
       html += `<li><a href="${escapeAttr(ref)}" target="_blank" rel="noopener">${escapeHtml(ref)}</a></li>`;
@@ -510,9 +510,9 @@ function renderFindingDetail(finding, index) {
   if (_currentScanId && isLoggedIn()) {
     html += `<div class="src-detail-actions">
       <button class="src-action-btn verify" data-action="verify" data-finding-id="${escapeAttr(finding.id || '')}" title="重新请求目标并尝试验证是否仍可复现">验证复现</button>
-      <button class="src-action-btn false-positive" data-action="fp" data-finding-id="${escapeAttr(finding.id || '')}" title="如果你判断该项不是实际漏洞，可标记为误报">标记误报</button>
-      <button class="src-action-btn confirm" data-action="confirm" data-finding-id="${escapeAttr(finding.id || '')}" title="如果你确认该项真实存在，可标记为有效漏洞">确认有效</button>
-      <button class="src-action-btn ticket" data-action="ticket" data-finding-id="${escapeAttr(finding.id || '')}" title="将该漏洞转为修复工单">创建工单</button>
+      <button class="src-action-btn false-positive" data-action="fp" data-finding-id="${escapeAttr(finding.id || '')}" title="如果你判断该项不是实际漏洞，可标记为误报或观察项">标记误报</button>
+      <button class="src-action-btn confirm" data-action="confirm" data-finding-id="${escapeAttr(finding.id || '')}" title="如果你确认该项真实存在，可标记为有效漏洞并进入修复流程">确认有效</button>
+      <button class="src-action-btn ticket" data-action="ticket" data-finding-id="${escapeAttr(finding.id || '')}" title="将该漏洞转为修复工单并跟踪处理">创建工单</button>
     </div>`;
   }
 
@@ -565,7 +565,7 @@ function renderEvidenceSection(evidence, finding) {
   html += `<div class="src-section-title">证据摘要</div>
     <div class="src-section-body src-evidence-meta">`;
   const confidenceState = finding.verification_status || (finding.is_likely_fp ? 'suspected' : 'probable');
-  const confidenceText = confidenceState === 'confirmed' ? '已验证' : confidenceState === 'probable' ? '可能存在' : '待复核';
+  const confidenceText = confidenceState === 'confirmed' ? '已验证' : confidenceState === 'probable' ? '可能存在' : '需要复测';
   html += `<div class="src-evidence-row"><span class="src-evidence-label">可信度</span><span>${escapeHtml(confidenceText)}</span></div>`;
   html += `<div class="src-evidence-row"><span class="src-evidence-label">误报概率</span><span>${finding.fp_score !== undefined ? ((finding.fp_score * 100).toFixed(0) + '%') : '—'}</span></div>`;
   if (requestSummary) {
