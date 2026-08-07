@@ -40,13 +40,13 @@ export function renderSRCResult(data) {
   _hideLikelyFp = false;
   _currentScanId = data.scan_id || null;
   _currentUrl = data.url || '';
+  _currentScore = typeof data.score === 'number' ? data.score : (parseInt(data.score, 10) || 0);
+  _currentSummary = data.summary || { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0, fp_count: 0 };
 
   const score = typeof data.score === 'number' ? data.score : (parseInt(data.score, 10) || 0);
   const summary = data.summary || { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0 };
   const riskLevel = data.risk_level || '未知';
   const url = data.url || '';
-  _currentScore = score;
-  _currentSummary = summary;
 
   const container = document.getElementById('result-content') || document.getElementById('result-container');
   if (!container) {
@@ -71,7 +71,7 @@ export function renderSRCResult(data) {
   html += '</div>';
 
   container.innerHTML = html;
-  bindFindingListEvents();
+  bindResultPageEvents();
   bindQualityPanelEvents();
 }
 
@@ -672,58 +672,57 @@ function renderFixCodeSection(fixCode) {
   return html;
 }
 
-function bindFindingListEvents() {
-  document.querySelectorAll('.src-list-item').forEach((el) => {
-    el.addEventListener('click', function() {
-      const idx = parseInt(this.dataset.index, 10);
+function bindResultPageEvents() {
+  const container = document.getElementById('result-content') || document.getElementById('result-container');
+  if (!container || container.dataset.srcResultBound === '1') return;
+  container.dataset.srcResultBound = '1';
+  container.addEventListener('click', function(e) {
+    const listItem = e.target.closest('.src-list-item');
+    if (listItem) {
+      const idx = parseInt(listItem.dataset.index, 10);
       selectFinding(idx);
-    });
-  });
-
-  document.querySelectorAll('.src-detail-tab').forEach((el) => {
-    el.addEventListener('click', function() {
-      const tab = this.dataset.tab;
-      const card = this.closest('.src-detail-card');
+      return;
+    }
+    const detailTab = e.target.closest('.src-detail-tab');
+    if (detailTab) {
+      const tab = detailTab.dataset.tab;
+      const card = detailTab.closest('.src-detail-card');
       if (!card) return;
       card.querySelectorAll('.src-detail-tab').forEach((t) => t.classList.remove('active'));
-      this.classList.add('active');
+      detailTab.classList.add('active');
       card.querySelectorAll('.src-detail-panel').forEach((p) => {
         p.classList.toggle('active', p.dataset.panel === tab);
       });
-    });
-  });
-
-  document.querySelectorAll('.src-fix-tab').forEach((el) => {
-    el.addEventListener('click', function() {
-      _currentFixTab = this.dataset.tab;
+      return;
+    }
+    const fixTab = e.target.closest('.src-fix-tab');
+    if (fixTab) {
+      _currentFixTab = fixTab.dataset.tab;
       document.querySelectorAll('.src-fix-tab').forEach((t) => t.classList.remove('active'));
-      this.classList.add('active');
+      fixTab.classList.add('active');
       document.querySelectorAll('.src-fix-panel').forEach((p) => {
         p.classList.toggle('active', p.dataset.panel === _currentFixTab);
         p.classList.toggle('hidden', p.dataset.panel !== _currentFixTab);
       });
-    });
-  });
-
-  document.querySelectorAll('.src-copy-btn').forEach((btn) => {
-    btn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      const text = this.dataset.copy || '';
-      copyToClipboard(text).then(() => showToast('已复制到剪贴板'));
-    });
-  });
-
-  document.querySelectorAll('.src-export-btn').forEach((btn) => {
-    if (btn.id === 'src-copy-summary') {
-      btn.addEventListener('click', onCopyReportSummary);
-    } else {
-      btn.addEventListener('click', onExportSRCReport);
+      return;
     }
-  });
-
-  document.querySelectorAll('.src-filter-btn').forEach((btn) => {
-    btn.addEventListener('click', function() {
-      if (this.dataset.action !== 'toggle-fp-filter') return;
+    const copyBtn = e.target.closest('.src-copy-btn');
+    if (copyBtn) {
+      const text = copyBtn.dataset.copy || '';
+      copyToClipboard(text).then(() => showToast('已复制到剪贴板'));
+      return;
+    }
+    const exportBtn = e.target.closest('.src-export-btn');
+    if (exportBtn) {
+      if (exportBtn.id === 'src-copy-summary') {
+        onCopyReportSummary();
+      } else {
+        onExportSRCReport();
+      }
+      return;
+    }
+    const filterBtn = e.target.closest('.src-filter-btn');
+    if (filterBtn && filterBtn.dataset.action === 'toggle-fp-filter') {
       _hideLikelyFp = !_hideLikelyFp;
       const visibleFindings = _hideLikelyFp ? _currentFindings.filter((item) => !item.is_likely_fp) : _currentFindings;
       _selectedIndex = 0;
@@ -731,14 +730,19 @@ function bindFindingListEvents() {
       if (detail) {
         detail.innerHTML = renderFindingDetail(visibleFindings[0], 0);
       }
-      bindFindingListEvents();
-    });
-  });
-
-  document.querySelectorAll('.src-action-btn').forEach((btn) => {
-    btn.addEventListener('click', onFindingAction);
+      return;
+    }
+    const actionBtn = e.target.closest('.src-action-btn');
+    if (actionBtn) {
+      onFindingAction(e);
+    }
   });
 }
+
+function bindFindingListEvents() {
+  // 保留旧调用点的兼容性；实际事件已由 bindResultPageEvents 统一托管。
+}
+
 
 
 async function onCopyReportSummary() {
