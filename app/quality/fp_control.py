@@ -78,10 +78,11 @@ class FalsePositiveControl:
         vuln_type = (finding.get("type") or "").lower()
         response = self._get_response_text(finding)
         request_text = self._get_request_text(finding)
+        response_headers = self._get_response_headers(finding)
 
         # 规则 1：WAF/防火墙拦截响应
         if self._contains_fp_keywords(response) and not self._has_strong_evidence(finding, vuln_type):
-            fp_score += 0.35
+            fp_score += 0.28
             reasons.append("响应包含 WAF/拦截关键词，可能是防护设备触发的误报")
 
         # 规则 2：HTTP 错误状态码且无利用证据
@@ -89,8 +90,11 @@ class FalsePositiveControl:
         if status_code in (403, 429, 503) and not self._has_exploit_evidence(
             finding, vuln_type
         ):
-            fp_score += 0.25
+            fp_score += 0.18
             reasons.append(f"HTTP {status_code} 响应且无明确利用证据")
+            if self._looks_like_challenge_response(response, response_headers):
+                fp_score += 0.12
+                reasons.append("响应更像登录/挑战/限流页面，降低直接判为漏洞的概率")
 
         # 规则 3：响应长度异常短（可能为通用错误页）
         resp_len = len(response)
@@ -142,6 +146,14 @@ class FalsePositiveControl:
         evidence = finding.get("evidence") or {}
         if isinstance(evidence, dict):
             return (evidence.get("request") or "").lower()
+        return ""
+
+    def _get_response_headers(self, finding: dict[str, Any]) -> str:
+        """提取响应头文本。"""
+        evidence = finding.get("evidence") or {}
+        if isinstance(evidence, dict):
+            headers = evidence.get("response_headers") or evidence.get("headers") or ""
+            return str(headers).lower()
         return ""
 
     def _contains_fp_keywords(self, text: str) -> bool:
@@ -223,6 +235,22 @@ class FalsePositiveControl:
             "nuxt",
         ]
         return any(p in response for p in framework_patterns)
+
+    def _looks_like_challenge_response(self, response: str, headers: str) -> bool:
+        text = f"{response}\n{headers}".lower()
+        challenge_markers = [
+            "captcha",
+            "cloudflare",
+            "access denied",
+            "verify you are human",
+            "challenge",
+            "csrf token",
+            "sign in",
+            "log in",
+            "too many requests",
+            "rate limit",
+        ]
+        return any(marker in text for marker in challenge_markers)
 
     def _adjust_confidence(self, original: str, fp_score: float) -> str:
         confidence_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
