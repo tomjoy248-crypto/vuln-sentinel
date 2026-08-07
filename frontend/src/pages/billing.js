@@ -58,7 +58,7 @@ function getRecommendedPlanId(plans) {
 }
 
 function getPlanBadge(plan, recommendedPlanId) {
-  if (plan.id === recommendedPlanId) return '最划算';
+  if (plan.id === recommendedPlanId) return '推荐';
   if ((plan.name || '').includes('企业')) return '企业版';
   if ((plan.name || '').includes('专业')) return '专业版';
   if ((plan.name || '').includes('标准')) return '标准版';
@@ -68,11 +68,11 @@ function getPlanBadge(plan, recommendedPlanId) {
 
 function getPlanTarget(plan) {
   const name = (plan.name || '').toLowerCase();
-  if (name.includes('企业')) return '大型团队 / 采购';
-  if (name.includes('专业')) return '安全运营 / 复测';
-  if (name.includes('标准')) return '日常扫描 / 验证';
-  if (name.includes('体验')) return '入门试用';
-  return '个人 / 轻量使用';
+  if (name.includes('企业')) return '团队采购 / 扩容';
+  if (name.includes('专业')) return '安全运营 / 交付';
+  if (name.includes('标准')) return '日常扫描 / 复测';
+  if (name.includes('体验')) return '入门起步';
+  return '个人 / 试点使用';
 }
 
 function getPlanPermission(plan) {
@@ -80,7 +80,7 @@ function getPlanPermission(plan) {
   if (credits >= 1000) return '企业采购';
   if (credits >= 500) return '专业运营';
   if (credits >= 100) return '标准使用';
-  return '入门试用';
+  return '入门起步';
 }
 
 function getProviderLabel(provider) {
