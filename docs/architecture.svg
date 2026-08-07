@@ -35,7 +35,7 @@
   <rect x="240" y="92" width="110" height="28" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1"/>
   <text x="295" y="110" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#475569">API 客户端</text>
   <rect x="380" y="92" width="110" height="28" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1"/>
-  <text x="435" y="110" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#475569">离线 HTML</text>
+  <text x="435" y="110" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#475569">Windows 桌面壳</text>
   <rect x="520" y="92" width="110" height="28" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1"/>
   <text x="575" y="110" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#475569">GitHub Actions</text>
   <rect x="660" y="92" width="110" height="28" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1"/>
@@ -52,7 +52,7 @@
   <!-- Frontend Layer -->
   <rect x="40" y="155" width="280" height="100" rx="10" fill="#ffffff" stroke="#4f46e5" stroke-width="2" filter="url(#shadow)"/>
   <text x="60" y="177" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#4f46e5">前端层</text>
-  <text x="60" y="195" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">单文件 HTML · 零框架依赖 · 离线可用</text>
+  <text x="60" y="195" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">托管 Web 版 · 统一发布 · 在线同步</text>
   <rect x="55" y="205" width="75" height="22" rx="5" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1"/>
   <text x="92" y="220" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#4f46e5">暗色主题</text>
   <rect x="145" y="205" width="75" height="22" rx="5" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1"/>
@@ -152,5 +152,5 @@
   <rect x="665" y="465" width="85" height="22" rx="5" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1"/>
   <text x="707" y="480" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#0284c7">本地启动</text>
   <rect x="760" y="465" width="85" height="22" rx="5" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1"/>
-  <text x="802" y="480" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#0284c7">离线 HTML</text>
+  <text x="802" y="480" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#0284c7">Windows 桌面壳</text>
 </svg>
