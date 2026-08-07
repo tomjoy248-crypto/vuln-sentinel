@@ -112,7 +112,7 @@ export const APP_TEMPLATE = `</head>
 
     <div class="ai-msg bot">
 
-      安全顾问随时在线，可以帮你分析漏洞、生成修复建议、解读扫描证据，并提示哪些结果需要复核。<br><br>
+      安全顾问随时在线，可以帮你解读漏洞、生成修复建议、梳理扫描证据，并提示哪些结果需要复测。<br><br>
 
       快捷问题
 
@@ -702,7 +702,7 @@ export const APP_TEMPLATE = `</head>
 
     <h1 class="workbench-title">修复器 / Fixer</h1>
 
-    <span class="workbench-subtitle">分析配置文件并生成安全加固补丁</span>
+    <span class="workbench-subtitle">检查配置文件并生成安全加固补丁</span>
 
   </div>
 
@@ -720,7 +720,7 @@ export const APP_TEMPLATE = `</head>
 
     <div class="fixer-btns">
 
-      <button class="fixer-btn primary" id="fixer-analyze-btn" onclick="analyzeFixer()">分析配置</button>
+      <button class="fixer-btn primary" id="fixer-analyze-btn" onclick="analyzeFixer()">检查配置</button>
 
       <button class="fixer-btn secondary" onclick="loadSampleConfig()">载入参考配置</button>
 

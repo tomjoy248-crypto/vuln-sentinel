@@ -15,7 +15,7 @@ function loadTicketContextFromStorage() {
     let prompt = document.getElementById('fixer-scan-prompt');
     if (prompt) {
       prompt.innerHTML = '<div class="card-title">已接收工单上下文</div>' +
-        '<p style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin:0">已从工单自动带入目标地址，你可以直接分析当前配置并生成修复方案。</p>' +
+        '<p style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin:0">已从工单自动带入目标地址，你可以直接检查当前配置并生成修复方案。</p>' +
         '<div style="margin-top:10px;font-size:12px;color:var(--text-secondary)">工单 #' + escapeHtml(String(ticket.ticket_id || '')) + ' · ' + escapeHtml(ticket.finding_name || '') + '</div>';
     }
     localStorage.removeItem('vs_fixer_ticket');
@@ -64,7 +64,7 @@ export function analyzeFixer() {
   } catch (e) {
     console.error('analyzeFixer error:', e);
     let fr = document.getElementById('fixer-result');
-    if (fr) fr.innerHTML = '<div class="card"><p style="color:var(--danger)">分析失败: ' + escapeHtml(e.message || String(e)) + '</p></div>';
+    if (fr) fr.innerHTML = '<div class="card"><p style="color:var(--danger)">检查失败: ' + escapeHtml(e.message || String(e)) + '</p></div>';
   }
 }
 
@@ -351,7 +351,7 @@ export function downloadNginxConf() {
 }
 
 export async function downloadRepairReport() {
-  if (!lastFixerResult) { showToast('请先分析配置'); return; }
+  if (!lastFixerResult) { showToast('请先检查配置'); return; }
   let r = lastFixerResult;
   let issues = Array.isArray(r.issues) ? r.issues : [];
   let zip = new JSZip();

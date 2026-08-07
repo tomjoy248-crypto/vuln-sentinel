@@ -49,11 +49,11 @@ let _progressTextTimeouts = [];
 let _currentProgress = 0;
 let _scanTextIndex = 0;
 let _scanTexts = [
-  '正在初始化分析引擎...',
+  '正在初始化扫描引擎...',
   'DNS 域名解析中...',
   '建立 TCP 连接...',
   '发送 HTTP 请求...',
-  '分析响应头安全配置...',
+  '检查响应头安全配置...',
   '检查 HSTS 配置...',
   '检查 CSP 内容安全策略...',
   '检查 X-Frame-Options...',
@@ -73,7 +73,7 @@ let _scanTexts = [
   '检测 Cloudflare...',
   '检测 Nginx WAF...',
   '检测 ModSecurity...',
-  '分析 CORS 跨域配置...',
+  '检查 CORS 跨域配置...',
   '检测 Cookie 安全标志...',
   '检查服务器信息泄露...',
   '计算安全评分...',
@@ -955,7 +955,7 @@ async function doPublicDemoFix() {
   // 从当前显示的报告里提取 findings
   let c = document.getElementById('public-report-content');
   if (!c) return;
-  // 把当前试用扫描报告里所有 finding 名称都传给后端模拟修复
+  // 把当前扫描报告里所有 finding 名称都传给后端模拟修复
   let findings = [];
   c.querySelectorAll('[data-finding-name]').forEach(function(el) {
     findings.push({
@@ -970,12 +970,12 @@ async function doPublicDemoFix() {
     showToast('没有发现需要修复的问题');
     return;
   }
-  // 先调用后端把试用扫描保存为用户的扫描记录
+  // 先调用后端把当前扫描保存为用户的扫描记录
   try {
     if (isLoggedIn() && window._lastScanId) {
       // 已经有 scan_id，不需要重新保存
     } else if (isLoggedIn()) {
-      // 调用 /api/scan 把当前试用扫描报告保存为正式扫描记录
+      // 调用 /api/scan 把当前扫描报告保存为正式扫描记录
       let url = document.getElementById('public-report-host') ? document.getElementById('public-report-host').value : 'https://example.com';
       let sr = await authFetch('/api/scan', {
         method: 'POST',
@@ -1680,10 +1680,10 @@ function startScan() {
   let progressHtml = '<div class="report-header fade-in-up">' +
     '<div style="font-size:48px;margin-bottom:16px"></div>' +
     '<h2 style="margin-bottom:8px;font-size:clamp(16px,5vw,22px)">正在扫描 ' + escapeHtml(host) + '</h2>' +
-    '<p style="color:var(--text-lighter);font-size:13px;margin-bottom:20px">安全扫描引擎正在执行目标分析...</p>' +
+    '<p style="color:var(--text-lighter);font-size:13px;margin-bottom:20px">安全扫描引擎正在执行目标扫描...</p>' +
     '<div style="max-width:min(320px,90vw);margin:0 auto 20px;background:rgba(255,255,255,0.1);border-radius:2px;height:8px;overflow:hidden">' +
     '<div id="scan-progress-bar" style="height:100%;background:linear-gradient(90deg,#4b6eaf,#818cf8);width:5%;border-radius:2px;transition:width 0.3s"></div></div>' +
-    '<div id="scan-progress-text" style="font-size:12px;color:var(--text-lighter)">正在初始化分析引擎...</div>' +
+    '<div id="scan-progress-text" style="font-size:12px;color:var(--text-lighter)">正在初始化扫描引擎...</div>' +
     '<button onclick="cancelScan()" style="margin-top:20px;padding:10px 24px;background:rgba(199,84,80,0.15);color:#c75450;border:1px solid rgba(199,84,80,0.3);border-radius:2px;cursor:pointer;font-size:13px;font-weight:500;transition:background 0.15s" onmouseover="this.style.background=\'rgba(199,84,80,0.25)\'" onmouseout="this.style.background=\'rgba(199,84,80,0.15)\'"> 取消扫描</button>' +
     '</div>';
   let resultContent = document.getElementById('result-content');
@@ -1698,9 +1698,9 @@ function startScan() {
     setButtonLoading("scan-btn", false);
     let rc = document.getElementById('result-content');
     if (rc) {
-      rc.innerHTML = '<div class="card" style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">错误：</div><h3 style="color:var(--danger);margin-bottom:8px">分析启动失败</h3><p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">页面在启动分析时遇到问题。</p><p style="color:var(--text-lighter);font-size:12px;margin-bottom:16px">错误信息：' + escapeHtml(e.message || String(e)) + '</p><button class="btn btn-primary" onclick="navigateTo(\'home\')"> 返回首页</button></div>';
+      rc.innerHTML = '<div class="card" style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">错误：</div><h3 style="color:var(--danger);margin-bottom:8px">扫描启动失败</h3><p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">页面在启动扫描时遇到问题。</p><p style="color:var(--text-lighter);font-size:12px;margin-bottom:16px">错误信息：' + escapeHtml(e.message || String(e)) + '</p><button class="btn btn-primary" onclick="navigateTo(\'home\')"> 返回首页</button></div>';
     } else {
-      showToast('分析启动失败：' + (e.message || String(e)), 'error');
+      showToast('扫描启动失败：' + (e.message || String(e)), 'error');
     }
   }
 }
@@ -2084,10 +2084,10 @@ function retryScan() {
     '</div>' +
     // 实时检测项滚动
     '<div id="scan-live-text" style="height:20px;font-size:12px;color:#a5b4fc;margin-bottom:14px;text-align:center;overflow:hidden;transition:all 0.3s">' +
-      '<span style="display:inline-block;animation:scan-text-glow 1.5s ease-in-out infinite">正在初始化分析引擎...</span>' +
+      '<span style="display:inline-block;animation:scan-text-glow 1.5s ease-in-out infinite">正在初始化扫描引擎...</span>' +
     '</div>' +
     '<h2 style="margin-bottom:6px;font-size:clamp(16px,5vw,20px)">正在扫描 ' + escapeHtml(host) + '</h2>' +
-    '<p style="color:var(--text-lighter);font-size:12px;margin-bottom:18px">安全扫描引擎 · 7 阶段实时分析中</p>' +
+    '<p style="color:var(--text-lighter);font-size:12px;margin-bottom:18px">安全扫描引擎 · 7 阶段实时扫描中</p>' +
     '<div style="max-width:min(420px,calc(100% - 32px));margin:0 auto;text-align:left">' + stagesHtml + '</div>' +
     '<button onclick="cancelScan()" style="margin-top:20px;padding:10px 24px;background:rgba(199,84,80,0.15);color:#c75450;border:1px solid rgba(199,84,80,0.3);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;transition:all 0.2s" onmouseover="this.style.background=\'rgba(199,84,80,0.25)\'" onmouseout="this.style.background=\'rgba(199,84,80,0.15)\'"> 取消扫描</button>' +
     '</div>' +
@@ -2789,7 +2789,7 @@ function renderResult(data) {
       }
       detailHtml += '</div></div>';
     }
-    detailHtml += '<div class="finding-section"><h4>智能分析</h4><p>' + escapeHtml(f.ai_advice).replace(/\n/g, '<br>') + '</p></div>';
+    detailHtml += '<div class="finding-section"><h4>智能检查</h4><p>' + escapeHtml(f.ai_advice).replace(/\n/g, '<br>') + '</p></div>';
     detailHtml += '<div class="finding-section"><h4>修复建议</h4><p>' + escapeHtml(f.fix) + '</p></div>';
     // 判断依据 evidence
     let evidenceText = '';
