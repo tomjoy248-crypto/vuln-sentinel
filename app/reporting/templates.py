@@ -27,7 +27,7 @@ DISCLAIMER_TEMPLATE = """> **免责声明**
 # 执行摘要
 EXECUTIVE_SUMMARY_TEMPLATE = """## 一、执行摘要
 
-本次针对 `{target_url}` 的安全测试共发现 **{total_findings}** 个安全问题。经人工复核，其中已验证问题 **{verified_count}** 个、待验证问题 **{unverified_count}** 个、已排除误报 **{false_positive_count}** 个。
+本次针对 `{target_url}` 的安全测试共发现 **{total_findings}** 个安全问题。经人工复测，其中已验证问题 **{verified_count}** 个、待验证问题 **{unverified_count}** 个、已排除误报 **{false_positive_count}** 个。
 
 ### 1.1 风险仪表盘
 
@@ -161,7 +161,7 @@ RISK_MATRIX_TEMPLATE = """## 四、风险评级矩阵
 | 中 (局部数据篡改/业务逻辑异常) | High | Medium | Low |
 | 低 (信息泄露/配置问题) | Medium | Low | Informational |
 
-> 注：最终级别还会参考验证状态与置信度；未经复核的发现仅作为风险线索展示，不直接等同于可利用漏洞结论。
+> 注：最终级别还会参考验证状态与置信度；未经复测的发现仅作为风险线索展示，不直接等同于可利用漏洞结论。
 
 """
 
