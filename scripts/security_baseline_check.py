@@ -22,6 +22,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _emit(message: str) -> None:
+    sys.stdout.write(f"{message}\n")
+    sys.stdout.flush()
+
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
 class CheckResult:
     """单项检查结果。"""
 
@@ -152,10 +161,16 @@ def check_hardcoded_secrets() -> CheckResult:
     """扫描项目源码中的明显硬编码密钥。"""
     suspicious: list[str] = []
     scanned = 0
+    skipped_roots = {"node_modules", "__pycache__", ".git", "static", "dist", "artifacts", ".pytest_cache"}
+    skipped_names = {"test", "tests", "scripts", "benchmark_reports"}
     for pattern in ("*.py", "*.js", "*.ts", "*.yml", "*.yaml", "*.toml"):
         for path in PROJECT_ROOT.rglob(pattern):
-            # 跳过依赖目录与构建产物
-            if any(part in {"node_modules", "__pycache__", ".git", "static", "dist"} for part in path.parts):
+            # 跳过依赖目录、测试与构建产物，避免把测试密码和示例配置当作真实密钥
+            if any(part in skipped_roots for part in path.parts):
+                continue
+            if path.name.startswith("test_") or path.stem.endswith("_test"):
+                continue
+            if path.parent.name in skipped_names:
                 continue
             try:
                 content = path.read_text(encoding="utf-8", errors="ignore")
@@ -188,7 +203,7 @@ def check_hardcoded_secrets() -> CheckResult:
 def main() -> int:
     """执行所有检查并输出报告。"""
     is_prod = _is_production()
-    print(f"漏洞哨兵 11-S 安全基线检查 — 识别为 {'生产' if is_prod else '开发'} 环境\n")
+    _emit(f"漏洞哨兵 11-S 安全基线检查 — 识别为 {'生产' if is_prod else '开发'} 环境\n")
 
     checks = [
         check_jwt_secret(),
@@ -204,21 +219,21 @@ def main() -> int:
     for check in checks:
         status = "PASS" if check.passed else ("WARN" if not check.critical else "FAIL")
         icon = "✓" if check.passed else ("⚠" if not check.critical else "✗")
-        print(f"{icon} [{status}] {check.name}: {check.message}")
+        _emit(f"{icon} [{status}] {check.name}: {check.message}")
         if not check.passed:
             if check.critical:
                 critical_failures += 1
             else:
                 warnings += 1
 
-    print()
+    _emit("")
     if critical_failures:
-        print(f"结果：存在 {critical_failures} 个必须修复的严重安全问题。")
+        _emit(f"结果：存在 {critical_failures} 个必须修复的严重安全问题。")
         return 1
     if warnings:
-        print(f"结果：通过，但存在 {warnings} 项建议改进。")
+        _emit(f"结果：通过，但存在 {warnings} 项建议改进。")
         return 0
-    print("结果：所有检查通过，安全配置符合基线要求。")
+    _emit("结果：所有检查通过，安全配置符合基线要求。")
     return 0
 
 

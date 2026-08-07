@@ -18,6 +18,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
 
 
+def _emit(message: str) -> None:
+    sys.stdout.write(f"{message}\n")
+    sys.stdout.flush()
+
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
 def _run_pip_audit() -> tuple[bool, str]:
     """调用 pip-audit 扫描 requirements.txt。
 
@@ -79,23 +88,23 @@ def _check_requirements_syntax() -> tuple[bool, str]:
 
 def main() -> int:
     """执行依赖安全扫描。"""
-    print("漏洞哨兵 11-S 依赖安全扫描\n")
+    _emit("漏洞哨兵 11-S 依赖安全扫描\n")
 
     if not REQUIREMENTS.exists():
-        print(f"✗ [FAIL] 未找到 {REQUIREMENTS}")
+        _emit(f"✗ [FAIL] 未找到 {REQUIREMENTS}")
         return 1
 
     ok, msg = _check_requirements_syntax()
-    print(f"{'✓' if ok else '✗'} [{'PASS' if ok else 'FAIL'}] REQUIREMENTS_SYNTAX: {msg}")
+    _emit(f"{'✓' if ok else '✗'} [{'PASS' if ok else 'FAIL'}] REQUIREMENTS_SYNTAX: {msg}")
     if not ok:
         return 1
 
     ok, msg = _run_pip_audit()
-    print(f"{'✓' if ok else '✗'} [{'PASS' if ok else 'FAIL'}] DEPENDENCY_VULNS: {msg}")
+    _emit(f"{'✓' if ok else '✗'} [{'PASS' if ok else 'FAIL'}] DEPENDENCY_VULNS: {msg}")
 
     if not ok and "pip-audit 未安装" in msg:
         # 未安装审计工具视为警告而非失败，避免阻塞无网络环境
-        print("\n提示：安装 pip-audit 后重新运行可获得已知漏洞扫描结果。")
+        _emit("\n提示：安装 pip-audit 后重新运行可获得已知漏洞扫描结果。")
         return 0
 
     return 0 if ok else 1
