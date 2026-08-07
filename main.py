@@ -52,6 +52,7 @@ from typing import Any
 from urllib.parse import urldefrag, urljoin, urlparse
 
 import bcrypt
+import hashlib
 import httpx
 import jwt
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -378,7 +379,12 @@ def hash_password(pwd: str) -> str:
 
 
 def verify_password(pwd: str, hashed: str) -> bool:
-    return bcrypt.checkpw(pwd[:72].encode("utf-8"), hashed.encode("utf-8"))
+    candidate = pwd[:72].encode("utf-8")
+    if hashed.startswith("$2b$") or hashed.startswith("$2a$"):
+        return bcrypt.checkpw(candidate, hashed.encode("utf-8"))
+    if len(hashed) == 64:
+        return hashlib.sha256(candidate).hexdigest() == hashed.lower()
+    return False
 
 
 def create_token(
@@ -939,19 +945,16 @@ def init_db() -> None:
         if not _column_exists(conn, "scans", col_name):
             conn.execute(col_def)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_scans_share_id ON scans(share_id)")
-    # 迁移旧 SHA256 密码到 bcrypt（自动检测非 bcrypt 哈希并重新哈希）
+    # 兼容旧 SHA256 账号：保留原哈希，登录时在 verify_password 中兼容校验
     try:
         old_users = conn.execute("SELECT id, username, password FROM users").fetchall()
         for uid, uname, pwd_hash in old_users:
+            if not pwd_hash:
+                continue
             if not pwd_hash.startswith("$2b$") and not pwd_hash.startswith("$2a$"):
-                # 旧 SHA256 哈希，无法直接迁移密码值，统一重置为随机哈希（用户需要走重置流程）
-                new_hash = hash_password("reset_" + secrets.token_hex(8))
-                conn.execute("UPDATE users SET password=? WHERE id=?", (new_hash, uid))
-                logger.info(
-                    "Migrated user %s to bcrypt (password reset required)", uname
-                )
+                logger.info("Legacy password hash preserved for user %s", uname)
     except Exception as e:
-        logger.warning("Password migration failed: %s", e)
+        logger.warning("Password migration inspection failed: %s", e)
     # 如果数据库中没有任何用户，预置一个演示账号 demo/demo123，便于首次体验和测试
     try:
         any_user = conn.execute("SELECT id FROM users LIMIT 1").fetchone()
