@@ -401,6 +401,9 @@ function updateAuthUI() {
     if (scanLoginTip) scanLoginTip.style.display = 'block';
     if (tokenInput) tokenInput.value = '登录后显示 Token';
   }
+  if (typeof window.updateScanStartState === 'function') {
+    window.updateScanStartState();
+  }
 }
 
 function copyApiToken() {
