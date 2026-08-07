@@ -26,10 +26,10 @@ export function loadSampleConfig() {
     let sample = 'server {\n    listen 80;\n    server_name example.com www.example.com;\n    root /var/www/html;\n    index index.html index.php;\n\n    location / {\n        try_files $uri $uri/ =404;\n    }\n\n    location ~ \\.php$ {\n        fastcgi_pass unix:/run/php/php-fpm.sock;\n        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n        include fastcgi_params;\n    }\n\n    access_log /var/log/nginx/access.log;\n    error_log /var/log/nginx/error.log;\n}';
     let inp = document.getElementById('fixer-input');
     if (inp) inp.value = sample;
-    showToast('已加载示例 Nginx 配置');
+    showToast('已载入参考 Nginx 配置');
   } catch (e) {
     console.error('loadSampleConfig error:', e);
-    showToast('加载示例配置失败: ' + (e.message || String(e)), 'error');
+    showToast('载入参考配置失败: ' + (e.message || String(e)), 'error');
   }
 }
 

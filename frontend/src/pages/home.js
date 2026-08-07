@@ -1461,8 +1461,8 @@ function quickDemo(url) {
 
 // ----- showFullScanDetail -----
 function showFullScanDetail() {
-  if (window._demoAfterResult) {
-    renderResult(window._demoAfterResult);
+  if (window._publicReportResult) {
+    renderResult(window._publicReportResult);
   }
 }
 

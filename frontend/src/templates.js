@@ -722,7 +722,7 @@ export const APP_TEMPLATE = `</head>
 
       <button class="fixer-btn primary" id="fixer-analyze-btn" onclick="analyzeFixer()">分析配置</button>
 
-      <button class="fixer-btn secondary" onclick="loadSampleConfig()">加载示例</button>
+      <button class="fixer-btn secondary" onclick="loadSampleConfig()">载入参考配置</button>
 
       <button class="fixer-btn secondary" onclick="clearFixer()">清空</button>
 
