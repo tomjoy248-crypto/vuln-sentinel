@@ -35,6 +35,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import httpx  # noqa: E402
 import pytest  # noqa: E402
 
+pytestmark = pytest.mark.asyncio
+
 import main  # noqa: E402
 
 main.init_db()

@@ -85,16 +85,17 @@ def _calculate_score(findings: list[dict[str, Any]]) -> dict[str, Any]:
     避免单条弱证据把结果拉得过低。"""
     score = 100
     summary = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0}
-    severity_weights = {"critical": 28, "high": 16, "medium": 8, "low": 3, "info": 0}
+    severity_weights = {"critical": 25, "high": 15, "medium": 8, "low": 3, "info": 0}
     confidence_multipliers = {"critical": 1.0, "high": 1.0, "medium": 0.7, "low": 0.4, "info": 0.2}
     verification_multipliers = {"confirmed": 1.0, "probable": 0.85, "suspected": 0.6}
     for finding in findings:
         sev = str(finding.get("severity", "info")).lower()
-        conf = str(finding.get("adjusted_confidence") or finding.get("confidence", "medium")).lower()
+        conf_value = finding.get("adjusted_confidence") or finding.get("confidence") or ""
+        conf = str(conf_value).lower()
         summary[sev] = summary.get(sev, 0) + 1
         summary["total"] += 1
         weight = severity_weights.get(sev, 0)
-        multiplier = confidence_multipliers.get(conf, 0.7)
+        multiplier = confidence_multipliers.get(conf, 1.0)
         verification = str(finding.get("verification_status", "")).lower()
         multiplier *= verification_multipliers.get(verification, 1.0)
         if finding.get("is_likely_fp"):
@@ -105,7 +106,7 @@ def _calculate_score(findings: list[dict[str, Any]]) -> dict[str, Any]:
     if summary["total"] == 0:
         risk_level = "low"
     else:
-        score = max(15, min(100, score))
+        score = max(10, min(100, score))
         risk_level = (
             "critical"
             if score < 40
@@ -340,14 +341,13 @@ async def run_plugin_scan(
     # 4. 交叉验证（standard/deep 默认开启，quick 可关闭）
     _phase_start = time.time()
     verification_stats = {
-        "enabled": False,
+        "enabled": bool(enable_verification),
         "confirmed": 0,
         "probable": 0,
         "suspected": 0,
     }
     if enable_verification and findings:
         findings = await _run_cross_validation(findings)
-        verification_stats["enabled"] = True
         verification_stats["confirmed"] = sum(
             1 for f in findings if f.get("verification_status") == "confirmed"
         )
