@@ -138,6 +138,21 @@ def _build_form_body(inputs: list[dict[str, str]]) -> str:
     return urlencode(params)
 
 
+def _extract_query_param_names(url: str) -> list[str]:
+    """从 URL 查询串中提取参数名，供后续定向 fuzz 使用。"""
+    parsed = urlparse(url)
+    if not parsed.query:
+        return []
+    param_names: list[str] = []
+    for part in parsed.query.split("&"):
+        if not part:
+            continue
+        key = part.split("=", 1)[0].strip()
+        if key:
+            param_names.append(key)
+    return param_names
+
+
 class DiscoveryCrawler:
     """轻量级同域端点发现器。"""
 
@@ -213,6 +228,17 @@ class DiscoveryCrawler:
                     # 当前页面本身作为一个入口
                     endpoints.append(DiscoveredEndpoint(url=current, source="homepage"))
 
+                    # 页面 URL 自带参数时，也作为一个可 fuzz 的入口
+                    query_params = _extract_query_param_names(current)
+                    if query_params:
+                        endpoints.append(
+                            DiscoveredEndpoint(
+                                url=current,
+                                parameter_names=query_params,
+                                source="link",
+                            )
+                        )
+
                     # 发现表单
                     for idx, form in enumerate(extractor.forms):
                         if idx >= self.max_forms:
@@ -235,6 +261,21 @@ class DiscoveryCrawler:
                                 source="form",
                             )
                         )
+
+                        if body_str:
+                            endpoints.append(
+                                DiscoveredEndpoint(
+                                    url=action,
+                                    method=method,
+                                    body=body_str,
+                                    parameter_names=[
+                                        i["name"]
+                                        for i in form.get("inputs", [])
+                                        if i.get("name")
+                                    ],
+                                    source="param_fuzz",
+                                )
+                            )
 
                     # 收集新链接
                     for link in extractor.links:

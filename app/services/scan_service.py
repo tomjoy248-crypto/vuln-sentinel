@@ -261,10 +261,15 @@ async def run_plugin_scan(
                 max_params=12,
             )
             fuzz_targets = [url]
+            fuzz_payloads: list[tuple[str, str, str]] = []
             if endpoints:
-                fuzz_targets.extend(
-                    [ep.url for ep in endpoints if ep.url and "?" in ep.url]
-                )
+                for ep in endpoints:
+                    if not ep.url:
+                        continue
+                    if "?" in ep.url:
+                        fuzz_targets.append(ep.url)
+                    if getattr(ep, "body", "") and getattr(ep, "parameter_names", None):
+                        fuzz_payloads.append((ep.url, ep.body or "", getattr(ep, "method", "GET")))
             fuzz_targets = list(dict.fromkeys(fuzz_targets))[:20]  # 去重并限制数量
 
             fuzz_results_map = await fuzzer.fuzz_multiple(
@@ -278,6 +283,31 @@ async def run_plugin_scan(
                     converted = fuzz_results_to_findings(fuzz_results, target_url)
                     plugin_findings.extend(converted)
                     fuzz_count += len(converted)
+
+            if fuzz_payloads:
+                async with httpx.AsyncClient(
+                    timeout=fuzzer.request_timeout + 2,
+                    follow_redirects=fuzzer.follow_redirects,
+                    headers=context.headers,
+                ) as fuzz_client:
+                    for target_url, body, method in fuzz_payloads[:10]:
+                        if method.upper() != "POST":
+                            continue
+                        try:
+                            extra_results = await fuzzer.fuzz_url(
+                                fuzz_client,
+                                target_url,
+                                headers=context.headers,
+                                body=body,
+                                content_type="application/x-www-form-urlencoded",
+                            )
+                        except Exception as exc:
+                            logger.debug("Form fuzz failed for %s: %s", target_url, exc)
+                            continue
+                        if extra_results:
+                            converted = fuzz_results_to_findings(extra_results, target_url)
+                            plugin_findings.extend(converted)
+                            fuzz_count += len(converted)
             if fuzz_count > 0:
                 logger.info("Fuzzing found %d potential injection issues", fuzz_count)
         except Exception as exc:
