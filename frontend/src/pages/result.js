@@ -50,7 +50,7 @@ export function renderSRCResult(data) {
 
   const container = document.getElementById('result-content') || document.getElementById('result-container');
   if (!container) {
-    console.error('result-content not found');
+    setTimeout(() => renderSRCResult(data), 0);
     return;
   }
 
