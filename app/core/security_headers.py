@@ -17,11 +17,8 @@ SECURITY_HEADERS: dict[str, str] = {
     "X-XSS-Protection": "1; mode=block",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
-    # NOTE: 'unsafe-inline' 保留在 script-src 中是因为当前前端代码中存在
-    # 内联脚本（非 Vite 注入的部分），直接移除会导致功能损坏。
-    # TODO（未来改进）: 将所有内联脚本迁移至外部文件后，改用基于 nonce 或 hash
-    # 的 CSP（Vite 已为构建产物生成哈希文件名，具备实施条件），
-    # 届时可移除 'unsafe-inline' 以显著增强 XSS 防护。
+    # NOTE: 当前前端仍保留少量内联脚本，因此 CSP 需要同时允许自身脚本和样式。
+    # 在将剩余内联脚本完全迁移后，可进一步收紧为 nonce / hash 方案。
     "Content-Security-Policy": (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline'; "
@@ -33,6 +30,10 @@ SECURITY_HEADERS: dict[str, str] = {
         "form-action 'self'"
     ),
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "X-Download-Options": "noopen",
+    "X-Permitted-Cross-Domain-Policies": "none",
 }
 
 # 仅在 HTTPS 下注入的头（HSTS 在明文 HTTP 上会被浏览器忽略，且可能锁定后续 HTTPS）
