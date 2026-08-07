@@ -3,6 +3,8 @@
 use tauri::menu::{AboutMetadataBuilder, MenuBuilder};
 use tauri::Manager;
 
+const FALLBACK_WEB_URL: &str = "https://vuln-sentinel-v11-s.onrender.com/";
+
 fn main() {
   tauri::Builder::default()
     .menu(|app_handle| {
@@ -24,6 +26,7 @@ fn main() {
       if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_title("Vuln Sentinel - 安全扫描与交付平台");
         let _ = window.set_focus();
+        let _ = window.eval(&format!("window.location.replace('{}')", FALLBACK_WEB_URL));
       }
       Ok(())
     })
