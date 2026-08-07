@@ -229,7 +229,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
     ? `<span class="meta-item verification-badge">
         <span class="v-confirmed" title="已验证">${vStats.confirmed || 0}</span>
         <span class="v-probable" title="待确认">${vStats.probable || 0}</span>
-        <span class="v-suspected" title="需要复测">${vStats.suspected || 0}</span>
+        <span class="v-suspected" title="待复测">${vStats.suspected || 0}</span>
        </span>`
     : '';
 
@@ -247,7 +247,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
   const reportSummary = '本次扫描共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
-  const reportIntro = '报告适用于上线前自查、客户交付和复扫留档，重点展示已验证、待确认和待复测的结果，可直接作为交付附件和复测底稿。';
+  const reportIntro = '报告适用于上线前自查、客户交付和复扫留档，重点展示已验证、待确认和待复测的结果，可直接作为交付附件和复测记录。';
   const actionHint = data.scan_id
     ? '<div class="src-report-action-hint">建议优先处理“已验证”和“待确认”项；“待复测”项通常表示证据不足或环境干扰，请先复测或人工确认后再进入工单。</div>'
     : '';
