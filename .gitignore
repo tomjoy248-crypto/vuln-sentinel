@@ -38,3 +38,6 @@ work-ssh/
 # Tauri build outputs
 src-tauri/target/
 src-tauri/gen/
+
+# Windows release artifacts
+artifacts/

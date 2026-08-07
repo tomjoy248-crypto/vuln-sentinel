@@ -262,6 +262,18 @@ start.bat
 
 
 
+
+## Windows 下载
+
+如果你要拿到可直接分发的 Windows 安装包，请先完成桌面壳打包，然后运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package_windows_release.ps1
+```
+
+打包完成后，安装包会被复制到 `artifacts/windows/`，便于直接发送给客户或放到下载页。
+
+
 ## Windows 桌面版
 
 漏洞哨兵已提供 Windows 桌面壳，当前采用 `NSIS` 安装包而不是 `MSI`，这样可以稳定支持普通用户的当前账号安装。
