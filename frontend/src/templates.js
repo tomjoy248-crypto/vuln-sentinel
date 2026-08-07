@@ -628,7 +628,7 @@ export const APP_TEMPLATE = `</head>
 
   <!-- 公开测试扫描 -->
 
-  <div class="card demo-report-card" id="demo-report" style="margin-top:18px">
+  <div class="card public-report-card" id="demo-report" style="margin-top:18px">
 
     <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
 
@@ -642,7 +642,7 @@ export const APP_TEMPLATE = `</head>
 
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
 
-        <select id="demo-host" onchange="loadPublicDemo()" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:5px 10px;border-radius:2px;font-size:12px;cursor:pointer">
+        <select id="public-report-host" onchange="loadPublicDemo()" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:5px 10px;border-radius:2px;font-size:12px;cursor:pointer">
 
           <option value="https://example.com">example.com</option>
 
@@ -654,13 +654,13 @@ export const APP_TEMPLATE = `</head>
 
         </select>
 
-        <button onclick="loadPublicDemo()" id="demo-refresh" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:5px 12px;border-radius:2px;font-size:12px;cursor:pointer;font-weight:500">重新生成</button>
+        <button onclick="loadPublicDemo()" id="public-report-refresh" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:5px 12px;border-radius:2px;font-size:12px;cursor:pointer;font-weight:500">刷新报告</button>
 
       </div>
 
     </div>
 
-    <div id="demo-content">
+    <div id="public-report-content">
 
       <div style="padding:16px;text-align:center;color:var(--text-secondary);background:var(--bg);border-radius:2px;margin-top:12px;border:1px dashed var(--border)">
 

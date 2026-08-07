@@ -720,11 +720,11 @@ function drawTrendChart(series, urls) {
 
 // ----- loadPublicDemo -----
 async function loadPublicDemo() {
-  let select = document.getElementById('demo-host');
-  let btn = document.getElementById('demo-refresh');
+  let select = document.getElementById('public-report-host');
+  let btn = document.getElementById('public-report-refresh');
   let url = (select && select.value) || 'https://example.com';
   if (btn) { btn.disabled = true; btn.textContent = '扫描中…'; }
-  let c = document.getElementById('demo-content');
+  let c = document.getElementById('public-report-content');
   if (c) c.innerHTML = '<div style="height:120px;border-radius:2px;margin-top:12px;background:#3c3f41;border:1px solid #555555;display:flex;align-items:center;justify-content:center;color:#808080;font-size:13px">扫描中…</div>';
   try {
     let r = await authFetch('/api/public-demo-scan', {
@@ -749,7 +749,7 @@ async function loadPublicDemo() {
 
 // ----- renderDemoReport -----
 function renderDemoReport(d) {
-  let c = document.getElementById('demo-content');
+  let c = document.getElementById('public-report-content');
   if (!c) return;
   let score = d.score || 0;
   let color = score >= 80 ? '#73c990' : score >= 50 ? '#f0a732' : '#c75450';
@@ -953,7 +953,7 @@ function switchPublicFixTab(platform) {
 // ----- doPublicDemoFix -----
 async function doPublicDemoFix() {
   // 从当前显示的报告里提取 findings
-  let c = document.getElementById('demo-content');
+  let c = document.getElementById('public-report-content');
   if (!c) return;
   // 把当前试用扫描报告里所有 finding 名称都传给后端模拟修复
   let findings = [];
@@ -976,7 +976,7 @@ async function doPublicDemoFix() {
       // 已经有 scan_id，不需要重新保存
     } else if (isLoggedIn()) {
       // 调用 /api/scan 把当前试用扫描报告保存为正式扫描记录
-      let url = document.getElementById('demo-host') ? document.getElementById('demo-host').value : 'https://example.com';
+      let url = document.getElementById('public-report-host') ? document.getElementById('public-report-host').value : 'https://example.com';
       let sr = await authFetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1013,7 +1013,7 @@ async function doPublicDemoFix() {
 // ----- renderFixComparison -----
 function renderFixComparison(d) {
   try {
-    let c = document.getElementById('demo-content');
+    let c = document.getElementById('public-report-content');
     if (!c) return;
     if (!d || typeof d !== 'object') {
       c.innerHTML = '<div class="card"><p style="color:var(--danger)">修复对比数据无效</p></div>';
@@ -1071,7 +1071,7 @@ function renderFixComparison(d) {
   c.innerHTML = html;
   } catch (e) {
     console.error('renderFixComparison error:', e);
-    let c = document.getElementById('demo-content');
+    let c = document.getElementById('public-report-content');
     if (c) c.innerHTML = '<div class="card"><p style="color:var(--danger)">渲染修复对比失败: ' + escapeHtml(e.message || String(e)) + '</p></div>';
   }
 }
