@@ -505,7 +505,7 @@ export const APP_TEMPLATE = `</head>
     <div id="auth-guest" style="display:none">
       <div class="card auth-form">
         <h3>账号登录</h3>
-        <div class="auth-form-error" id="login-error"></div><div id="auth-status-message" class="auth-form-hint" style="margin-top:8px;color:var(--text-secondary)"></div>
+        <div class="auth-form-error" id="login-error"></div><div id="auth-status-message" class="auth-form-hint" style="margin-top:8px;color:var(--text-secondary)">默认演示账号：demo / demo123</div>
         <div class="auth-form-row">
           <input type="text" id="login-username" placeholder="用户名" aria-label="用户名" />
         </div>
