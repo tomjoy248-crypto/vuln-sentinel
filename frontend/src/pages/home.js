@@ -49,7 +49,7 @@ let _progressTextTimeouts = [];
 let _currentProgress = 0;
 let _scanTextIndex = 0;
 let _scanTexts = [
-  '正在初始化扫描引擎...',
+  '正在初始化分析引擎...',
   'DNS 域名解析中...',
   '建立 TCP 连接...',
   '发送 HTTP 请求...',
@@ -1367,7 +1367,7 @@ function startScanDirect() {
     let scanBtn = document.getElementById('scan-btn');
     if (scanBtn) scanBtn.disabled = false;
   }
-  // 11-S：已登录用户跳过 step3 二次确认，直接开始扫描（合规授权已在 step1 完成）
+  // 11-S：已登录用户跳过 step3 二次确认，直接开始分析（合规授权已在 step1 完成）
   // 同时把 URL 也填到 step3 输入框，保留 step3 备用
   let confirmedInput = document.getElementById('scan-url-confirmed');
   if (confirmedInput) confirmedInput.value = url;
@@ -1379,7 +1379,7 @@ function startScanDirect() {
     _scanInProgress = false;
     setButtonLoading("scan-btn", false);
     setButtonLoading("scan-btn-step1", false);
-    showToast('扫描启动失败：' + (e.message || String(e)));
+    showToast('分析启动失败：' + (e.message || String(e)));
   }
 }
 
@@ -1641,7 +1641,7 @@ function startScan() {
     url = urlInput ? urlInput.value.trim() : '';
     if (url && confirmedInput) confirmedInput.value = url;
   }
-  if (!url) { _scanInProgress = false; setButtonLoading("scan-btn", false); showToast('请输入网址'); return; }
+  if (!url) { _scanInProgress = false; setButtonLoading("scan-btn", false); showToast('请输入有效网址'); return; }
 
   // 自动补全 URL：不加协议默认 https://
   if (!/^https?:\/\//i.test(url)) {
@@ -1680,10 +1680,10 @@ function startScan() {
   let progressHtml = '<div class="report-header fade-in-up">' +
     '<div style="font-size:48px;margin-bottom:16px"></div>' +
     '<h2 style="margin-bottom:8px;font-size:clamp(16px,5vw,22px)">正在扫描 ' + escapeHtml(host) + '</h2>' +
-    '<p style="color:var(--text-lighter);font-size:13px;margin-bottom:20px">安全扫描引擎正在分析目标网站...</p>' +
+    '<p style="color:var(--text-lighter);font-size:13px;margin-bottom:20px">安全扫描引擎正在执行目标分析...</p>' +
     '<div style="max-width:min(320px,90vw);margin:0 auto 20px;background:rgba(255,255,255,0.1);border-radius:2px;height:8px;overflow:hidden">' +
     '<div id="scan-progress-bar" style="height:100%;background:linear-gradient(90deg,#4b6eaf,#818cf8);width:5%;border-radius:2px;transition:width 0.3s"></div></div>' +
-    '<div id="scan-progress-text" style="font-size:12px;color:var(--text-lighter)">正在初始化扫描引擎...</div>' +
+    '<div id="scan-progress-text" style="font-size:12px;color:var(--text-lighter)">正在初始化分析引擎...</div>' +
     '<button onclick="cancelScan()" style="margin-top:20px;padding:10px 24px;background:rgba(199,84,80,0.15);color:#c75450;border:1px solid rgba(199,84,80,0.3);border-radius:2px;cursor:pointer;font-size:13px;font-weight:500;transition:background 0.15s" onmouseover="this.style.background=\'rgba(199,84,80,0.25)\'" onmouseout="this.style.background=\'rgba(199,84,80,0.15)\'"> 取消扫描</button>' +
     '</div>';
   let resultContent = document.getElementById('result-content');
@@ -1698,9 +1698,9 @@ function startScan() {
     setButtonLoading("scan-btn", false);
     let rc = document.getElementById('result-content');
     if (rc) {
-      rc.innerHTML = '<div class="card" style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">错误：</div><h3 style="color:var(--danger);margin-bottom:8px">扫描启动失败</h3><p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">页面在启动扫描时遇到问题。</p><p style="color:var(--text-lighter);font-size:12px;margin-bottom:16px">错误信息：' + escapeHtml(e.message || String(e)) + '</p><button class="btn btn-primary" onclick="navigateTo(\'home\')"> 返回首页</button></div>';
+      rc.innerHTML = '<div class="card" style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">错误：</div><h3 style="color:var(--danger);margin-bottom:8px">分析启动失败</h3><p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">页面在启动分析时遇到问题。</p><p style="color:var(--text-lighter);font-size:12px;margin-bottom:16px">错误信息：' + escapeHtml(e.message || String(e)) + '</p><button class="btn btn-primary" onclick="navigateTo(\'home\')"> 返回首页</button></div>';
     } else {
-      showToast('扫描启动失败：' + (e.message || String(e)), 'error');
+      showToast('分析启动失败：' + (e.message || String(e)), 'error');
     }
   }
 }
@@ -2025,7 +2025,7 @@ function retryScan() {
   let input = document.getElementById('retry-url-input');
   if (!input) return;
   let url = input.value.trim();
-  if (!url) { showToast('请输入网址'); return; }
+  if (!url) { showToast('请输入有效网址'); return; }
   // 授权确认检查（深度扫描/重试时）
   let authCheck = document.getElementById('auth-check');
   if (!authCheck || !authCheck.checked) {
@@ -2084,7 +2084,7 @@ function retryScan() {
     '</div>' +
     // 实时检测项滚动
     '<div id="scan-live-text" style="height:20px;font-size:12px;color:#a5b4fc;margin-bottom:14px;text-align:center;overflow:hidden;transition:all 0.3s">' +
-      '<span style="display:inline-block;animation:scan-text-glow 1.5s ease-in-out infinite">正在初始化扫描引擎...</span>' +
+      '<span style="display:inline-block;animation:scan-text-glow 1.5s ease-in-out infinite">正在初始化分析引擎...</span>' +
     '</div>' +
     '<h2 style="margin-bottom:6px;font-size:clamp(16px,5vw,20px)">正在扫描 ' + escapeHtml(host) + '</h2>' +
     '<p style="color:var(--text-lighter);font-size:12px;margin-bottom:18px">安全扫描引擎 · 7 阶段实时分析中</p>' +
@@ -4047,7 +4047,7 @@ function renderScanHistory(page) {
   authFetch('/api/history?limit=50').then(function(resp) { return resp.json(); }).then(function(data) {
     let history = data.history || [];
     if (history.length === 0) {
-      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:13px">暂无扫描记录</div><div style="font-size:12px;margin-top:6px">点首页「开始扫描」试试</div><div style="margin-top:12px"><button class="fixer-btn primary" onclick="navigateTo(\'scan\')">开始扫描</button></div></div>';
+      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:13px">暂无扫描记录</div><div style="font-size:12px;margin-top:6px">点首页「开始分析」试试</div><div style="margin-top:12px"><button class="fixer-btn primary" onclick="navigateTo(\'scan\')">开始分析</button></div></div>';
       safeSetDisplay('history-pagination', 'none');
       let tw = document.getElementById('history-trend-wrap');
       if (tw) tw.style.display = 'none';

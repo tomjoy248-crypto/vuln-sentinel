@@ -158,7 +158,7 @@ export const APP_TEMPLATE = `</head>
 
         <h1 class="workbench-title">漏洞扫描与交付平台</h1>
 
-        <span class="workbench-subtitle">输入网址后自动完成扫描、证据收集、修复建议、复扫验证和审计留痕，面向上线前自查、客户交付和持续安全运营，支持直接演示、内测和小范围交付</span>
+        <span class="workbench-subtitle">输入网址后自动完成扫描、证据收集、修复建议、复扫验证和审计留痕，面向上线前自查、客户交付和持续安全运营，支持演示、内测和小范围交付</span>
 
       </div>
 
@@ -190,7 +190,7 @@ export const APP_TEMPLATE = `</head>
 
         <div style="font-size:12px;color:var(--text-secondary);line-height:1.7">① 输入网址并确认授权 → ② 查看风险、证据与修复建议 → ③ 创建工单、复测并导出报告。
 
-        试用模式可先体验公开站点，正式账号可保存记录、发工单、看审计信息和复测，适合内测、演示和交付前验收。</div>
+        受控模式可先体验白名单站点，正式账号可保存记录、发工单、看审计信息和复测，适合内测、演示和交付前验收。</div>
 
       </div>
 
