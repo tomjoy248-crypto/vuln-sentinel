@@ -64,9 +64,10 @@ export function renderSRCResult(data) {
   }
 
   // 主体：左列表 + 右详情
+  const firstFinding = _currentFindings.length > 0 ? _currentFindings[0] : null;
   html += '<div class="src-result-layout">';
   html += '<div class="src-result-sidebar">' + renderFindingList(_currentFindings, _selectedIndex) + '</div>';
-  html += '<div class="src-result-detail" id="src-detail-panel">' + renderFindingDetail(_currentFindings[0], 0) + '</div>';
+  html += '<div class="src-result-detail" id="src-detail-panel">' + renderFindingDetail(firstFinding, 0) + '</div>';
   html += '</div>';
 
   container.innerHTML = html;
@@ -722,6 +723,7 @@ function bindFindingListEvents() {
 
   document.querySelectorAll('.src-filter-btn').forEach((btn) => {
     btn.addEventListener('click', function() {
+      if (this.dataset.action !== 'toggle-fp-filter') return;
       _hideLikelyFp = !_hideLikelyFp;
       const visibleFindings = _hideLikelyFp ? _currentFindings.filter((item) => !item.is_likely_fp) : _currentFindings;
       _selectedIndex = 0;
