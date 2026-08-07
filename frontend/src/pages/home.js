@@ -1391,10 +1391,13 @@ function updateScanStartState() {
   let authStep3 = document.getElementById('auth-check');
   let step1Btn = document.getElementById('scan-btn-step1');
   let step3Btn = document.getElementById('scan-btn');
-  let step1Ready = hasUrl && !!(authStep1 && authStep1.checked);
+  let step1Ready = hasUrl && isLoggedIn();
   let step3Ready = hasUrl && !!(authStep3 && authStep3.checked);
   if (step1Btn) step1Btn.disabled = !step1Ready;
   if (step3Btn) step3Btn.disabled = !step3Ready;
+  if (authStep1 && authStep1.checked && step1Btn && step1Btn.disabled) {
+    step1Btn.disabled = false;
+  }
 }
 
 function refreshScanStartStateSoon() {

@@ -54,10 +54,10 @@ function bindCheckboxToButton(checkboxId, buttonId) {
   let btn = document.getElementById(buttonId);
   if (!cb || !btn) return;
   cb.addEventListener('change', function() {
-    btn.disabled = !cb.checked;
+    if (typeof window.updateScanStartState === 'function') {
+      window.updateScanStartState();
+    }
   });
-  // 初始化时同步状态（处理 restoreAuthCheckbox 可能提前设置的情况）
-  if (cb.checked) btn.disabled = false;
 }
 
 function initAuthCheckboxBinding() {
@@ -99,11 +99,9 @@ function restoreAuthCheckbox() {
       _updatingAuthCheckbox = true;
       targets.forEach(function(t) { if (t) { t.checked = checked; } });
       _updatingAuthCheckbox = false;
-      // 同步按钮状态
-      let b1 = document.getElementById('scan-btn-step1');
+      // 仅记录授权状态，按钮是否可点由页面的输入校验统一控制
       let b2 = document.getElementById('scan-btn');
       let b3 = document.getElementById('batch-go-btn');
-      if (b1) b1.disabled = !checked;
       if (b2) b2.disabled = !checked;
       if (b3) b3.disabled = !checked;
       try { localStorage.setItem('vs_auth_checked', checked ? 'true' : 'false'); } catch(e) {}
