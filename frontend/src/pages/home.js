@@ -3772,20 +3772,28 @@ async function downloadAllFixes() {
   let platformOrder = ['nginx', 'apache', 'express', 'flask', 'spring_boot', 'cloudflare', 'python', 'nodejs'];
   let zip = new JSZip();
   let manifest = {
+    product: 'Vuln Sentinel',
+    package_type: 'repair_configuration_package',
     target: lastScanResult.url || '',
     generated_at: new Date().toISOString(),
+    generated_at_local: new Date().toLocaleString('zh-CN'),
     scan_id: lastScanResult.scan_id || null,
     score: typeof lastScanResult.score === 'number' ? lastScanResult.score : null,
-    findings: Array.isArray(lastScanResult.findings) ? lastScanResult.findings.length : 0
+    findings: Array.isArray(lastScanResult.findings) ? lastScanResult.findings.length : 0,
+    version: '11-S'
   };
   zip.file('manifest.json', JSON.stringify(manifest, null, 2));
   zip.file('README.txt', [
-    '漏洞哨兵修复配置包',
+    'Vuln Sentinel 修复配置包',
     '目标: ' + (lastScanResult.url || ''),
-    '生成时间: ' + new Date().toLocaleString(),
+    '生成时间: ' + new Date().toLocaleString('zh-CN'),
+    '',
+    '内容结构:',
+    '- manifest.json: 包信息与扫描摘要',
+    '- README.txt: 使用说明',
+    '- 各平台 .txt: 对应平台的修复片段',
     '',
     '说明:',
-    '- 该压缩包按平台拆分保存修复建议片段',
     '- 如果某个平台文件为空，表示当前扫描结果暂未生成对应配置',
     '- 请优先查看报告中的漏洞证据和修复说明'
   ].join('\n'));
@@ -3797,13 +3805,13 @@ async function downloadAllFixes() {
     zip.file(p + '.txt', content);
   });
   if (!hasContent) {
-    zip.file('USAGE.txt', '当前扫描结果没有直接生成平台配置片段，请先查看报告中的漏洞证据与修复建议，再重新生成修复包。\n');
+    zip.file('USAGE.txt', '当前扫描结果没有直接生成平台配置片段。请先查看报告中的漏洞证据与修复建议，再重新生成修复包。\n');
   }
   let blob = await zip.generateAsync({ type: 'blob' });
   let url = URL.createObjectURL(blob);
   let a = document.createElement('a');
   a.href = url;
-  a.download = 'security-fixes-package-' + getHost(lastScanResult.url) + '.zip';
+  a.download = 'vuln-sentinel-fixes-' + getHost(lastScanResult.url) + '.zip';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

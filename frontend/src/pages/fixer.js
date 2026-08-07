@@ -355,8 +355,9 @@ export async function downloadRepairReport() {
   let r = lastFixerResult;
   let issues = Array.isArray(r.issues) ? r.issues : [];
   let zip = new JSZip();
-  let report = '=== 漏洞哨兵修复报告 ===\n';
+  let report = '=== Vuln Sentinel 修复报告包 ===\n';
   report += '生成时间：' + new Date().toLocaleString('zh-CN') + '\n';
+  report += '报告类型：修复建议与复测清单\n';
   if (lastTicketContext) {
     report += '来源工单：#' + (lastTicketContext.ticket_id || '') + ' · ' + (lastTicketContext.finding_name || '') + '\n';
     report += '来源扫描：#' + (lastTicketContext.scan_id || '') + ' · ' + (lastTicketContext.finding_type || '') + '\n';
@@ -378,7 +379,7 @@ export async function downloadRepairReport() {
   report += '3. 使用 SSL Labs 检测 HTTPS 配置\n';
   report += '4. 检查 Content-Security-Policy 是否生效\n';
   zip.file('repair-report.txt', report);
-  zip.file('repair-summary.json', JSON.stringify({
+  zip.file('report-summary.json', JSON.stringify({
     generated_at: new Date().toISOString(),
     issues_count: issues.length,
     ticket: lastTicketContext || null,
@@ -388,7 +389,7 @@ export async function downloadRepairReport() {
   let url = URL.createObjectURL(blob);
   let a = document.createElement('a');
   a.href = url;
-  a.download = 'repair-report.zip';
+  a.download = 'vuln-sentinel-repair-report.zip';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
