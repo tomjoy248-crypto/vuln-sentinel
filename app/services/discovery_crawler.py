@@ -42,6 +42,10 @@ class _LinkExtractor(HTMLParser):
         self.forms: list[dict[str, Any]] = []
         self._current_form: dict[str, Any] | None = None
         self._current_inputs: list[dict[str, str]] = []
+        self._current_textarea: dict[str, str] | None = None
+        self._current_select: dict[str, Any] | None = None
+        self._capture_textarea = False
+        self._textarea_buffer: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple]) -> None:
         attr_map = {k.lower(): v for k, v in attrs}
@@ -71,12 +75,54 @@ class _LinkExtractor(HTMLParser):
                     }
                 )
 
+        if tag.lower() == "textarea" and self._current_form is not None:
+            name = attr_map.get("name")
+            if name:
+                self._current_textarea = {"name": name, "value": ""}
+                self._capture_textarea = True
+                self._textarea_buffer = []
+
+        if tag.lower() == "select" and self._current_form is not None:
+            name = attr_map.get("name")
+            if name:
+                self._current_select = {"name": name, "value": "", "options": []}
+
+        if tag.lower() == "option" and self._current_select is not None:
+            option_value = attr_map.get("value")
+            if option_value:
+                self._current_select["options"].append(option_value)
+                if not self._current_select.get("value"):
+                    self._current_select["value"] = option_value
+
     def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "textarea" and self._current_textarea is not None:
+            text_value = "".join(self._textarea_buffer).strip()
+            self._current_textarea["value"] = text_value
+            self._current_inputs.append(self._current_textarea)
+            self._current_textarea = None
+            self._capture_textarea = False
+            self._textarea_buffer = []
+
+        if tag.lower() == "select" and self._current_select is not None:
+            select_value = self._current_select.get("value") or "test"
+            self._current_inputs.append(
+                {
+                    "name": self._current_select["name"],
+                    "type": "select",
+                    "value": select_value,
+                }
+            )
+            self._current_select = None
+
         if tag.lower() == "form" and self._current_form is not None:
             self._current_form["inputs"] = self._current_inputs
             self.forms.append(self._current_form)
             self._current_form = None
             self._current_inputs = []
+
+    def handle_data(self, data: str) -> None:
+        if self._capture_textarea and data:
+            self._textarea_buffer.append(data)
 
 
 def _same_origin(url1: str, url2: str) -> bool:
@@ -128,7 +174,7 @@ def _is_interesting_path(path: str) -> bool:
 
 def _build_form_body(inputs: list[dict[str, str]]) -> str:
     """为表单构建一个占位请求体，用于后续检测器识别参数。"""
-    params = {}
+    params: dict[str, str] = {}
     for inp in inputs:
         name = inp.get("name")
         if not name:
