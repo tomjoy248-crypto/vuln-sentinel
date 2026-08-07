@@ -236,7 +236,16 @@ def generate_executive_summary(scan_data: dict[str, Any]) -> str:
         f"本次扫描共发现 {summary.total_findings} 项安全问题，"
         f"建议优先处理已验证与高危项，并将待复测项作为后续验证清单。"
     )
-    return intro + "\n\n" + EXECUTIVE_SUMMARY_TEMPLATE.format(
+    summary_block = (
+        f"### 0.1 客户摘要\n\n"
+        f"- 目标地址：`{summary.target_url}`\n"
+        f"- 安全评分：{summary.overall_score} / 100\n"
+        f"- 风险等级：{summary.risk_level}\n"
+        f"- 发现问题：{summary.total_findings} 项\n"
+        f"- 已验证：{summary.verified_count} 项，待复测：{summary.unverified_count} 项，误报：{summary.false_positive_count} 项\n"
+        f"- 扫描时长：{_format_duration(summary.scan_duration_ms)}\n"
+    )
+    return intro + "\n\n" + summary_block + "\n" + EXECUTIVE_SUMMARY_TEMPLATE.format(
         target_url=_escape_md_table_cell(summary.target_url),
         total_findings=summary.total_findings,
         verified_count=summary.verified_count,

@@ -6425,6 +6425,11 @@ def generate_pdf_report(scan_data: dict) -> bytes:
         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttf",
         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttf",
         "static/fonts/NotoSansSC-Regular.ttf",
+        r"C:\Windows\Fonts\simhei.ttf",
+        r"C:\Windows\Fonts\simsun.ttc",
+        r"C:\Windows\Fonts\simsunb.ttf",
+        r"C:\Windows\Fonts\NotoSansSC-VF.ttf",
+        r"C:\Windows\Fonts\Noto Sans SC (TrueType).otf",
     ]:
         if os.path.isfile(_fp):
             try:
