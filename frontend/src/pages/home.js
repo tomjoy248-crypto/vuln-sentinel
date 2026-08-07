@@ -2770,7 +2770,7 @@ function renderResult(data) {
     detailHtml += '<span class="finding-name">' + escapeHtml(f.name) + '</span>';
     detailHtml += '<span class="finding-priority ' + priorityClass + '">' + priorityLabel + '</span>';
     if (fbInitial && fbInitial.is_false_positive) {
-      detailHtml += '<span class="fp-badge">已被标记为误报</span>';
+      detailHtml += '<span class="fp-badge">已标记为误报</span>';
     } else if (fbInitial && fbInitial.is_confirmed) {
       detailHtml += '<span class="confirmed-badge">已确认</span>';
     }
@@ -3378,7 +3378,7 @@ function renderResult(data) {
   html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
   html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据摘要，再用 curl 或浏览器 F12 确认；修复后重新扫描，对比评分和证据变化即可验证效果。</div>';
   html += '<div style="margin-top:8px;font-weight:600">证据分层</div>';
-  html += '<div>「已验证」表示已完成交叉验证或用户确认；「可能存在」表示有较强线索但建议人工复核；「存疑」表示证据较弱，建议优先复核后再进入工单。</div>';
+  html += '<div>「已验证」表示已完成交叉验证或用户确认；「可能存在」表示有较强线索但建议人工复核；「待复核」表示证据较弱或不完整，建议先复测再进入工单。</div>';
   html += '<div style="margin-top:8px;font-weight:600">审计范围</div>';
   html += '<div>本报告覆盖 HTTP/TLS 配置、安全响应头、Cookie 标记、CORS、敏感路径和 WAF 识别，不包含破坏性利用或深度渗透动作。</div>';
   html += '<div style="margin-top:8px;font-weight:600">免责声明</div>';

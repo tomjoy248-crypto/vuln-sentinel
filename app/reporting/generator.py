@@ -83,6 +83,21 @@ def _get_risk_level(score: int) -> str:
     return "Informational"
 
 
+def _normalize_verification_status(status: str) -> str:
+    """统一验证状态展示口径。"""
+    mapping = {
+        "verified": "已验证",
+        "confirmed": "已验证",
+        "unverified": "待复核",
+        "probable": "可能存在",
+        "suspected": "存疑",
+        "false positive": "误报",
+        "false_positive": "误报",
+    }
+    key = (status or "").strip().lower().replace("_", " ")
+    return mapping.get(key, status or "待复核")
+
+
 def _build_summary_from_scan_data(scan_data: dict[str, Any]) -> ScanExecutiveSummary:
     """从原始扫描数据构建执行摘要对象。"""
     summary_data = scan_data.get("summary", {})
@@ -127,7 +142,7 @@ def _build_summary_from_scan_data(scan_data: dict[str, Any]) -> ScanExecutiveSum
         false_positive_count = sum(
             1
             for f in findings
-            if f.get("verification_status", "").lower() in {"false positive", "suspected"}
+            if f.get("verification_status", "").lower() in {"false positive", "false_positive", "suspected"}
         )
 
     return ScanExecutiveSummary(
@@ -176,7 +191,7 @@ def _build_findings_from_scan_data(
             type=raw.get("type", raw.get("vulnerability_type", "其他")),
             severity=_normalize_severity(raw.get("severity", "Medium")),
             confidence=raw.get("confidence", "Tentative"),
-            verification_status=raw.get("verification_status", "Unverified"),
+            verification_status=_normalize_verification_status(raw.get("verification_status", "Unverified")),
             description=raw.get("description", ""),
             impact=raw.get("impact", ""),
             reproduction_steps=raw.get("reproduction_steps", []),
@@ -221,9 +236,7 @@ def generate_executive_summary(scan_data: dict[str, Any]) -> str:
         f"本次扫描共发现 {summary.total_findings} 项安全问题，"
         f"建议优先处理已验证与高危项。"
     )
-    return intro + "
-
-" + EXECUTIVE_SUMMARY_TEMPLATE.format(
+    return intro + "\n\n" + EXECUTIVE_SUMMARY_TEMPLATE.format(
         target_url=_escape_md_table_cell(summary.target_url),
         total_findings=summary.total_findings,
         verified_count=summary.verified_count,
