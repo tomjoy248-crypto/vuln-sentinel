@@ -325,7 +325,7 @@ async def run_plugin_scan(
 
     # 2. 误报控制
     _phase_start = time.time()
-    fp_controller = FalsePositiveControl(threshold=0.3)
+    fp_controller = FalsePositiveControl(threshold=0.35)
     findings = fp_controller.analyze_batch(findings)
     fp_marked = sum(1 for f in findings if f.get("is_likely_fp"))
     if fp_marked:
