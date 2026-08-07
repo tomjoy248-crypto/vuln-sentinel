@@ -8,6 +8,7 @@ import {
 } from '../utils.js';
 
 import { showToast } from '../components/Toast.js';
+import JSZip from 'jszip';
 
 import {
   authFetch, apiPost, apiGet, apiDelete, apiPatch, scan, history, trend,
@@ -3763,34 +3764,46 @@ function downloadFixCode(lang) {
 }
 
 // ----- downloadAllFixes -----
-function downloadAllFixes() {
+async function downloadAllFixes() {
   if (!lastScanResult) { showToast('请先完成扫描'); return; }
   // 优先使用已生成的 lastFixResult；若不存在则本地生成
   let fixes = lastFixResult || generateLocalFixes(lastScanResult.findings);
   let platformNames = { nginx: 'Nginx', apache: 'Apache', express: 'Express', flask: 'Flask/FastAPI', spring_boot: 'Spring Boot', cloudflare: 'Cloudflare', python: 'Python', nodejs: 'Node.js' };
   let platformOrder = ['nginx', 'apache', 'express', 'flask', 'spring_boot', 'cloudflare', 'python', 'nodejs'];
-  let lines = ['# 漏洞哨兵修复配置包', '# 目标: ' + (lastScanResult.url || ''), '# 生成时间: ' + new Date().toLocaleString(), ''];
+  let zip = new JSZip();
+  let manifest = {
+    target: lastScanResult.url || '',
+    generated_at: new Date().toISOString(),
+    scan_id: lastScanResult.scan_id || null,
+    score: typeof lastScanResult.score === 'number' ? lastScanResult.score : null,
+    findings: Array.isArray(lastScanResult.findings) ? lastScanResult.findings.length : 0
+  };
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+  zip.file('README.txt', [
+    '漏洞哨兵修复配置包',
+    '目标: ' + (lastScanResult.url || ''),
+    '生成时间: ' + new Date().toLocaleString(),
+    '',
+    '说明:',
+    '- 该压缩包按平台拆分保存修复建议片段',
+    '- 如果某个平台文件为空，表示当前扫描结果暂未生成对应配置',
+    '- 请优先查看报告中的漏洞证据和修复说明'
+  ].join('\n'));
   let hasContent = false;
   platformOrder.forEach(function(p) {
     let arr = fixes && fixes[p] ? fixes[p] : [];
-    lines.push('## ' + (platformNames[p] || p));
-    if (arr.length === 0) {
-      lines.push('暂无适用配置片段');
-    } else {
-      lines.push(_fixesToText(arr));
-      hasContent = true;
-    }
-    lines.push('');
+    let content = arr.length === 0 ? '暂无适用配置片段\n' : _fixesToText(arr) + '\n';
+    if (arr.length > 0) hasContent = true;
+    zip.file(p + '.txt', content);
   });
   if (!hasContent) {
-    lines.push('## 使用建议');
-    lines.push('当前扫描结果没有直接生成平台配置片段，请先查看报告中的漏洞证据与修复建议，再重新生成修复包。');
+    zip.file('USAGE.txt', '当前扫描结果没有直接生成平台配置片段，请先查看报告中的漏洞证据与修复建议，再重新生成修复包。\n');
   }
-  let blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+  let blob = await zip.generateAsync({ type: 'blob' });
   let url = URL.createObjectURL(blob);
   let a = document.createElement('a');
   a.href = url;
-  a.download = 'security-fixes-package-' + getHost(lastScanResult.url) + '.txt';
+  a.download = 'security-fixes-package-' + getHost(lastScanResult.url) + '.zip';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

@@ -350,9 +350,11 @@ export function downloadNginxConf() {
   showToast('nginx.conf 已下载');
 }
 
-export function downloadRepairReport() {
+export async function downloadRepairReport() {
   if (!lastFixerResult) { showToast('请先分析配置'); return; }
   let r = lastFixerResult;
+  let issues = Array.isArray(r.issues) ? r.issues : [];
+  let zip = new JSZip();
   let report = '=== 漏洞哨兵修复报告 ===\n';
   report += '生成时间：' + new Date().toLocaleString('zh-CN') + '\n';
   if (lastTicketContext) {
@@ -360,32 +362,38 @@ export function downloadRepairReport() {
     report += '来源扫描：#' + (lastTicketContext.scan_id || '') + ' · ' + (lastTicketContext.finding_type || '') + '\n';
   }
   report += '\n--- 原始风险 ---\n';
-  r.issues.forEach(function(issue, i) {
-    report += (i + 1) + '. [' + issue.severity.toUpperCase() + '] ' + issue.name + '\n';
-    report += '   原因：' + issue.reason + '\n';
+  issues.forEach(function(issue, i) {
+    report += (i + 1) + '. [' + String(issue.severity || '').toUpperCase() + '] ' + (issue.name || '') + '\n';
+    report += '   原因：' + (issue.reason || '') + '\n';
   });
   report += '\n--- 修复项 ---\n';
-  r.issues.forEach(function(issue, i) {
-    report += (i + 1) + '. ' + issue.name + '：已修复\n';
+  issues.forEach(function(issue, i) {
+    report += (i + 1) + '. ' + (issue.name || '') + '：已修复\n';
   });
   report += '\n--- 修复后配置 ---\n';
-  report += r.fixed + '\n';
+  report += (r.fixed || '') + '\n';
   report += '\n--- 复测建议 ---\n';
   report += '1. 使用 curl -I 检查响应头是否包含安全头\n';
   report += '2. 访问 /.env 等敏感路径应返回 403\n';
   report += '3. 使用 SSL Labs 检测 HTTPS 配置\n';
   report += '4. 检查 Content-Security-Policy 是否生效\n';
-
-  let blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+  zip.file('repair-report.txt', report);
+  zip.file('repair-summary.json', JSON.stringify({
+    generated_at: new Date().toISOString(),
+    issues_count: issues.length,
+    ticket: lastTicketContext || null,
+    has_fixed_code: !!(r.fixed && String(r.fixed).trim())
+  }, null, 2));
+  let blob = await zip.generateAsync({ type: 'blob' });
   let url = URL.createObjectURL(blob);
   let a = document.createElement('a');
   a.href = url;
-  a.download = 'repair-report.txt';
+  a.download = 'repair-report.zip';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showToast('修复报告已下载');
+  showToast('修复报告包已下载');
 }
 
 // 将需要在 HTML 内联 onclick 中调用的函数暴露到全局

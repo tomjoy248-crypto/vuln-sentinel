@@ -18,5 +18,8 @@
     "jsdom": "^25.0.0",
     "vite": "^6.4.3",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
   }
 }
