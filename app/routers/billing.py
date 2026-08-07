@@ -38,7 +38,7 @@ async def api_billing_plans() -> dict:
 async def api_billing_purchase(
     req: PurchasePlanRequest, user: dict = Depends(require_login)
 ) -> dict:
-    """购买套餐。生产环境需使用真实支付通道，本地开发可保留测试通道。"""
+    """购买套餐。生产环境需使用真实支付通道，本地开发可保留开发环境通道。"""
     from app.services.billing_service import purchase_plan
 
     result = purchase_plan(user["user_id"], req.plan_id)
@@ -78,7 +78,7 @@ async def api_admin_recharge(
 async def api_billing_create_order(
     req: CreateOrderRequest, user: dict = Depends(require_login)
 ) -> dict:
-    """创建支付订单。生产环境使用真实支付通道，本地开发可保留测试通道。"""
+    """创建支付订单。生产环境使用真实支付通道，本地开发可保留开发环境通道。"""
     from app.services.billing_service import create_payment_order
 
     result = create_payment_order(

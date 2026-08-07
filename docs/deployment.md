@@ -70,7 +70,7 @@ REDIS_URL=redis://redis:6379/0
 - 支付宝：`POST /api/billing/order`（provider=`alipay`）
 - 微信：`POST /api/billing/order`（provider=`wechat`）
 
-未配置真实商户参数时，生产环境仅返回 `pending` 订单与空的 `pay_params`；本地联调可使用本地测试模式，生产环境不应开启任何 mock 充值回调。
+未配置真实商户参数时，生产环境仅返回 `pending` 订单与空的 `pay_params`；本地联调可使用开发环境通道，生产环境不应开启任何 mock 充值回调。
 
 异步通知回调接口：
 - 支付宝：`POST /api/billing/webhook/alipay`

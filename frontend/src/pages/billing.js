@@ -84,7 +84,7 @@ function getPlanPermission(plan) {
 }
 
 function getProviderLabel(provider) {
-  const map = { mock: '本地测试通道', stripe: 'Stripe', alipay: '支付宝', wechat: '微信支付' };
+  const map = { mock: '开发环境通道', stripe: 'Stripe', alipay: '支付宝', wechat: '微信支付' };
   return map[provider] || provider;
 }
 
@@ -120,7 +120,7 @@ function loadPlans() {
     html += '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
     html += '<div>• 所有订单都会进入充值记录，便于财务对账与追踪</div>';
     html += '<div>• 充值后可立即用于扫描、复测、修复验证、报告导出和审计留痕</div>';
-    html += '<div>• 生产环境默认仅开放真实支付；本地开发可用测试通道</div>';
+    html += '<div>• 生产环境默认仅开放真实支付；开发环境可用通道</div>';
     html += '</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">';
     plans.forEach(function(plan) {
@@ -185,7 +185,7 @@ function buyPlan(planId, ev) {
       // Stripe 跳转
       window.location.href = data.data.checkout_url;
     } else if (data.data && data.data.transaction_id) {
-      // 本地测试通道 / 直接到账
+      // 开发环境通道 / 直接到账
       showToast('支付成功，积分已到账', 'success');
       updateUserCredits();
       loadRechargeRecords();
