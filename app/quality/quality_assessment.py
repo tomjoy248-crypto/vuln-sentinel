@@ -64,7 +64,7 @@ def assess_scan_quality(
             fp_count += 1
 
     # 漏洞类型覆盖（期望至少覆盖 5 种基础类型）
-    expected_types = {"sqli", "xss", "header_missing", "info_leak", "csrf", "ssl"}
+    expected_types = {"sqli", "xss", "header_missing", "info_leak", "csrf", "ssl", "cors_misconfig", "open_redirect", "cmdi", "ssrf", "traversal"}
     type_coverage = len(vuln_types & expected_types) / max(1, len(expected_types))
     type_bonus = min(30, len(vuln_types) * 3)
 
@@ -121,7 +121,7 @@ def assess_scan_quality(
     # ---------- 建议 ----------
     recommendations: list[str] = []
     if type_coverage < 0.5:
-        recommendations.append("建议启用深度扫描模式以提升漏洞类型覆盖度")
+        recommendations.append("建议启用深度扫描模式，补充更多端点、参数和漏洞类型覆盖")
     if fp_rate > 0.3:
         recommendations.append(
             "检测到较高比例的潜在误报，建议人工复核标记为低置信度的 finding"
@@ -132,10 +132,10 @@ def assess_scan_quality(
         )
     if total_findings == 0:
         recommendations.append(
-            "未检测到漏洞，建议确认目标是否可访问、是否存在 WAF 拦截"
+            "未检测到漏洞，建议确认目标是否可访问、页面是否存在反爬或 WAF 拦截"
         )
     if not recommendations:
-        recommendations.append("扫描质量良好，建议关注高危及以上级别的 finding")
+        recommendations.append("当前结果可信度较高，建议优先关注高危及以上 finding 并复测修复项")
 
     assessment.recommendations = recommendations
     return assessment

@@ -58,7 +58,7 @@ export function renderSRCResult(data) {
   // 顶部概览
   html += renderHeader(score, riskLevel, summary, url, data);
 
-  // 扫描质量详情面板
+  // 扫描可信度详情面板
   if (data.quality && data.quality.overall_score !== undefined) {
     html += renderQualityPanel(data.quality, data.dedup_stats);
   }
@@ -99,7 +99,7 @@ function renderQualityPanel(quality, dedupStats) {
        </div>`
     : '';
 
-  // 可靠性详情
+  // 结果可信度
   const fpRate = reliabilityBreakdown.fp_rate !== undefined ? (reliabilityBreakdown.fp_rate * 100).toFixed(0) + '%' : '-';
   const highConfRate = reliabilityBreakdown.high_confidence_rate !== undefined ? (reliabilityBreakdown.high_confidence_rate * 100).toFixed(0) + '%' : '-';
 
@@ -110,7 +110,7 @@ function renderQualityPanel(quality, dedupStats) {
           <div class="src-quality-ring" style="border-color:${qColor}">
             <span style="color:${qColor};font-size:22px;font-weight:700">${qScore}</span>
           </div>
-          <span class="src-quality-title">扫描质量</span>
+          <span class="src-quality-title">扫描可信度</span>
         </div>
         <div class="src-quality-bars">
           <div class="src-quality-bar-row">
@@ -129,12 +129,12 @@ function renderQualityPanel(quality, dedupStats) {
             <span class="src-quality-bar-val">${depth}</span>
           </div>
         </div>
-        <button class="src-quality-expand" id="src-quality-expand-btn">展开详情</button>
+        <button class="src-quality-expand" id="src-quality-expand-btn">查看明细</button>
       </div>
       <div class="src-quality-detail" id="src-quality-detail" style="display:none">
         <div class="src-quality-grid">
           <div class="src-quality-section">
-            <div class="src-quality-section-title">覆盖度详情</div>
+            <div class="src-quality-section-title">覆盖面说明</div>
             <div class="src-quality-section-body">
               <div class="src-quality-kv"><span>检测漏洞类型</span><code>${typesDetected.length} 种</code></div>
               <div class="src-quality-kv"><span>类型列表</span><code>${escapeHtml(typesDetected.join(', ') || '-')}</code></div>
@@ -142,7 +142,7 @@ function renderQualityPanel(quality, dedupStats) {
             </div>
           </div>
           <div class="src-quality-section">
-            <div class="src-quality-section-title">可靠性详情</div>
+            <div class="src-quality-section-title">结果可信度</div>
             <div class="src-quality-section-body">
               <div class="src-quality-kv"><span>误报率</span><code>${fpRate}</code></div>
               <div class="src-quality-kv"><span>高置信度比例</span><code>${highConfRate}</code></div>
@@ -154,7 +154,7 @@ function renderQualityPanel(quality, dedupStats) {
         ${dedupHtml}
         ${recommendations.length > 0 ? `
           <div class="src-quality-recommendations">
-            <div class="src-quality-section-title">扫描建议</div>
+            <div class="src-quality-section-title">交付建议</div>
             <ul class="src-quality-rec-list">
               ${recommendations.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
             </ul>
@@ -174,13 +174,13 @@ function bindQualityPanelEvents() {
     if (e.target === btn) return;
     const visible = detail.style.display !== 'none';
     detail.style.display = visible ? 'none' : 'block';
-    btn.textContent = visible ? '展开详情' : '收起';
+    btn.textContent = visible ? '查看明细' : '收起明细';
   });
   btn.addEventListener('click', function(e) {
     e.stopPropagation();
     const visible = detail.style.display !== 'none';
     detail.style.display = visible ? 'none' : 'block';
-    btn.textContent = visible ? '展开详情' : '收起';
+    btn.textContent = visible ? '查看明细' : '收起明细';
   });
 }
 
