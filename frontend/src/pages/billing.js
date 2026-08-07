@@ -84,7 +84,7 @@ function getPlanPermission(plan) {
 }
 
 function getProviderLabel(provider) {
-  const map = { mock: '本地测试支付', stripe: 'Stripe', alipay: '支付宝', wechat: '微信支付' };
+  const map = { mock: '本地测试通道', stripe: 'Stripe', alipay: '支付宝', wechat: '微信支付' };
   return map[provider] || provider;
 }
 
