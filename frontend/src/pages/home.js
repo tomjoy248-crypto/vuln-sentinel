@@ -1371,7 +1371,7 @@ function startScanDirect() {
   // 同时把 URL 也填到 step3 输入框，保留 step3 备用
   let confirmedInput = document.getElementById('scan-url-confirmed');
   if (confirmedInput) confirmedInput.value = url;
-  try { updateScanStartState(); } catch (e) {}
+  refreshScanStartStateSoon();
   // 直接触发扫描
   startScan();
   } catch (e) {
@@ -1391,8 +1391,16 @@ function updateScanStartState() {
   let authStep3 = document.getElementById('auth-check');
   let step1Btn = document.getElementById('scan-btn-step1');
   let step3Btn = document.getElementById('scan-btn');
-  if (step1Btn) step1Btn.disabled = !(hasUrl && authStep1 && authStep1.checked);
-  if (step3Btn) step3Btn.disabled = !(hasUrl && authStep3 && authStep3.checked);
+  let step1Ready = hasUrl && !!(authStep1 && authStep1.checked);
+  let step3Ready = hasUrl && !!(authStep3 && authStep3.checked);
+  if (step1Btn) step1Btn.disabled = !step1Ready;
+  if (step3Btn) step3Btn.disabled = !step3Ready;
+}
+
+function refreshScanStartStateSoon() {
+  try { updateScanStartState(); } catch (e) {}
+  setTimeout(function() { try { updateScanStartState(); } catch (e) {} }, 100);
+  setTimeout(function() { try { updateScanStartState(); } catch (e) {} }, 500);
 }
 
 // ----- copyFixCode -----
@@ -4408,3 +4416,14 @@ export {
   dismissHomeOnboarding,
   showHomeOnboarding,
 };
+
+
+window.addEventListener('load', function() {
+  refreshScanStartStateSoon();
+  let scanUrl = document.getElementById('scan-url');
+  if (scanUrl) scanUrl.addEventListener('input', refreshScanStartStateSoon);
+  let authStep1 = document.getElementById('auth-check-step1');
+  if (authStep1) authStep1.addEventListener('change', refreshScanStartStateSoon);
+  let authStep3 = document.getElementById('auth-check');
+  if (authStep3) authStep3.addEventListener('change', refreshScanStartStateSoon);
+});
