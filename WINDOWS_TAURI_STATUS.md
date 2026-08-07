@@ -9,10 +9,10 @@
 
 ## 当前阻塞
 
-- 还需要完整的 Visual C++ Build Tools
-- 目前桌面壳已转为 `NSIS` 路线，重点是稳定构建、启动与安装体验。
+- 已具备可编译环境，`cargo check` 与 Windows 打包已验证通过
+- 目前桌面壳已转为 `NSIS` 路线，重点是稳定构建、启动和安装体验。
 
 ## 下一步
 
-- 装好 MSVC 工具链后再次执行 `cargo check`
-- 通过后再做 `cargo tauri build`，并验证 `NSIS` 安装、卸载与快捷方式。
+- 保持 `tauri-cli`、Rust 和 Windows 打包脚本可用
+- 继续验证 `NSIS` 安装、卸载与快捷方式。
