@@ -300,6 +300,7 @@ async def run_plugin_scan(
                                 headers=context.headers,
                                 body=body,
                                 content_type="application/x-www-form-urlencoded",
+                                method=method,
                             )
                         except Exception as exc:
                             logger.debug("Form fuzz failed for %s: %s", target_url, exc)

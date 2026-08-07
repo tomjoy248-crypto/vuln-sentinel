@@ -175,12 +175,22 @@ class FuzzEngine:
                         base_url, params, param_name, payload
                     )
                     try:
-                        resp = await client.get(
-                            fuzz_url,
-                            headers=headers,
-                            follow_redirects=self.follow_redirects,
-                            timeout=self.request_timeout,
-                        )
+                        request_method = method.upper() if method else 'GET'
+                        if request_method == 'POST' and body and content_type:
+                            resp = await client.post(
+                                base_url,
+                                content=urlencode({k: (v[0] if v else '') for k, v in params.items() if k != param_name} | {param_name: payload}),
+                                headers={**(headers or {}), 'Content-Type': content_type},
+                                follow_redirects=self.follow_redirects,
+                                timeout=self.request_timeout,
+                            )
+                        else:
+                            resp = await client.get(
+                                fuzz_url,
+                                headers=headers,
+                                follow_redirects=self.follow_redirects,
+                                timeout=self.request_timeout,
+                            )
                         snippet = resp.text[:500]
                         evidence = self._detect_evidence(technique, payload, snippet)
                         if evidence:
