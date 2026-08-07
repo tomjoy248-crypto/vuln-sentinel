@@ -1850,7 +1850,7 @@ function mergeRealData(url, apiData) {
   let aiReport = {
     summary: '对 ' + host + ' 的真实安全扫描已完成。共发现 ' + findings.length + ' 个安全问题，综合安全评分为 ' + score + ' 分（满分 100）。',
     priority: findings.length > 0 ? '优先修复标记为"高风险"的安全问题。' : '安全状况良好，建议持续监控。',
-    boundary: '本次检测基于真实 HTTP 响应头分析。'
+    boundary: '本次检测基于真实 HTTP 响应头判断。'
   };
 
   return {
@@ -2044,7 +2044,7 @@ function retryScan() {
   let stages = [
     { id: 'dns', label: 'DNS 解析', detail: host },
     { id: 'connect', label: 'TCP 连接', detail: '443/80 端口' },
-    { id: 'headers', label: '响应头分析', detail: '9 项安全头' },
+    { id: 'headers', label: '响应头判断', detail: '9 项安全头' },
     { id: 'ssl', label: 'SSL 证书检查', detail: '证书链/有效期' },
     { id: 'sensitive', label: '敏感路径扫描', detail: '12 个路径' },
     { id: 'waf', label: 'WAF 识别', detail: '6 类厂商指纹' },

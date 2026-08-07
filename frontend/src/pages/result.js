@@ -317,7 +317,7 @@ function renderFindingList(findings, selectedIndex) {
       const typeLabel = f.type ? `<span class="src-list-type">${escapeHtml(f.type.toUpperCase())}</span>` : '';
       const host = f.url ? new URL(f.url, window.location.href).hostname : '';
       const path = f.url ? new URL(f.url, window.location.href).pathname : '';
-      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag" title="需要人工复核或复测">待复核</span>' : '';
+      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag" title="需要人工复测或复测">待复测</span>' : '';
       const corrGroup = f.correlation_group ? `<span class="src-list-corr" title="关联组 ${escapeAttr(f.correlation_group)}（${f.correlation_size || 0} 个相关）">${escapeHtml(f.correlation_group)}</span>` : '';
       const mergedCount = f.merged_count > 1 ? `<span class="src-list-merged" title="合并了 ${f.merged_count} 个重复项">×${f.merged_count}</span>` : '';
       const vStatus = f.verification_status;
@@ -379,7 +379,7 @@ function renderFindingDetail(finding, index) {
       ${finding.severity_score ? `<span class="src-detail-score">评分 ${finding.severity_score}/10</span>` : ''}
       <span class="src-detail-confidence">置信度 ${escapeHtml(finding.adjusted_confidence || finding.confidence || 'medium')}</span>
       ${finding.verification_status ? `<span class="src-detail-verify-badge ${finding.verification_status}">${finding.verification_status === 'confirmed' ? '已验证' : finding.verification_status === 'probable' ? '可能存在' : '存疑'}</span>` : ''}
-      ${finding.is_likely_fp ? '<span class="src-detail-fp-badge">待复核</span>' : ''}
+      ${finding.is_likely_fp ? '<span class="src-detail-fp-badge">待复测</span>' : ''}
       ${finding.user_feedback ? (finding.user_feedback.is_false_positive ? '<span class="src-detail-fp-badge" title="您已标记为误报">已标记误报</span>' : '<span class="src-detail-verify-badge verified" title="您已确认有效">您已确认</span>') : ''}
     </div>
   </div>`;
