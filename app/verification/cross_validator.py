@@ -1865,15 +1865,32 @@ async def _verify_header_missing(
         )
         if resp:
             actual_headers = {k.lower(): v for k, v in resp.headers.items()}
+            server_banner = (actual_headers.get("server") or "").lower()
+            content_type = (actual_headers.get("content-type") or "").lower()
+            generic_public_site = any(
+                marker in server_banner
+                for marker in ["cloudflare", "akamai", "nginx", "apache"]
+            ) or "text/html" in content_type
+
             if header_name.lower() not in actual_headers:
-                score = 100
-                techniques.append(
-                    {
-                        "name": "header_absence",
-                        "passed": True,
-                        "note": f"确认响应中不存在 {header_name} 头",
-                    }
-                )
+                if header_name in {"Strict-Transport-Security", "X-Frame-Options"} and generic_public_site:
+                    score = 70
+                    techniques.append(
+                        {
+                            "name": "header_absence",
+                            "passed": True,
+                            "note": f"公共站点缺少 {header_name}，先保守标记为待复核",
+                        }
+                    )
+                else:
+                    score = 90
+                    techniques.append(
+                        {
+                            "name": "header_absence",
+                            "passed": True,
+                            "note": f"确认响应中不存在 {header_name} 头",
+                        }
+                    )
             else:
                 score = 0
                 techniques.append(
@@ -1884,21 +1901,21 @@ async def _verify_header_missing(
                     }
                 )
         else:
-            score = 50
+            score = 40
             techniques.append(
                 {
                     "name": "header_absence",
-                    "passed": True,
-                    "note": "请求失败，保持原始判定",
+                    "passed": False,
+                    "note": "请求失败，保守保留为待复核",
                 }
             )
     else:
-        score = 70
+        score = 55
         techniques.append(
             {
                 "name": "existing_evidence",
-                "passed": True,
-                "note": "基于原始扫描数据判定",
+                "passed": False,
+                "note": "基于原始扫描数据的保守判定",
             }
         )
 
