@@ -271,7 +271,7 @@ start.bat
 powershell -ExecutionPolicy Bypass -File scripts\package_windows_release.ps1
 ```
 
-打包完成后，安装包会被复制到 `artifacts/windows/`，便于直接发送给客户或放到下载页。
+打包完成后，安装包会被复制到 `artifacts/windows/`，同时生成 `release-manifest.json` 和 SHA256 校验值，便于直接发送给客户或放到下载页。
 
 
 ## Windows 桌面版
