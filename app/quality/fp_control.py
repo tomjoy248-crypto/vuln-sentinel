@@ -80,7 +80,7 @@ class FalsePositiveControl:
         request_text = self._get_request_text(finding)
 
         # 规则 1：WAF/防火墙拦截响应
-        if self._contains_fp_keywords(response):
+        if self._contains_fp_keywords(response) and not self._has_strong_evidence(finding, vuln_type):
             fp_score += 0.35
             reasons.append("响应包含 WAF/拦截关键词，可能是防护设备触发的误报")
 
@@ -104,12 +104,12 @@ class FalsePositiveControl:
             reasons.append("存在强利用证据，降低误报概率")
 
         # 规则 5：请求参数为常见静态资源后缀
-        if request_text and self._is_static_resource(request_text):
+        if request_text and self._is_static_resource(request_text) and not self._has_strong_evidence(finding, vuln_type):
             fp_score += 0.2
             reasons.append("请求目标为静态资源，动态漏洞利用概率低")
 
         # 规则 6：响应中包含页面框架/模板代码（可能为反射而非注入）
-        if vuln_type in ("xss", "sqli") and self._contains_framework_markup(response):
+        if vuln_type in ("xss", "sqli") and self._contains_framework_markup(response) and not self._has_strong_evidence(finding, vuln_type):
             fp_score += 0.15
             reasons.append("响应包含框架/模板代码，可能是正常页面反射")
 
@@ -205,7 +205,8 @@ class FalsePositiveControl:
             ".woff",
             ".ttf",
         ]
-        return any(ext in request_text for ext in static_exts)
+        first_line = request_text.splitlines()[0] if request_text else ""
+        return any(ext in first_line for ext in static_exts)
 
     def _contains_framework_markup(self, response: str) -> bool:
         framework_patterns = [
