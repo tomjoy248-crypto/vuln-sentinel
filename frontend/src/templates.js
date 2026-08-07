@@ -666,7 +666,7 @@ export const APP_TEMPLATE = `</head>
 
         <div style="font-size:12px;margin-bottom:8px;color:var(--text)">选择公开演示站点，立即查看扫描结果</div>
 
-        <div style="margin-top:10px"><button onclick="loadPublicDemo()" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">查看示例结果</button></div>
+        <div style="margin-top:10px"><button onclick="loadPublicDemo()" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">查看公开演示结果</button></div>
 
       </div>
 
@@ -1876,7 +1876,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">每行一个 URL，最多 5 个。建议先用快速模式扫描示例站点：</div>
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">每行一个 URL，最多 5 个。建议先用快速模式扫描公开演示站点：</div>
 
     <textarea id="batch-urls" placeholder="https://example.com&#10;https://httpbin.org&#10;https://www.iana.org" style="width:100%;min-height:120px;padding:10px;border:1px solid var(--border);border-radius:2px;font-family:monospace;font-size:12px;background:var(--bg);color:var(--text);resize:vertical"></textarea>
 
