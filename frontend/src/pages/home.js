@@ -2407,9 +2407,9 @@ function renderResult(data) {
   if (highCount + medCount > 0) {
     managementSummary = '当前结果显示存在 ' + highCount + ' 个高风险和 ' + medCount + ' 个中风险项，建议优先修复对外暴露面并在发布前复测。';
   } else if (lowCount > 0) {
-    managementSummary = '当前风险以低危和信息项为主，建议保持修复节奏并持续监控。';
+    managementSummary = '当前风险以低危和提示项为主，建议保持修复节奏并持续监控。';
   } else {
-    managementSummary = '当前未发现明显风险，可作为基线结果保留并持续监控后续变化。';
+    managementSummary = '当前未发现明显风险，可作为基线结果保留，并在版本变更后复测。';
   }
   html += '<div class="card fade-in-up" style="animation-delay:0.05s;padding:14px;margin-top:12px;border:1px solid rgba(75,110,175,0.25);background:rgba(60,63,65,0.9)">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">';
@@ -2437,10 +2437,10 @@ function renderResult(data) {
   html += '<div id="radar-chart-container" style="display:flex;justify-content:center"></div>';
   html += '</div>';
 
-  // 攻击模拟按钮
+  // 风险演示按钮
   html += '<div class="card fade-in-up" style="animation-delay:0.2s">';
-  html += '<div class="card-title">效果演示</div>';
-  html += '<p style="margin:0 0 14px 0;font-size:12px;color:var(--text-secondary)">展示常见风险验证场景，用于说明问题影响</p>';
+  html += '<div class="card-title">风险演示</div>';
+  html += '<p style="margin:0 0 14px 0;font-size:12px;color:var(--text-secondary)">展示常见风险场景，用于说明问题影响</p>';
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
   html += '<button onclick="simulateCSRF(\'' + escapeAttr(data.url) + '\')" style="padding:10px 8px;border:1px solid rgba(199,84,80,0.3);background:rgba(199,84,80,0.08);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;color:#dc2626;transition:background 0.15s" onmouseover="this.style.background=\'rgba(199,84,80,0.15)\'" onmouseout="this.style.background=\'rgba(199,84,80,0.08)\'">';
   html += '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">CSRF</div>';
@@ -3376,7 +3376,7 @@ function renderResult(data) {
   html += '<div style="margin-top:4px">不进行：破坏性攻击、密码爆破、权限绕过、漏洞利用、主动渗透测试。</div>';
   html += '<div style="margin-top:4px;color:var(--text-light)">如需全面安全评估，建议配合专业渗透测试服务。</div>';
   html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
-  html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据摘要，再用 curl 或浏览器 F12 确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
+  html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据摘要，再结合二次扫描结果和原始响应确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
   html += '<div style="margin-top:8px;font-weight:600">证据分层</div>';
   html += '<div>「已验证」表示已完成交叉验证或用户确认；「可能存在」表示有较强线索但建议人工复核；「待复核」表示证据较弱或不完整，建议先复测再进入工单。</div>';
   html += '<div style="margin-top:8px;font-weight:600">审计范围</div>';
