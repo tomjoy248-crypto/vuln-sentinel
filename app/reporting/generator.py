@@ -232,9 +232,9 @@ def generate_executive_summary(scan_data: dict[str, Any]) -> str:
     """生成 Markdown 执行摘要章节。"""
     summary = _build_summary_from_scan_data(scan_data)
     intro = (
-        f"本报告面向上线前自查、客户交付与复扫留档。"
+        f"本报告面向客户交付、上线前验收与复扫留档。"
         f"本次扫描共发现 {summary.total_findings} 项安全问题，"
-        f"建议优先处理已验证与高危项。"
+        f"建议优先处理已验证与高危项，并将待复测项作为后续验证清单。"
     )
     return intro + "\n\n" + EXECUTIVE_SUMMARY_TEMPLATE.format(
         target_url=_escape_md_table_cell(summary.target_url),

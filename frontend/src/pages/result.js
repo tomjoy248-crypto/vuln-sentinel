@@ -285,8 +285,8 @@ function renderHeader(score, riskLevel, summary, url, data) {
         <div class="src-report-summary">${escapeHtml(reportSummary)}</div>
         <div class="src-report-intro">${escapeHtml(reportIntro)}</div>
         <div class="src-report-exec-summary">
-          <div class="src-report-exec-title">交付摘要</div>
-          <div class="src-report-exec-text">当前结果已按验证状态和可信度排序，便于直接筛选可交付问题、待复测项和疑似误报项。建议优先关闭高危与已验证项，再复测中低风险项并保留证据链。</div>
+          <div class="src-report-exec-title">客户摘要</div>
+          <div class="src-report-exec-text">本次结果已按风险优先级、验证状态和可信度整理，便于直接确认需要修复的问题、待复测项和疑似误报项。建议先关闭高危与已验证项，再复测中低风险项并保留证据链，适合作为客户沟通与交付附件。</div>
         </div>
         <div class="src-report-next-step">
           <div class="src-report-next-step-title">交付建议</div>
