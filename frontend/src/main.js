@@ -479,6 +479,7 @@ function doLogin() {
       updateAlertBadge();
       updateUserCredits();
       if (typeof window.updateScanCreditsHint === 'function') window.updateScanCreditsHint();
+      if (typeof window.refreshScanStartStateSoon === 'function') window.refreshScanStartStateSoon();
       showToast('登录成功，欢迎 ' + resolvedUsername);
       navigateTo('scan');
     } else {
@@ -522,6 +523,7 @@ function doRegister() {
       updateAlertBadge();
       updateUserCredits();
       if (typeof window.updateScanCreditsHint === 'function') window.updateScanCreditsHint();
+      if (typeof window.refreshScanStartStateSoon === 'function') window.refreshScanStartStateSoon();
       showToast('注册成功，欢迎 ' + resolvedUsername);
       navigateTo('scan');
     } else {
