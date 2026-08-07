@@ -481,11 +481,18 @@ def generate_src_report(scan_data: dict[str, Any], format: str = "markdown") -> 
     client_summary = (
         "## 0. 客户摘要\n\n"
         f"- 目标地址：`{summary.target_url}`\n"
+        f"- 扫描时间：{summary.scan_time}\n"
         f"- 安全评分：{summary.overall_score} / 100\n"
         f"- 风险等级：{summary.risk_level}\n"
+        f"- 发现问题：{summary.total_findings} 项\n"
         f"- 已验证：{summary.verified_count}，待复测：{summary.unverified_count}，误报：{summary.false_positive_count}\n"
         f"- 扫描时长：{_format_duration(summary.scan_duration_ms)}\n\n"
-        "> 建议优先关闭高危与已验证项，再复测中低风险项并保留证据链。"
+        "### 0.1 交付结论\n\n"
+        "> 本次结果可作为客户沟通、上线验收与复扫留档的基础版本。建议优先关闭高危与已验证项，再复测中低风险项并保留证据链。\n\n"
+        "### 0.2 后续动作\n\n"
+        "1. 先处理高危与已验证问题。\n"
+        "2. 再复测中低风险项并确认修复是否生效。\n"
+        "3. 最后将结论、证据和变更记录归档，形成交付闭环。"
     )
 
     parts = [

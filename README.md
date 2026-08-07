@@ -283,7 +283,7 @@ powershell -ExecutionPolicy Bypass -File scripts\package_windows_release.ps1
 - 卸载后会移除安装目录和快捷方式
 - 当前桌面版以 `src-tauri/tauri.conf.json` 的 `NSIS` 配置为准
 
-### Windows 实机自测清单
+### Windows 实机验收清单
 
 1. 运行 `artifacts/windows/Vuln-Sentinel-11.0.0-win64-setup.exe`。
 2. 检查是否可正常安装到当前用户目录。
