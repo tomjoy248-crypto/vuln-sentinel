@@ -241,7 +241,7 @@ export const APP_TEMPLATE = `</head>
       <button class="scan-btn" id="scan-btn-step1" onclick="startScanDirect()" disabled>开始安全扫描</button>
       <div style="text-align:center;margin-top:10px">
         <button onclick="goVerifyStep2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">域名归属验证（可选）</button>
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">快速跳过验证仅适用于自有测试环境</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">快速测试仅适用于自有测试环境，正式交付建议完成归属验证</div>
       </div>
       <div style="text-align:center;margin-top:8px">
         <button onclick="showBatchScanModal()" style="background:none;border:1px dashed var(--border);color:var(--text-secondary);padding:8px 16px;border-radius:2px;cursor:pointer;font-size:12px;width:100%">批量扫描（一次最多 5 个 URL，适合交付前巡检）</button>
@@ -505,7 +505,7 @@ export const APP_TEMPLATE = `</head>
     <div id="auth-guest" style="display:none">
       <div class="card auth-form">
         <h3>账号登录</h3>
-        <div class="auth-form-error" id="login-error"></div><div id="auth-status-message" class="auth-form-hint" style="margin-top:8px;color:var(--text-secondary)">默认演示账号：demo / demo123</div>
+        <div class="auth-form-error" id="login-error"></div><div id="auth-status-message" class="auth-form-hint" style="margin-top:8px;color:var(--text-secondary)">默认演示账号：demo / demo123（仅演示环境）</div>
         <div class="auth-form-row">
           <input type="text" id="login-username" placeholder="用户名" aria-label="用户名" />
         </div>
