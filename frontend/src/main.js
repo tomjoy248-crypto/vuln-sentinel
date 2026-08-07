@@ -326,6 +326,10 @@ function authFetch(url, options) {
   // 线上模式：自动补全 base URL（防 file:// 被混用）
   let fullUrl = (url.indexOf('http') === 0) ? url : (API_BASE + url);
   return fetch(fullUrl, options).then(function(resp) {
+    if (resp.status === 404 && url.indexOf('/api/') === 0 && url.indexOf('/api/v1/') !== 0) {
+      let fallbackUrl = (url.indexOf('http') === 0) ? url : (API_BASE + '/api/v1' + url.slice('/api'.length));
+      return fetch(fallbackUrl, options);
+    }
     if (resp.status === 401 && !skipAuthExpiry) {
       // 温和处理 401：仅清除过期 token 并更新 UI，不强制跳转或弹窗
       // 避免页面加载时的探测请求导致用户被意外登出
@@ -460,14 +464,16 @@ function doLogin() {
     method: 'POST',
     body: JSON.stringify({ username: username, password: password })
   }).then(function(resp) { return resp.json(); }).then(function(data) {
-    if (data.token) {
-      setToken(data.token);
-      try { localStorage.setItem('vs_username', data.username || username); } catch(e) {}
+    let token = data.token || (data.data && data.data.token);
+    let resolvedUsername = data.username || (data.data && data.data.username) || username;
+    if (token) {
+      setToken(token);
+      try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
       updateUserCredits();
       if (typeof window.updateScanCreditsHint === 'function') window.updateScanCreditsHint();
-      showToast('登录成功，欢迎 ' + (data.username || username));
+      showToast('登录成功，欢迎 ' + resolvedUsername);
       navigateTo('scan');
     } else {
       if (errEl) errEl.textContent = extractError(data) || '登录失败';
@@ -501,14 +507,16 @@ function doRegister() {
     method: 'POST',
     body: JSON.stringify(payload)
   }).then(function(resp) { return resp.json(); }).then(function(data) {
-    if (data.token) {
-      setToken(data.token);
-      try { localStorage.setItem('vs_username', data.username || username); } catch(e) {}
+    let token = data.token || (data.data && data.data.token);
+    let resolvedUsername = data.username || (data.data && data.data.username) || username;
+    if (token) {
+      setToken(token);
+      try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
       updateUserCredits();
       if (typeof window.updateScanCreditsHint === 'function') window.updateScanCreditsHint();
-      showToast('注册成功，欢迎 ' + (data.username || username));
+      showToast('注册成功，欢迎 ' + resolvedUsername);
       navigateTo('scan');
     } else {
       if (errEl) errEl.textContent = extractError(data) || '注册失败';

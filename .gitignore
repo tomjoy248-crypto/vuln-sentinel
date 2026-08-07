@@ -34,3 +34,7 @@ static/assets/
 
 # Local SSH material generated during setup
 work-ssh/
+
+# Tauri build outputs
+src-tauri/target/
+src-tauri/gen/

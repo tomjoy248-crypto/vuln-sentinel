@@ -33,7 +33,12 @@ export async function authFetch(url, options = {}) {
   options.headers = Object.assign({}, authHeaders(), options.headers || {});
   const skipAuthExpiry = !!options.skipAuthExpiry;
   try {
-    const resp = await fetch(API_BASE + url, options);
+    const primaryUrl = API_BASE + url;
+    let resp = await fetch(primaryUrl, options);
+    if (resp.status === 404 && url.startsWith('/api/') && !url.startsWith('/api/v1/')) {
+      const fallbackUrl = API_BASE + '/api/v1' + url.slice('/api'.length);
+      resp = await fetch(fallbackUrl, options);
+    }
     // 401 过期处理：清除过期 token，抛出友好错误让上层引导用户重新登录
     if (resp.status === 401 && !skipAuthExpiry) {
       removeToken();

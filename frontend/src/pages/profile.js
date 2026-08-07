@@ -140,14 +140,16 @@ function doLogin() {
     method: 'POST',
     body: JSON.stringify({ username: username, password: password })
   }).then(function(resp) { return resp.json(); }).then(function(data) {
-    if (data.token) {
-      setToken(data.token);
-      try { localStorage.setItem('vs_username', data.username || username); } catch(e) {}
+    let token = data.token || (data.data && data.data.token);
+    let resolvedUsername = data.username || (data.data && data.data.username) || username;
+    if (token) {
+      setToken(token);
+      try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
       updateUserCredits();
       if (typeof window.updateScanCreditsHint === 'function') window.updateScanCreditsHint();
-      showToast('登录成功，欢迎 ' + (data.username || username));
+      showToast('登录成功，欢迎 ' + resolvedUsername);
       navigateTo('scan');
     } else {
       if (errEl) errEl.textContent = extractError(data) || '登录失败';
@@ -181,14 +183,16 @@ function doRegister() {
     method: 'POST',
     body: JSON.stringify(payload)
   }).then(function(resp) { return resp.json(); }).then(function(data) {
-    if (data.token) {
-      setToken(data.token);
-      try { localStorage.setItem('vs_username', data.username || username); } catch(e) {}
+    let token = data.token || (data.data && data.data.token);
+    let resolvedUsername = data.username || (data.data && data.data.username) || username;
+    if (token) {
+      setToken(token);
+      try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
       updateUserCredits();
       if (typeof window.updateScanCreditsHint === 'function') window.updateScanCreditsHint();
-      showToast('注册成功，欢迎 ' + (data.username || username));
+      showToast('注册成功，欢迎 ' + resolvedUsername);
       navigateTo('scan');
     } else {
       if (errEl) errEl.textContent = extractError(data) || '注册失败';
