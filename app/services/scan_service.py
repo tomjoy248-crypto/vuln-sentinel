@@ -87,6 +87,7 @@ def _calculate_score(findings: list[dict[str, Any]]) -> dict[str, Any]:
     summary = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0}
     severity_weights = {"critical": 28, "high": 16, "medium": 8, "low": 3, "info": 0}
     confidence_multipliers = {"critical": 1.0, "high": 1.0, "medium": 0.7, "low": 0.4, "info": 0.2}
+    verification_multipliers = {"confirmed": 1.0, "probable": 0.85, "suspected": 0.6}
     for finding in findings:
         sev = str(finding.get("severity", "info")).lower()
         conf = str(finding.get("adjusted_confidence") or finding.get("confidence", "medium")).lower()
@@ -94,6 +95,8 @@ def _calculate_score(findings: list[dict[str, Any]]) -> dict[str, Any]:
         summary["total"] += 1
         weight = severity_weights.get(sev, 0)
         multiplier = confidence_multipliers.get(conf, 0.7)
+        verification = str(finding.get("verification_status", "")).lower()
+        multiplier *= verification_multipliers.get(verification, 1.0)
         if finding.get("is_likely_fp"):
             multiplier *= 0.5
         if conf == 'info':
