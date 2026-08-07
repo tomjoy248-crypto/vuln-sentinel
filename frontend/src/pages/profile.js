@@ -45,6 +45,25 @@ const renderScanHistory = (...args) => typeof window.renderScanHistory === 'func
 const renderMonitorTargets = (...args) => typeof window.renderMonitorTargets === 'function' && window.renderMonitorTargets(...args);
 
 // ========== Auth UI ==========
+async function refreshLoginStatus() {
+  let statusMessage = document.getElementById('auth-status-message');
+  if (!statusMessage) return;
+  statusMessage.textContent = '正在检查登录服务...';
+  try {
+    let controller = new AbortController();
+    let timer = setTimeout(function() { controller.abort(); }, 2000);
+    let resp = await fetch('/api/v1/', { signal: controller.signal });
+    clearTimeout(timer);
+    if (resp.ok) {
+      statusMessage.textContent = '登录服务在线，可使用 demo / demo123 或你的账号登录';
+    } else {
+      statusMessage.textContent = '登录服务可访问，但返回异常状态：' + resp.status;
+    }
+  } catch (e) {
+    statusMessage.textContent = '登录服务暂时不可用，请先确认后端已启动';
+  }
+}
+
 function toggleAuthForm(mode) {
   let guest = document.getElementById('auth-guest');
   let reg = document.getElementById('auth-register');
@@ -75,12 +94,14 @@ function updateAuthUI() {
   let logged = document.getElementById('auth-logged');
   let scanLoginTip = document.getElementById('scan-login-tip');
   let tokenInput = document.getElementById('api-token-input');
+  let statusMessage = document.getElementById('auth-status-message');
   if (isLoggedIn()) {
     if (guest) guest.style.display = 'none';
     if (reg) reg.style.display = 'none';
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'block';
     if (scanLoginTip) scanLoginTip.style.display = 'none';
+    if (statusMessage) statusMessage.textContent = '已登录，可直接扫描或查看历史记录';
     let name = getUsername();
     let displayName = document.getElementById('auth-display-name');
     if (displayName) displayName.textContent = name || '用户';
@@ -95,6 +116,7 @@ function updateAuthUI() {
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'none';
     if (scanLoginTip) scanLoginTip.style.display = 'block';
+    if (statusMessage) statusMessage.textContent = '默认演示账号：demo / demo123；如果自建账号登录失败，请先确认后端服务已启动。';
     if (tokenInput) tokenInput.value = '登录后显示 Token';
   }
 }
@@ -559,6 +581,7 @@ export function init() {
 
   try { updateProfileStats(); } catch(e) { console.warn('updateProfileStats error:', e); }
   try { updateAuthUI(); } catch(e) { console.warn('updateAuthUI error:', e); }
+  try { refreshLoginStatus(); } catch(e) { console.warn('refreshLoginStatus error:', e); }
   try { updateUserCredits(); } catch(e) { console.warn('updateUserCredits error:', e); }
   try { renderAIConfig(); } catch(e) { console.warn('renderAIConfig error:', e); }
 
@@ -572,6 +595,7 @@ export function init() {
 export {
   toggleAuthForm,
   updateAuthUI,
+  refreshLoginStatus,
   doResetPassword,
   doLogin,
   doRegister,

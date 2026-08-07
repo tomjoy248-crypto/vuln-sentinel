@@ -101,8 +101,24 @@ export function extractError(data) {
   let msg = '';
   if (typeof data.error === 'string' && data.error) msg = data.error;
   else if (typeof data.detail === 'string' && data.detail) msg = data.detail;
+  else if (Array.isArray(data.detail) && data.detail.length > 0) {
+    msg = data.detail
+      .map(function(item) {
+        if (!item) return '';
+        if (typeof item === 'string') return item;
+        if (typeof item.msg === 'string' && item.msg) return item.msg;
+        if (Array.isArray(item.loc) && item.loc.length) return String(item.loc[item.loc.length - 1]);
+        return '';
+      })
+      .filter(Boolean)
+      .join('；');
+  }
   else if (typeof data.message === 'string' && data.message) msg = data.message;
   else msg = '请求失败';
+
+  if (typeof data.code === 'string' && !msg.includes(data.code) && data.code !== 'ERROR') {
+    msg += '（' + data.code + '）';
+  }
 
   // 合规/授权错误附加更明确的引导
   if (data.restricted_code === 'restricted') {
