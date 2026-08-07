@@ -1898,7 +1898,10 @@ function mergeRealData(url, apiData) {
 // ----- renderScanError -----
 function renderScanError(errorMsg, url) {
   let container = document.getElementById('result-content');
-  if (!container) return;
+  if (!container) {
+    setTimeout(function() { renderScanError(errorMsg, url); }, 0);
+    return;
+  }
   let safeUrl = escapeHtml(url);
 
   // 检测是否是登录/跳转长链接
@@ -3399,7 +3402,7 @@ function renderResult(data) {
 
   let resultContent = document.getElementById('result-content');
   if (!resultContent) {
-    console.warn('renderResult: result-content element not found');
+    setTimeout(function() { renderResult(data); }, 0);
     return;
   }
   resultContent.innerHTML = html;
