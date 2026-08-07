@@ -100,8 +100,10 @@ function restoreAuthCheckbox() {
       targets.forEach(function(t) { if (t) { t.checked = checked; } });
       _updatingAuthCheckbox = false;
       // 仅记录授权状态，按钮是否可点由页面的输入校验统一控制
+      let b1 = document.getElementById('scan-btn-step1');
       let b2 = document.getElementById('scan-btn');
       let b3 = document.getElementById('batch-go-btn');
+      if (b1) b1.disabled = !checked;
       if (b2) b2.disabled = !checked;
       if (b3) b3.disabled = !checked;
       try { localStorage.setItem('vs_auth_checked', checked ? 'true' : 'false'); } catch(e) {}
