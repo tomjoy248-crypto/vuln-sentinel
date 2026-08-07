@@ -27,7 +27,7 @@ DISCLAIMER_TEMPLATE = """> **免责声明**
 # 执行摘要
 EXECUTIVE_SUMMARY_TEMPLATE = """## 一、执行摘要
 
-本次针对 `{target_url}` 的安全测试共发现 **{total_findings}** 个安全问题。经人工复测，其中已验证问题 **{verified_count}** 个、待验证问题 **{unverified_count}** 个、已排除误报 **{false_positive_count}** 个。
+本次针对 `{target_url}` 的安全测试共发现 **{total_findings}** 个安全问题。经人工复测，其中已验证问题 **{verified_count}** 个、待复测问题 **{unverified_count}** 个、已排除误报 **{false_positive_count}** 个。
 
 ### 1.1 风险仪表盘
 
@@ -168,9 +168,9 @@ RISK_MATRIX_TEMPLATE = """## 四、风险评级矩阵
 # 测试方法论
 METHODOLOGY_TEMPLATE = """## 五、测试方法论
 
-### 5.1 测试流程
+### 5.1 交付流程
 
-本次测试遵循业界常见的 Web 应用安全测试流程，主要包括以下阶段：
+本次交付遵循业界常见的 Web 应用安全测试流程，主要包括以下阶段：
 
 1. **信息收集**: 目标识别、子域名枚举、端口扫描、技术栈探测。
 2. **漏洞发现**: 基于自动化扫描与手动渗透相结合的方式，覆盖 OWASP Top 10 等常见安全领域。

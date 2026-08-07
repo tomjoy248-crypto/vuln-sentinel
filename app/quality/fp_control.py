@@ -55,7 +55,7 @@ class FalsePositiveControl:
         re.compile(r"\b503\b.*service unavailable", re.I),
     ]
 
-    def __init__(self, threshold: float = 0.3) -> None:
+    def __init__(self, threshold: float = 0.38) -> None:
         """
         Args:
             threshold: 误报概率阈值，超过此值则标记为低置信度
@@ -249,6 +249,9 @@ class FalsePositiveControl:
             "log in",
             "too many requests",
             "rate limit",
+            "bot detection",
+            "security check",
+            "verify your browser",
         ]
         return any(marker in text for marker in challenge_markers)
 

@@ -247,7 +247,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
   const reportSummary = '本次扫描共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
-  const reportIntro = '报告适用于上线前自查、客户交付和复扫留档，重点展示已验证、待确认和待复测的结果，可直接作为交付附件和复测记录。';
+  const reportIntro = '本报告面向客户交付、上线前验收和复扫留档，突出已验证问题、待确认风险与待复测项，并可直接作为交付附件、复测记录和修复跟踪底稿。';
   const actionHint = data.scan_id
     ? '<div class="src-report-action-hint">建议优先处理“已验证”和“待确认”项；“待复测”项通常表示证据不足或环境干扰，请先复测或人工确认后再进入工单。</div>'
     : '';
@@ -284,6 +284,10 @@ function renderHeader(score, riskLevel, summary, url, data) {
         </div>
         <div class="src-report-summary">${escapeHtml(reportSummary)}</div>
         <div class="src-report-intro">${escapeHtml(reportIntro)}</div>
+        <div class="src-report-exec-summary">
+          <div class="src-report-exec-title">交付摘要</div>
+          <div class="src-report-exec-text">当前结果已按验证状态和可信度排序，便于直接筛选可交付问题、待复测项和疑似误报项。建议优先关闭高危与已验证项，再复测中低风险项并保留证据链。</div>
+        </div>
         <div class="src-report-next-step">
           <div class="src-report-next-step-title">交付建议</div>
           <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已自动识别 ' + fpCount + ' 项潜在误报，系统默认优先显示更可信的结果。' : ''}</div>
