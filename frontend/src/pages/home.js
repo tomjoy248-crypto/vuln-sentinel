@@ -873,11 +873,11 @@ function renderDemoReport(d) {
           });
           html += '</div></details>';
         } else {
-          html += '<div style="margin-top:6px;font-size:12px;color:var(--primary)">验证方法：修复后重新扫描该网站，查看此项是否消失或评分是否提升。</div>';
+          html += '<div style="margin-top:6px;font-size:12px;color:var(--primary)">验证方法：复测后重新扫描该网站，查看此项是否消失或评分是否提升。</div>';
         }
       }
       // 误报说明
-      html += '<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">说明：如认为此项为误报，可在修复建议中忽略。安全扫描可能存在误报，建议结合专业评估综合判断。</div>';
+      html += '<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">说明：如认为此项需要复核，可结合修复建议、响应证据和二次扫描结果综合判断。</div>';
       html += '</div>';
     });
     html += '</div></details>';
@@ -1031,12 +1031,12 @@ function renderFixComparison(d) {
   // 评分对比
   html += '<div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-top:14px">';
   html += '<div style="text-align:center;background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:14px">';
-  html += '<div style="font-size:12px;color:var(--text-secondary)">修复前</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary)">复测前</div>';
   html += '<div style="font-size:36px;font-weight:700;color:#c75450;margin-top:4px">' + d.before_score + '</div>';
   html += '</div>';
   html += '<div style="text-align:center;color:#73c990;font-size:24px;font-weight:700">→</div>';
   html += '<div style="text-align:center;background:rgba(16,185,129,0.08);border:2px solid #73c990;border-radius:2px;padding:14px">';
-  html += '<div style="font-size:12px;color:#73c990">修复后</div>';
+  html += '<div style="font-size:12px;color:#73c990">复测后</div>';
   html += '<div style="font-size:36px;font-weight:700;color:#73c990;margin-top:4px">' + d.after_score + '</div>';
   html += '<div style="font-size:12px;color:#73c990;margin-top:2px">+ ' + d.delta + ' 分</div>';
   html += '</div>';
@@ -2439,8 +2439,8 @@ function renderResult(data) {
 
   // 攻击模拟按钮
   html += '<div class="card fade-in-up" style="animation-delay:0.2s">';
-  html += '<div class="card-title">攻击模拟</div>';
-  html += '<p style="margin:0 0 14px 0;font-size:12px;color:var(--text-secondary)">展示常见攻击场景以验证漏洞影响</p>';
+  html += '<div class="card-title">效果演示</div>';
+  html += '<p style="margin:0 0 14px 0;font-size:12px;color:var(--text-secondary)">展示常见风险验证场景，用于说明问题影响</p>';
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
   html += '<button onclick="simulateCSRF(\'' + escapeAttr(data.url) + '\')" style="padding:10px 8px;border:1px solid rgba(199,84,80,0.3);background:rgba(199,84,80,0.08);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;color:#dc2626;transition:background 0.15s" onmouseover="this.style.background=\'rgba(199,84,80,0.15)\'" onmouseout="this.style.background=\'rgba(199,84,80,0.08)\'">';
   html += '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">CSRF</div>';
@@ -2536,7 +2536,7 @@ function renderResult(data) {
     html += '</div>';
   }
 
-  //  修复前后价值对比
+  //  复测前后价值对比
   let _valBeforeScore = data.score || 0;
   let _valAfterScore  = Math.min(98, _valBeforeScore + 25);
   let _valBeforeRisk  = highCount + medCount;
@@ -2556,15 +2556,15 @@ function renderResult(data) {
   }
   html += '<div class="card fade-in-up" style="animation-delay:0.18s">';
   html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">';
-  html += '<div class="card-title" style="margin:0">修复前后对比</div>';
+  html += '<div class="card-title" style="margin:0">复测前后对比</div>';
   html += '<span style="font-size:11px;background:rgba(115,201,144,0.15);color:#16a34a;padding:2px 8px;border-radius:2px;font-weight:600">预估</span>';
   html += '</div>';
   html += '<div style="overflow-x:auto">';
   html += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
   html += '<thead><tr style="border-bottom:1px solid #555555">';
   html += '<th style="text-align:left;padding:10px 8px;font-weight:600;color:var(--text-secondary)">项目</th>';
-  html += '<th style="text-align:center;padding:10px 8px;font-weight:600;color:var(--text-secondary)">修复前</th>';
-  html += '<th style="text-align:center;padding:10px 8px;font-weight:600;color:var(--text-secondary)">修复后</th>';
+  html += '<th style="text-align:center;padding:10px 8px;font-weight:600;color:var(--text-secondary)">复测前</th>';
+  html += '<th style="text-align:center;padding:10px 8px;font-weight:600;color:var(--text-secondary)">复测后</th>';
   html += '<th style="text-align:center;padding:10px 8px;font-weight:600;color:var(--text-secondary)">变化</th>';
   html += '</tr></thead>';
   html += '<tbody>';
@@ -2708,7 +2708,7 @@ function renderResult(data) {
   if (!data.findings || data.findings.length === 0) {
     html += '<div class="card fade-in-up" style="animation-delay:0.35s;text-align:center;padding:40px 20px;background:#3c3f41;border:1px solid #555555">';
     html += '<h3 style="margin:0 0 8px;color:#73c990;font-size:16px">安全状况良好</h3>';
-    html += '<p style="color:var(--text-secondary);margin:0 0 16px;font-size:13px;line-height:1.6">本次扫描未发现明显的安全配置问题。<br/>建议定期扫描，持续监控网站安全状态。</p>';
+    html += '<p style="color:var(--text-secondary);margin:0 0 16px;font-size:13px;line-height:1.6">本次扫描未发现明显的安全配置问题。<br/>建议保留当前结果作为基线，并在版本变更后复测。</p>';
     html += '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">';
     html += '<button onclick="navigateTo(\'scan\')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:8px 16px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">重新扫描</button>';
     html += '<button onclick="navigateTo(\'evolution\')" style="background:transparent;color:var(--text);border:1px solid var(--border);padding:8px 16px;border-radius:2px;cursor:pointer;font-size:12px">查看进化中心</button>';
@@ -2953,9 +2953,9 @@ function renderResult(data) {
     detailHtml += '<button class="finding-feedback-btn btn-confirm" onclick="submitFindingFeedback(this, \'' + escapeAttr(f.name) + '\', ' + scanIdForFeedback + ', false)" ' + btnDisabled + '>准确</button>';
     detailHtml += '<button class="finding-feedback-btn btn-fp" onclick="submitFindingFeedback(this, \'' + escapeAttr(f.name) + '\', ' + scanIdForFeedback + ', true)" ' + btnDisabled + '>误报</button>';
     if (fbInitial && fbInitial.is_false_positive) {
-      detailHtml += '<span class="fp-reason-text">已标记为误报，将用于优化未来检测</span>';
+      detailHtml += '<span class="fp-reason-text">已标记为误报，将用于优化后续检测</span>';
     } else if (fbInitial && fbInitial.is_confirmed) {
-      detailHtml += '<span class="fp-reason-text" style="color:#73c990">已确认为真实漏洞，感谢您的反馈</span>';
+      detailHtml += '<span class="fp-reason-text" style="color:#73c990">已确认为真实问题，感谢您的反馈</span>';
     }
     detailHtml += '</div>';
     detailHtml += '</div></div>';
@@ -2980,7 +2980,7 @@ function renderResult(data) {
 
     if (availablePlatforms.length > 0) {
       html += '<div class="card fade-in-up" style="animation-delay:0.3s;border:2px solid rgba(115,201,144,0.4);background:#3c3f41,rgba(115,201,144,0.01))">';
-      html += '<div style="font-weight:700;font-size:16px;margin-bottom:10px;color:var(--success)"> 修复建议（' + availablePlatforms.length + ' 种服务器平台）</div>';
+      html += '<div style="font-weight:700;font-size:16px;margin-bottom:10px;color:var(--success)"> 修复建议（' + availablePlatforms.length + ' 种平台）</div>';
       html += '<div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">';
       availablePlatforms.forEach(function(p, i) {
         let active = i === 0;
@@ -3007,32 +3007,32 @@ function renderResult(data) {
   // Generate Fix
   html += '<div class="gen-fix-section fade-in-up" style="animation-delay:0.4s">';
   html += '<h3> 一键生成修复配置</h3>';
-  html += '<p class="card-desc" style="margin-bottom:14px">输入您的 Nginx 配置，系统将根据扫描结果自动生成安全补丁</p>';
+  html += '<p class="card-desc" style="margin-bottom:14px">输入您的配置，系统将根据扫描结果生成可直接参考的修复建议</p>';
   html += '<div class="gen-fix-row">';
-  html += '<input type="text" id="gen-fix-input" placeholder="粘贴 Nginx 配置或输入 server 块..." />';
+  html += '<input type="text" id="gen-fix-input" placeholder="粘贴配置或输入 server 块..." />';
   html += '<button class="gen-fix-btn" onclick="generateFixFromResult()"> 生成</button>';
   html += '</div>';
   html += '<div id="gen-fix-output"></div>';
   html += '</div>';
 
-  // 修复后：所有 finding 全部消除，仅保留修复加成（最多 100）
+  // 复测后：所有 finding 全部消除，仅保留修复加成（最多 100）
   let fixedScore = Math.min(100, 100 + 12);
   html += '<div class="score-compare fade-in-up" style="animation-delay:0.45s">';
-  html += '<h3> 修复后评分对比</h3>';
+  html += '<h3> 复测后评分对比</h3>';
   html += '<div class="score-rings">';
   html += '<div class="score-ring-item">';
   html += '<div class="ring" style="background:' + getScoreGradient(data.score) + '">';
   html += '<div class="val" style="color:#fff">' + data.score + '</div>';
-  html += '<div class="lbl" style="color:rgba(255,255,255,0.7)">修复前</div>';
+  html += '<div class="lbl" style="color:rgba(255,255,255,0.7)">复测前</div>';
   html += '</div>';
-  html += '<div class="tag">修复前</div>';
+  html += '<div class="tag">复测前</div>';
   html += '</div>';
   html += '<div class="score-ring-item">';
   html += '<div class="ring" id="score-after-ring" style="background:' + getScoreGradient(fixedScore) + '">';
   html += '<div class="val" style="color:#fff">' + fixedScore + '</div>';
-  html += '<div class="lbl" style="color:rgba(255,255,255,0.7)">修复后</div>';
+  html += '<div class="lbl" style="color:rgba(255,255,255,0.7)">复测后</div>';
   html += '</div>';
-  html += '<div class="tag">修复后</div>';
+  html += '<div class="tag">复测后</div>';
   html += '</div>';
   html += '</div>';
   html += '<div class="score-improve" id="score-diff"> 提升 <strong>' + (fixedScore - data.score) + '</strong> 分 <span>（' + data.score + ' -> ' + fixedScore + '）</span></div>';
@@ -3376,7 +3376,7 @@ function renderResult(data) {
   html += '<div style="margin-top:4px">不进行：破坏性攻击、密码爆破、权限绕过、漏洞利用、主动渗透测试。</div>';
   html += '<div style="margin-top:4px;color:var(--text-light)">如需全面安全评估，建议配合专业渗透测试服务。</div>';
   html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
-  html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据摘要，再用 curl 或浏览器 F12 确认；修复后重新扫描，对比评分和证据变化即可验证效果。</div>';
+  html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据摘要，再用 curl 或浏览器 F12 确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
   html += '<div style="margin-top:8px;font-weight:600">证据分层</div>';
   html += '<div>「已验证」表示已完成交叉验证或用户确认；「可能存在」表示有较强线索但建议人工复核；「待复核」表示证据较弱或不完整，建议先复测再进入工单。</div>';
   html += '<div style="margin-top:8px;font-weight:600">审计范围</div>';
@@ -3488,7 +3488,7 @@ function generateFixFromResult() {
     return;
   }
   let result = generateFixFromFindings(lastScanResult.findings, input);
-  output.innerHTML = '<div style="margin-top:14px"><div class="finding-section"><h4>修复后配置</h4><div class="code-block">' + escapeHtml(result.fixed) + '</div></div>' +
+  output.innerHTML = '<div style="margin-top:14px"><div class="finding-section"><h4>复测后配置</h4><div class="code-block">' + escapeHtml(result.fixed) + '</div></div>' +
     '<div class="fixer-btns" style="margin-top:10px"><button class="fixer-btn success" onclick="copyText(this, \'' + btoa(encodeURIComponent(result.fixed)) + '\')"> 复制配置</button></div></div>';
   } catch(e) {
     console.error('generateFixFromResult error:', e);
