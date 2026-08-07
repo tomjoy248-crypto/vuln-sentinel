@@ -2543,3 +2543,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 });
+
+
+if (typeof window !== 'undefined') {
+  window.downloadNginxConf = downloadNginxConf;
+  window.downloadRepairReport = downloadRepairReport;
+}
