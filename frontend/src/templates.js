@@ -628,7 +628,7 @@ export const APP_TEMPLATE = `</head>
 
   <!-- 公开演示扫描 -->
 
-  <div class="card public-report-card" id="demo-report" style="margin-top:18px">
+  <div class="card public-report-card" id="public-report-card" style="margin-top:18px">
 
     <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
 
