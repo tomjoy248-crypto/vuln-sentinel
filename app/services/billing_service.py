@@ -16,6 +16,8 @@ from app.core.exceptions import BusinessException
 from app.db.session import get_db
 from app.services.credits_service import add_credits
 
+_IS_PRODUCTION = os.environ.get("ENV", "development").strip().lower() == "production" or os.environ.get("PRODUCTION", "").strip().lower() in {"1", "true", "yes", "on"}
+
 logger = logging.getLogger("vuln_sentinel.billing")
 
 # 可选的 Stripe 依赖；未安装时自动降级为模拟支付
@@ -343,6 +345,11 @@ def create_payment_order(
             f"不支持的支付渠道：{provider}", code="UNSUPPORTED_PROVIDER", status_code=400
         )
 
+    if _IS_PRODUCTION and provider == "mock":
+        raise BusinessException(
+            "生产环境不允许使用 mock 支付渠道", code="MOCK_DISABLED", status_code=400
+        )
+
     if not _provider_enabled(provider):
         raise BusinessException(
             f"支付渠道未启用：{provider}", code="PROVIDER_NOT_CONFIGURED", status_code=400
@@ -448,6 +455,10 @@ def create_payment_order(
             conn.close()
 
         if _is_mock_enabled(provider.upper()):
+            if _IS_PRODUCTION:
+                raise BusinessException(
+                    "生产环境不允许启用支付 mock 模式", code="MOCK_DISABLED", status_code=400
+                )
             # mock 模式：模拟支付成功并立即到账
             new_balance = _fulfill_order(
                 {

@@ -529,6 +529,12 @@ def validate_production_config() -> list[str]:
     metrics_public = os.environ.get("METRICS_PUBLIC", "").strip().lower() in {"1", "true", "yes", "on"}
     if settings.enable_metrics and not metrics_public and not os.environ.get("METRICS_AUTH_TOKEN", "").strip():
         issues.append("生产环境启用 /metrics 时应配置 METRICS_AUTH_TOKEN 或关闭公开暴露")
+    if os.environ.get("ALIPAY_MOCK", "").strip().lower() in {"1", "true", "yes", "on"}:
+        issues.append("生产环境不应启用 ALIPAY_MOCK")
+    if os.environ.get("WECHAT_MOCK", "").strip().lower() in {"1", "true", "yes", "on"}:
+        issues.append("生产环境不应启用 WECHAT_MOCK")
+    if os.environ.get("MOCK_WEBHOOK_SECRET", "").strip():
+        issues.append("生产环境不应保留 MOCK_WEBHOOK_SECRET")
     return issues
 
 

@@ -51,3 +51,40 @@ def test_quality_assessment_penalizes_high_fp_rates():
 
     assert assessment.reliability_score < 60
     assert assessment.overall_score < 70
+
+
+from app.services import billing_service
+import main
+
+
+def test_production_blocks_mock_payment(monkeypatch):
+    monkeypatch.setenv("ENV", "production")
+    monkeypatch.setenv("PRODUCTION", "1")
+    monkeypatch.setenv("ALIPAY_MOCK", "1")
+    monkeypatch.setenv("WECHAT_MOCK", "1")
+    monkeypatch.setenv("MOCK_WEBHOOK_SECRET", "secret")
+    monkeypatch.setattr(billing_service, "_IS_PRODUCTION", True)
+    monkeypatch.setattr(billing_service, "get_plan", lambda plan_id: {"active": True, "price_cents": 990, "credits": 20, "name": "体验包", "description": "", "currency": "CNY"})
+    monkeypatch.setattr(billing_service, "create_recharge_record", lambda **kwargs: {"id": 1, "transaction_id": "T-1", "status": "pending"})
+    monkeypatch.setattr(billing_service, "_provider_enabled", lambda provider: True)
+
+    try:
+        billing_service.create_payment_order(user_id=1, plan_id=1, provider="mock")
+    except billing_service.BusinessException as exc:
+        assert "生产环境不允许使用 mock 支付渠道" in str(exc)
+    else:
+        raise AssertionError("expected BusinessException")
+
+
+def test_production_config_flags_mock_payment(monkeypatch):
+    monkeypatch.setenv("ENV", "production")
+    monkeypatch.setenv("PRODUCTION", "1")
+    monkeypatch.setenv("ALIPAY_MOCK", "1")
+    monkeypatch.setenv("WECHAT_MOCK", "1")
+    monkeypatch.setenv("MOCK_WEBHOOK_SECRET", "secret")
+    monkeypatch.setattr(main, "_IS_PRODUCTION", True)
+
+    issues = main.validate_production_config()
+    assert any("ALIPAY_MOCK" in item for item in issues)
+    assert any("WECHAT_MOCK" in item for item in issues)
+    assert any("MOCK_WEBHOOK_SECRET" in item for item in issues)
