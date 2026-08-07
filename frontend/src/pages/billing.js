@@ -118,8 +118,8 @@ function loadPlans() {
     let recommendedPlanId = getRecommendedPlanId(plans);
     let html = '<div style="display:flex;flex-direction:column;gap:12px">';
     html += '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
-    html += '<div>• 所有订单都会进入充值记录，便于财务对账</div>';
-    html += '<div>• 充值后可立即用于扫描、复扫、修复验证、报告导出和审计留痕</div>';
+    html += '<div>• 所有订单都会进入充值记录，便于财务对账与追踪</div>';
+    html += '<div>• 充值后可立即用于扫描、复测、修复验证、报告导出和审计留痕</div>';
     html += '<div>• 支持模拟支付、Stripe，以及支付宝/微信测试回调与骨架通道</div>';
     html += '</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">';
@@ -149,7 +149,7 @@ function loadPlans() {
     html += '<div>1. 选择套餐并完成支付 → 2. 积分立即到账 → 3. 直接进入扫描或复扫 → 4. 结果会进入报告、工单和审计 → 5. 可按项目或团队需求继续升级。</div>';
     html += '</div>';
     html += '<div style="margin-top:12px;padding:12px 14px;background:rgba(75,110,175,0.08);border:1px solid rgba(75,110,175,0.2);border-radius:2px;font-size:12px;color:var(--text-secondary);line-height:1.7">';
-    html += '<div style="font-weight:700;color:var(--primary);margin-bottom:4px">上线前审计提醒</div>';
+    html += '<div style="font-weight:700;color:var(--primary);margin-bottom:4px">交付前确认</div>';
     html += '<div>建议上线前重点确认：支付回调签名、积分扣减日志、权限分层、导出权限、审计日志留存，以及客户能否看懂套餐价值与结果证据。</div>';
     html += '</div>';
     container.innerHTML = html;
@@ -309,3 +309,4 @@ export function init() {
     window.loadBillingPage = loadBillingPage;
   }
 }
+
