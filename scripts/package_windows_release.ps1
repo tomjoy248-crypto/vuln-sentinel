@@ -33,6 +33,23 @@ $manifest = [ordered]@{
 $manifestPath = Join-Path $outDir 'release-manifest.json'
 $manifest | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $manifestPath
 
+$notes = @(
+  'Vuln Sentinel Windows Release',
+  '',
+  'Installer: ' + $targetName,
+  'SHA256: ' + $hash.Hash,
+  'Manifest: release-manifest.json',
+  '',
+  'Verification:',
+  '  powershell -ExecutionPolicy Bypass -File scripts\verify_windows_release.ps1',
+  '',
+  'Install package path:',
+  '  ' + $targetPath
+)
+$notesPath = Join-Path $outDir 'release-notes.txt'
+$notes -join "`r`n" | Set-Content -Encoding UTF8 $notesPath
+
 Write-Host "Output: $targetPath"
 Write-Host "Manifest: $manifestPath"
+Write-Host "Notes: $notesPath"
 Write-Host "SHA256: $($hash.Hash)"
