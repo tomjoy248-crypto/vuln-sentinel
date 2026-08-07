@@ -70,17 +70,14 @@ REDIS_URL=redis://redis:6379/0
 - 支付宝：`POST /api/billing/order`（provider=`alipay`）
 - 微信：`POST /api/billing/order`（provider=`wechat`）
 
-未配置真实商户参数时返回 `pending` 订单与空的 `pay_params`，前端可先行联调；开发测试可开启 mock 模式直接到账：
-```bash
-ALIPAY_MOCK=true
-WECHAT_MOCK=true
-```
+未配置真实商户参数时，生产环境仅返回 `pending` 订单与空的 `pay_params`，前端不会自动走测试通道；本地联调可使用本地测试模式，生产环境不应开启任何 mock 充值回调。
 
 异步通知回调接口：
 - 支付宝：`POST /api/billing/webhook/alipay`
 - 微信：`POST /api/billing/webhook/wechat`
 
 接入真实支付时需安装对应 SDK（如 `alipay-sdk-python`、`wechatpayv3`），并在 `app/services/billing_service.py` 中替换签名验证逻辑。
+生产环境请确保 `ALIPAY_MOCK`、`WECHAT_MOCK` 和 `MOCK_WEBHOOK_SECRET` 均未启用。
 
 ## 5. Sentry 错误追踪（可选）
 

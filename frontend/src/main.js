@@ -2331,7 +2331,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (data.public_base_url) {
       window.__PUBLIC_BASE_URL__ = data.public_base_url;
     }
-  }).catch(function() { /* 静默失败，降级为 mock 支付 */ });
+  }).catch(function() { /* 静默失败，保留本地默认配置 */ });
 
   // Remove skeleton screen
   let skeleton = safeGetElement('skeleton-screen');
