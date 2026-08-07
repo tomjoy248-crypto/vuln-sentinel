@@ -287,6 +287,10 @@ powershell -ExecutionPolicy Bypass -File scripts\package_windows_release.ps1
 
 详细清单已独立到 `docs/windows-delivery-acceptance.md`，README 保留快速入口。
 
+### PDF 交付说明
+
+PDF 交付说明已整理到 `docs/pdf-delivery-guide.md`，用于给客户、研发和运维统一阅读口径。
+
 1. 运行 `artifacts/windows/Vuln-Sentinel-11.0.0-win64-setup.exe`。
 2. 检查是否可正常安装到当前用户目录。
 3. 验证桌面快捷方式与开始菜单入口是否存在。
