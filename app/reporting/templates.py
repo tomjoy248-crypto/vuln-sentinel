@@ -72,7 +72,7 @@ FINDINGS_SUMMARY_TEMPLATE = """## 二、漏洞汇总
 | 验证状态 | 数量 |
 | --- | --- |
 | Verified (已验证) | {verified_count} |
-| Unverified (待复核) | {unverified_count} |
+| Unverified (待复测) | {unverified_count} |
 | False Positive (误报) | {false_positive_count} |
 
 ### 2.3 漏洞清单
@@ -210,7 +210,7 @@ LIMITATIONS_TEMPLATE = """## 六、限制与范围说明
 
 - 部分漏洞的验证结果依赖于测试时的网络环境、账号权限及业务状态。
 - 动态应用环境下，漏洞表现可能随版本迭代、配置变更而变化，建议修复后再次进行验证。
-- 自动化扫描结果可能存在误报；高风险结论会优先标记为“已验证/待复核”并建议复测确认。
+- 自动化扫描结果可能存在误报；高风险结论会优先标记为“已验证/待复测”并建议复测确认。
 
 """
 

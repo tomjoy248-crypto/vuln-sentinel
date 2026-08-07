@@ -317,7 +317,7 @@ function renderFindingList(findings, selectedIndex) {
       const typeLabel = f.type ? `<span class="src-list-type">${escapeHtml(f.type.toUpperCase())}</span>` : '';
       const host = f.url ? new URL(f.url, window.location.href).hostname : '';
       const path = f.url ? new URL(f.url, window.location.href).pathname : '';
-      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag" title="需要人工复测或复测">待复测</span>' : '';
+      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag" title="需要人工复测或复核">待复测</span>' : '';
       const corrGroup = f.correlation_group ? `<span class="src-list-corr" title="关联组 ${escapeAttr(f.correlation_group)}（${f.correlation_size || 0} 个相关）">${escapeHtml(f.correlation_group)}</span>` : '';
       const mergedCount = f.merged_count > 1 ? `<span class="src-list-merged" title="合并了 ${f.merged_count} 个重复项">×${f.merged_count}</span>` : '';
       const vStatus = f.verification_status;
