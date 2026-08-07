@@ -278,10 +278,10 @@ powershell -ExecutionPolicy Bypass -File scripts\package_windows_release.ps1
 
 漏洞哨兵已提供 Windows 桌面壳，当前采用 `NSIS` 安装包而不是 `MSI`，这样可以稳定支持普通用户的当前账号安装。
 
-- 启动时直接打开主界面，并保留与 Web 版一致的登录、扫描、结果、工单和审计入口
 - 安装后可从桌面快捷方式或开始菜单打开
 - 卸载后会移除安装目录和快捷方式
 - 当前桌面版以 `src-tauri/tauri.conf.json` 的 `NSIS` 配置为准
+- 当前桌面壳会打开托管的 Web 版，适合需要快速交付和在线同步的场景
 
 ### Windows 实机验收清单
 
@@ -304,25 +304,13 @@ PDF 交付说明已整理到 `docs/pdf-delivery-guide.md`，用于给客户、�
 
 ### 方式 E：Render 云部署
 
-
-
 ```bash
-
 # render.yaml 已配置好
 
 # 1. Fork 本仓库
-
 # 2. 在 Render 创建 Web Service，连接你的 fork
-
 # 3. Render 自动识别 render.yaml 并部署
-
 ```
-
-
-
----
-
-
 
 ## 使用流程
 
