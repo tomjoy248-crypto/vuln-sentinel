@@ -878,7 +878,7 @@ function renderDemoReport(d) {
         }
       }
       // 误报说明
-      html += '<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">说明：如认为此项需要复核，可结合修复建议、响应证据和二次扫描结果综合判断。</div>';
+      html += '<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">说明：如认为此项需要复测，可结合修复建议、响应证据和二次扫描结果综合判断。</div>';
       html += '</div>';
     });
     html += '</div></details>';
@@ -2945,9 +2945,9 @@ function renderResult(data) {
     if (cvReason) {
       detailHtml += '<span style="font-size:12px;color:var(--text-lighter)">· ' + escapeHtml(cvReason) + '</span>';
     }
-    // 建议人工复核标签（suspect 项）
+    // 建议人工复测标签（suspect 项）
     if (f.review_required || confLevel === '中') {
-      detailHtml += '<span style="font-size:11px;background:var(--warning);color:#000;padding:1px 6px;border-radius:2px;margin-left:6px">建议人工复核</span>';
+      detailHtml += '<span style="font-size:11px;background:var(--warning);color:#000;padding:1px 6px;border-radius:2px;margin-left:6px">建议人工复测</span>';
     }
     // 反馈按钮
     let btnDisabled = (fbInitial && (fbInitial.is_false_positive || fbInitial.is_confirmed)) ? ' disabled' : '';
@@ -3256,7 +3256,7 @@ function renderResult(data) {
     html += '<div style="color:var(--danger)"> 确认漏洞：' + exposedCount + ' 个敏感文件可直接访问，需立即修复</div>';
   }
   if (suspectCount > 0) {
-    html += '<div style="color:var(--warning)">疑似风险：' + suspectCount + ' 个路径返回 200，但内容命中 WAF/登录页/反爬特征，因此不判定为真实泄露，建议人工复核</div>';
+    html += '<div style="color:var(--warning)">疑似风险：' + suspectCount + ' 个路径返回 200，但内容命中 WAF/登录页/反爬特征，因此不判定为真实泄露，建议人工复测</div>';
   }
   if (infoCount > 0) {
     html += '<div style="color:var(--primary)">信息： 公开信息：' + infoCount + ' 个路径为公开协议文件（如 robots.txt），仅作为信息项展示</div>';
@@ -3379,7 +3379,7 @@ function renderResult(data) {
   html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
   html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据摘要，再结合二次扫描结果和原始响应确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
   html += '<div style="margin-top:8px;font-weight:600">证据分层</div>';
-  html += '<div>「已验证」表示已完成交叉验证或用户确认；「可能存在」表示有较强线索但建议人工复核；「待复核」表示证据较弱或不完整，建议先复测再进入工单。</div>';
+  html += '<div>「已验证」表示已完成交叉验证或用户确认；「可能存在」表示有较强线索但建议人工复测；「待复测」表示证据较弱或不完整，建议先复测再进入工单。</div>';
   html += '<div style="margin-top:8px;font-weight:600">审计范围</div>';
   html += '<div>本报告覆盖 HTTP/TLS 配置、安全响应头、Cookie 标记、CORS、敏感路径和 WAF 识别，不包含破坏性利用或深度渗透动作。</div>';
   html += '<div style="margin-top:8px;font-weight:600">免责声明</div>';
