@@ -77,9 +77,9 @@ class CrossValidator:
     对 finding 使用多种技术手段验证，提高结果可信度。
     """
 
-    VERIFIED_THRESHOLD = 60  # 验证分数达到 60 即视为已验证
-    CONFIRMED_THRESHOLD = 70
-    PROBABLE_THRESHOLD = 40
+    VERIFIED_THRESHOLD = 70  # 验证分数达到 70 才视为已验证
+    CONFIRMED_THRESHOLD = 80
+    PROBABLE_THRESHOLD = 55
 
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         self._client = client
@@ -133,20 +133,20 @@ class CrossValidator:
 
         strategy = _VERIFICATION_STRATEGIES.get(vuln_type)
         if strategy is None:
-            # 无对应策略，返回默认结果（保持原始置信度）
+            # 无对应策略时保持保守：不直接认定为已验证
             return VerificationResult(
                 finding_id=finding_id,
                 vuln_type=vuln_type,
-                verified=True,
-                verification_score=50,
+                verified=False,
+                verification_score=35,
                 techniques=[
                     {
                         "name": "no_strategy",
-                        "passed": True,
-                        "note": "无交叉验证策略，保持原始判定",
+                        "passed": False,
+                        "note": "无交叉验证策略，保守保留为待复核",
                     }
                 ],
-                summary="该漏洞类型暂无交叉验证策略",
+                summary="该漏洞类型暂无交叉验证策略，已保守标记为待复核",
             )
 
         return await strategy(self, finding)
@@ -162,17 +162,17 @@ class CrossValidator:
             if isinstance(res, VerificationResult):
                 verified.append(res)
             else:
-                # 异常时返回默认验证通过
+                # 异常时保守处理：不要把验证失败当成已通过
                 verified.append(
                     VerificationResult(
                         finding_id=findings[i].get("id", ""),
                         vuln_type=(findings[i].get("type") or "").lower(),
-                        verified=True,
-                        verification_score=50,
+                        verified=False,
+                        verification_score=20,
                         techniques=[
                             {"name": "error", "passed": False, "note": str(res)}
                         ],
-                        summary="验证过程异常，保持原始判定",
+                        summary="验证过程异常，已保守标记为待复核",
                     )
                 )
         return verified
