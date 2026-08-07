@@ -482,6 +482,9 @@ function doLogin() {
       if (typeof window.refreshScanStartStateSoon === 'function') window.refreshScanStartStateSoon();
       showToast('登录成功，欢迎 ' + resolvedUsername);
       navigateTo('scan');
+      setTimeout(function() {
+        if (typeof window.refreshScanStartStateSoon === 'function') window.refreshScanStartStateSoon();
+      }, 0);
     } else {
       if (errEl) errEl.textContent = extractError(data) || '登录失败';
     }
@@ -526,6 +529,9 @@ function doRegister() {
       if (typeof window.refreshScanStartStateSoon === 'function') window.refreshScanStartStateSoon();
       showToast('注册成功，欢迎 ' + resolvedUsername);
       navigateTo('scan');
+      setTimeout(function() {
+        if (typeof window.refreshScanStartStateSoon === 'function') window.refreshScanStartStateSoon();
+      }, 0);
     } else {
       if (errEl) errEl.textContent = extractError(data) || '注册失败';
     }
