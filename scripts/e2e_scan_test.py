@@ -505,36 +505,36 @@ def main():
     targets = ["https://httpbin.org", "https://example.com"]
 
     # ===== 基础功能测试 =====
-    print("▶ 基础功能测试...")
+    print("[1/7] 基础功能测试...")
     report.add(test_health_check(client))
     report.add(test_register_and_login(client))
     report.add(test_credits_available(client))
 
     # ===== 正常扫描测试 =====
-    print("▶ 正常扫描测试...")
+    print("[2/7] 正常扫描测试...")
     for target in targets:
         report.add(test_scan_normal(client, target))
 
     # ===== 异常处理测试 =====
-    print("▶ 异常处理测试...")
+    print("[3/7] 异常处理测试...")
     report.add(test_scan_invalid_url(client))
     report.add(test_scan_unreachable(client))
 
     # ===== 缓存与历史 =====
-    print("▶ 缓存与历史测试...")
+    print("[4/7] 缓存与历史测试...")
     report.add(test_scan_cache(client, targets[0]))
     report.add(test_scan_history(client))
 
     # ===== 修复配置 =====
-    print("▶ 修复配置测试...")
+    print("[5/7] 修复配置测试...")
     report.add(test_fix_generation(client, targets[0]))
 
     # ===== 扫描进度 =====
-    print("▶ 扫描进度测试...")
+    print("[6/7] 扫描进度测试...")
     report.add(test_scan_progress(client))
 
     # ===== 并发与限流 =====
-    print("▶ 并发与限流测试...")
+    print("[7/7] 并发与限流测试...")
     report.add(test_concurrent_scans(client, targets[0]))
     report.add(test_rate_limiting(client))
 
