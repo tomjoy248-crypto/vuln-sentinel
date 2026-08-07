@@ -522,8 +522,13 @@ def validate_production_config() -> list[str]:
         issues.append("PUBLIC_BASE_URL 为空时不建议开启公开试用")
     if not settings.database_url and settings.db_dir.strip() in {"/tmp", "/var/tmp", "/dev/shm"}:
         issues.append("生产环境不能使用临时目录作为 DB_DIR")
-    if settings.enable_metrics and settings.env == "production" and not settings.sentry_dsn and not settings.redis_url:
-        issues.append("建议在生产环境配置监控/告警或明确关闭 metrics 暴露")
+    if not os.environ.get("CREDENTIAL_ENCRYPT_KEY", "").strip():
+        issues.append("生产环境必须设置 CREDENTIAL_ENCRYPT_KEY（base64 编码的 32 字节密钥）")
+    if os.environ.get("DISABLE_API_DOCS", "").strip().lower() not in {"1", "true", "yes"}:
+        issues.append("生产环境建议设置 DISABLE_API_DOCS=1")
+    metrics_public = os.environ.get("METRICS_PUBLIC", "").strip().lower() in {"1", "true", "yes", "on"}
+    if settings.enable_metrics and not metrics_public and not os.environ.get("METRICS_AUTH_TOKEN", "").strip():
+        issues.append("生产环境启用 /metrics 时应配置 METRICS_AUTH_TOKEN 或关闭公开暴露")
     return issues
 
 

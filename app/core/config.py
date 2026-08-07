@@ -131,6 +131,10 @@ def validate_production_config(settings: AppSettings) -> None:
 
     - JWT_SECRET 必须设置且长度 >= 32
     - CORS 不能为空或通配符
+    - CREDENTIAL_ENCRYPT_KEY 必须存在
+    - 数据库不能落在临时目录
+    - API 文档必须关闭
+    - metrics 必须受控
     """
     if not is_production(settings):
         return
@@ -153,3 +157,20 @@ def validate_production_config(settings: AppSettings) -> None:
             "生产环境禁止将 ALLOWED_ORIGINS 配置为通配符 '*'，"
             "请显式列出允许的来源域名，避免任意站点跨域访问。"
         )
+
+    if not os.environ.get("CREDENTIAL_ENCRYPT_KEY", "").strip():
+        raise RuntimeError(
+            "生产环境必须设置 CREDENTIAL_ENCRYPT_KEY 环境变量（base64 编码的 32 字节密钥）。"
+        )
+
+    if not settings.database_url:
+        normalized_db_dir = (settings.db_dir or "").strip()
+        if normalized_db_dir in {"/tmp", "/var/tmp", "/dev/shm"}:
+            raise RuntimeError("生产环境不能使用临时目录作为 DB_DIR。")
+
+    if os.environ.get("DISABLE_API_DOCS", "").strip().lower() not in {"1", "true", "yes"}:
+        raise RuntimeError("生产环境建议设置 DISABLE_API_DOCS=1。")
+
+    metrics_public = os.environ.get("METRICS_PUBLIC", "").strip().lower() in {"1", "true", "yes", "on"}
+    if settings.enable_metrics and not metrics_public and not os.environ.get("METRICS_AUTH_TOKEN", "").strip():
+        raise RuntimeError("生产环境启用 /metrics 时应配置 METRICS_AUTH_TOKEN 或关闭公开暴露。")

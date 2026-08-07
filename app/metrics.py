@@ -7,17 +7,20 @@ no-ops so the application and tests can still import the package tree.
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
 try:  # pragma: no cover - optional dependency
-    from fastapi import FastAPI
-    from prometheus_client import Counter, Gauge, Histogram
-    from prometheus_fastapi_instrumentator import Instrumentator
+    from fastapi import FastAPI, Header, HTTPException, Request
+    from fastapi.responses import PlainTextResponse
+    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 except Exception:  # pragma: no cover - graceful fallback
     FastAPI = Any  # type: ignore[assignment]
     Counter = Gauge = Histogram = None  # type: ignore[assignment]
-    Instrumentator = None  # type: ignore[assignment]
+    generate_latest = None  # type: ignore[assignment]
+    CONTENT_TYPE_LATEST = "text/plain; version=0.0.4"  # type: ignore[assignment]
+    PlainTextResponse = Any  # type: ignore[assignment]
 
 
 class _NullMetric:
@@ -40,6 +43,39 @@ class _NullTimer:
 
     def __float__(self) -> float:
         return self.start
+
+
+def _client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
+    if forwarded_for:
+        candidate = forwarded_for.split(",", 1)[0].strip()
+        if candidate:
+            return candidate
+    forwarded = request.headers.get("X-Real-IP", "").strip()
+    if forwarded:
+        return forwarded
+    return request.client.host if request.client else "unknown"
+
+
+def _metrics_allowed(request: Request, auth_header: str | None) -> bool:
+    public_flag = os.environ.get("METRICS_PUBLIC", "0").strip().lower() in ("1", "true", "yes", "on")
+    if public_flag:
+        return True
+    if _client_ip(request) in {"127.0.0.1", "::1", "localhost"}:
+        return True
+    token = os.environ.get("METRICS_AUTH_TOKEN", "").strip()
+    if not token:
+        return False
+    if not auth_header:
+        return False
+    header = auth_header.strip()
+    if header == token:
+        return True
+    if header.startswith("Bearer ") and header[7:].strip() == token:
+        return True
+    if header.startswith("Token ") and header[6:].strip() == token:
+        return True
+    return False
 
 
 if Counter is None:
@@ -73,20 +109,17 @@ else:
 
 
 def setup_metrics(app: Any) -> None:
-    """Register metrics middleware when the optional package exists."""
-    if Instrumentator is None:
+    """Register metrics endpoint with lightweight auth."""
+    if generate_latest is None:
         return None
-    Instrumentator(
-        should_group_status_codes=True,
-        should_ignore_untemplated=True,
-        should_respect_env_var=False,
-        excluded_handlers=["/metrics", "/health/*", "/favicon.ico", "/robots.txt"],
-    ).instrument(app).expose(
-        app,
-        endpoint="/metrics",
-        include_in_schema=False,
-        tags=["monitoring"],
-    )
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics_endpoint(request: Request, authorization: str | None = Header(None)) -> Any:
+        if not _metrics_allowed(request, authorization):
+            raise HTTPException(status_code=403, detail="metrics access denied")
+        return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    return None
 
 
 def record_scan_start() -> float:
@@ -109,11 +142,6 @@ def record_cache_miss() -> None:
     scan_cache_misses_total.inc()
 
 
-def record_findings(findings: list[dict[str, Any]]) -> None:
-    for finding in findings:
-        severity = str(finding.get("severity") or "unknown")
-        findings_total.labels(severity=severity).inc()
 
-
-def record_api_request(method: str, endpoint: str, status_code: int) -> None:
-    api_requests_total.labels(method=method, endpoint=endpoint, status_code=str(status_code)).inc()
+def record_findings(severity: str, count: int = 1) -> None:
+    findings_total.labels(severity=severity).inc(count)

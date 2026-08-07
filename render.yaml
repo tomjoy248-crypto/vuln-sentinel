@@ -27,6 +27,14 @@ services:
         sync: false
       - key: DB_DIR
         value: "/data"
+      - key: CREDENTIAL_ENCRYPT_KEY
+        generateValue: true
+      - key: TLS_VERIFY
+        value: "true"
+      - key: DISABLE_API_DOCS
+        value: "1"
+      - key: METRICS_AUTH_TOKEN
+        generateValue: true
       - key: ENABLE_SCHEDULER
         value: "true"
       - key: PUBLIC_DEMO_ENABLED
@@ -35,5 +43,7 @@ services:
         value: "1"
       - key: ENABLE_METRICS
         value: "1"
+      - key: METRICS_PUBLIC
+        value: "0"
       - key: PYTHONUNBUFFERED
         value: "1"
