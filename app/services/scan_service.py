@@ -86,16 +86,18 @@ def _calculate_score(findings: list[dict[str, Any]]) -> dict[str, Any]:
     score = 100
     summary = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "total": 0}
     severity_weights = {"critical": 28, "high": 16, "medium": 8, "low": 3, "info": 0}
-    confidence_multipliers = {"high": 1.0, "medium": 0.7, "low": 0.4}
+    confidence_multipliers = {"critical": 1.0, "high": 1.0, "medium": 0.7, "low": 0.4, "info": 0.2}
     for finding in findings:
         sev = str(finding.get("severity", "info")).lower()
-        conf = str(finding.get("confidence", "medium")).lower()
+        conf = str(finding.get("adjusted_confidence") or finding.get("confidence", "medium")).lower()
         summary[sev] = summary.get(sev, 0) + 1
         summary["total"] += 1
         weight = severity_weights.get(sev, 0)
         multiplier = confidence_multipliers.get(conf, 0.7)
         if finding.get("is_likely_fp"):
             multiplier *= 0.5
+        if conf == 'info':
+            multiplier *= 0.6
         score -= int(round(weight * multiplier))
     if summary["total"] == 0:
         risk_level = "low"
