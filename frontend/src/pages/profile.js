@@ -616,3 +616,43 @@ export {
   toggleApiKeyVisibility,
   renderAIConfig
 };
+
+
+if (typeof window !== 'undefined') {
+  window.doPasswordResetConfirm = function() {
+    let passwordEl = document.getElementById('reset-password-token');
+    let newPasswordEl = document.getElementById('reset-new-password');
+    let confirmEl = document.getElementById('reset-new-password2');
+    let token = passwordEl ? passwordEl.value.trim() : '';
+    let newPassword = newPasswordEl ? newPasswordEl.value.trim() : '';
+    let confirmPassword = confirmEl ? confirmEl.value.trim() : '';
+    if (!token) { showToast('请输入重置 Token'); return; }
+    if (!newPassword || newPassword.length < 6) { showToast('新密码至少 6 个字符'); return; }
+    if (newPassword !== confirmPassword) { showToast('两次密码不一致'); return; }
+    apiPost('/api/auth/password-reset/confirm', { token: token, new_password: newPassword }).then(function(data) {
+      if (data && data.success) {
+        showToast('密码重置成功，请重新登录');
+        toggleAuthForm('login');
+      } else {
+        showToast(extractError(data) || '密码重置失败');
+      }
+    }).catch(function(e) { showToast('密码重置失败：' + e.message); });
+  };
+  window.doResendVerification = function() {
+    resendVerification().then(function(data) {
+      showToast((data && data.message) || '验证邮件已重新发送');
+    }).catch(function(e) { showToast('重新发送失败：' + e.message); });
+  };
+  window.doVerifyEmailFromToken = function() {
+    let tokenEl = document.getElementById('verify-email-token');
+    let token = tokenEl ? tokenEl.value.trim() : '';
+    if (!token) { showToast('请输入邮箱验证 Token'); return; }
+    apiPost('/api/auth/verify-email', { token: token }).then(function(data) {
+      if (data && data.success) {
+        showToast('邮箱验证成功');
+      } else {
+        showToast(extractError(data) || '邮箱验证失败');
+      }
+    }).catch(function(e) { showToast('邮箱验证失败：' + e.message); });
+  };
+}

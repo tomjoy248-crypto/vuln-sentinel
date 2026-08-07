@@ -2549,3 +2549,9 @@ if (typeof window !== 'undefined') {
   window.downloadNginxConf = downloadNginxConf;
   window.downloadRepairReport = downloadRepairReport;
 }
+
+
+if (typeof window !== 'undefined') {
+  window.copyText = copyText;
+  window.submitFindingFeedback = submitFindingFeedback;
+}
