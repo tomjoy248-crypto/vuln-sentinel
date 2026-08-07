@@ -11,9 +11,9 @@
 ## 2. 补齐工程文件
 
 - `src-tauri/Cargo.toml` 中加入 `tauri` 依赖
-- `src-tauri/build.rs` 中加入 `tauri_build`
-- `src-tauri/src/main.rs` 中创建应用窗口
-- `src-tauri/tauri.conf.json` 中补齐打包参数
+- `src-tauri/build.rs` 中加入 `tauri_build`（当前已补齐）
+- `src-tauri/src/main.rs` 中创建应用窗口（当前已补齐）
+- `src-tauri/tauri.conf.json` 中补齐打包参数（当前已切到 `NSIS` / `currentUser`）
 
 ## 3. 接入前端
 
@@ -23,7 +23,7 @@
 
 ## 4. Windows 打包
 
-- 生成 `msi`
+- 生成 `NSIS` 安装包（当前用户安装）
 - 检查图标和版本号
 - 校验安装、卸载、更新流程
 

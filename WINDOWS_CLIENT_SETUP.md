@@ -6,7 +6,7 @@
 
 - 安装 Node.js
 - 安装 Rust toolchain
-- 安装 Tauri CLI
+- 安装 Tauri CLI（`cargo install tauri-cli --version "^2.0.0" --locked`，网络稳定时执行）
 
 ## 2. 初始化桌面壳
 
@@ -51,5 +51,5 @@ cargo tauri build
 
 ## 8. 当前限制
 
-- 目前仓库已有骨架，但没有真正运行 Rust/Tauri 依赖
-- 要完成可编译版本，还需要安装系统环境后继续补最后一层
+- 目前仓库已具备可编译骨架，`cargo check` 已通过，但 `tauri-cli` 仍需补齐才能执行打包
+- 要完成打包版本，还需要安装 `tauri-cli` 和 Windows 打包依赖后继续最后一层
