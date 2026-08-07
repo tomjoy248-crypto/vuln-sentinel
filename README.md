@@ -283,6 +283,17 @@ powershell -ExecutionPolicy Bypass -File scripts\package_windows_release.ps1
 - 卸载后会移除安装目录和快捷方式
 - 当前桌面版以 `src-tauri/tauri.conf.json` 的 `NSIS` 配置为准
 
+### Windows 实机自测清单
+
+1. 运行 `artifacts/windows/Vuln-Sentinel-11.0.0-win64-setup.exe`。
+2. 检查是否可正常安装到当前用户目录。
+3. 验证桌面快捷方式与开始菜单入口是否存在。
+4. 启动后确认登录页、首页、扫描页、结果页可正常打开。
+5. 输入一个授权目标，确认“开始扫描”能进入结果页。
+6. 生成 PDF 报告，确认能下载且标题、摘要、中文内容正常。
+7. 执行卸载，确认程序目录和快捷方式被移除。
+8. 卸载后再次打开入口，确认不会残留异常启动项。
+
 ---
 
 ### 方式 E：Render 云部署

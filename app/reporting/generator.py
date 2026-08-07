@@ -478,9 +478,20 @@ def generate_src_report(scan_data: dict[str, Any], format: str = "markdown") -> 
         overall_score=summary.overall_score,
     )
 
+    client_summary = (
+        "## 0. 客户摘要\n\n"
+        f"- 目标地址：`{summary.target_url}`\n"
+        f"- 安全评分：{summary.overall_score} / 100\n"
+        f"- 风险等级：{summary.risk_level}\n"
+        f"- 已验证：{summary.verified_count}，待复测：{summary.unverified_count}，误报：{summary.false_positive_count}\n"
+        f"- 扫描时长：{_format_duration(summary.scan_duration_ms)}\n\n"
+        "> 建议优先关闭高危与已验证项，再复测中低风险项并保留证据链。"
+    )
+
     parts = [
         title,
         DISCLAIMER_TEMPLATE,
+        client_summary,
         generate_executive_summary(scan_data),
         _generate_findings_summary(findings, summary),
         _generate_detailed_findings(findings),
