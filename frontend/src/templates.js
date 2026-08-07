@@ -484,7 +484,7 @@ export const APP_TEMPLATE = `</head>
 
         <button onclick="goVerifyStep2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">域名归属验证（推荐）</button>
 
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">快速测试仅适用于自有测试环境，正式交付建议完成归属验证</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">快速演示仅适用于自有目标或授权场景，正式交付建议完成归属验证</div>
 
       </div>
 
@@ -626,7 +626,7 @@ export const APP_TEMPLATE = `</head>
 
 
 
-  <!-- 公开测试扫描 -->
+  <!-- 公开演示扫描 -->
 
   <div class="card public-report-card" id="demo-report" style="margin-top:18px">
 
@@ -634,7 +634,7 @@ export const APP_TEMPLATE = `</head>
 
       <div>
 
-        <span style="font-size:13px">公开测试扫描</span>
+        <span style="font-size:13px">公开演示扫描</span>
 
         <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">无需登录，即时检测公开站点</span>
 
@@ -650,7 +650,7 @@ export const APP_TEMPLATE = `</head>
 
           <option value="https://httpbin.org">httpbin.org</option>
 
-          <option value="https://testphp.vulnweb.com">testphp.vulnweb.com（测试漏洞）</option>
+          <option value="https://testphp.vulnweb.com">testphp.vulnweb.com（公开演示）</option>
 
         </select>
 
@@ -664,9 +664,9 @@ export const APP_TEMPLATE = `</head>
 
       <div style="padding:16px;text-align:center;color:var(--text-secondary);background:var(--bg);border-radius:2px;margin-top:12px;border:1px dashed var(--border)">
 
-        <div style="font-size:12px;margin-bottom:8px;color:var(--text)">选择公开测试站点，立即开始扫描</div>
+        <div style="font-size:12px;margin-bottom:8px;color:var(--text)">选择公开演示站点，立即查看扫描结果</div>
 
-        <div style="margin-top:10px"><button onclick="loadPublicDemo()" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">扫描 example.com</button></div>
+        <div style="margin-top:10px"><button onclick="loadPublicDemo()" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">查看示例结果</button></div>
 
       </div>
 

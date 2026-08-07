@@ -3151,9 +3151,9 @@ function renderResult(data) {
     let vulnCount = data.vuln_tests.filter(function(t) { return t.vulnerable; }).length;
     let totalTests = data.vuln_tests.length;
     html += '<div class="card fade-in-up" style="animation-delay:0.40s">';
-    html += '<div class="card-title"> 漏洞注入测试</div>';
+    html += '<div class="card-title"> 参数与表单验证</div>';
     html += '<div style="display:flex;gap:12px;margin-bottom:10px;font-size:13px">';
-    html += '<span style="color:var(--text-secondary)">测试总数: <strong>' + totalTests + '</strong></span>';
+    html += '<span style="color:var(--text-secondary)">检测项总数: <strong>' + totalTests + '</strong></span>';
     html += '<span style="color:' + (vulnCount > 0 ? 'var(--danger)' : 'var(--success)') + '">发现漏洞: <strong>' + vulnCount + '</strong></span>';
     html += '</div>';
     html += '<div style="font-size:12px;line-height:1.8;max-height:180px;overflow-y:auto">';
@@ -3169,7 +3169,7 @@ function renderResult(data) {
   // Scan mode badge
   if ( data.scan_type === 'deep') {
     html += '<div style="text-align:center;margin:12px 0">';
-    html += '<span style="display:inline-block;padding:4px 14px;background:rgba(75,110,175,0.1);color:var(--primary);border-radius:2px;font-size:12px;font-weight:600">深度扫描模式 - 含漏洞注入测试</span>';
+    html += '<span style="display:inline-block;padding:4px 14px;background:rgba(75,110,175,0.1);color:var(--primary);border-radius:2px;font-size:12px;font-weight:600">深度扫描模式 - 含参数与表单验证</span>';
     html += '</div>';
   }
 
@@ -3374,8 +3374,8 @@ function renderResult(data) {
   html += '<div style="margin-top:20px;padding:16px;background:var(--bg-secondary);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
   html += '<div style="font-weight:600;margin-bottom:8px">检测范围说明</div>';
   html += '<div>本次扫描检测了：HTTPS/TLS 配置、安全响应头（HSTS/CSP/X-Frame-Options 等 15+ 项）、Cookie 安全属性、CORS 策略、敏感路径暴露、WAF 识别。</div>';
-  html += '<div style="margin-top:4px">不进行：破坏性攻击、密码爆破、权限绕过、漏洞利用、主动渗透测试。</div>';
-  html += '<div style="margin-top:4px;color:var(--text-light)">如需全面安全评估，建议配合专业渗透测试服务。</div>';
+  html += '<div style="margin-top:4px">不进行：破坏性攻击、密码爆破、权限绕过、主动利用和深度渗透测试。</div>';
+  html += '<div style="margin-top:4px;color:var(--text-light)">如需全面安全评估，建议配合专业安全服务。</div>';
   html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
   html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据摘要，再结合二次扫描结果和原始响应确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
   html += '<div style="margin-top:8px;font-weight:600">证据分层</div>';
