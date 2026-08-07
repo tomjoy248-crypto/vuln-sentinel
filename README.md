@@ -285,7 +285,7 @@ powershell -ExecutionPolicy Bypass -File scripts\package_windows_release.ps1
 
 ### Windows 实机验收清单
 
-详细清单已独立到 `docs/windows-acceptance-checklist.md`，README 保留快速入口。
+详细清单已独立到 `docs/windows-delivery-acceptance.md`，README 保留快速入口。
 
 1. 运行 `artifacts/windows/Vuln-Sentinel-11.0.0-win64-setup.exe`。
 2. 检查是否可正常安装到当前用户目录。
