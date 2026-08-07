@@ -1367,7 +1367,7 @@ function startScanDirect() {
     let scanBtn = document.getElementById('scan-btn');
     if (scanBtn) scanBtn.disabled = false;
   }
-  // 11-S：已登录用户跳过 step3 二次确认，直接开始分析（合规授权已在 step1 完成）
+  // 11-S：已登录用户跳过 step3 二次确认，直接开始扫描（合规授权已在 step1 完成）
   // 同时把 URL 也填到 step3 输入框，保留 step3 备用
   let confirmedInput = document.getElementById('scan-url-confirmed');
   if (confirmedInput) confirmedInput.value = url;
@@ -1379,7 +1379,7 @@ function startScanDirect() {
     _scanInProgress = false;
     setButtonLoading("scan-btn", false);
     setButtonLoading("scan-btn-step1", false);
-    showToast('分析启动失败：' + (e.message || String(e)));
+    showToast('扫描启动失败：' + (e.message || String(e)));
   }
 }
 
@@ -4047,7 +4047,7 @@ function renderScanHistory(page) {
   authFetch('/api/history?limit=50').then(function(resp) { return resp.json(); }).then(function(data) {
     let history = data.history || [];
     if (history.length === 0) {
-      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:13px">暂无扫描记录</div><div style="font-size:12px;margin-top:6px">点首页「开始分析」试试</div><div style="margin-top:12px"><button class="fixer-btn primary" onclick="navigateTo(\'scan\')">开始分析</button></div></div>';
+      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:13px">暂无扫描记录</div><div style="font-size:12px;margin-top:6px">点首页「开始扫描」试试</div><div style="margin-top:12px"><button class="fixer-btn primary" onclick="navigateTo(\'scan\')">开始扫描</button></div></div>';
       safeSetDisplay('history-pagination', 'none');
       let tw = document.getElementById('history-trend-wrap');
       if (tw) tw.style.display = 'none';
