@@ -4159,6 +4159,7 @@ function updateProfileStats() {
 window.startScanDirect = startScanDirect;
 window.startScan = startScan;
 window.updateScanStartState = updateScanStartState;
+window.dismissHomeOnboarding = dismissHomeOnboarding;
 window.goVerifyStep2 = goVerifyStep2;
 window.cancelScan = cancelScan;
 window.quickDemo = quickDemo;
