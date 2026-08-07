@@ -406,6 +406,9 @@ function updateAuthUI() {
   if (typeof window.updateScanStartState === 'function') {
     window.updateScanStartState();
   }
+  if (typeof window.refreshScanStartStateSoon === 'function') {
+    window.refreshScanStartStateSoon();
+  }
 }
 
 function copyApiToken() {
