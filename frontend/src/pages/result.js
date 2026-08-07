@@ -247,9 +247,9 @@ function renderHeader(score, riskLevel, summary, url, data) {
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
   const reportSummary = '本次扫描共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
-  const reportIntro = '报告适用于上线前自查、客户交付和复扫留档，重点展示已验证、待确认和需要复测的结果，可直接作为交付附件和复测底稿。';
+  const reportIntro = '报告适用于上线前自查、客户交付和复扫留档，重点展示已验证、待确认和待复测的结果，可直接作为交付附件和复测底稿。';
   const actionHint = data.scan_id
-    ? '<div class="src-report-action-hint">建议优先处理“已验证”和“待确认”项；“需要复测”项通常表示证据不足或环境干扰，请先复测或人工确认后再进入工单。</div>'
+    ? '<div class="src-report-action-hint">建议优先处理“已验证”和“待确认”项；“待复测”项通常表示证据不足或环境干扰，请先复测或人工确认后再进入工单。</div>'
     : '';
 
   return `
@@ -317,7 +317,7 @@ function renderFindingList(findings, selectedIndex) {
       const typeLabel = f.type ? `<span class="src-list-type">${escapeHtml(f.type.toUpperCase())}</span>` : '';
       const host = f.url ? new URL(f.url, window.location.href).hostname : '';
       const path = f.url ? new URL(f.url, window.location.href).pathname : '';
-      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag" title="需要人工复核">待复核</span>' : '';
+      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag" title="需要人工复核或复测">待复核</span>' : '';
       const corrGroup = f.correlation_group ? `<span class="src-list-corr" title="关联组 ${escapeAttr(f.correlation_group)}（${f.correlation_size || 0} 个相关）">${escapeHtml(f.correlation_group)}</span>` : '';
       const mergedCount = f.merged_count > 1 ? `<span class="src-list-merged" title="合并了 ${f.merged_count} 个重复项">×${f.merged_count}</span>` : '';
       const vStatus = f.verification_status;
@@ -565,7 +565,7 @@ function renderEvidenceSection(evidence, finding) {
   html += `<div class="src-section-title">证据摘要</div>
     <div class="src-section-body src-evidence-meta">`;
   const confidenceState = finding.verification_status || (finding.is_likely_fp ? 'suspected' : 'probable');
-  const confidenceText = confidenceState === 'confirmed' ? '已验证' : confidenceState === 'probable' ? '可能存在' : '需要复测';
+  const confidenceText = confidenceState === 'confirmed' ? '已验证' : confidenceState === 'probable' ? '可能存在' : '待复测';
   html += `<div class="src-evidence-row"><span class="src-evidence-label">可信度</span><span>${escapeHtml(confidenceText)}</span></div>`;
   html += `<div class="src-evidence-row"><span class="src-evidence-label">误报概率</span><span>${finding.fp_score !== undefined ? ((finding.fp_score * 100).toFixed(0) + '%') : '—'}</span></div>`;
   if (requestSummary) {
