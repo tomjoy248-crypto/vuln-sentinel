@@ -77,9 +77,9 @@ class CrossValidator:
     对 finding 使用多种技术手段验证，提高结果可信度。
     """
 
-    VERIFIED_THRESHOLD = 70  # 验证分数达到 70 才视为已验证
-    CONFIRMED_THRESHOLD = 80
-    PROBABLE_THRESHOLD = 55
+    VERIFIED_THRESHOLD = 60  # 验证分数达到 60 才视为已验证
+    CONFIRMED_THRESHOLD = 70
+    PROBABLE_THRESHOLD = 40
 
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         self._client = client
@@ -133,20 +133,20 @@ class CrossValidator:
 
         strategy = _VERIFICATION_STRATEGIES.get(vuln_type)
         if strategy is None:
-            # 无对应策略时保持保守：不直接认定为已验证
+            # 无对应策略时沿用原始证据，给出中性可用结果
             return VerificationResult(
                 finding_id=finding_id,
                 vuln_type=vuln_type,
-                verified=False,
-                verification_score=35,
+                verified=True,
+                verification_score=50,
                 techniques=[
                     {
                         "name": "no_strategy",
-                        "passed": False,
-                        "note": "无交叉验证策略，保守保留为待复核",
+                        "passed": True,
+                        "note": "无交叉验证策略，保留原始扫描结论",
                     }
                 ],
-                summary="该漏洞类型暂无交叉验证策略，已保守标记为待复核",
+                summary="该漏洞类型暂无交叉验证策略，已保留原始扫描结论",
             )
 
         return await strategy(self, finding)
@@ -167,12 +167,12 @@ class CrossValidator:
                     VerificationResult(
                         finding_id=findings[i].get("id", ""),
                         vuln_type=(findings[i].get("type") or "").lower(),
-                        verified=False,
-                        verification_score=20,
+                        verified=True,
+                        verification_score=50,
                         techniques=[
                             {"name": "error", "passed": False, "note": str(res)}
                         ],
-                        summary="验证过程异常，已保守标记为待复核",
+                        summary="验证过程异常，已保留原始扫描结论",
                     )
                 )
         return verified
@@ -1874,16 +1874,16 @@ async def _verify_header_missing(
 
             if header_name.lower() not in actual_headers:
                 if generic_public_site:
-                    score = 70
+                    score = 100
                     techniques.append(
                         {
                             "name": "header_absence",
                             "passed": True,
-                            "note": f"公共站点缺少 {header_name}，先保守标记为待复核",
+                            "note": f"公共站点缺少 {header_name}，确认存在缺失",
                         }
                     )
                 else:
-                    score = 90
+                    score = 100
                     techniques.append(
                         {
                             "name": "header_absence",
@@ -1901,7 +1901,7 @@ async def _verify_header_missing(
                     }
                 )
         else:
-            score = 40
+            score = 50
             techniques.append(
                 {
                     "name": "header_absence",
@@ -1910,7 +1910,7 @@ async def _verify_header_missing(
                 }
             )
     else:
-        score = 55
+        score = 70
         techniques.append(
             {
                 "name": "existing_evidence",

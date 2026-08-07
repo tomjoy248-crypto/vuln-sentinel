@@ -28,6 +28,8 @@ except Exception:  # pragma: no cover - best effort init
 
 import pytest  # noqa: E402
 
+pytestmark = pytest.mark.asyncio
+
 import app.verification.cross_validator as cv  # noqa: E402
 from app.verification.cross_validator import (  # noqa: E402
     CrossValidator,
