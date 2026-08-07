@@ -3607,12 +3607,16 @@ function goToFixerWithScanResult() {
 function generateLocalFixes(findings) {
   try {
     if (!Array.isArray(findings)) findings = [];
-  let fixes = { nginx: [], python: [], nodejs: [], apache: [] };
+  let fixes = { nginx: [], apache: [], express: [], flask: [], spring_boot: [], cloudflare: [], python: [], nodejs: [] };
   findings.forEach(function(f) {
     let fix = f.fix || '';
     if (fix) {
       fixes.nginx.push(fix);
       fixes.apache.push(fix.replace('add_header', 'Header set').replace('always;', ''));
+      fixes.express.push('// ' + f.name + ': ' + fix.substring(0, 60));
+      fixes.flask.push('# ' + f.name + ': ' + fix.substring(0, 60));
+      fixes.spring_boot.push('// ' + f.name + ': ' + fix.substring(0, 60));
+      fixes.cloudflare.push('# ' + f.name + ': ' + fix.substring(0, 60));
       fixes.python.push('# ' + f.name + ': ' + fix.substring(0, 60));
       fixes.nodejs.push('// ' + f.name + ': ' + fix.substring(0, 60));
     }
@@ -3620,7 +3624,7 @@ function generateLocalFixes(findings) {
   return fixes;
   } catch (e) {
     console.error('generateLocalFixes error:', e);
-    return { nginx: [], python: [], nodejs: [], apache: [] };
+    return { nginx: [], apache: [], express: [], flask: [], spring_boot: [], cloudflare: [], python: [], nodejs: [] };
   }
 }
 
@@ -3763,22 +3767,26 @@ function downloadAllFixes() {
   if (!lastScanResult) { showToast('请先完成扫描'); return; }
   // 优先使用已生成的 lastFixResult；若不存在则本地生成
   let fixes = lastFixResult || generateLocalFixes(lastScanResult.findings);
-  if (!fixes) { showToast('暂无可导出的修复配置'); return; }
-  let platformNames = { nginx: 'Nginx', apache: 'Apache', express: 'Express', flask: 'Flask/FastAPI', spring_boot: 'Spring Boot', cloudflare: 'Cloudflare' };
-  let platformOrder = ['nginx', 'apache', 'express', 'flask', 'spring_boot', 'cloudflare'];
+  let platformNames = { nginx: 'Nginx', apache: 'Apache', express: 'Express', flask: 'Flask/FastAPI', spring_boot: 'Spring Boot', cloudflare: 'Cloudflare', python: 'Python', nodejs: 'Node.js' };
+  let platformOrder = ['nginx', 'apache', 'express', 'flask', 'spring_boot', 'cloudflare', 'python', 'nodejs'];
   let lines = ['# 漏洞哨兵修复配置包', '# 目标: ' + (lastScanResult.url || ''), '# 生成时间: ' + new Date().toLocaleString(), ''];
+  let hasContent = false;
   platformOrder.forEach(function(p) {
-    let arr = fixes[p] || [];
-    if (arr.length === 0) return;
+    let arr = fixes && fixes[p] ? fixes[p] : [];
     lines.push('## ' + (platformNames[p] || p));
-    lines.push(_fixesToText(arr));
+    if (arr.length === 0) {
+      lines.push('暂无适用配置片段');
+    } else {
+      lines.push(_fixesToText(arr));
+      hasContent = true;
+    }
     lines.push('');
   });
-  if (lines.length <= 4) {
-    showToast('暂无可导出的修复配置');
-    return;
+  if (!hasContent) {
+    lines.push('## 使用建议');
+    lines.push('当前扫描结果没有直接生成平台配置片段，请先查看报告中的漏洞证据与修复建议，再重新生成修复包。');
   }
-  let blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  let blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
   let url = URL.createObjectURL(blob);
   let a = document.createElement('a');
   a.href = url;
