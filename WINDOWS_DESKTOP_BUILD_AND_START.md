@@ -10,7 +10,7 @@
 
 - 首先打通 `cargo check`
 - 然后打通 `cargo tauri build`
-- 最后生成 Windows 安装包 `msi`
+- 最后生成 Windows 安装包 `NSIS`（当前用户安装）
 
 ## 图标与品牌
 
