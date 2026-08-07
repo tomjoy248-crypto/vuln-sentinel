@@ -1873,7 +1873,7 @@ async def _verify_header_missing(
             ) or "text/html" in content_type
 
             if header_name.lower() not in actual_headers:
-                if header_name in {"Strict-Transport-Security", "X-Frame-Options"} and generic_public_site:
+                if generic_public_site:
                     score = 70
                     techniques.append(
                         {
