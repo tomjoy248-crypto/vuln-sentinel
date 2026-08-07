@@ -55,7 +55,7 @@ async function refreshLoginStatus() {
     let resp = await fetch('/api/v1/', { signal: controller.signal });
     clearTimeout(timer);
     if (resp.ok) {
-      statusMessage.textContent = '登录服务在线，可使用 demo / demo123 或你的账号登录';
+      statusMessage.textContent = '登录服务在线，可直接使用你的账号登录';
     } else {
       statusMessage.textContent = '登录服务可访问，但返回异常状态：' + resp.status;
     }
@@ -116,7 +116,7 @@ function updateAuthUI() {
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'none';
     if (scanLoginTip) scanLoginTip.style.display = 'block';
-    if (statusMessage) statusMessage.textContent = '默认演示账号：demo / demo123；如果自建账号登录失败，请先确认后端服务已启动。';
+    if (statusMessage) statusMessage.textContent = '如果登录失败，请先确认后端服务已启动。';
     if (tokenInput) tokenInput.value = '登录后显示 Token';
   }
 }

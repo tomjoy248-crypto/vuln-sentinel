@@ -15,7 +15,7 @@ function loadTicketContextFromStorage() {
     let prompt = document.getElementById('fixer-scan-prompt');
     if (prompt) {
       prompt.innerHTML = '<div class="card-title">已接收工单上下文</div>' +
-        '<p style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin:0">已从工单自动带入目标地址，你可以直接分析当前配置或继续生成修复方案。</p>' +
+        '<p style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin:0">已从工单自动带入目标地址，你可以直接分析当前配置并生成修复方案。</p>' +
         '<div style="margin-top:10px;font-size:12px;color:var(--text-secondary)">工单 #' + escapeHtml(String(ticket.ticket_id || '')) + ' · ' + escapeHtml(ticket.finding_name || '') + '</div>';
     }
     localStorage.removeItem('vs_fixer_ticket');
