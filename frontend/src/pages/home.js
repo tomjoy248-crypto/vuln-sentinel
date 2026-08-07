@@ -1370,6 +1370,7 @@ function startScanDirect() {
   // 同时把 URL 也填到 step3 输入框，保留 step3 备用
   let confirmedInput = document.getElementById('scan-url-confirmed');
   if (confirmedInput) confirmedInput.value = url;
+  try { updateScanStartState(); } catch (e) {}
   // 直接触发扫描
   startScan();
   } catch (e) {
@@ -1576,7 +1577,7 @@ function confirmVerification() {
       if (confirmedInput) confirmedInput.value = url;
       let authStep3 = document.getElementById('auth-check');
       if (authStep3) authStep3.checked = true;
-      updateScanStartState();
+      try { updateScanStartState(); } catch (e) {}
       let step2 = document.getElementById('verify-step-2');
       let step3 = document.getElementById('verify-step-3');
       if (step2) step2.style.display = 'none';
