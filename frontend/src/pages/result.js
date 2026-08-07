@@ -228,8 +228,8 @@ function renderHeader(score, riskLevel, summary, url, data) {
   const vBadge = vStats.enabled
     ? `<span class="meta-item verification-badge">
         <span class="v-confirmed" title="已验证">${vStats.confirmed || 0}</span>
-        <span class="v-probable" title="可能存在">${vStats.probable || 0}</span>
-        <span class="v-suspected" title="存疑">${vStats.suspected || 0}</span>
+        <span class="v-probable" title="待确认">${vStats.probable || 0}</span>
+        <span class="v-suspected" title="待复核">${vStats.suspected || 0}</span>
        </span>`
     : '';
 
@@ -247,9 +247,9 @@ function renderHeader(score, riskLevel, summary, url, data) {
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
   const reportSummary = '本次扫描共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
-  const reportIntro = '报告适用于上线前自查、客户交付和复扫留档，重点展示已验证、可能存在与待复核结果。';
+  const reportIntro = '报告适用于上线前自查、客户交付和复扫留档，重点展示已验证、待确认和待复核结果。';
   const actionHint = data.scan_id
-    ? '<div class="src-report-action-hint">建议优先处理“已验证”和“可能存在”项；“待复核”项请结合业务上下文判断，修复后再复扫确认。</div>'
+    ? '<div class="src-report-action-hint">建议优先处理“已验证”和“待确认”项；“待复核”项请结合业务上下文判断，修复后再复扫确认。</div>'
     : '';
 
   return `
