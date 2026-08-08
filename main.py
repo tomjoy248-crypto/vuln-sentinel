@@ -3640,12 +3640,64 @@ async def check_sensitive_paths(host: str, is_https: bool) -> list[dict]:
                 # 公开文件没有特定规则：默认 info，不当 suspect
                 return {"verdict": "info", "reason": f"{path} 为公开文件，内容可供参考"}
 
+        # 软 404 / 登录页 / WAF / 错误页识别
+        soft404_signals = (
+            "page not found",
+            "not found",
+            "404 not found",
+            "file not found",
+            "页面不存在",
+            "找不到页面",
+            "资源不存在",
+            "无法找到",
+            "sorry, the page you requested does not exist",
+        )
+        if any(sig in text_lower for sig in soft404_signals):
+            return {
+                "verdict": "suspect",
+                "reason": "响应内容疑似软404/错误页，需人工复核",
+            }
+
+        login_signals = (
+            "login",
+            "sign in",
+            "sign-in",
+            "password",
+            "remember me",
+            "forgot password",
+            "username",
+            "验证码",
+            "请登录",
+            "登录",
+        )
+        if ("<form" in text_lower or "type=\"password\"" in text_lower) and any(sig in text_lower for sig in login_signals):
+            return {
+                "verdict": "suspect",
+                "reason": "响应内容疑似登录页，需人工复核",
+            }
+
+        waf_signals = (
+            "access denied",
+            "forbidden",
+            "request blocked",
+            "security check",
+            "bot detection",
+            "captcha",
+            "waf",
+            "cloudflare",
+        )
+        if any(sig in text_lower for sig in waf_signals):
+            return {
+                "verdict": "suspect",
+                "reason": "响应内容疑似 WAF/反爬拦截页，需人工复核",
+            }
+
         # 全局 forbidden 检测（WAF/反爬/登录页/错误页）
         for fb in GLOBAL_FORBIDDEN:
             if fb.lower() in text_lower:
                 return {
                     "verdict": "suspect",
-                    "reason": f"响应内容包含 '{fb}'，疑似 WAF 拦截/登录页/错误页，需人工确认",
+                    "reason": f"响应内容包含 '{fb}'，疑似 WAF 拦截/登录页/错误页，需人工复核",
                 }
 
         checks = CONTENT_CHECKS.get(path)
