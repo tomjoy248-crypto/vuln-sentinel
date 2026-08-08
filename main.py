@@ -6423,7 +6423,7 @@ async def analyze_security(
         waf_name = waf_list[0].get("name", "").lower()
         if waf_name in REAL_WAF:
             restricted = True
-            restricted_reason = f"检测到反爬 WAF（{waf_list[0].get('name', '未知')}），目标站点有访问限制。"
+            restricted_reason = f"检测到反爬 WAF（{waf_list[0].get('name', '未知')}），目标站点有访问限制，建议人工复核。"
             restricted_code = "WAF"
         # CDN（WAF/CDN 列表里有 cloudflare/aws）只标识别到，不算受限
     # 2. 敏感路径中有 suspect（登录页/反爬响应）
@@ -6453,7 +6453,7 @@ async def analyze_security(
                 if sign in k or sign in v:
                     if not restricted:
                         restricted = True
-                        restricted_reason = f"响应头检测到反爬/WAF 特征（{sign}），目标站点限制自动化访问。"
+                        restricted_reason = f"响应头检测到反爬/WAF 特征（{sign}），目标站点限制自动化访问，建议人工复核。"
                         restricted_code = "ANTI_BOT"
                     break
 

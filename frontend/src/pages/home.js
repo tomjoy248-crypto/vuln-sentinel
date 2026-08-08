@@ -2443,7 +2443,7 @@ function renderResult(data) {
   html += '<div class="card fade-in-up" style="animation-delay:0.05s;padding:14px;margin-top:12px;border:1px solid rgba(75,110,175,0.25);background:rgba(60,63,65,0.9)">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">';
   html += '<div style="font-size:13px;font-weight:700;color:var(--text-primary)">管理层摘要</div>';
-  html += '<div style="font-size:12px;color:var(--text-secondary)">' + (data.restricted ? '受限扫描，结论需人工复核' : '可直接进入修复与复核闭环') + '</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary)">' + (data.restricted ? '受限扫描，结论需复核' : '可直接进入修复与复核闭环') + '</div>';
   html += '</div>';
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.8">' + escapeHtml(managementSummary) + '</div>';
   html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-secondary)">';
@@ -3298,7 +3298,7 @@ function renderResult(data) {
   if (data.restricted) {
     html += '<div style="margin-top:10px;padding:8px 12px;background:rgba(240,167,50,0.1);border-radius:2px;color:var(--warning);font-size:12px;line-height:1.6">';
     html += '<strong>受限扫描提示</strong><br/>';
-    html += '目标站点存在 WAF/反爬/登录限制，本次扫描可能未获取完整信息。建议扫描网站首页或主域名，或联系站点管理员获取授权后进行深度扫描。';
+    html += '目标站点存在 WAF / CDN / 登录 / 反爬限制，本次扫描可能未获取完整信息。建议先扫描首页或主域名，必要时联系站点管理员获取授权后再做深度扫描。';
     html += '</div>';
   } else if (exposedCount === 0 && suspectCount === 0 && (headerMissingCount > 0 || configCount > 0)) {
     html += '<div style="margin-top:10px;padding:8px 12px;background:rgba(115,201,144,0.08);border-radius:2px;color:var(--success);font-size:12px">';
