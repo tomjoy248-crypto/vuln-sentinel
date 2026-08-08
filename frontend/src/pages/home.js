@@ -1766,7 +1766,7 @@ function startRealScan(url, host, deepScan) {
   // Try /api/scan
   authFetch('/api/scan', {
     method: 'POST',
-    body: JSON.stringify({ url: url, depth: deepScan ? 'deep' : 'standard', authorized: true })
+    body: JSON.stringify({ url: url, depth: deepScan ? 'deep' : 'standard', authorized: !!((authCb && authCb.checked) || (authStep1 && authStep1.checked)) })
   }).then(function(resp) {
     if (_scanCancelled) return;
     clearTimeout(timeoutId);

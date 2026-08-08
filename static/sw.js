@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vuln-sentinel-v11-s-v5';
+const CACHE_NAME = 'vuln-sentinel-v11-s-v3';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',

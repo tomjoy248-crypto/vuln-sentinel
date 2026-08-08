@@ -38,23 +38,6 @@
     }
   });
 </script>
-<script>
-  (function() {
-    if (!('serviceWorker' in navigator) || !window.caches) return;
-    window.addEventListener('load', function() {
-      Promise.resolve()
-        .then(function() { return navigator.serviceWorker.getRegistrations(); })
-        .then(function(registrations) {
-          return Promise.all(registrations.map(function(registration) { return registration.unregister(); }));
-        })
-        .then(function() { return caches.keys(); })
-        .then(function(keys) {
-          return Promise.all(keys.map(function(key) { return caches.delete(key); }));
-        })
-        .catch(function() {});
-    });
-  })();
-</script>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>
