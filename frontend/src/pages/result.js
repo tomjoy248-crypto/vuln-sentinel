@@ -249,9 +249,9 @@ function renderHeader(score, riskLevel, summary, url, data) {
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
   const reportSummary = '本次扫描共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
-  const reportIntro = '本报告面向客户交付、上线前验收和复扫留档，突出已验证问题、待确认风险与待复测项，并可直接作为交付附件、复测记录和修复跟踪底稿。';
+  const reportIntro = '本报告面向客户交付、上线前验收和复扫留档，突出已验证问题、待复核风险与待人工确认项，并可直接作为交付附件、复测记录和修复跟踪底稿。';
   const actionHint = data.scan_id
-    ? '<div class="src-report-action-hint">建议优先处理“已验证”和“待确认”项；“待复测”项通常表示证据不足或环境干扰，请先复测或人工确认后再进入工单。</div>'
+    ? '<div class="src-report-action-hint">建议优先处理“已验证”和“待复核”项；“待人工复核”项通常表示证据不足或环境干扰，请先复测或人工确认后再进入工单。</div>'
     : '';
 
   return `

@@ -2405,7 +2405,7 @@ function renderResult(data) {
     html += '<div style="background:rgba(240,167,50,0.08);border:1px solid rgba(240,167,50,0.2);border-radius:2px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#f0a732;line-height:1.6">';
     html += '<strong>受限扫描报告</strong><br/>';
     html += '目标可访问，但存在登录/WAF/反爬限制（HTTP ' + (data.restricted_code || '') + '），<br/>';
-    html += '本次为受限扫描，部分结果需要人工确认。';
+    html += '本次扫描受到登录态、WAF 或反爬限制影响，部分结果仅供复核参考。';
     html += '</div>';
   } else if (data.restricted_reason) {
     html += '<div style="background:rgba(240,167,50,0.08);border:1px solid rgba(240,167,50,0.2);border-radius:2px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#f0a732;line-height:1.6">';
@@ -2443,7 +2443,7 @@ function renderResult(data) {
   html += '<div class="card fade-in-up" style="animation-delay:0.05s;padding:14px;margin-top:12px;border:1px solid rgba(75,110,175,0.25);background:rgba(60,63,65,0.9)">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">';
   html += '<div style="font-size:13px;font-weight:700;color:var(--text-primary)">管理层摘要</div>';
-  html += '<div style="font-size:12px;color:var(--text-secondary)">' + (data.restricted ? '受限扫描，结论需人工确认' : '可直接进入修复闭环') + '</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary)">' + (data.restricted ? '受限扫描，结论需复核' : '可直接进入修复与复测闭环') + '</div>';
   html += '</div>';
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.8">' + escapeHtml(managementSummary) + '</div>';
   html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-secondary)">';
