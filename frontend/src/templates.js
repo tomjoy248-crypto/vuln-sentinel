@@ -1017,6 +1017,14 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
+          <div id="auth-challenge-question" class="auth-form-hint" style="margin-bottom:8px">验证码加载中...</div>
+          <input type="hidden" id="auth-challenge-token" />
+          <input type="text" id="login-challenge-answer" placeholder="验证码答案" aria-label="验证码答案" />
+
+        </div>
+
+        <div class="auth-form-row">
+
           <button class="auth-form-btn" style="flex:1" onclick="doLogin()">登 录</button>
 
         </div>
@@ -1122,6 +1130,20 @@ export const APP_TEMPLATE = `</head>
         <div class="auth-form-row">
 
           <input type="password" id="reg-password2" placeholder="确认密码" aria-label="确认密码" />
+
+        </div>
+
+        <div class="auth-form-row">
+
+          <div id="auth-challenge-question-reg" class="auth-form-hint" style="margin-bottom:8px">验证码加载中...</div>
+          <input type="hidden" id="auth-challenge-token-reg" />
+          <input type="text" id="reg-challenge-answer" placeholder="验证码答案" aria-label="验证码答案" />
+
+        </div>
+
+        <div class="auth-form-row">
+
+          <button class="auth-form-btn secondary" style="flex:1" onclick="refreshAuthChallenge()">刷新验证码</button>
 
         </div>
 

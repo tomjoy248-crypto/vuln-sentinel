@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import time
+import jwt
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -39,6 +41,25 @@ from models import LoginRequest, RegisterRequest
 router = APIRouter(tags=["认证"])
 
 
+def _make_auth_challenge() -> dict:
+    a = int(time.time()) % 9 + 1
+    b = (int(time.time()) // 7) % 9 + 1
+    answer = str(a + b)
+    token = jwt.encode({"a": a, "b": b, "ans": answer, "exp": time.time() + 300, "purpose": "auth_challenge"}, __import__("main").settings.jwt_secret, algorithm="HS256")
+    return {"token": token, "question": f"{a} + {b} = ?", "hint": "请输入验证码答案"}
+
+
+def _verify_auth_challenge(token: str, answer: str) -> None:
+    if not token or not answer:
+        raise BusinessException("请完成验证码验证")
+    try:
+        payload = jwt.decode(token, __import__("main").settings.jwt_secret, algorithms=["HS256"])
+    except Exception:
+        raise BusinessException("验证码已过期，请刷新重试")
+    if payload.get("purpose") != "auth_challenge" or str(payload.get("ans", "")) != str(answer).strip():
+        raise BusinessException("验证码错误")
+
+
 # ---------- 请求模型 ----------
 
 
@@ -54,6 +75,11 @@ class PasswordResetConfirmModel(BaseModel):
 # ---------- 端点 ----------
 
 
+@router.get("/api/auth/challenge", response_model=MessageResponse)
+async def api_auth_challenge() -> dict:
+    return success_response(data=_make_auth_challenge())
+
+
 @router.post("/api/register", response_model=RegisterResponse)
 async def api_register(req: RegisterRequest, request: Request) -> dict:
     client_ip = get_client_ip(request)
@@ -63,6 +89,7 @@ async def api_register(req: RegisterRequest, request: Request) -> dict:
             detail="注册请求过于频繁，请稍后再试",
             headers={"Retry-After": "60"},
         )
+    _verify_auth_challenge(req.challenge_token, req.challenge_answer)
     conn = get_db()
     try:
         existing = conn.execute(
@@ -116,6 +143,7 @@ async def api_login(req: LoginRequest, request: Request) -> dict:
             detail="登录请求过于频繁，请稍后再试",
             headers={"Retry-After": "60"},
         )
+    _verify_auth_challenge(req.challenge_token, req.challenge_answer)
     conn = get_db()
     try:
         user_row = conn.execute(

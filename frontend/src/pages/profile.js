@@ -656,3 +656,8 @@ if (typeof window !== 'undefined') {
     }).catch(function(e) { showToast('邮箱验证失败：' + e.message); });
   };
 }
+
+
+if (typeof window !== 'undefined') {
+  window.refreshAuthChallenge = window.refreshAuthChallenge || function(){};
+}

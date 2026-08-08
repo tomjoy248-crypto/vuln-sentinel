@@ -103,6 +103,8 @@ class RegisterRequest(BaseModel):
     username: str
     password: str
     email: str = ""
+    challenge_token: str = ""
+    challenge_answer: str = ""
 
     @field_validator("username")
     @classmethod
@@ -125,6 +127,8 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+    challenge_token: str = ""
+    challenge_answer: str = ""
 
     @field_validator("username")
     @classmethod

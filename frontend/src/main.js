@@ -351,6 +351,32 @@ function authFetch(url, options) {
 
 
 // ========== Auth UI ==========
+async function loadAuthChallenge() {
+  let qEl = document.getElementById('auth-challenge-question');
+  let qElReg = document.getElementById('auth-challenge-question-reg');
+  let tokenEl = document.getElementById('auth-challenge-token');
+  let tokenElReg = document.getElementById('auth-challenge-token-reg');
+  let answerEl = document.getElementById('login-challenge-answer');
+  let answerElReg = document.getElementById('reg-challenge-answer');
+  try {
+    let resp = await fetch('/api/auth/challenge', { credentials: 'same-origin' });
+    let data = await resp.json();
+    if (data && data.data) data = data.data;
+    if (qEl) qEl.textContent = '验证码：' + (data.question || '请先刷新验证码');
+    if (qElReg) qElReg.textContent = '验证码：' + (data.question || '请先刷新验证码');
+    if (tokenEl) tokenEl.value = data.token || '';
+    if (tokenElReg) tokenElReg.value = data.token || '';
+    if (answerEl) answerEl.value = '';
+    if (answerElReg) answerElReg.value = '';
+  } catch (e) {
+    if (qEl) qEl.textContent = '验证码加载失败，请刷新页面';
+  }
+}
+
+function refreshAuthChallenge() {
+  loadAuthChallenge();
+}
+
 function toggleAuthForm(mode) {
   let guest = document.getElementById('auth-guest');
   let reg = document.getElementById('auth-register');
@@ -361,7 +387,9 @@ function toggleAuthForm(mode) {
     if (reg) reg.style.display = 'block';
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'none';
+    loadAuthChallenge();
   } else if (mode === 'login') {
+    loadAuthChallenge();
     if (guest) guest.style.display = 'block';
     if (reg) reg.style.display = 'none';
     if (reset) reset.style.display = 'none';
@@ -458,6 +486,8 @@ function doResetPassword() {
 function doLogin() {
   let usernameEl = document.getElementById('login-username');
   let passwordEl = document.getElementById('login-password');
+  let challengeTokenEl = document.getElementById('auth-challenge-token');
+  let challengeAnswerEl = document.getElementById('login-challenge-answer');
   let errEl = document.getElementById('login-error');
   if (!usernameEl || !passwordEl) { showToast('登录表单加载失败'); return; }
   let username = usernameEl.value.trim();
@@ -504,12 +534,14 @@ function doRegister() {
   let email = emailEl ? emailEl.value.trim() : '';
   let password = passwordEl.value.trim();
   let password2 = password2El.value.trim();
+  let challengeTokenEl = document.getElementById('auth-challenge-token-reg') || document.getElementById('auth-challenge-token');
+  let challengeAnswerEl = document.getElementById('reg-challenge-answer');
   if (errEl) errEl.textContent = '';
   if (!username || !password) { if (errEl) errEl.textContent = '请输入用户名和密码'; return; }
   if (password !== password2) { if (errEl) errEl.textContent = '两次密码不一致'; return; }
   if (password.length < 6) { if (errEl) errEl.textContent = '密码至少 6 个字符'; return; }
 
-  let payload = { username: username, password: password };
+  let payload = { username: username, password: password, challenge_token: challengeTokenEl ? challengeTokenEl.value : '', challenge_answer: challengeAnswerEl ? challengeAnswerEl.value.trim() : '' };
   if (email) { payload.email = email; }
 
   authFetch('/api/register', {
@@ -2519,6 +2551,7 @@ document.addEventListener('DOMContentLoaded', function() {
   window.doLogin = doLogin;
   window.doRegister = doRegister;
   window.doLogout = doLogout;
+  window.refreshAuthChallenge = refreshAuthChallenge;
   window.copyApiToken = copyApiToken;
   window.doResetPassword = doResetPassword;
   window.toggleAuthForm = toggleAuthForm;
