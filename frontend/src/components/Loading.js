@@ -1,4 +1,4 @@
-/** Loading 组件 */
+/** 加载 组件 */
 
 export function setLoading(selectorOrElement, loading) {
   const el = typeof selectorOrElement === 'string'
@@ -14,7 +14,7 @@ export function setLoading(selectorOrElement, loading) {
   }
 }
 
-export function showGlobalLoading(text = '加载中...') {
+export function showGlobalLoading(text = '正在加载…') {
   let el = document.getElementById('global-loading');
   if (!el) {
     el = document.createElement('div');

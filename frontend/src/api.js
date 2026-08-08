@@ -43,13 +43,13 @@ export async function authFetch(url, options = {}) {
     if (resp.status === 401 && !skipAuthExpiry) {
       removeToken();
       try { localStorage.removeItem('vs_username'); } catch (e) {}
-      throw new Error('登录状态已过期，请重新登录后再使用扫描功能');
+      throw new Error('登录状态已过期，请重新登录后再继续使用扫描功能');
     }
     return resp;
   } catch (err) {
     // 网络层错误（服务器未启动 / DNS 失败 / CORS 等）
-    if (err && err.message && err.message.indexOf('Failed to fetch') >= 0) {
-      throw new Error('无法连接扫描服务，请确认后端服务已启动');
+    if (err && err.message && err.message.indexOf('请求失败') >= 0) {
+      throw new Error('无法连接扫描服务，请确认本地后端已启动');
     }
     throw err;
   }

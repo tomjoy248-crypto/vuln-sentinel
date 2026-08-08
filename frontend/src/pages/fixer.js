@@ -26,7 +26,7 @@ export function loadSampleConfig() {
     let sample = 'server {\n    listen 80;\n    server_name example.com www.example.com;\n    root /var/www/html;\n    index index.html index.php;\n\n    location / {\n        try_files $uri $uri/ =404;\n    }\n\n    location ~ \\.php$ {\n        fastcgi_pass unix:/run/php/php-fpm.sock;\n        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n        include fastcgi_params;\n    }\n\n    access_log /var/log/nginx/access.log;\n    error_log /var/log/nginx/error.log;\n}';
     let inp = document.getElementById('fixer-input');
     if (inp) inp.value = sample;
-    showToast('已载入参考 Nginx 配置');
+    showToast('已载入参考服务器配置');
   } catch (e) {
     console.error('loadSampleConfig error:', e);
     showToast('载入参考配置失败: ' + (e.message || String(e)), 'error');
@@ -54,7 +54,7 @@ export function analyzeFixer() {
   if (!inputEl) return;
   let config = inputEl.value.trim();
   if (!config) {
-    showToast('请先输入或粘贴 Nginx 配置');
+    showToast('请先输入或粘贴服务器配置');
     return;
   }
   try {
@@ -275,7 +275,7 @@ function renderFixerResult(result, original) {
     });
     html += '</div>';
 
-    // Compare
+    // 对比
     html += '<div class="card fade-in-up" style="animation-delay:0.2s">';
     html += '<div class="card-title">修复前后对比</div>';
     html += '<div class="compare-grid">';
@@ -298,7 +298,7 @@ function renderFixerResult(result, original) {
     html += '<div class="card-title">操作</div>';
     html += '<div class="fixer-btns">';
     html += '<button class="fixer-btn success" onclick="copyFixerResult()">复制修复后配置</button>';
-    html += '<button class="fixer-btn primary" onclick="downloadNginxConf()">下载 nginx.conf</button>';
+    html += '<button class="fixer-btn primary" onclick="downloadNginxConf()">下载服务器配置文件</button>';
     html += '<button class="fixer-btn success" onclick="downloadRepairReport()">下载修复报告包</button>';
     html += '</div></div>';
 
@@ -342,12 +342,12 @@ export function downloadNginxConf() {
   let url = URL.createObjectURL(blob);
   let a = document.createElement('a');
   a.href = url;
-  a.download = 'nginx.conf';
+  a.download = 'Nginx 配置文件';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showToast('nginx.conf 已下载');
+  showToast('服务器配置文件已下载');
 }
 
 export async function downloadRepairReport() {

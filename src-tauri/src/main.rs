@@ -1,9 +1,40 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::net::TcpStream;
+use std::process::Command;
+use std::thread;
+use std::time::Duration;
 use tauri::menu::{AboutMetadataBuilder, MenuBuilder};
 use tauri::Manager;
+use tauri::path::BaseDirectory;
 
-const FALLBACK_WEB_URL: &str = "https://vuln-sentinel-v11-s.onrender.com/";
+const LOCAL_WEB_URL: &str = "http://127.0.0.1:8000/";
+const LOCAL_BACKEND_ADDR: &str = "127.0.0.1:8000";
+
+fn try_start_local_backend(app: &tauri::AppHandle) {
+  let backend_path = match app.path().resolve("vuln-sentinel-backend.exe", BaseDirectory::Resource) {
+    Ok(path) => path,
+    Err(_) => return,
+  };
+
+  if !backend_path.exists() {
+    return;
+  }
+
+  let _ = Command::new(backend_path).spawn();
+}
+
+fn wait_for_backend_ready(timeout_seconds: u64) -> bool {
+  let mut elapsed = 0;
+  while elapsed < timeout_seconds * 10 {
+    if TcpStream::connect(LOCAL_BACKEND_ADDR).is_ok() {
+      return true;
+    }
+    thread::sleep(Duration::from_millis(100));
+    elapsed += 1;
+  }
+  false
+}
 
 fn main() {
   tauri::Builder::default()
@@ -23,10 +54,17 @@ fn main() {
         .build()
     })
     .setup(|app| {
+      try_start_local_backend(&app.handle().clone());
       if let Some(window) = app.get_webview_window("main") {
-        let _ = window.set_title("Vuln Sentinel - 安全扫描与交付平台");
-        let _ = window.set_focus();
-        let _ = window.eval(&format!("window.location.replace('{}')", FALLBACK_WEB_URL));
+        let window = window.clone();
+        let _ = window.eval(r#"document.body.innerHTML='<div style="padding:24px;font-size:18px;font-family:sans-serif">Vuln Sentinel 正在启动本地服务，请稍候...</div>';"#);
+        thread::spawn(move || {
+          if !wait_for_backend_ready(20) {
+            let _ = window.eval(r#"document.body.innerHTML='<div style="padding:24px;font-size:18px;font-family:sans-serif">本地服务启动失败，请重新打开安装包或检查防火墙。</div>';"#);
+            return;
+          }
+          let _ = window.eval(&format!("window.location.replace('{}');", LOCAL_WEB_URL));
+        });
       }
       Ok(())
     })

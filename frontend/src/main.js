@@ -261,7 +261,7 @@ function extractError(data) {
   return '未知错误';
 }
 
-// ===== Utility: Button Loading State =====
+// ===== Utility: Button 加载 State =====
 function setButtonLoading(btnId, loading) {
   let btn = safeGetElement(btnId);
   if (!btn) return;
@@ -294,8 +294,8 @@ function renderPagination(containerId, currentPage, totalPages, onPageChange) {
   container.innerHTML = html;
 }
 
-// ===== Auth & Token with safe localStorage =====
-var _authFetchInLogout = false;
+// ===== Auth & 令牌 with safe localStorage =====
+var _authFetchIn退出登录 = false;
 function getToken() { try { return localStorage.getItem('vs_token'); } catch(e) { return null; } }
 function setToken(t) { try { localStorage.setItem('vs_token', t); } catch(e) {} }
 function removeToken() { try { localStorage.removeItem('vs_token'); } catch(e) {} }
@@ -306,7 +306,7 @@ function getUsername() { try { return localStorage.getItem('vs_username') || '';
 
 
 
-// ========== Auth & Token Management ==========
+// ========== Auth & 令牌 Management ==========
 
 // authFetch: 自动附加 Authorization header 的 fetch 封装
 var API_BASE = '';
@@ -340,8 +340,8 @@ function authFetch(url, options) {
     }
     return resp;
   }).catch(function(err) {
-    if (err.message && err.message.indexOf('Failed to fetch') >= 0) {
-      throw new Error('网络请求失败。请确认后端服务是否已启动（python main.py）。');
+    if (err.message && err.message.indexOf('请求失败') >= 0) {
+      throw new Error('网络请求失败。请确认本地后端是否已启动。');
     }
     throw err;
   });
@@ -379,29 +379,29 @@ function updateAuthUI() {
   let reg = document.getElementById('auth-register');
   let reset = document.getElementById('auth-reset');
   let logged = document.getElementById('auth-logged');
-  let scanLoginTip = document.getElementById('scan-login-tip');
+  let scan登录Tip = document.getElementById('scan-login-tip');
   let tokenInput = document.getElementById('api-token-input');
   if (isLoggedIn()) {
     if (guest) guest.style.display = 'none';
     if (reg) reg.style.display = 'none';
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'block';
-    if (scanLoginTip) scanLoginTip.style.display = 'none';
+    if (scan登录Tip) scan登录Tip.style.display = 'none';
     let name = getUsername();
     let displayName = document.getElementById('auth-display-name');
     if (displayName) displayName.textContent = name || '用户';
     // 显示真实的 JWT token，不再生成假 token
     if (tokenInput) {
-      let realToken = getToken();
-      tokenInput.value = realToken || 'Token 不可用';
+      let real令牌 = getToken();
+      tokenInput.value = real令牌 || '令牌 不可用';
     }
   } else {
     if (guest) guest.style.display = 'block';
     if (reg) reg.style.display = 'none';
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'none';
-    if (scanLoginTip) scanLoginTip.style.display = 'block';
-    if (tokenInput) tokenInput.value = '登录后显示 Token';
+    if (scan登录Tip) scan登录Tip.style.display = 'block';
+    if (tokenInput) tokenInput.value = '登录后显示 令牌';
   }
   if (typeof window.updateScanStartState === 'function') {
     window.updateScanStartState();
@@ -414,13 +414,13 @@ function updateAuthUI() {
 function copyApiToken() {
   if (!isLoggedIn()) { showToast('请先登录', 'error'); return; }
   let el = document.getElementById('api-token-input');
-  if (!el || !el.value || el.value.indexOf('登录') !== -1 || el.value === 'Token 不可用') {
-    showToast('Token 不可用，请重新登录', 'error');
+  if (!el || !el.value || el.value.indexOf('登录') !== -1 || el.value === '令牌 不可用') {
+    showToast('令牌 不可用，请重新登录', 'error');
     return;
   }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(el.value).then(function() {
-      showToast('Token 已复制', 'success');
+      showToast('令牌 已复制', 'success');
     }).catch(function() {
       showToast('复制失败', 'error');
     });
@@ -556,7 +556,7 @@ function doLogout() {
 
 
 
-// ========== Report Download (PDF + HTML) ==========
+// ========== 报告 Download (PDF + HTML) ==========
 
 // 兼容旧函数名
 
@@ -1023,7 +1023,7 @@ function showEvolutionDetail(name) {
     html += '</div>';
     // 加载状态 + 绑定 Enter 发送
     setTimeout(function(){
-      loadAiStatus();
+      loadAi状态();
       let ta = document.getElementById('evo-ai-q');
       if (ta) {
         ta.addEventListener('keydown', function(e) {
@@ -1147,7 +1147,7 @@ function aiSend(q) {
     });
 }
 
-function loadAiStatus() {
+function loadAi状态() {
   let bar = document.getElementById('ai-status-bar');
   if (!bar) return;
   fetch('/api/ai/status').then(function(r) { return r.json(); }).then(function(d) {
@@ -1246,7 +1246,7 @@ function scanAsset(assetId, domain) {
   if (typeof window.startScanDirect === 'function') window.startScanDirect();
 }
 
-// Dashboard
+// 概览
 
 // 11-S: 安全趋势面板
 
@@ -1589,7 +1589,7 @@ function getRiskColor(level) {
 
 
 
-// Render Scan Error (site unreachable / fake URL)
+// Render Scan 错误 (site unreachable / fake URL)
 
 // 用指定 URL 重试扫描
 
@@ -1629,14 +1629,14 @@ function getRiskColor(level) {
 // 一键导出所有平台修复配置包
 
 
-// Fixer Page
+// 修复器 Page
 
 function loadSampleConfig() {
   try {
   let sample = 'server {\n    listen 80;\n    server_name example.com www.example.com;\n    root /var/www/html;\n    index index.html index.php;\n\n    location / {\n        try_files $uri $uri/ =404;\n    }\n\n    location ~ \\.php$ {\n        fastcgi_pass unix:/run/php/php-fpm.sock;\n        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n        include fastcgi_params;\n    }\n\n    access_log /var/log/nginx/access.log;\n    error_log /var/log/nginx/error.log;\n}';
   let inp = document.getElementById('fixer-input');
   if (inp) inp.value = sample;
-  showToast('已加载示例 Nginx 配置');
+  showToast('已载入示例服务器配置');
   } catch (e) {
     console.error('loadSampleConfig error:', e);
     showToast('加载示例配置失败: ' + (e.message || String(e)), 'error');
@@ -1664,7 +1664,7 @@ function analyzeFixer() {
   if (!inputEl) return;
   let config = inputEl.value.trim();
   if (!config) {
-    showToast('请先输入或粘贴 Nginx 配置');
+    showToast('请先输入或粘贴服务器配置');
     return;
   }
   try {
@@ -1873,7 +1873,7 @@ function renderFixerResult(result, original) {
   });
   html += '</div>';
 
-  // Compare
+  // 对比
   html += '<div class="card fade-in-up" style="animation-delay:0.2s">';
   html += '<div class="card-title">修复前后对比</div>';
   html += '<div class="compare-grid">';
@@ -1896,7 +1896,7 @@ function renderFixerResult(result, original) {
   html += '<div class="card-title">操作</div>';
   html += '<div class="fixer-btns">';
   html += '<button class="fixer-btn success" onclick="copyFixerResult()">复制修复后配置</button>';
-  html += '<button class="fixer-btn primary" onclick="downloadNginxConf()">下载 nginx.conf</button>';
+  html += '<button class="fixer-btn primary" onclick="downloadNginxConf()">下载服务器配置文件</button>';
   html += '<button class="fixer-btn success" onclick="downloadRepairReport()">下载修复报告包</button>';
   html += '</div></div>';
 
@@ -1940,12 +1940,12 @@ function downloadNginxConf() {
   let url = URL.createObjectURL(blob);
   let a = document.createElement('a');
   a.href = url;
-  a.download = 'nginx.conf';
+  a.download = 'Nginx 配置文件';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showToast('nginx.conf 已下载');
+  showToast('服务器配置文件已下载');
 }
 
 function downloadRepairReport() {
@@ -2008,7 +2008,7 @@ function copyToClipboard(text) {
   }
 }
 
-// Scan History
+// Scan 历史
 
 
 
@@ -2022,7 +2022,7 @@ function copyToClipboard(text) {
 
 
 
-// Profile Tab Navigation
+// 账号 Tab Navigation
 function showProfileTab(tab) {
   document.querySelectorAll('.profile-tab').forEach(function(el) { el.style.display = 'none'; });
   let target = document.getElementById('profile-tab-' + tab);
@@ -2057,7 +2057,7 @@ function toggleSetting(el, key) {
     updateThemeIcon(newState);
   }
   // Real auto-save toggle
-  if (key === 'autoSave') {
+  if (key === 'auto保存') {
     (function(){try{localStorage.setItem('vs_autosave',newState?'1':'0');}catch(e){}})();
   }
   // Real notify toggle: persist to localStorage
@@ -2109,7 +2109,7 @@ function toggleAISetting(key) {
   span.classList.toggle('on', !isOn);
 }
 
-// ===== Notification / Alert Functions =====
+// ===== Notification / 告警 Functions =====
 function loadAlerts(page) {
   page = page || 1;
   let listEl = document.getElementById('alerts-list');
@@ -2256,9 +2256,10 @@ function renderAIConfig() {
   }
 }
 
-let _deferredInstallPrompt = null;
+let _deferred安装提示 = null;
 
-function initInstallBanner() {
+function init安装Banner() {
+  try { if (window.__TAURI__ || window.__TAURI_INTERNALS__) return; } catch (e) {}
   if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return;
   if (document.getElementById('pwa-install-banner')) return;
   let banner = document.createElement('div');
@@ -2276,12 +2277,12 @@ function initInstallBanner() {
   }
   if (installBtn) {
     installBtn.addEventListener('click', async function() {
-      if (_deferredInstallPrompt) {
-        _deferredInstallPrompt.prompt();
-        await _deferredInstallPrompt.userChoice;
-        _deferredInstallPrompt = null;
+      if (_deferred安装提示) {
+        _deferred安装提示.prompt();
+        await _deferred安装提示.userChoice;
+        _deferred安装提示 = null;
       } else {
-        showToast('浏览器未准备好安装提示，可在菜单里选择“安装应用”。', 'info');
+        showToast('当前不支持浏览器安装提示。', 'info');
       }
       banner.remove();
       try { localStorage.setItem('vs_pwa_banner_hidden', 'true'); } catch (e) {}
@@ -2291,15 +2292,15 @@ function initInstallBanner() {
 
 window.addEventListener('beforeinstallprompt', function(event) {
   event.preventDefault();
-  _deferredInstallPrompt = event;
+  _deferred安装提示 = event;
   try {
     if (localStorage.getItem('vs_pwa_banner_hidden') === 'true') return;
   } catch (e) {}
-  initInstallBanner();
+  init安装Banner();
 });
 
 window.addEventListener('appinstalled', function() {
-  _deferredInstallPrompt = null;
+  _deferred安装提示 = null;
   const banner = document.getElementById('pwa-install-banner');
   if (banner) banner.remove();
 });
@@ -2319,8 +2320,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 加载公开运行时配置（Stripe 公钥等）
   try {
-    if (_deferredInstallPrompt && localStorage.getItem('vs_pwa_banner_hidden') !== 'true') {
-      initInstallBanner();
+    if (_deferred安装提示 && localStorage.getItem('vs_pwa_banner_hidden') !== 'true') {
+      init安装Banner();
     }
   } catch (e) {}
   publicConfig().then(function(cfg) {
@@ -2432,10 +2433,10 @@ document.addEventListener('DOMContentLoaded', function() {
   // Enter key handlers for forms
   let loginPass = safeGetElement('login-password');
   if (loginPass) { loginPass.addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); }); }
-  let regEmail = safeGetElement('reg-email');
+  let reg邮箱 = safeGetElement('reg-email');
   let regPass = safeGetElement('reg-password');
   let regConfirm = safeGetElement('reg-password2');
-  if (regEmail) { regEmail.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
+  if (reg邮箱) { reg邮箱.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
   if (regPass) { regPass.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
   if (regConfirm) { regConfirm.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
   let scanUrl = safeGetElement('scan-url');

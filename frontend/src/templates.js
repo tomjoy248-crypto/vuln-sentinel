@@ -10,7 +10,7 @@ export const APP_TEMPLATE = `</head>
 
 
 
-<!-- Skeleton Loading Screen -->
+<!-- Skeleton 加载 Screen -->
 
 <div id="skeleton-screen" class="skeleton-screen">
 
@@ -362,9 +362,9 @@ export const APP_TEMPLATE = `</head>
 
       <div style="display:flex;gap:6px">
 
-        <button onclick="loadTrendChart(7)" class="trend-range" data-days="7" style="padding:4px 10px;min-height:0;font-size:12px;border:1px solid #555555;background:#45494a;border-radius:2px;cursor:pointer;color:#808080;font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace">7天</button>
+        <button onclick="load趋势Chart(7)" class="trend-range" data-days="7" style="padding:4px 10px;min-height:0;font-size:12px;border:1px solid #555555;background:#45494a;border-radius:2px;cursor:pointer;color:#808080;font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace">7天</button>
 
-        <button onclick="loadTrendChart(30)" class="trend-range" data-days="30" style="padding:4px 10px;min-height:0;font-size:12px;border:1px solid #555555;background:#45494a;border-radius:2px;cursor:pointer;color:#808080;font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace">30天</button>
+        <button onclick="load趋势Chart(30)" class="trend-range" data-days="30" style="padding:4px 10px;min-height:0;font-size:12px;border:1px solid #555555;background:#45494a;border-radius:2px;cursor:pointer;color:#808080;font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace">30天</button>
 
       </div>
 
@@ -450,7 +450,7 @@ export const APP_TEMPLATE = `</head>
 
       <div class="scan-input-wrap">
 
-        <input id="scan-url" type="url" placeholder="例如：https://example.com" aria-label="目标网址" oninput="updateScanStartState()" />
+        <input id="scan-url" type="url" placeholder="例如：https://example.com" aria-label="目标网址" oninput="updateScan开始State()" />
 
       </div>
 
@@ -472,7 +472,7 @@ export const APP_TEMPLATE = `</head>
 
       <label class="scan-checkbox" style="margin-bottom:12px">
 
-        <input id="auth-check-step1" type="checkbox" onchange="updateScanStartState()" />
+        <input id="auth-check-step1" type="checkbox" onchange="updateScan开始State()" />
 
         <span>我已确认拥有该域名或已获得授权扫描</span>
 
@@ -482,7 +482,7 @@ export const APP_TEMPLATE = `</head>
 
       <div style="text-align:center;margin-top:10px">
 
-        <button onclick="goVerifyStep2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">域名归属验证（推荐）</button>
+        <button onclick="go验证Step2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">域名归属验证（推荐）</button>
 
         <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">快速演示仅适用于自有目标或授权场景，正式交付建议完成归属验证</div>
 
@@ -498,7 +498,7 @@ export const APP_TEMPLATE = `</head>
 
 
 
-    <!-- Step 2: Generate Verification Token -->
+    <!-- Step 2: Generate Verification 令牌 -->
 
     <div id="verify-step-2" class="verify-step" style="display:none">
 
@@ -514,7 +514,7 @@ export const APP_TEMPLATE = `</head>
 
       <div class="token-box">
 
-        <label>验证 Token</label>
+        <label>验证 令牌</label>
 
         <code id="verify-token">vuln-sentinel-xxxx</code>
 
@@ -524,7 +524,7 @@ export const APP_TEMPLATE = `</head>
 
       <div class="verify-methods">
 
-        <div class="verify-method" onclick="selectVerifyMethod(this, 'dns')">
+        <div class="verify-method" onclick="select验证Method(this, 'dns')">
 
           <strong>DNS TXT 验证</strong>
 
@@ -532,11 +532,11 @@ export const APP_TEMPLATE = `</head>
 
         </div>
 
-        <div class="verify-method" onclick="selectVerifyMethod(this, 'file')">
+        <div class="verify-method" onclick="select验证Method(this, 'file')">
 
           <strong>网站文件验证</strong>
 
-          <p>在网站根目录创建文件：<code>vuln-sentinel-verification.txt</code>，内容为 Token</p>
+          <p>在网站根目录创建文件：<code>vuln-sentinel-verification.txt</code>，内容为 令牌</p>
 
         </div>
 
@@ -580,7 +580,7 @@ export const APP_TEMPLATE = `</head>
 
         <label class="scan-checkbox">
 
-          <input id="auth-check" type="checkbox" onchange="updateScanStartState()" />
+          <input id="auth-check" type="checkbox" onchange="updateScan开始State()" />
 
           <span>我已确认拥有该域名或已获得授权扫描</span>
 
@@ -682,7 +682,7 @@ export const APP_TEMPLATE = `</head>
 
   <div class="workbench-header">
 
-    <h1 class="workbench-title">扫描结果 / Scan Result</h1>
+    <h1 class="workbench-title">扫描结果</h1>
 
     <span class="workbench-subtitle">查看漏洞发现、响应头与修复建议</span>
 
@@ -700,7 +700,7 @@ export const APP_TEMPLATE = `</head>
 
   <div class="workbench-header">
 
-    <h1 class="workbench-title">修复器 / Fixer</h1>
+    <h1 class="workbench-title">修复器</h1>
 
     <span class="workbench-subtitle">检查配置文件并生成安全加固补丁</span>
 
@@ -716,15 +716,15 @@ export const APP_TEMPLATE = `</head>
 
     <p class="card-desc" style="margin-bottom:12px">粘贴 Nginx/Apache 配置文件，检测安全问题并生成修复补丁。</p>
 
-    <textarea id="fixer-input" class="fixer-textarea" placeholder="粘贴 Nginx 配置文件...&#10;&#10;例如：&#10;server {&#10;    listen 80;&#10;    server_name example.com;&#10;    ...&#10;}"></textarea>
+    <textarea id="fixer-input" class="fixer-textarea" placeholder="粘贴服务器配置文件...&#10;&#10;例如：&#10;server {&#10;    listen 80;&#10;    server_name example.com;&#10;    ...&#10;}"></textarea>
 
     <div class="fixer-btns">
 
-      <button class="fixer-btn primary" id="fixer-analyze-btn" onclick="analyzeFixer()">检查配置</button>
+      <button class="fixer-btn primary" id="fixer-analyze-btn" onclick="analyze修复器()">检查配置</button>
 
       <button class="fixer-btn secondary" onclick="loadSampleConfig()">载入参考配置</button>
 
-      <button class="fixer-btn secondary" onclick="clearFixer()">清空</button>
+      <button class="fixer-btn secondary" onclick="clear修复器()">清空</button>
 
     </div>
 
@@ -742,13 +742,13 @@ export const APP_TEMPLATE = `</head>
 
       2. 扫描结果页点击<strong>"生成修复配置"</strong><br>
 
-      3. 此处自动生成 Nginx / Python / Node.js / Apache 修复代码
+      3. 此处自动生成 Nginx、Python、Node.js、Apache 修复代码
 
     </p>
 
     <div class="fixer-btns" style="margin-top:12px">
 
-      <button class="fixer-btn primary" id="goto-fixer-btn" onclick="goToFixerWithScanResult()" aria-label="生成修复配置">使用上次扫描结果生成</button>
+      <button class="fixer-btn primary" id="goto-fixer-btn" onclick="goTo修复器WithScanResult()" aria-label="生成修复配置">使用上次扫描结果生成</button>
 
     </div>
 
@@ -786,7 +786,7 @@ export const APP_TEMPLATE = `</head>
 
   <div class="workbench-header">
 
-    <h1 class="workbench-title">进化中心 / Evolution</h1>
+    <h1 class="workbench-title">进化中心</h1>
 
     <span class="workbench-subtitle">历史学习与持续监控</span>
 
@@ -804,7 +804,7 @@ export const APP_TEMPLATE = `</head>
 
   <div class="workbench-header">
 
-    <h1 class="workbench-title">资产管理 / Assets</h1>
+    <h1 class="workbench-title">资产管理</h1>
 
     <span class="workbench-subtitle">管理网站域名资产与扫描状态</span>
 
@@ -884,7 +884,7 @@ export const APP_TEMPLATE = `</head>
 
   <div class="workbench-header">
 
-    <h1 class="workbench-title">修复工单 / Tickets</h1>
+    <h1 class="workbench-title">修复工单</h1>
 
     <span class="workbench-subtitle">跟踪和管理扫描发现的安全问题</span>
 
@@ -992,7 +992,7 @@ export const APP_TEMPLATE = `</head>
 
   <div class="workbench-header">
 
-    <h1 class="workbench-title">设置 / Settings</h1>
+    <h1 class="workbench-title">设置</h1>
 
     <span class="workbench-subtitle">账号、主题与系统配置</span>
 
@@ -1028,7 +1028,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
-          <button class="auth-form-btn" style="flex:1" onclick="doLogin()">登 录</button>
+          <button class="auth-form-btn" style="flex:1" onclick="do登录()">登 录</button>
 
         </div>
 
@@ -1080,7 +1080,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
-          <button class="auth-form-btn" style="flex:1" onclick="doPasswordResetConfirm()">确认重置</button>
+          <button class="auth-form-btn" style="flex:1" onclick="do密码重置Confirm()">确认重置</button>
 
         </div>
 
@@ -1144,7 +1144,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
-          <button class="auth-form-btn" style="flex:1" onclick="doRegister()">注 册</button>
+          <button class="auth-form-btn" style="flex:1" onclick="do注册()">注 册</button>
 
         </div>
 
@@ -1188,7 +1188,7 @@ export const APP_TEMPLATE = `</head>
 
         </div>
 
-        <button class="auth-logout-btn" onclick="doLogout()">退出登录</button>
+        <button class="auth-logout-btn" onclick="do退出()">退出登录</button>
 
       </div>
 
@@ -1238,7 +1238,7 @@ export const APP_TEMPLATE = `</head>
 
   <div class="settings-group">
 
-    <div class="settings-row" onclick="showProfileTab('history')">
+    <div class="settings-row" onclick="show账号Tab('history')">
 
       <span>扫描历史</span>
 
@@ -1246,7 +1246,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="showProfileTab('knowledge')">
+    <div class="settings-row" onclick="show账号Tab('knowledge')">
 
       <span>安全知识库</span>
 
@@ -1254,7 +1254,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="showProfileTab('monitor')">
+    <div class="settings-row" onclick="show账号Tab('monitor')">
 
       <span>监控目标</span>
 
@@ -1262,7 +1262,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="showProfileTab('alerts')">
+    <div class="settings-row" onclick="show账号Tab('alerts')">
 
       <span>告警历史</span>
 
@@ -1270,7 +1270,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="showProfileTab('credits')">
+    <div class="settings-row" onclick="show账号Tab('credits')">
 
       <span>额度与使用记录</span>
 
@@ -1294,7 +1294,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="showProfileTab('settings')">
+    <div class="settings-row" onclick="show账号Tab('settings')">
 
       <span>扫描设置</span>
 
@@ -1302,7 +1302,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="showProfileTab('notifications')">
+    <div class="settings-row" onclick="show账号Tab('notifications')">
 
       <span>通知设置</span>
 
@@ -1310,7 +1310,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="showProfileTab('ai-config')">
+    <div class="settings-row" onclick="show账号Tab('ai-config')">
 
       <span>安全顾问配置</span>
 
@@ -1318,7 +1318,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="showProfileTab('about')">
+    <div class="settings-row" onclick="show账号Tab('about')">
 
       <span>关于</span>
 
@@ -1330,21 +1330,21 @@ export const APP_TEMPLATE = `</head>
 
 
 
-  <!-- API Token -->
+  <!-- API 令牌 -->
 
   <div class="settings-group">
 
-    <div class="settings-group-title">API Token</div>
+    <div class="settings-group-title">API 令牌</div>
 
     <div class="settings-row-static">
 
-      <input type="text" id="api-token-input" readonly value="登录后显示 Token" style="flex:1;background:#2b2b2b;color:var(--text-secondary);font-family:monospace;font-size:11px" />
+      <input type="text" id="api-token-input" readonly value="登录后显示 令牌" style="flex:1;background:#2b2b2b;color:var(--text-secondary);font-family:monospace;font-size:11px" />
 
       <button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px" onclick="copyApiToken()">复制</button>
 
     </div>
 
-    <p style="font-size:11px;color:var(--text-secondary);margin-top:6px">此 Token 用于 API 调用身份认证，登录后自动生成。Token 会在服务端密钥变更或过期后失效。</p>
+    <p style="font-size:11px;color:var(--text-secondary);margin-top:6px">此 令牌 用于 API 调用身份认证，登录后自动生成。令牌 会在服务端密钥变更或过期后失效。</p>
 
   </div>
 
@@ -1360,7 +1360,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="card-title">扫描历史</div>
 
-        <button class="fixer-btn secondary" style="height:36px;padding:0 14px;font-size:12px" onclick="clearScanHistory()">清空历史</button>
+        <button class="fixer-btn secondary" style="height:36px;padding:0 14px;font-size:12px" onclick="clearScan历史()">清空历史</button>
 
       </div>
 
@@ -1380,9 +1380,9 @@ export const APP_TEMPLATE = `</head>
 
         <span style="font-size:12px;color:var(--text-secondary)">已选择 <strong id="history-compare-count">0</strong> 项</span>
 
-        <button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px;margin-left:auto" onclick="cancelHistoryCompare()">取消</button>
+        <button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px;margin-left:auto" onclick="cancel历史对比()">取消</button>
 
-        <button class="fixer-btn primary" style="height:32px;padding:0 12px;font-size:12px" id="history-compare-btn" onclick="doHistoryCompare()" disabled>对比</button>
+        <button class="fixer-btn primary" style="height:32px;padding:0 12px;font-size:12px" id="history-compare-btn" onclick="do历史对比()" disabled>对比</button>
 
       </div>
 
@@ -1518,11 +1518,11 @@ export const APP_TEMPLATE = `</head>
 
       <div class="card-title">扫描设置</div>
 
-      <div class="settings-row" style="margin-top:10px" onclick="toggleSetting(this, 'autoSave')">
+      <div class="settings-row" style="margin-top:10px" onclick="toggleSetting(this, 'auto保存')">
 
         <span>自动保存扫描结果</span>
 
-        <span class="settings-toggle on" id="setting-autoSave" data-enabled="true"></span>
+        <span class="settings-toggle on" id="setting-auto保存" data-enabled="true"></span>
 
       </div>
 
@@ -1596,7 +1596,7 @@ export const APP_TEMPLATE = `</head>
 
       </div>
 
-      <button class="fixer-btn primary" style="width:100%" onclick="saveNotificationSettings()">保存设置</button>
+      <button class="fixer-btn primary" style="width:100%" onclick="saveNotification设置()">保存设置</button>
 
     </div>
 
@@ -1670,7 +1670,7 @@ export const APP_TEMPLATE = `</head>
 
         <select id="ai-config-provider" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:2px;font-size:13px;background:var(--bg);color:var(--text)">
 
-          <option value="openai">OpenAI (GPT-4)</option>
+          <option value="openai">打开AI (GPT-4)</option>
 
         </select>
 
@@ -1724,7 +1724,7 @@ export const APP_TEMPLATE = `</head>
 
         <p>账号级数据隔离</p>
 
-        <p>支持 Nginx / Apache / Node.js</p>
+        <p>支持 Nginx、Apache、Node.js</p>
 
       </div>
 
@@ -1750,7 +1750,7 @@ export const APP_TEMPLATE = `</head>
 
   <div class="workbench-header">
 
-    <h1 class="workbench-title">计费套餐 / Billing</h1>
+    <h1 class="workbench-title">计费套餐</h1>
 
     <span class="workbench-subtitle">购买积分套餐，按量使用扫描与修复服务</span>
 
@@ -1802,7 +1802,7 @@ export const APP_TEMPLATE = `</head>
 
   <div class="workbench-header">
 
-    <h1 class="workbench-title">上线前审计 / Audit</h1>
+    <h1 class="workbench-title">上线前审计</h1>
 
     <span class="workbench-subtitle">用于对外交付前的内部检查：权限、证据、计费、导出、复扫与审计留痕</span>
 
@@ -1838,7 +1838,7 @@ export const APP_TEMPLATE = `</head>
 
     <div style="margin-top:12px;display:grid;gap:10px;font-size:13px;line-height:1.7;color:var(--text-secondary)">
 
-      <div>☐ 登录 / 注册 / 退出是否稳定</div>
+      <div>☐ 登录、注册、退出是否稳定</div>
 
       <div>☐ 输入网址后能否顺利开始扫描</div>
 

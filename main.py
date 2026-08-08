@@ -73,7 +73,21 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+def _resolve_static_dir() -> str:
+    candidates = []
+    frozen_root = getattr(sys, "_MEIPASS", None)
+    if frozen_root:
+        candidates.append(os.path.join(frozen_root, "static"))
+    script_root = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(script_root, "static"))
+    candidates.append(os.path.join(os.path.dirname(script_root), "static"))
+    candidates.append(os.path.join(os.getcwd(), "static"))
+    for candidate in candidates:
+        if os.path.exists(os.path.join(candidate, "index.html")):
+            return candidate
+    return candidates[0] if candidates else script_root
+
+STATIC_DIR = _resolve_static_dir()
 
 # ---------- 代码拆分模块导入 ----------
 import src_scanner

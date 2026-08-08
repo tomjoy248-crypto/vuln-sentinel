@@ -18,12 +18,6 @@
 .toast.warning{background:#3c3f41;border-left:3px solid #f0a732;color:#bbbbbb}
 .toast.info{background:#3c3f41;border-left:3px solid #4b6eaf;color:#bbbbbb}
 
-/* 字体：优先使用本地打包的文泉驿微米黑（保证中文显示一致） */
-@font-face {
-font-family: "WQY MicroHei Local";
-src: url("/fonts/wqy-microhei.ttc") format("truetype-collection");
-font-weight: normal; font-style: normal; font-display: swap;
-}
 /* CSS Variables - Burp Suite Dark Workbench Theme */
 :root {
 --primary: #4b6eaf;

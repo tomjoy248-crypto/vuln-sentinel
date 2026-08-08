@@ -648,6 +648,8 @@ def _infer_vuln_type(name: str, ftype: str) -> str:
         return "xss"
     if "csrf" in name_norm:
         return "csrf"
+    if "cors" in name_norm or "跨域" in name or "cross origin" in name_norm:
+        return "header_missing"
     if "ssrf" in name_norm:
         return "ssrf"
     if "cmd" in name_norm or "command" in name_norm:
@@ -674,7 +676,7 @@ def _infer_vuln_type(name: str, ftype: str) -> str:
         return "xxe"
     if "弱 ssl" in name_norm or "弱 tls" in name_norm or "weak ssl" in name_norm:
         return "weak_ssl"
-    if "ssl" in name_norm or "https" in name_norm:
+    if "ssl" in name_norm or "https" in name_norm or "tls" in name_norm:
         return "ssl"
     if "cookie" in name_norm:
         return "header_missing"
@@ -776,6 +778,13 @@ def generate_remediation_plan(
             platform_fixes[platform] = entry
             by_platform.setdefault(platform, []).append(entry)
 
+        chosen_platforms = engine.suggest_platforms(detected, ftype)
+        primary_platform = chosen_platforms[0] if chosen_platforms else "generic"
+        verification_checklist = []
+        for tmpl in templates.values():
+            verification_checklist.extend(tmpl.verification_steps)
+        verification_checklist = list(dict.fromkeys(verification_checklist))
+
         plans.append(
             {
                 "finding_name": name,
@@ -783,9 +792,13 @@ def generate_remediation_plan(
                 "severity": severity,
                 "url": url,
                 "parameter": parameter,
-                "recommended_platforms": engine.suggest_platforms(detected, ftype),
+                "priority": "P0" if severity in ("critical", "high") else "P1" if severity == "medium" else "P2",
+                "recommended_platforms": chosen_platforms,
+                "primary_platform": primary_platform,
                 "detected_platform": detected,
                 "fixes": platform_fixes,
+                "verification_checklist": verification_checklist,
+                "customer_summary": f"{name or ftype}：优先按 {primary_platform} 平台修复，并复测确认。",
             }
         )
 
@@ -820,9 +833,8 @@ def generate_remediation_plan(
         "legacy_fixes": legacy_fixes,
         "summary": {
             "total_findings": len(plans),
-            "platforms_available": list(
-                {p for plan in plans for p in plan["fixes"].keys()}
-            ),
+            "platforms_available": sorted({p for plan in plans for p in plan["fixes"].keys()}),
             "detected_platform": detected,
+            "primary_platforms": sorted({plan["primary_platform"] for plan in plans if plan.get("primary_platform")}),
         },
     }

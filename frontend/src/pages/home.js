@@ -40,8 +40,8 @@ let monitorPageSize = 5;
 let historyPage = 1;
 let historyPageSize = 5;
 let verifyToken = '';
-let selectedVerifyMethod = '';
-let _scanCancelled = false;
+let selected验证Method = '';
+let _scan取消led = false;
 let _scoreAnimInterval = null;
 let _stageTimer = null;
 let _progressTimer = null;
@@ -80,8 +80,8 @@ let _scanTexts = [
   '生成修复建议...',
   '生成安全报告...',
 ];
-let _historyCompareMode = false;
-let _historyCompareSelected = [];
+let _history对比Mode = false;
+let _history对比Selected = [];
 
 // ----- renderRadarChart -----
 function renderRadarChart(data) {
@@ -167,7 +167,7 @@ function renderRadarChart(data) {
 
 // ----- simulateCSRF -----
 function simulateCSRF(target) {
-  let out = document.getElementById('attack-demo-result');
+  let out = document.getElementById('attack-演示-result');
   if (!out) return;
   out.innerHTML = '<div style="background:#3c3f41;border:1px solid rgba(199,84,80,0.3);border-radius:2px;padding:14px;animation:fadeInUp 0.4s">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
@@ -182,15 +182,15 @@ function simulateCSRF(target) {
     '<div>&lt;script&gt;document.forms[0].submit();&lt;/script&gt;</div>' +
     '</div>' +
     '<div style="background:rgba(199,84,80,0.1);border-left:3px solid #c75450;padding:8px 10px;font-size:12px;color:#c75450;border-radius:2px;margin-bottom:10px">' +
-    '<strong>如果目标未设置 CSRF Token，受害者点击后资金会被转走。</strong></div>' +
+    '<strong>如果目标未设置 CSRF 令牌，受害者点击后资金会被转走。</strong></div>' +
     '<div style="background:rgba(115,201,144,0.1);border-left:3px solid #73c990;padding:8px 10px;font-size:12px;color:#73c990;border-radius:2px">' +
-    '<strong>修复：</strong>添加 <code style="background:#3c3f41;padding:1px 4px;border-radius:3px">SameSite=Strict</code> Cookie + CSRF Token 验证</div>' +
+    '<strong>修复：</strong>添加 <code style="background:#3c3f41;padding:1px 4px;border-radius:3px">SameSite=Strict</code> Cookie + CSRF 令牌 验证</div>' +
     '</div>';
 }
 
 // ----- simulateXSS -----
 function simulateXSS(target) {
-  let out = document.getElementById('attack-demo-result');
+  let out = document.getElementById('attack-演示-result');
   if (!out) return;
   out.innerHTML = '<div style="background:#3c3f41;border:1px solid rgba(240,167,50,0.3);border-radius:2px;padding:14px;animation:fadeInUp 0.4s">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
@@ -212,7 +212,7 @@ function simulateXSS(target) {
 
 // ----- simulateClickjacking -----
 function simulateClickjacking(target) {
-  let out = document.getElementById('attack-demo-result');
+  let out = document.getElementById('attack-演示-result');
   if (!out) return;
   out.innerHTML = '<div style="background:#3c3f41;border:1px solid rgba(168,85,247,0.3);border-radius:2px;padding:14px;animation:fadeInUp 0.4s">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
@@ -358,7 +358,7 @@ function downloadReport(fmt) {
     if (format === 'html') {
       authFetch(url)
         .then(function(resp) {
-          if (!resp.ok) throw new Error('报告生成失败 (' + resp.status + ')');
+          if (!resp.ok) throw new Error('报告生成失败（' + resp.status + ')');
           return resp.text();
         })
         .then(function(html) {
@@ -379,7 +379,7 @@ function downloadReport(fmt) {
     } else {
       authFetch(url)
         .then(function(resp) {
-          if (!resp.ok) throw new Error('PDF 生成失败 (' + resp.status + ')');
+          if (!resp.ok) throw new Error('PDF 生成失败（' + resp.status + ')');
           return resp.blob();
         })
         .then(function(blob) {
@@ -584,25 +584,25 @@ function drawTrendChart(series, urls) {
   // 收集所有数据点
   let colors = ['#4b6eaf', '#73c990', '#f0a732', '#c75450', '#c75450', '#4b6eaf', '#4b6eaf'];
   let datasets = [];
-  let allScores = [];
+  let all评分s = [];
   for (let i = 0; i < urls.length; i++) {
     let url = urls[i];
     let points = series[url] || [];
     if (points.length === 0) continue;
     let scores = points.map(function(p) { return p.score; });
-    allScores = allScores.concat(scores);
+    all评分s = all评分s.concat(scores);
     datasets.push({ url: url, points: points, color: colors[i % colors.length] });
   }
 
-  if (datasets.length === 0 || allScores.length === 0) return;
+  if (datasets.length === 0 || all评分s.length === 0) return;
 
   // 图表参数
   let padding = { top: 20, right: 20, bottom: 30, left: 45 };
   let chartW = W - padding.left - padding.right;
   let chartH = H - padding.top - padding.bottom;
-  let minScore = Math.max(Math.min.apply(null, allScores) - 5, 0);
-  let maxScore = Math.min(Math.max.apply(null, allScores) + 5, 100);
-  let scoreRange = maxScore - minScore || 1;
+  let min评分 = Math.max(Math.min.apply(null, all评分s) - 5, 0);
+  let max评分 = Math.min(Math.max.apply(null, all评分s) + 5, 100);
+  let scoreRange = max评分 - min评分 || 1;
 
   // 清空
   ctx.clearRect(0, 0, W, H);
@@ -618,7 +618,7 @@ function drawTrendChart(series, urls) {
     ctx.lineTo(W - padding.right, y);
     ctx.stroke();
     // Y 轴标签
-    let val = Math.round(maxScore - (g / gridLines) * scoreRange);
+    let val = Math.round(max评分 - (g / gridLines) * scoreRange);
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'right';
@@ -626,8 +626,8 @@ function drawTrendChart(series, urls) {
   }
 
   // 绘制安全区间背景
-  let safeY = padding.top + ((maxScore - 90) / scoreRange) * chartH;
-  let warnY = padding.top + ((maxScore - 70) / scoreRange) * chartH;
+  let safeY = padding.top + ((max评分 - 90) / scoreRange) * chartH;
+  let warnY = padding.top + ((max评分 - 70) / scoreRange) * chartH;
   ctx.fillStyle = 'rgba(115,201,144,0.05)';
   ctx.fillRect(padding.left, safeY, chartW, padding.top - safeY + chartH);
   ctx.fillStyle = 'rgba(240,167,50,0.05)';
@@ -650,7 +650,7 @@ function drawTrendChart(series, urls) {
     ctx.beginPath();
     for (let p = 0; p < n; p++) {
       let x = xCoords[p];
-      let y = padding.top + ((maxScore - pts[p].score) / scoreRange) * chartH;
+      let y = padding.top + ((max评分 - pts[p].score) / scoreRange) * chartH;
       if (p === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
@@ -668,7 +668,7 @@ function drawTrendChart(series, urls) {
     ctx.lineCap = 'round';
     for (let p = 0; p < n; p++) {
       let x = xCoords[p];
-      let y = padding.top + ((maxScore - pts[p].score) / scoreRange) * chartH;
+      let y = padding.top + ((max评分 - pts[p].score) / scoreRange) * chartH;
       if (p === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
@@ -677,7 +677,7 @@ function drawTrendChart(series, urls) {
     // 绘制数据点
     for (let p = 0; p < n; p++) {
       let x = xCoords[p];
-      let y = padding.top + ((maxScore - pts[p].score) / scoreRange) * chartH;
+      let y = padding.top + ((max评分 - pts[p].score) / scoreRange) * chartH;
       ctx.beginPath();
       ctx.arc(x, y, 4, 0, Math.PI * 2);
       ctx.fillStyle = ds.color;
@@ -691,7 +691,7 @@ function drawTrendChart(series, urls) {
     // 最后一个点高亮（显示分数）
     if (n > 0) {
       let lastX = xCoords[n - 1];
-      let lastY = padding.top + ((maxScore - pts[n - 1].score) / scoreRange) * chartH;
+      let lastY = padding.top + ((max评分 - pts[n - 1].score) / scoreRange) * chartH;
       ctx.beginPath();
       ctx.arc(lastX, lastY, 6, 0, Math.PI * 2);
       ctx.fillStyle = ds.color + '40';
@@ -727,7 +727,7 @@ async function loadPublicDemo() {
   let c = document.getElementById('public-report-content');
   if (c) c.innerHTML = '<div style="height:120px;border-radius:2px;margin-top:12px;background:#3c3f41;border:1px solid #555555;display:flex;align-items:center;justify-content:center;color:#808080;font-size:13px">扫描中…</div>';
   try {
-    let r = await authFetch('/api/public-demo-scan', {
+    let r = await authFetch('/api/public-演示-scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: url })
@@ -1117,7 +1117,7 @@ function showAutoFixDialog(scanId, fixCount) {
   html += '<input type="radio" name="auto-fix-method" value="cloudflare" style="display:none">';
   html += '<div style="font-size:20px;color:var(--text-secondary)">CF</div>';
   html += '<div style="font-size:12px;font-weight:600;margin-top:4px">Cloudflare API</div>';
-  html += '<div style="font-size:11px;color:var(--text-secondary)">只需 API Token</div>';
+  html += '<div style="font-size:11px;color:var(--text-secondary)">只需 API 令牌</div>';
   html += '</label>';
   html += '</div>';
   html += '</div>';
@@ -1137,7 +1137,7 @@ function showAutoFixDialog(scanId, fixCount) {
 
   // Cloudflare 表单（默认隐藏）
   html += '<div id="cf-form" style="display:none">';
-  html += '<div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Cloudflare API Token</label><input id="af-cf-token" type="password" placeholder="CF Token" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);font-size:12px"></div>';
+  html += '<div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Cloudflare API 令牌</label><input id="af-cf-token" type="password" placeholder="CF 令牌" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);font-size:12px"></div>';
   html += '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text-secondary)">Zone（域名，如 example.com）</label><input id="af-cf-zone" type="text" placeholder="example.com" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);font-size:12px"></div>';
   html += '</div>';
 
@@ -1217,7 +1217,7 @@ async function executeAutoFix(scanId) {
       body.cf_token = document.getElementById('af-cf-token').value.trim();
       body.cf_zone = document.getElementById('af-cf-zone').value.trim();
       if (!body.cf_token || !body.cf_zone) {
-        result.innerHTML = '<div style="background:#3c3f41;border:1px solid #c75450;border-radius:2px;padding:12px;font-size:12px;color:#c75450">错误：请填写 CF Token 和 Zone</div>';
+        result.innerHTML = '<div style="background:#3c3f41;border:1px solid #c75450;border-radius:2px;padding:12px;font-size:12px;color:#c75450">错误：请填写 CF 令牌 和 Zone</div>';
         return;
       }
     }
@@ -1252,7 +1252,7 @@ async function executeAutoFix(scanId) {
     if (data.applied !== undefined) {
       html += '<div style="font-size:12px;margin-top:8px">Cloudflare: ' + data.applied + '/' + data.total + ' 头已应用</div>';
     }
-    html += '<button onclick="closeAutoFixDialog();loadHistory&&loadHistory()" style="width:100%;margin-top:10px;background:var(--primary);color:#fff;border:none;padding:8px;border-radius:2px;cursor:pointer;font-size:12px">完成</button>';
+    html += '<button onclick="closeAutoFixDialog();load历史&&load历史()" style="width:100%;margin-top:10px;background:var(--primary);color:#fff;border:none;padding:8px;border-radius:2px;cursor:pointer;font-size:12px">完成</button>';
     html += '</div>';
     result.innerHTML = html;
     showToast('修复配置已应用。已验证 ' + (data.verified_headers ? data.verified_headers.length : 0) + ' 个安全头');
@@ -1472,8 +1472,8 @@ function quickDemo(url) {
 
 // ----- showFullScanDetail -----
 function showFullScanDetail() {
-  if (window._publicReportResult) {
-    renderResult(window._publicReportResult);
+  if (window._public报告Result) {
+    renderResult(window._public报告Result);
   }
 }
 
@@ -1519,14 +1519,14 @@ function goVerifyStep2() {
   if (dnsEl) dnsEl.textContent = '_vuln-sentinel.' + host + ' TXT "' + verifyToken + '"';
   if (step1) step1.style.display = 'none';
   if (step2) step2.style.display = 'block';
-  selectedVerifyMethod = '';
+  selected验证Method = '';
   if (infoEl) infoEl.innerHTML = '<p>请选择一种验证方式</p>';
   if (btnEl) btnEl.disabled = true;
 }
 
 // ----- selectVerifyMethod -----
 function selectVerifyMethod(el, method) {
-  selectedVerifyMethod = method;
+  selected验证Method = method;
   document.querySelectorAll('.verify-method').forEach(function(item) { item.classList.remove('selected'); });
   if (el) el.classList.add('selected');
   let info = document.getElementById('verify-method-info');
@@ -1567,7 +1567,7 @@ function skipVerification() {
 
 // ----- confirmVerification -----
 function confirmVerification() {
-  if (!selectedVerifyMethod) { showToast('请先选择验证方式'); return; }
+  if (!selected验证Method) { showToast('请先选择验证方式'); return; }
   if (!isLoggedIn()) { showToast('请先登录'); navigateTo('profile'); return; }
   let btn = document.getElementById('verify-confirm-btn');
   let urlInput = document.getElementById('scan-url');
@@ -1581,7 +1581,7 @@ function confirmVerification() {
   if (btn) { btn.disabled = true; btn.textContent = '正在查询 DNS / 下载验证文件...'; }
   authFetch('/api/verify', {
     method: 'POST',
-    body: JSON.stringify({ url: url, token: verifyToken, method: selectedVerifyMethod })
+    body: JSON.stringify({ url: url, token: verifyToken, method: selected验证Method })
   }).then(function(resp) { return resp.json(); }).then(function(data) {
     if (btn) { btn.disabled = false; btn.textContent = '我已添加验证信息，确认验证'; }
     if (data.success) {
@@ -1609,7 +1609,7 @@ function confirmVerification() {
 // ----- copyToken -----
 function copyToken() {
   copyToClipboard(verifyToken);
-  showToast('Token 已复制');
+  showToast('令牌 已复制');
 }
 
 // ----- calculateScore -----
@@ -1632,9 +1632,18 @@ function startScan() {
   if (!isLoggedIn()) { showToast('请先登录后再使用扫描功能'); navigateTo('profile'); return; }
   _scanInProgress = true;
   setButtonLoading("scan-btn", true);
+  setButtonLoading("scan-btn-step1", true);
   let authCb = document.getElementById('auth-check');
-  let auth = authCb ? authCb.checked : false;
-  if (!auth) { _scanInProgress = false; setButtonLoading("scan-btn", false); showToast('请确认你拥有该域名或已获得授权。未经授权的安全扫描可能违反法律法规。'); return; }
+  let authStep1 = document.getElementById('auth-check-step1');
+  let auth = (authCb && authCb.checked) || (authStep1 && authStep1.checked) || false;
+  if (!auth) {
+    _scanInProgress = false;
+    setButtonLoading("scan-btn", false);
+    setButtonLoading("scan-btn-step1", false);
+    showToast('请确认你拥有该域名或已获得授权。未经授权的安全扫描可能违反法律法规。');
+    return;
+  }
+  if (authCb && !authCb.checked) authCb.checked = true;
   // 记录勾选时间
   try {
     let authTime = new Date().toISOString();
@@ -1707,6 +1716,7 @@ function startScan() {
     console.error('startScan error:', e);
     _scanInProgress = false;
     setButtonLoading("scan-btn", false);
+    setButtonLoading("scan-btn-step1", false);
     let rc = document.getElementById('result-content');
     if (rc) {
       rc.innerHTML = '<div class="card" style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">错误：</div><h3 style="color:var(--danger);margin-bottom:8px">扫描启动失败</h3><p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">页面在启动扫描时遇到问题。</p><p style="color:var(--text-lighter);font-size:12px;margin-bottom:16px">错误信息：' + escapeHtml(e.message || String(e)) + '</p><button class="btn btn-primary" onclick="navigateTo(\'home\')"> 返回首页</button></div>';
@@ -1719,7 +1729,7 @@ function startScan() {
 // ----- cancelScan -----
 function cancelScan() {
   if (!_scanInProgress) return;
-  _scanCancelled = true;
+  _scan取消led = true;
   _scanInProgress = false;
   setButtonLoading("scan-btn", false);
   // 清除进度动画
@@ -1729,7 +1739,7 @@ function cancelScan() {
   // 返回首页
   setTimeout(function() {
     navigateTo('home');
-    _scanCancelled = false;
+    _scan取消led = false;
   }, 300);
 }
 
@@ -1741,13 +1751,15 @@ function startRealScan(url, host, deepScan) {
   // 超时保护：标准扫描 60 秒，深度扫描 120 秒
   let scanTimeoutMs = deepScan ? 120000 : 60000;
   let timeoutId = setTimeout(function() {
-    if (_scanCancelled) return;
+    if (_scan取消led) return;
     finishStages();
     setTimeout(function() {
-      if (_scanCancelled) return;
+      if (_scan取消led) return;
       renderScanError('扫描超时，目标网站可能响应缓慢或无法访问。请检查网址是否正确，或稍后重试。', url);
       _scanInProgress = false;
       setButtonLoading("scan-btn", false);
+      setButtonLoading("scan-btn-step1", false);
+      setButtonLoading("scan-btn-step1", false);
     }, 600);
   }, scanTimeoutMs);
 
@@ -1756,7 +1768,7 @@ function startRealScan(url, host, deepScan) {
     method: 'POST',
     body: JSON.stringify({ url: url, depth: deepScan ? 'deep' : 'standard', authorized: true })
   }).then(function(resp) {
-    if (_scanCancelled) return;
+    if (_scan取消led) return;
     clearTimeout(timeoutId);
     // 无论成功还是失败，都解析响应体以保留后端返回的具体错误信息
     return resp.json().then(function(data) {
@@ -1767,12 +1779,12 @@ function startRealScan(url, host, deepScan) {
       throw new Error('服务器返回异常（HTTP ' + resp.status + '），请稍后重试');
     });
   }).then(function(data) {
-    if (_scanCancelled) return;
+    if (_scan取消led) return;
     clearTimeout(timeoutId);
     if (isPaymentRequired(data)) {
       finishStages();
       setTimeout(function() {
-        if (_scanCancelled) return;
+        if (_scan取消led) return;
         showToast(paymentRequiredMessage(data), 'error');
         let rc = document.getElementById('result-content');
         if (rc) {
@@ -1788,7 +1800,7 @@ function startRealScan(url, host, deepScan) {
     if (data._status && data._status >= 400) {
       finishStages();
       setTimeout(function() {
-        if (_scanCancelled) return;
+        if (_scan取消led) return;
         let errMsg = extractError(data);
         // 对常见 HTTP 状态码补充提示
         if (data._status === 403) {
@@ -1805,7 +1817,7 @@ function startRealScan(url, host, deepScan) {
     if (data.error) {
       finishStages();
       setTimeout(function() {
-        if (_scanCancelled) return;
+        if (_scan取消led) return;
         renderScanError(extractError(data), url);
         _scanInProgress = false;
         setButtonLoading("scan-btn", false);
@@ -1814,26 +1826,28 @@ function startRealScan(url, host, deepScan) {
     }
     finishStages();
     setTimeout(function() {
-      if (_scanCancelled) return;
+      if (_scan取消led) return;
       let merged = mergeRealData(url, data);
       lastScanResult = merged;
-      saveScanHistory(merged);
+      saveScan历史(merged);
       renderResult(merged);
       _scanInProgress = false;
       setButtonLoading("scan-btn", false);
+      setButtonLoading("scan-btn-step1", false);
       updateUserCredits();
     }, 400);
   }).catch(function(err) {
-    if (_scanCancelled) return;
+    if (_scan取消led) return;
     clearTimeout(timeoutId);
     finishStages();
     setTimeout(function() {
-      if (_scanCancelled) return;
+      if (_scan取消led) return;
       // 保留真实错误信息，而非笼统的"连接失败"
       let errMsg = (err && err.message) ? err.message : '扫描服务连接失败，请检查网络或稍后重试';
       renderScanError(errMsg, url);
       _scanInProgress = false;
       setButtonLoading("scan-btn", false);
+      setButtonLoading("scan-btn-step1", false);
     }, 600);
   });
 }
@@ -1858,7 +1872,7 @@ function mergeRealData(url, apiData) {
   let score = apiData.score;
   let riskLevel = apiData.risk_level;
 
-  let aiReport = {
+  let ai报告 = {
     summary: '对 ' + host + ' 的真实安全扫描已完成。共发现 ' + findings.length + ' 个安全问题，综合安全评分为 ' + score + ' 分（满分 100）。',
     priority: findings.length > 0 ? '优先修复标记为"高风险"的安全问题。' : '安全状况良好，建议持续监控。',
     boundary: '本次检测基于真实 HTTP 响应头判断。'
@@ -1871,7 +1885,7 @@ function mergeRealData(url, apiData) {
     risk_level: riskLevel,
     scan_mode: 'real',
     scan_id: apiData.scan_id || null,
-    ai_report: aiReport,
+    ai_report: ai报告,
     owasp_coverage: apiData.owasp_coverage || [],
     findings: findings,
     header_details: apiData.header_details || [],
@@ -1905,7 +1919,7 @@ function renderScanError(errorMsg, url) {
   let safeUrl = escapeHtml(url);
 
   // 检测是否是登录/跳转长链接
-  let isLoginUrl = /login|redirect|spm|havana|sso|auth|signin/i.test(url);
+  let is登录Url = /login|redirect|spm|havana|sso|auth|signin/i.test(url);
   let isLongUrl = url.length > 80;
   let mainDomain = '';
   try {
@@ -1917,9 +1931,9 @@ function renderScanError(errorMsg, url) {
   let isDnsFail = errorMsg && (errorMsg.indexOf('无法解析') !== -1 || errorMsg.indexOf('DNS') !== -1);
   let isTimeout = errorMsg && errorMsg.indexOf('超时') !== -1;
   let isConnectFail = errorMsg && errorMsg.indexOf('无法连接') !== -1;
-  let isDomainVerify = errorMsg && (errorMsg.indexOf('域名归属验证') !== -1 || errorMsg.indexOf('域名验证') !== -1);
+  let isDomain验证 = errorMsg && (errorMsg.indexOf('域名归属验证') !== -1 || errorMsg.indexOf('域名验证') !== -1);
 
-  if (isDomainVerify) {
+  if (isDomain验证) {
     // 深度扫描需要域名验证的专属引导
     let html = '<div class="card" style="padding:24px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.3);border-radius:2px;text-align:center;max-width:600px;margin:0 auto;">';
     html += '<div style="font-size:14px;font-weight:600;color:#4b6eaf;margin-bottom:12px">安全登录</div>';
@@ -1972,7 +1986,7 @@ function renderScanError(errorMsg, url) {
   html += '<p style="color:var(--text-light);margin-bottom:20px;max-width:400px;margin-left:auto;margin-right:auto">' + escapeHtml(subtitle) + '</p>';
 
   // 登录/跳转链接提示
-  if (isLoginUrl || isLongUrl) {
+  if (is登录Url || isLongUrl) {
     html += '<div style="background:rgba(240,167,50,0.1);border:1px solid rgba(240,167,50,0.3);border-radius:var(--radius-sm);padding:16px;text-align:left;font-size:13px;color:var(--text-secondary);line-height:2;margin-bottom:16px">';
     html += '<p><strong>提示： 检测到登录/跳转长链接</strong></p>';
     html += '<p>建议扫描网站主域名，而不是登录页或跳转链接。</p>';
@@ -2333,7 +2347,7 @@ function renderResult(data) {
     navigateTo('result');
     renderSRCResult(data);
     lastScanResult = data;
-    saveScanHistory(data);
+    saveScan历史(data);
     return;
   }
   // 防御性兜底：确保 data 及核心字段存在
@@ -2370,7 +2384,7 @@ function renderResult(data) {
 
   let html = '';
 
-  // Report Header
+  // 报告 Header
   html += '<div class="report-header fade-in-up">';
   html += '<div style="margin-bottom:12px">';
   if (data.restricted) {
@@ -2467,7 +2481,7 @@ function renderResult(data) {
   html += '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">Clickjacking</div>';
   html += '<div style="font-size:11px;font-weight:400;color:#c084fc">点击劫持</div></button>';
   html += '</div>';
-  html += '<div id="attack-demo-result" style="margin-top:14px"></div>';
+  html += '<div id="attack-演示-result" style="margin-top:14px"></div>';
   html += '</div>';
 
   //  评分解读（专业版）
@@ -2552,8 +2566,8 @@ function renderResult(data) {
   }
 
   //  复测前后价值对比
-  let _valBeforeScore = data.score || 0;
-  let _valAfterScore  = Math.min(98, _valBeforeScore + 25);
+  let _valBefore评分 = data.score || 0;
+  let _valAfter评分  = Math.min(98, _valBefore评分 + 25);
   let _valBeforeRisk  = highCount + medCount;
   let _valAfterRisk   = Math.max(0, Math.round(_valBeforeRisk * 0.25));
   let _valBeforeHdr   = 0;
@@ -2584,7 +2598,7 @@ function renderResult(data) {
   html += '</tr></thead>';
   html += '<tbody>';
   let _rows = [
-    { label: '安全评分', before: _valBeforeScore, after: _valAfterScore, unit: '分', good: 'up' },
+    { label: '安全评分', before: _valBefore评分, after: _valAfter评分, unit: '分', good: 'up' },
     { label: '中高风险', before: _valBeforeRisk, after: _valAfterRisk, unit: '个', good: 'down' },
     { label: '缺失安全头', before: _valBeforeHdr, after: _valAfterHdr, unit: '个', good: 'down' },
     { label: '敏感路径风险', before: _valBeforePath, after: _valAfterPath, unit: '个', good: 'down' },
@@ -2717,8 +2731,8 @@ function renderResult(data) {
   }
   html += '</div></div>';
 
-  // Findings - Burp workbench layout: left list + right detail
-  html += '<div class="section-title fade-in-up" style="animation-delay:0.3s">漏洞详情 / Findings</div>';
+  // 漏洞项 - Burp workbench layout: left list + right detail
+  html += '<div class="section-title fade-in-up" style="animation-delay:0.3s">漏洞详情</div>';
   // 11-S: 0 漏洞时显示提示
   if (!data.findings || data.findings.length === 0) {
     html += '<div class="card fade-in-up" style="animation-delay:0.35s;text-align:center;padding:40px 20px;background:#3c3f41;border:1px solid #555555">';
@@ -2876,7 +2890,7 @@ function renderResult(data) {
       });
       detailHtml += '</ul></div>';
       if (f.remediation.nginx) {
-        detailHtml += '<div class="finding-section"><h4>Nginx 配置</h4><div class="code-block">' + escapeHtml(f.remediation.nginx) + '</div></div>';
+        detailHtml += '<div class="finding-section"><h4>服务器配置</h4><div class="code-block">' + escapeHtml(f.remediation.nginx) + '</div></div>';
       }
       if (f.remediation.apache) {
         detailHtml += '<div class="finding-section"><h4>Apache 配置</h4><div class="code-block">' + escapeHtml(f.remediation.apache) + '</div></div>';
@@ -2978,7 +2992,7 @@ function renderResult(data) {
   // Assemble workbench
   if (data.findings && data.findings.length > 0) {
     html += '<div class="result-workbench">';
-    html += '<div class="result-list-panel"><div class="result-list-header">Findings (' + data.findings.length + ')</div><div class="result-list">' + listHtml + '</div></div>';
+    html += '<div class="result-list-panel"><div class="result-list-header">发现项（' + data.findings.length + ')</div><div class="result-list">' + listHtml + '</div></div>';
     html += '<div class="result-detail-panel" id="result-detail-panel">' + detailHtml + '</div>';
     html += '</div>';
   }
@@ -3031,7 +3045,7 @@ function renderResult(data) {
   html += '</div>';
 
   // 复测后：所有 finding 全部消除，仅保留修复加成（最多 100）
-  let fixedScore = Math.min(100, 100 + 12);
+  let fixed评分 = Math.min(100, 100 + 12);
   html += '<div class="score-compare fade-in-up" style="animation-delay:0.45s">';
   html += '<h3> 复测后评分对比</h3>';
   html += '<div class="score-rings">';
@@ -3043,14 +3057,14 @@ function renderResult(data) {
   html += '<div class="tag">复测前</div>';
   html += '</div>';
   html += '<div class="score-ring-item">';
-  html += '<div class="ring" id="score-after-ring" style="background:' + getScoreGradient(fixedScore) + '">';
-  html += '<div class="val" style="color:#fff">' + fixedScore + '</div>';
+  html += '<div class="ring" id="score-after-ring" style="background:' + getScoreGradient(fixed评分) + '">';
+  html += '<div class="val" style="color:#fff">' + fixed评分 + '</div>';
   html += '<div class="lbl" style="color:rgba(255,255,255,0.7)">复测后</div>';
   html += '</div>';
   html += '<div class="tag">复测后</div>';
   html += '</div>';
   html += '</div>';
-  html += '<div class="score-improve" id="score-diff"> 提升 <strong>' + (fixedScore - data.score) + '</strong> 分 <span>（' + data.score + ' -> ' + fixedScore + '）</span></div>';
+  html += '<div class="score-improve" id="score-diff"> 提升 <strong>' + (fixed评分 - data.score) + '</strong> 分 <span>（' + data.score + ' -> ' + fixed评分 + '）</span></div>';
   html += '<div class="score-rules"><p>评分规则：基础 100 分 - 高风险(18) - 中风险(10) - 低风险(4) + 修复配置(+12) + PR修复(+10)</p></div>';
   html += '</div>';
   if ( data.ssl_info && data.ssl_info.has_cert) {
@@ -3188,13 +3202,13 @@ function renderResult(data) {
   }
 
   // One-click fix section
-  let configFindings = data.findings.filter(function(f) {
+  let config漏洞项 = data.findings.filter(function(f) {
     return f.owasp === 'A05 安全配置错误' || f.owasp === 'A02 加密机制失效' || f.name.indexOf('缺少') === 0;
   });
-  if ( configFindings.length > 0) {
+  if ( config漏洞项.length > 0) {
     html += '<div class="card fade-in-up" style="animation-delay:0.42s">';
     html += '<div class="card-title"> 一键生成修复配置</div>';
-    html += '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">检测到 ' + configFindings.length + ' 个配置类问题，可自动生成 Nginx 修复配置。</p>';
+    html += '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">检测到 ' + config漏洞项.length + ' 个配置类问题，可自动生成 Nginx 修复配置。</p>';
     html += '<div class="fixer-btns">';
     html += '<button class="fixer-btn primary" onclick="goToFixerWithScanResult()"> 生成修复配置</button>';
     html += '<div class="report-download-dropdown">';
@@ -3228,8 +3242,8 @@ function renderResult(data) {
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.8">';
   html += '<div> <strong>风险摘要</strong>：确认漏洞数 / 疑似风险数 / 配置缺失数总览</div>';
   html += '<div> <strong>证据详情</strong>：每个 finding 的响应头值、敏感路径内容片段、WAF 检测依据</div>';
-  html += '<div> <strong>修复建议</strong>：按服务器类型（Nginx / Apache / Express / Flask / Spring Boot / Cloudflare）分类的修复配置，含优先级排序</div>';
-  html += '<div> <strong>复测结果</strong>：上次 vs 本次分数对比、新增问题 / 已修复问题列表</div>';
+  html += '<div> <strong>修复建议</strong>：按服务器类型（Nginx、Apache、Express、Flask、Spring Boot、Cloudflare）分类的修复配置，含优先级排序</div>';
+  html += '<div> <strong>复测结果</strong>：上次 vs 本次分数对比、新增问题、已修复问题列表</div>';
   html += '<div> <strong>评分变化</strong>：如有历史记录，展示分数变化趋势</div>';
   html += '</div>';
   html += '<div style="margin-top:10px;text-align:center">';
@@ -3337,7 +3351,7 @@ function renderResult(data) {
     step3Effect = '验证闭环';
     step3Done = step1Done && step2Done;
 
-    let stepStatus = function(done) {
+    let step状态 = function(done) {
       return done ? '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(115,201,144,0.15);color:#73c990;border:1px solid rgba(115,201,144,0.3);border-radius:2px;padding:2px 10px;font-size:12px;font-weight:600"> 已完成</span>' : '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(240,167,50,0.15);color:#f0a732;border:1px solid rgba(240,167,50,0.3);border-radius:2px;padding:2px 10px;font-size:12px;font-weight:600"> 未开始</span>';
     };
 
@@ -3349,7 +3363,7 @@ function renderResult(data) {
     html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(115,201,144,0.15);border-radius:2px;padding:12px 14px">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
     html += '<strong style="font-size:13px;color:#73c990">1. 第一步（立即）</strong>';
-    html += stepStatus(step1Done);
+    html += step状态(step1Done);
     html += '</div>';
     html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.6">' + step1Action + '</div>';
     html += '<div style="margin-top:6px;font-size:12px;color:#73c990;font-weight:600">' + step1Effect + '</div>';
@@ -3362,7 +3376,7 @@ function renderResult(data) {
     html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(115,201,144,0.15);border-radius:2px;padding:12px 14px">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
     html += '<strong style="font-size:13px;color:#73c990">2. 第二步（今天）</strong>';
-    html += stepStatus(step2Done);
+    html += step状态(step2Done);
     html += '</div>';
     html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.6">' + step2Action + '</div>';
     html += '<div style="margin-top:6px;font-size:12px;color:#73c990;font-weight:600">' + step2Effect + '</div>';
@@ -3375,7 +3389,7 @@ function renderResult(data) {
     html += '<div style="background:rgba(0,0,0,0.15);border:1px solid rgba(115,201,144,0.15);border-radius:2px;padding:12px 14px">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
     html += '<strong style="font-size:13px;color:#73c990">3. 第三步（复测）</strong>';
-    html += stepStatus(step3Done);
+    html += step状态(step3Done);
     html += '</div>';
     html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.6">' + step3Action + '</div>';
     html += '<div style="margin-top:6px;font-size:12px;color:#73c990;font-weight:600">' + step3Effect + '</div>';
@@ -3459,10 +3473,10 @@ function showPdfDownloadTip() {
   html += '<div style="font-size:15px;font-weight:700;margin-bottom:6px">PDF 报告已生成</div>';
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.7;margin-bottom:12px">';
   html += '报告包含以下内容：<br>';
-  html += ' 风险摘要（确认漏洞 / 疑似风险 / 配置缺失）<br>';
+  html += ' 风险摘要（确认漏洞、疑似风险、配置缺失）<br>';
   html += ' 证据详情（响应头值、敏感路径片段、WAF 检测依据）<br>';
   html += ' 修复建议（按服务器类型分类，含优先级排序）<br>';
-  html += ' 复测结果（上次 vs 本次分数对比、新增 / 已修复问题）<br>';
+  html += ' 复测结果（上次与本次分数对比、新增与已修复问题）<br>';
   html += ' 评分变化趋势（如有历史记录）';
   html += '</div>';
   html += '<button class="btn btn-primary" onclick="downloadReport(\'pdf\')"> 立即下载 PDF</button>';
@@ -3498,7 +3512,7 @@ function generateFixFromResult() {
   if (!inputEl || !output) { setButtonLoading("gen-fix-btn", false); return; }
   let input = inputEl.value.trim();
   if (!input) {
-    output.innerHTML = '<div style="color:var(--warning);font-size:13px;margin-top:8px">请输入 Nginx 配置内容</div>';
+    output.innerHTML = '<div style="color:var(--warning);font-size:13px;margin-top:8px">请输入服务器配置内容</div>';
     setButtonLoading("gen-fix-btn", false);
     return;
   }
@@ -3848,7 +3862,7 @@ function verifyFix() {
     if (resp.status === 402) {
       return resp.json().then(function(data) { data._status = 402; return data; });
     }
-    if (!resp.ok) throw new Error('API 返回 ' + resp.status);
+    if (!resp.ok) throw new Error('接口返回 ' + resp.status);
     return resp.json();
   }).then(function(data) {
     if (btn) { btn.disabled = false; btn.textContent = '验证修复效果'; }
@@ -3858,13 +3872,13 @@ function verifyFix() {
       return;
     }
     if (data.success) {
-      let oldScore = lastScanResult.score;
-      let newScore = data.new_score;
-      let msg = '重新扫描完成！评分: ' + oldScore + ' → ' + newScore;
-      if (newScore > oldScore) {
-        msg += ' (提升 ' + (newScore - oldScore) + ' 分)';
-      } else if (newScore < oldScore) {
-        msg += ' (下降 ' + (oldScore - newScore) + ' 分)';
+      let old评分 = lastScanResult.score;
+      let new评分 = data.new_score;
+      let msg = '重新扫描完成！评分: ' + old评分 + ' → ' + new评分;
+      if (new评分 > old评分) {
+        msg += ' (提升 ' + (new评分 - old评分) + ' 分)';
+      } else if (new评分 < old评分) {
+        msg += ' (下降 ' + (old评分 - new评分) + ' 分)';
       } else {
         msg += ' (无变化)';
       }
@@ -3895,8 +3909,8 @@ function verifyFix() {
   });
 }
 
-// ----- saveScanHistory -----
-function saveScanHistory(data) {
+// ----- saveScan历史 -----
+function saveScan历史(data) {
   // 扫描结果已由后端保存到数据库（按用户隔离），无需本地存储
   updateProfileStats();
 }
@@ -3918,18 +3932,18 @@ function clearScanHistory() {
 
 // ----- toggleHistoryCompareMode -----
 function toggleHistoryCompareMode() {
-  _historyCompareMode = !_historyCompareMode;
-  _historyCompareSelected = [];
+  _history对比Mode = !_history对比Mode;
+  _history对比Selected = [];
   let bar = document.getElementById('history-compare-bar');
-  if (bar) bar.style.display = _historyCompareMode ? 'flex' : 'none';
-  updateHistoryCompareUI();
+  if (bar) bar.style.display = _history对比Mode ? 'flex' : 'none';
+  update历史对比UI();
   renderScanHistory(historyPage);
 }
 
 // ----- cancelHistoryCompare -----
 function cancelHistoryCompare() {
-  _historyCompareMode = false;
-  _historyCompareSelected = [];
+  _history对比Mode = false;
+  _history对比Selected = [];
   let bar = document.getElementById('history-compare-bar');
   if (bar) bar.style.display = 'none';
   renderScanHistory(historyPage);
@@ -3937,35 +3951,35 @@ function cancelHistoryCompare() {
 
 // ----- onHistorySelect -----
 function onHistorySelect(idx) {
-  let pos = _historyCompareSelected.indexOf(idx);
+  let pos = _history对比Selected.indexOf(idx);
   if (pos >= 0) {
-    _historyCompareSelected.splice(pos, 1);
+    _history对比Selected.splice(pos, 1);
   } else {
-    if (_historyCompareSelected.length >= 2) {
+    if (_history对比Selected.length >= 2) {
       showToast('最多选择 2 条记录进行对比');
       return;
     }
-    _historyCompareSelected.push(idx);
+    _history对比Selected.push(idx);
   }
-  updateHistoryCompareUI();
+  update历史对比UI();
   renderScanHistory(historyPage);
 }
 
-// ----- updateHistoryCompareUI -----
-function updateHistoryCompareUI() {
+// ----- update历史对比UI -----
+function update历史对比UI() {
   let count = document.getElementById('history-compare-count');
   let btn = document.getElementById('history-compare-btn');
-  if (count) count.textContent = String(_historyCompareSelected.length);
-  if (btn) btn.disabled = _historyCompareSelected.length !== 2;
+  if (count) count.textContent = String(_history对比Selected.length);
+  if (btn) btn.disabled = _history对比Selected.length !== 2;
 }
 
 // ----- doHistoryCompare -----
 function doHistoryCompare() {
-  if (_historyCompareSelected.length !== 2) { showToast('请选择 2 条记录'); return; }
+  if (_history对比Selected.length !== 2) { showToast('请选择 2 条记录'); return; }
   authFetch('/api/history?limit=50').then(function(r){return r.json();}).then(function(data){
     let history = data.history || [];
-    let a = history[_historyCompareSelected[0]];
-    let b = history[_historyCompareSelected[1]];
+    let a = history[_history对比Selected[0]];
+    let b = history[_history对比Selected[1]];
     if (!a || !b) { showToast('记录不存在'); return; }
     let diff = compareHistoryItems(a, b);
     let html = '<div class="card" style="margin-bottom:16px">';
@@ -4004,12 +4018,12 @@ function doHistoryCompare() {
 
 // ----- compareHistoryItems -----
 function compareHistoryItems(a, b) {
-  let aFindings = (a.findings || []).map(function(f){ return f.name || f; });
-  let bFindings = (b.findings || []).map(function(f){ return f.name || f; });
+  let a漏洞项 = (a.findings || []).map(function(f){ return f.name || f; });
+  let b漏洞项 = (b.findings || []).map(function(f){ return f.name || f; });
   let newIssues = [];
   let fixedIssues = [];
-  bFindings.forEach(function(name){ if (aFindings.indexOf(name) === -1) newIssues.push({name:name}); });
-  aFindings.forEach(function(name){ if (bFindings.indexOf(name) === -1) fixedIssues.push({name:name}); });
+  b漏洞项.forEach(function(name){ if (a漏洞项.indexOf(name) === -1) newIssues.push({name:name}); });
+  a漏洞项.forEach(function(name){ if (b漏洞项.indexOf(name) === -1) fixedIssues.push({name:name}); });
   return { scoreDelta: (b.score || 0) - (a.score || 0), newIssues: newIssues, fixedIssues: fixedIssues };
 }
 
@@ -4024,10 +4038,10 @@ function renderHistoryTrendChart(history) {
   let w = container.clientWidth || 300;
   let h = 60;
   let pad = 4;
-  let maxScore = 100;
+  let max评分 = 100;
   let points = recent.map(function(item, i) {
     let x = pad + (i / (recent.length - 1)) * (w - pad * 2);
-    let y = h - pad - ((item.score || 0) / maxScore) * (h - pad * 2);
+    let y = h - pad - ((item.score || 0) / max评分) * (h - pad * 2);
     return { x: Math.round(x), y: Math.round(y), score: item.score || 0 };
   });
   let svg = '<svg width="' + w + '" height="' + h + '" style="overflow:visible">';
@@ -4072,7 +4086,7 @@ function renderScanHistory(page) {
     let start = (page - 1) * historyPageSize;
     let pageItems = history.slice(start, start + historyPageSize);
     let html = '';
-    if (!_historyCompareMode) {
+    if (!_history对比Mode) {
       html += '<div style="text-align:right;margin-bottom:8px">';
       html += '<button class="fixer-btn secondary" style="height:28px;padding:0 10px;font-size:12px" onclick="toggleHistoryCompareMode()"> 对比模式</button>';
       html += '</div>';
@@ -4080,13 +4094,13 @@ function renderScanHistory(page) {
     pageItems.forEach(function(h, i) {
       let realIndex = start + i;
       let color = h.score >= 75 ? 'var(--success)' : h.score >= 50 ? 'var(--warning)' : 'var(--danger)';
-      let prevScore = (history[realIndex + 1] || {}).score;
+      let prev评分 = (history[realIndex + 1] || {}).score;
       let arrow = '';
-      if (typeof prevScore === 'number') {
-        arrow = (h.score || 0) > prevScore ? ' <span style="color:var(--success);font-size:12px"></span>' : (h.score || 0) < prevScore ? ' <span style="color:var(--danger);font-size:12px"></span>' : ' <span style="color:var(--text-lighter);font-size:12px">-></span>';
+      if (typeof prev评分 === 'number') {
+        arrow = (h.score || 0) > prev评分 ? ' <span style="color:var(--success);font-size:12px"></span>' : (h.score || 0) < prev评分 ? ' <span style="color:var(--danger);font-size:12px"></span>' : ' <span style="color:var(--text-lighter);font-size:12px">-></span>';
       }
-      if (_historyCompareMode) {
-        let checked = _historyCompareSelected.indexOf(realIndex) >= 0 ? 'checked' : '';
+      if (_history对比Mode) {
+        let checked = _history对比Selected.indexOf(realIndex) >= 0 ? 'checked' : '';
         html += '<label class="menu-item" style="margin-bottom:6px;cursor:pointer;display:flex;align-items:center;gap:10px">';
         html += '<input type="checkbox" ' + checked + ' onchange="onHistorySelect(' + realIndex + ')" style="width:16px;height:16px;accent-color:var(--primary)">';
         html += '<div style="flex:1">';
@@ -4141,15 +4155,15 @@ function updateProfileStats() {
     let history = data.history || [];
     let stats = data.stats || { scan_count: history.length, fixed_count: 0 };
     let scanCount = document.getElementById('stat-scan-count');
-    let avgScore = document.getElementById('stat-avg-score');
+    let avg评分 = document.getElementById('stat-avg-score');
     let fixedCount = document.getElementById('stat-fixed-count');
     if (scanCount) scanCount.textContent = stats.scan_count || history.length;
-    if (avgScore) {
+    if (avg评分) {
       if (history.length === 0) {
-        avgScore.textContent = '-';
+        avg评分.textContent = '-';
       } else {
         let sum = history.reduce(function(a, b) { return a + (b.score || 0); }, 0);
-        avgScore.textContent = Math.round(sum / history.length);
+        avg评分.textContent = Math.round(sum / history.length);
       }
     }
     // 已修复数：取后端真实统计（同 URL 的相邻两次扫描 diff 累计）
@@ -4405,12 +4419,12 @@ export {
   downloadFixCode,
   downloadAllFixes,
   verifyFix,
-  saveScanHistory,
+  saveScan历史,
   clearScanHistory,
   toggleHistoryCompareMode,
   cancelHistoryCompare,
   onHistorySelect,
-  updateHistoryCompareUI,
+  update历史对比UI,
   doHistoryCompare,
   compareHistoryItems,
   renderHistoryTrendChart,
