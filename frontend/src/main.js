@@ -1594,6 +1594,8 @@ window.friendlyError = friendlyError;
 // 页面加载时刷新告警红点
 document.addEventListener('DOMContentLoaded', function() {
   updateAlertBadge();
+  // 页面首次打开先加载登录/注册验证码，避免表单为空
+  try { loadAuthChallenge(); } catch (e) { console.warn('loadAuthChallenge error:', e); }
   // 每 60 秒刷新一次未读告警红点
   setInterval(updateAlertBadge, 60000);
   // 初始化扫描页模块
