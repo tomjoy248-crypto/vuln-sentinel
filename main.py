@@ -8561,9 +8561,16 @@ async def api_scan(
             if not redirect_loc:
                 redirect_loc = headers.pop("location", "")
             if error.startswith("REDIRECT_"):
-                # 301/302 跳转：不算受限，只提示跳转
-                redirected = True
-                redirect_reason = f"目标发生跳转（HTTP {status_code}），跳转地址：{redirect_loc or '未知'}。建议扫描最终目标地址。"
+                from urllib.parse import urljoin, urlparse
+                resolved_loc = urljoin(url, redirect_loc) if redirect_loc else ""
+                current_host = urlparse(url).hostname or ""
+                target_host = urlparse(resolved_loc).hostname or current_host
+                # 仅明显外跳时提示为“跳转目标”，同站内常规跳转不单独打扰用户
+                if resolved_loc and target_host and target_host.lower() != current_host.lower():
+                    redirected = True
+                    redirect_reason = f"目标发生外部跳转（HTTP {status_code}），跳转地址：{resolved_loc}。建议扫描最终目标地址。"
+                else:
+                    redirect_reason = f"目标发生站内跳转（HTTP {status_code}），最终地址：{resolved_loc or '未知'}。"
                 error = None
             elif error == "AUTH_REQUIRED":
                 _restricted = True
