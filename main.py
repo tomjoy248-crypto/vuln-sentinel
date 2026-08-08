@@ -15650,7 +15650,11 @@ async def index() -> HTMLResponse:
             config_script = _build_frontend_config_script()
             if "</head>" in html:
                 html = html.replace("</head>", f"{config_script}</head>", 1)
-            return HTMLResponse(content=html)
+            response = HTMLResponse(content=html)
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            return response
     fallback_html = (
         '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
@@ -16149,11 +16153,19 @@ async def serve_favicon():
     """尝试返回 favicon.ico；如果不存在返回 404 而非 HTML。"""
     fp = Path(STATIC_DIR) / "favicon.ico"
     if fp.is_file():
-        return FileResponse(str(fp))
+        response = FileResponse(str(fp))
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
     # fallback: 尝试 favicon.svg（HTML 里引用的是 .svg）
     fp2 = Path(STATIC_DIR) / "favicon.svg"
     if fp2.is_file():
-        return FileResponse(str(fp2), media_type="image/svg+xml")
+        response = FileResponse(str(fp2), media_type="image/svg+xml")
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
     return JSONResponse(status_code=404, content={"detail": "not found"})
 
 
@@ -16211,7 +16223,11 @@ async def catch_all(path: str) -> Any:
             base = Path(STATIC_DIR).resolve()
             fp = (base / path).resolve()
             if fp.is_relative_to(base) and fp.is_file():
-                return FileResponse(str(fp))
+                response = FileResponse(str(fp))
+                response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                response.headers['Pragma'] = 'no-cache'
+                response.headers['Expires'] = '0'
+                return response
         except (OSError, ValueError):
             pass
         return JSONResponse(status_code=404, content={"detail": "not found"})
