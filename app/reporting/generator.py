@@ -234,7 +234,7 @@ def generate_executive_summary(scan_data: dict[str, Any]) -> str:
     intro = (
         f"本报告面向客户交付、上线前验收与复扫留档。"
         f"本次扫描共发现 {summary.total_findings} 项安全问题，"
-        f"建议优先处理已验证与高危项，并将待复测项作为后续验证清单。"
+        f"建议优先处理已验证与高危项，并将待人工复核项作为后续验证清单。"
     )
     summary_block = (
         f"### 0.1 客户摘要\n\n"
@@ -242,7 +242,7 @@ def generate_executive_summary(scan_data: dict[str, Any]) -> str:
         f"- 安全评分：{summary.overall_score} / 100\n"
         f"- 风险等级：{summary.risk_level}\n"
         f"- 发现问题：{summary.total_findings} 项\n"
-        f"- 已验证：{summary.verified_count} 项，待复测：{summary.unverified_count} 项，误报：{summary.false_positive_count} 项\n"
+        f"- 已验证：{summary.verified_count} 项，待人工复核：{summary.unverified_count} 项，误报：{summary.false_positive_count} 项\n"
         f"- 扫描时长：{_format_duration(summary.scan_duration_ms)}\n"
     )
     return intro + "\n\n" + summary_block + "\n" + EXECUTIVE_SUMMARY_TEMPLATE.format(
@@ -485,7 +485,7 @@ def generate_src_report(scan_data: dict[str, Any], format: str = "markdown") -> 
         f"- 安全评分：{summary.overall_score} / 100\n"
         f"- 风险等级：{summary.risk_level}\n"
         f"- 发现问题：{summary.total_findings} 项\n"
-        f"- 已验证：{summary.verified_count}，待复测：{summary.unverified_count}，误报：{summary.false_positive_count}\n"
+        f"- 已验证：{summary.verified_count}，待人工复核：{summary.unverified_count}，误报：{summary.false_positive_count}\n"
         f"- 扫描时长：{_format_duration(summary.scan_duration_ms)}\n\n"
         "### 0.1 交付结论\n\n"
         "> 本次结果可直接用于客户沟通、上线验收和复扫留档。建议优先关闭高危与已验证项，再复测中低风险项并保留证据链。\n\n"

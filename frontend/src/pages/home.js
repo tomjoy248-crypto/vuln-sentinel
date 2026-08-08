@@ -2443,7 +2443,7 @@ function renderResult(data) {
   html += '<div class="card fade-in-up" style="animation-delay:0.05s;padding:14px;margin-top:12px;border:1px solid rgba(75,110,175,0.25);background:rgba(60,63,65,0.9)">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">';
   html += '<div style="font-size:13px;font-weight:700;color:var(--text-primary)">管理层摘要</div>';
-  html += '<div style="font-size:12px;color:var(--text-secondary)">' + (data.restricted ? '受限扫描，结论需复核' : '可直接进入修复与复测闭环') + '</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary)">' + (data.restricted ? '受限扫描，结论需复核' : '可直接进入修复与复核闭环') + '</div>';
   html += '</div>';
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.8">' + escapeHtml(managementSummary) + '</div>';
   html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-secondary)">';
@@ -3129,7 +3129,7 @@ function renderResult(data) {
       html += '<div style="font-size:13px;font-weight:700;color:var(--warning);margin-bottom:6px;padding:4px 8px;background:rgba(240,167,50,0.08);border-radius:2px;border-left:3px solid var(--warning)">疑似风险 (' + suspectPaths.length + ')</div>';
       html += '<div style="font-size:12px;line-height:2">';
       suspectPaths.forEach(function(p) {
-        html += '<div style="color:var(--warning)">' + escapeHtml(p.path) + ' <span style="color:var(--text-lighter)">[' + p.status + ']</span> ' + escapeHtml(p.reason || '疑似误报，需人工确认') + '</div>';
+        html += '<div style="color:var(--warning)">' + escapeHtml(p.path) + ' <span style="color:var(--text-lighter)">[' + p.status + ']</span> ' + escapeHtml(p.reason || '疑似误报，需复核') + '</div>';
       });
       html += '</div></div>';
     }
@@ -3407,7 +3407,7 @@ function renderResult(data) {
   html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
   html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据摘要，再结合二次扫描结果和原始响应确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
   html += '<div style="margin-top:8px;font-weight:600">证据分层</div>';
-  html += '<div>「已验证」表示已完成交叉验证或用户确认；「可能存在」表示有较强线索但建议人工复测；「待复测」表示证据较弱或不完整，建议先复测再进入工单。</div>';
+  html += '<div>「已验证」表示已完成交叉验证或用户确认；「可能存在」表示有较强线索但建议人工复核；「待人工复核」表示证据较弱或不完整，建议先复核再进入工单。</div>';
   html += '<div style="margin-top:8px;font-weight:600">审计范围</div>';
   html += '<div>本报告覆盖 HTTP/TLS 配置、安全响应头、Cookie 标记、CORS、敏感路径和 WAF 识别，不包含破坏性利用或深度渗透动作。</div>';
   html += '<div style="margin-top:8px;font-weight:600">免责声明</div>';
