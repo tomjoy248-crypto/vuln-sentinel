@@ -980,7 +980,7 @@ async function doPublicDemoFix() {
       let sr = await authFetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url, depth: 'standard', authorized: true })
+        body: JSON.stringify({ url: url, depth: 'standard', authorized: !!((document.getElementById('auth-check-step1') && document.getElementById('auth-check-step1').checked) || (document.getElementById('auth-check') && document.getElementById('auth-check').checked)) })
       });
       if (sr.ok) {
         let sd = await sr.json();
@@ -1295,7 +1295,7 @@ async function doBatchScan() {
     let r = await authFetch('/api/batch-scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls: urls, deep: deep, authorized: true })
+      body: JSON.stringify({ urls: urls, deep: deep, authorized: !!(batchAuth && batchAuth.checked) })
     });
     let data = await r.json();
     if (!r.ok) { res.innerHTML = '<div style="color:#c75450;padding:10px">错误：' + escapeHtml(friendlyError(extractError(data))) + '</div>'; return; }
