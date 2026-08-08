@@ -15641,16 +15641,24 @@ def _build_frontend_config_script() -> str:
 
 @app.get("/")
 async def index() -> HTMLResponse:
-    path = os.path.join(STATIC_DIR, "index.html")
-    if os.path.exists(path):
-        with open(encoding="utf-8", file=path) as f:
-            html = f.read()
-        # 注入运行时配置（在 </head> 前插入，确保在 JS bundle 之前执行）
-        config_script = _build_frontend_config_script()
-        if "</head>" in html:
-            html = html.replace("</head>", f"{config_script}</head>", 1)
-        return HTMLResponse(content=html)
-    return HTMLResponse(content="<h1>VulnSentinel 11-S</h1>")
+    static_index = os.path.join(STATIC_DIR, "index.html")
+    fallback_index = os.path.join(_BASE_DIR, "frontend", "dist", "index.html")
+    for path in (static_index, fallback_index):
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                html = f.read()
+            config_script = _build_frontend_config_script()
+            if "</head>" in html:
+                html = html.replace("</head>", f"{config_script}</head>", 1)
+            return HTMLResponse(content=html)
+    fallback_html = (
+        '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+        '<title>漏洞哨兵</title></head><body><div id="app"></div>'
+        '<script>document.body.innerHTML="<div style=\"padding:24px;font-size:18px;font-family:sans-serif\">漏洞哨兵正在准备界面，请稍候…</div>";</script>'
+        '</body></html>'
+    )
+    return HTMLResponse(content=fallback_html)
 
 
 # ============================================================
