@@ -362,9 +362,9 @@ export const APP_TEMPLATE = `</head>
 
       <div style="display:flex;gap:6px">
 
-        <button onclick="load趋势Chart(7)" class="trend-range" data-days="7" style="padding:4px 10px;min-height:0;font-size:12px;border:1px solid #555555;background:#45494a;border-radius:2px;cursor:pointer;color:#808080;font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace">7天</button>
+        <button onclick="loadTrendChart(7)" class="trend-range" data-days="7" style="padding:4px 10px;min-height:0;font-size:12px;border:1px solid #555555;background:#45494a;border-radius:2px;cursor:pointer;color:#808080;font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace">7天</button>
 
-        <button onclick="load趋势Chart(30)" class="trend-range" data-days="30" style="padding:4px 10px;min-height:0;font-size:12px;border:1px solid #555555;background:#45494a;border-radius:2px;cursor:pointer;color:#808080;font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace">30天</button>
+        <button onclick="loadTrendChart(30)" class="trend-range" data-days="30" style="padding:4px 10px;min-height:0;font-size:12px;border:1px solid #555555;background:#45494a;border-radius:2px;cursor:pointer;color:#808080;font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace">30天</button>
 
       </div>
 
@@ -482,7 +482,7 @@ export const APP_TEMPLATE = `</head>
 
       <div style="text-align:center;margin-top:10px">
 
-        <button onclick="go验证Step2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">域名归属验证（推荐）</button>
+        <button onclick="goVerifyStep2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">域名归属验证（推荐）</button>
 
         <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">快速演示仅适用于自有目标或授权场景，正式交付建议完成归属验证</div>
 
@@ -524,7 +524,7 @@ export const APP_TEMPLATE = `</head>
 
       <div class="verify-methods">
 
-        <div class="verify-method" onclick="select验证Method(this, 'dns')">
+        <div class="verify-method" onclick="selectVerifyMethod(this, 'dns')">
 
           <strong>DNS TXT 验证</strong>
 
@@ -532,7 +532,7 @@ export const APP_TEMPLATE = `</head>
 
         </div>
 
-        <div class="verify-method" onclick="select验证Method(this, 'file')">
+        <div class="verify-method" onclick="selectVerifyMethod(this, 'file')">
 
           <strong>网站文件验证</strong>
 
@@ -720,11 +720,11 @@ export const APP_TEMPLATE = `</head>
 
     <div class="fixer-btns">
 
-      <button class="fixer-btn primary" id="fixer-analyze-btn" onclick="analyze修复器()">检查配置</button>
+      <button class="fixer-btn primary" id="fixer-analyze-btn" onclick="analyzeFixer()">检查配置</button>
 
       <button class="fixer-btn secondary" onclick="loadSampleConfig()">载入参考配置</button>
 
-      <button class="fixer-btn secondary" onclick="clear修复器()">清空</button>
+      <button class="fixer-btn secondary" onclick="clearFixer()">清空</button>
 
     </div>
 
@@ -748,7 +748,7 @@ export const APP_TEMPLATE = `</head>
 
     <div class="fixer-btns" style="margin-top:12px">
 
-      <button class="fixer-btn primary" id="goto-fixer-btn" onclick="goTo修复器WithScanResult()" aria-label="生成修复配置">使用上次扫描结果生成</button>
+      <button class="fixer-btn primary" id="goto-fixer-btn" onclick="goToFixerWithScanResult()" aria-label="生成修复配置">使用上次扫描结果生成</button>
 
     </div>
 
@@ -1028,7 +1028,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
-          <button class="auth-form-btn" style="flex:1" onclick="do登录()">登 录</button>
+          <button class="auth-form-btn" style="flex:1" onclick="doLogin()">登 录</button>
 
         </div>
 
@@ -1080,7 +1080,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
-          <button class="auth-form-btn" style="flex:1" onclick="do密码重置Confirm()">确认重置</button>
+          <button class="auth-form-btn" style="flex:1" onclick="doResetPassword()">确认重置</button>
 
         </div>
 
@@ -1144,7 +1144,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
-          <button class="auth-form-btn" style="flex:1" onclick="do注册()">注 册</button>
+          <button class="auth-form-btn" style="flex:1" onclick="doRegister()">注 册</button>
 
         </div>
 
@@ -1188,7 +1188,7 @@ export const APP_TEMPLATE = `</head>
 
         </div>
 
-        <button class="auth-logout-btn" onclick="do退出()">退出登录</button>
+        <button class="auth-logout-btn" onclick="doLogout()">退出登录</button>
 
       </div>
 
@@ -1238,7 +1238,7 @@ export const APP_TEMPLATE = `</head>
 
   <div class="settings-group">
 
-    <div class="settings-row" onclick="show账号Tab('history')">
+    <div class="settings-row" onclick="showProfileTab('history')">
 
       <span>扫描历史</span>
 
@@ -1246,7 +1246,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="show账号Tab('knowledge')">
+    <div class="settings-row" onclick="showProfileTab('knowledge')">
 
       <span>安全知识库</span>
 
@@ -1254,7 +1254,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="show账号Tab('monitor')">
+    <div class="settings-row" onclick="showProfileTab('monitor')">
 
       <span>监控目标</span>
 
@@ -1262,7 +1262,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="show账号Tab('alerts')">
+    <div class="settings-row" onclick="showProfileTab('alerts')">
 
       <span>告警历史</span>
 
@@ -1270,7 +1270,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="show账号Tab('credits')">
+    <div class="settings-row" onclick="showProfileTab('credits')">
 
       <span>额度与使用记录</span>
 
@@ -1294,7 +1294,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="show账号Tab('settings')">
+    <div class="settings-row" onclick="showProfileTab('settings')">
 
       <span>扫描设置</span>
 
@@ -1302,7 +1302,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="show账号Tab('notifications')">
+    <div class="settings-row" onclick="showProfileTab('notifications')">
 
       <span>通知设置</span>
 
@@ -1310,7 +1310,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="show账号Tab('ai-config')">
+    <div class="settings-row" onclick="showProfileTab('ai-config')">
 
       <span>安全顾问配置</span>
 
@@ -1318,7 +1318,7 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="show账号Tab('about')">
+    <div class="settings-row" onclick="showProfileTab('about')">
 
       <span>关于</span>
 
@@ -1360,7 +1360,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="card-title">扫描历史</div>
 
-        <button class="fixer-btn secondary" style="height:36px;padding:0 14px;font-size:12px" onclick="clearScan历史()">清空历史</button>
+        <button class="fixer-btn secondary" style="height:36px;padding:0 14px;font-size:12px" onclick="clearScanHistory()">清空历史</button>
 
       </div>
 
@@ -1380,9 +1380,9 @@ export const APP_TEMPLATE = `</head>
 
         <span style="font-size:12px;color:var(--text-secondary)">已选择 <strong id="history-compare-count">0</strong> 项</span>
 
-        <button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px;margin-left:auto" onclick="cancel历史对比()">取消</button>
+        <button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px;margin-left:auto" onclick="cancelHistoryCompare()">取消</button>
 
-        <button class="fixer-btn primary" style="height:32px;padding:0 12px;font-size:12px" id="history-compare-btn" onclick="do历史对比()" disabled>对比</button>
+        <button class="fixer-btn primary" style="height:32px;padding:0 12px;font-size:12px" id="history-compare-btn" onclick="doHistoryCompare()" disabled>对比</button>
 
       </div>
 
@@ -1596,7 +1596,7 @@ export const APP_TEMPLATE = `</head>
 
       </div>
 
-      <button class="fixer-btn primary" style="width:100%" onclick="save通知设置()">保存设置</button>
+      <button class="fixer-btn primary" style="width:100%" onclick="saveNotificationSettings()">保存设置</button>
 
     </div>
 

@@ -1023,7 +1023,7 @@ function showEvolutionDetail(name) {
     html += '</div>';
     // 加载状态 + 绑定 Enter 发送
     setTimeout(function(){
-      loadAi状态();
+      loadAiStatus();
       let ta = document.getElementById('evo-ai-q');
       if (ta) {
         ta.addEventListener('keydown', function(e) {
@@ -1147,7 +1147,7 @@ function aiSend(q) {
     });
 }
 
-function loadAi状态() {
+function loadAiStatus() {
   let bar = document.getElementById('ai-status-bar');
   if (!bar) return;
   fetch('/api/ai/status').then(function(r) { return r.json(); }).then(function(d) {
@@ -2258,7 +2258,7 @@ function renderAIConfig() {
 
 let _deferred安装提示 = null;
 
-function init安装Banner() {
+function initInstallBanner() {
   try { if (window.__TAURI__ || window.__TAURI_INTERNALS__) return; } catch (e) {}
   if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return;
   if (document.getElementById('pwa-install-banner')) return;
@@ -2296,7 +2296,7 @@ window.addEventListener('beforeinstallprompt', function(event) {
   try {
     if (localStorage.getItem('vs_pwa_banner_hidden') === 'true') return;
   } catch (e) {}
-  init安装Banner();
+  initInstallBanner();
 });
 
 window.addEventListener('appinstalled', function() {
@@ -2321,7 +2321,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // 加载公开运行时配置（Stripe 公钥等）
   try {
     if (_deferred安装提示 && localStorage.getItem('vs_pwa_banner_hidden') !== 'true') {
-      init安装Banner();
+      initInstallBanner();
     }
   } catch (e) {}
   publicConfig().then(function(cfg) {

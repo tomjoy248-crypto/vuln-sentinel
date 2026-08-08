@@ -1252,7 +1252,7 @@ async function executeAutoFix(scanId) {
     if (data.applied !== undefined) {
       html += '<div style="font-size:12px;margin-top:8px">Cloudflare: ' + data.applied + '/' + data.total + ' 头已应用</div>';
     }
-    html += '<button onclick="closeAutoFixDialog();load历史&&load历史()" style="width:100%;margin-top:10px;background:var(--primary);color:#fff;border:none;padding:8px;border-radius:2px;cursor:pointer;font-size:12px">完成</button>';
+    html += '<button onclick="closeAutoFixDialog();loadHistory&&loadHistory()" style="width:100%;margin-top:10px;background:var(--primary);color:#fff;border:none;padding:8px;border-radius:2px;cursor:pointer;font-size:12px">完成</button>';
     html += '</div>';
     result.innerHTML = html;
     showToast('修复配置已应用。已验证 ' + (data.verified_headers ? data.verified_headers.length : 0) + ' 个安全头');
@@ -1472,8 +1472,8 @@ function quickDemo(url) {
 
 // ----- showFullScanDetail -----
 function showFullScanDetail() {
-  if (window._public报告Result) {
-    renderResult(window._public报告Result);
+  if (window._publicReportResult) {
+    renderResult(window._publicReportResult);
   }
 }
 
@@ -1829,7 +1829,7 @@ function startRealScan(url, host, deepScan) {
       if (_scan取消led) return;
       let merged = mergeRealData(url, data);
       lastScanResult = merged;
-      saveScan历史(merged);
+      saveScanHistory(merged);
       renderResult(merged);
       _scanInProgress = false;
       setButtonLoading("scan-btn", false);
@@ -2347,7 +2347,7 @@ function renderResult(data) {
     navigateTo('result');
     renderSRCResult(data);
     lastScanResult = data;
-    saveScan历史(data);
+    saveScanHistory(data);
     return;
   }
   // 防御性兜底：确保 data 及核心字段存在
@@ -3909,8 +3909,8 @@ function verifyFix() {
   });
 }
 
-// ----- saveScan历史 -----
-function saveScan历史(data) {
+// ----- saveScanHistory -----
+function saveScanHistory(data) {
   // 扫描结果已由后端保存到数据库（按用户隔离），无需本地存储
   updateProfileStats();
 }
@@ -3936,7 +3936,7 @@ function toggleHistoryCompareMode() {
   _history对比Selected = [];
   let bar = document.getElementById('history-compare-bar');
   if (bar) bar.style.display = _history对比Mode ? 'flex' : 'none';
-  update历史对比UI();
+  updateHistoryCompareUI();
   renderScanHistory(historyPage);
 }
 
@@ -3961,12 +3961,12 @@ function onHistorySelect(idx) {
     }
     _history对比Selected.push(idx);
   }
-  update历史对比UI();
+  updateHistoryCompareUI();
   renderScanHistory(historyPage);
 }
 
-// ----- update历史对比UI -----
-function update历史对比UI() {
+// ----- updateHistoryCompareUI -----
+function updateHistoryCompareUI() {
   let count = document.getElementById('history-compare-count');
   let btn = document.getElementById('history-compare-btn');
   if (count) count.textContent = String(_history对比Selected.length);
@@ -4419,12 +4419,12 @@ export {
   downloadFixCode,
   downloadAllFixes,
   verifyFix,
-  saveScan历史,
+  saveScanHistory,
   clearScanHistory,
   toggleHistoryCompareMode,
   cancelHistoryCompare,
   onHistorySelect,
-  update历史对比UI,
+  updateHistoryCompareUI,
   doHistoryCompare,
   compareHistoryItems,
   renderHistoryTrendChart,

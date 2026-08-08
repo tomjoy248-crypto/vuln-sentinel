@@ -619,7 +619,7 @@ export {
 
 
 if (typeof window !== 'undefined') {
-  window.do密码重置Confirm = function() {
+  window.doResetPassword = function() {
     let passwordEl = document.getElementById('reset-password-token');
     let new密码El = document.getElementById('reset-new-password');
     let confirmEl = document.getElementById('reset-new-password2');
