@@ -1074,7 +1074,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
-          <input type="text" id="reset-令牌-input" placeholder="重置令牌" aria-label="重置令牌" />
+          <input type="text" id="reset-password-token" placeholder="重置令牌" aria-label="重置令牌" />
 
         </div>
 
@@ -1150,7 +1150,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
-          <input type="text" id="verify-email-令牌" placeholder="邮箱验证令牌（收到邮件后填写）" aria-label="邮箱验证 令牌" />
+          <input type="text" id="verify-email-token" placeholder="邮箱验证令牌（收到邮件后填写）" aria-label="邮箱验证 令牌" />
 
         </div>
 

@@ -379,14 +379,14 @@ function updateAuthUI() {
   let reg = document.getElementById('auth-register');
   let reset = document.getElementById('auth-reset');
   let logged = document.getElementById('auth-logged');
-  let scan登录Tip = document.getElementById('scan-login-tip');
+  let scanLoginTip = document.getElementById('scan-login-tip');
   let tokenInput = document.getElementById('api-token-input');
   if (isLoggedIn()) {
     if (guest) guest.style.display = 'none';
     if (reg) reg.style.display = 'none';
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'block';
-    if (scan登录Tip) scan登录Tip.style.display = 'none';
+    if (scanLoginTip) scanLoginTip.style.display = 'none';
     let name = getUsername();
     let displayName = document.getElementById('auth-display-name');
     if (displayName) displayName.textContent = name || '用户';
@@ -400,7 +400,7 @@ function updateAuthUI() {
     if (reg) reg.style.display = 'none';
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'none';
-    if (scan登录Tip) scan登录Tip.style.display = 'block';
+    if (scanLoginTip) scanLoginTip.style.display = 'block';
     if (tokenInput) tokenInput.value = '登录后显示 令牌';
   }
   if (typeof window.updateScanStartState === 'function') {
@@ -2433,10 +2433,10 @@ document.addEventListener('DOMContentLoaded', function() {
   // Enter key handlers for forms
   let loginPass = safeGetElement('login-password');
   if (loginPass) { loginPass.addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); }); }
-  let reg邮箱 = safeGetElement('reg-email');
+  let regEmail = safeGetElement('reg-email');
   let regPass = safeGetElement('reg-password');
   let regConfirm = safeGetElement('reg-password2');
-  if (reg邮箱) { reg邮箱.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
+  if (regEmail) { regEmail.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
   if (regPass) { regPass.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
   if (regConfirm) { regConfirm.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
   let scanUrl = safeGetElement('scan-url');

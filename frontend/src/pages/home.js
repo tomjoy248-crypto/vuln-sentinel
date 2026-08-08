@@ -40,8 +40,8 @@ let monitorPageSize = 5;
 let historyPage = 1;
 let historyPageSize = 5;
 let verifyToken = '';
-let selected验证Method = '';
-let _scan取消led = false;
+let selectedVerifyMethod = '';
+let _scanCancelled = false;
 let _scoreAnimInterval = null;
 let _stageTimer = null;
 let _progressTimer = null;
@@ -1519,14 +1519,14 @@ function goVerifyStep2() {
   if (dnsEl) dnsEl.textContent = '_vuln-sentinel.' + host + ' TXT "' + verifyToken + '"';
   if (step1) step1.style.display = 'none';
   if (step2) step2.style.display = 'block';
-  selected验证Method = '';
+  selectedVerifyMethod = '';
   if (infoEl) infoEl.innerHTML = '<p>请选择一种验证方式</p>';
   if (btnEl) btnEl.disabled = true;
 }
 
 // ----- selectVerifyMethod -----
 function selectVerifyMethod(el, method) {
-  selected验证Method = method;
+  selectedVerifyMethod = method;
   document.querySelectorAll('.verify-method').forEach(function(item) { item.classList.remove('selected'); });
   if (el) el.classList.add('selected');
   let info = document.getElementById('verify-method-info');
@@ -1567,7 +1567,7 @@ function skipVerification() {
 
 // ----- confirmVerification -----
 function confirmVerification() {
-  if (!selected验证Method) { showToast('请先选择验证方式'); return; }
+  if (!selectedVerifyMethod) { showToast('请先选择验证方式'); return; }
   if (!isLoggedIn()) { showToast('请先登录'); navigateTo('profile'); return; }
   let btn = document.getElementById('verify-confirm-btn');
   let urlInput = document.getElementById('scan-url');
@@ -1581,7 +1581,7 @@ function confirmVerification() {
   if (btn) { btn.disabled = true; btn.textContent = '正在查询 DNS / 下载验证文件...'; }
   authFetch('/api/verify', {
     method: 'POST',
-    body: JSON.stringify({ url: url, token: verifyToken, method: selected验证Method })
+    body: JSON.stringify({ url: url, token: verifyToken, method: selectedVerifyMethod })
   }).then(function(resp) { return resp.json(); }).then(function(data) {
     if (btn) { btn.disabled = false; btn.textContent = '我已添加验证信息，确认验证'; }
     if (data.success) {
@@ -1729,7 +1729,7 @@ function startScan() {
 // ----- cancelScan -----
 function cancelScan() {
   if (!_scanInProgress) return;
-  _scan取消led = true;
+  _scanCancelled = true;
   _scanInProgress = false;
   setButtonLoading("scan-btn", false);
   // 清除进度动画
@@ -1739,7 +1739,7 @@ function cancelScan() {
   // 返回首页
   setTimeout(function() {
     navigateTo('home');
-    _scan取消led = false;
+    _scanCancelled = false;
   }, 300);
 }
 
@@ -1751,10 +1751,10 @@ function startRealScan(url, host, deepScan) {
   // 超时保护：标准扫描 60 秒，深度扫描 120 秒
   let scanTimeoutMs = deepScan ? 120000 : 60000;
   let timeoutId = setTimeout(function() {
-    if (_scan取消led) return;
+    if (_scanCancelled) return;
     finishStages();
     setTimeout(function() {
-      if (_scan取消led) return;
+      if (_scanCancelled) return;
       renderScanError('扫描超时，目标网站可能响应缓慢或无法访问。请检查网址是否正确，或稍后重试。', url);
       _scanInProgress = false;
       setButtonLoading("scan-btn", false);
@@ -1768,7 +1768,7 @@ function startRealScan(url, host, deepScan) {
     method: 'POST',
     body: JSON.stringify({ url: url, depth: deepScan ? 'deep' : 'standard', authorized: true })
   }).then(function(resp) {
-    if (_scan取消led) return;
+    if (_scanCancelled) return;
     clearTimeout(timeoutId);
     // 无论成功还是失败，都解析响应体以保留后端返回的具体错误信息
     return resp.json().then(function(data) {
@@ -1779,12 +1779,12 @@ function startRealScan(url, host, deepScan) {
       throw new Error('服务器返回异常（HTTP ' + resp.status + '），请稍后重试');
     });
   }).then(function(data) {
-    if (_scan取消led) return;
+    if (_scanCancelled) return;
     clearTimeout(timeoutId);
     if (isPaymentRequired(data)) {
       finishStages();
       setTimeout(function() {
-        if (_scan取消led) return;
+        if (_scanCancelled) return;
         showToast(paymentRequiredMessage(data), 'error');
         let rc = document.getElementById('result-content');
         if (rc) {
@@ -1800,7 +1800,7 @@ function startRealScan(url, host, deepScan) {
     if (data._status && data._status >= 400) {
       finishStages();
       setTimeout(function() {
-        if (_scan取消led) return;
+        if (_scanCancelled) return;
         let errMsg = extractError(data);
         // 对常见 HTTP 状态码补充提示
         if (data._status === 403) {
@@ -1817,7 +1817,7 @@ function startRealScan(url, host, deepScan) {
     if (data.error) {
       finishStages();
       setTimeout(function() {
-        if (_scan取消led) return;
+        if (_scanCancelled) return;
         renderScanError(extractError(data), url);
         _scanInProgress = false;
         setButtonLoading("scan-btn", false);
@@ -1826,7 +1826,7 @@ function startRealScan(url, host, deepScan) {
     }
     finishStages();
     setTimeout(function() {
-      if (_scan取消led) return;
+      if (_scanCancelled) return;
       let merged = mergeRealData(url, data);
       lastScanResult = merged;
       saveScanHistory(merged);
@@ -1837,11 +1837,11 @@ function startRealScan(url, host, deepScan) {
       updateUserCredits();
     }, 400);
   }).catch(function(err) {
-    if (_scan取消led) return;
+    if (_scanCancelled) return;
     clearTimeout(timeoutId);
     finishStages();
     setTimeout(function() {
-      if (_scan取消led) return;
+      if (_scanCancelled) return;
       // 保留真实错误信息，而非笼统的"连接失败"
       let errMsg = (err && err.message) ? err.message : '扫描服务连接失败，请检查网络或稍后重试';
       renderScanError(errMsg, url);

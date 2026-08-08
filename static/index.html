@@ -9,7 +9,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="./icon-192x192.png">
 <title>漏洞哨兵 11-S - 安全修复闭环</title>
-  <script type="module" crossorigin src="./assets/index-jWhvPxG5.js"></script>
+  <script type="module" crossorigin src="./assets/index-b1flXha_.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-Cqq3SN4y.css">
 </head>
 <body>
@@ -40,7 +40,24 @@
     }
   });
 </script>
-<script src="./pwa-register.js"></script>
+<script>
+  (function() {
+    if (!('serviceWorker' in navigator) || !window.caches) return;
+    window.addEventListener('load', function() {
+      Promise.resolve()
+        .then(function() { return navigator.serviceWorker.getRegistrations(); })
+        .then(function(registrations) {
+          return Promise.all(registrations.map(function(registration) { return registration.unregister(); }));
+        })
+        .then(function() { return caches.keys(); })
+        .then(function(keys) {
+          return Promise.all(keys.map(function(key) { return caches.delete(key); }));
+        })
+        .catch(function() {});
+    });
+  })();
+</script>
 </body>
 </html>
+
 

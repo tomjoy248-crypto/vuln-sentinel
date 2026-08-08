@@ -92,7 +92,7 @@ function updateAuthUI() {
   let reg = document.getElementById('auth-register');
   let reset = document.getElementById('auth-reset');
   let logged = document.getElementById('auth-logged');
-  let scan登录Tip = document.getElementById('scan-login-tip');
+  let scanLoginTip = document.getElementById('scan-login-tip');
   let tokenInput = document.getElementById('api-token-input');
   let statusMessage = document.getElementById('auth-status-message');
   if (isLoggedIn()) {
@@ -100,7 +100,7 @@ function updateAuthUI() {
     if (reg) reg.style.display = 'none';
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'block';
-    if (scan登录Tip) scan登录Tip.style.display = 'none';
+    if (scanLoginTip) scanLoginTip.style.display = 'none';
     if (statusMessage) statusMessage.textContent = '已登录，可直接扫描或查看历史记录';
     let name = getUsername();
     let displayName = document.getElementById('auth-display-name');
@@ -115,7 +115,7 @@ function updateAuthUI() {
     if (reg) reg.style.display = 'none';
     if (reset) reset.style.display = 'none';
     if (logged) logged.style.display = 'none';
-    if (scan登录Tip) scan登录Tip.style.display = 'block';
+    if (scanLoginTip) scanLoginTip.style.display = 'block';
     if (statusMessage) statusMessage.textContent = '如果登录失败，请先确认后端服务已启动。';
     if (tokenInput) tokenInput.value = '登录后显示 令牌';
   }
@@ -321,15 +321,15 @@ function updateProfileStats() {
     let history = data.history || [];
     let stats = data.stats || { scan_count: history.length, fixed_count: 0 };
     let scanCount = document.getElementById('stat-scan-count');
-    let avg评分 = document.getElementById('stat-avg-score');
+    let avgScore = document.getElementById('stat-avg-score');
     let fixedCount = document.getElementById('stat-fixed-count');
     if (scanCount) scanCount.textContent = stats.scan_count || history.length;
-    if (avg评分) {
+    if (avgScore) {
       if (history.length === 0) {
-        avg评分.textContent = '-';
+        avgScore.textContent = '-';
       } else {
         let sum = history.reduce(function(a, b) { return a + (b.score || 0); }, 0);
-        avg评分.textContent = Math.round(sum / history.length);
+        avgScore.textContent = Math.round(sum / history.length);
       }
     }
     // 已修复数：取后端真实统计（同 URL 的相邻两次扫描 diff 累计）
@@ -572,10 +572,10 @@ function toggleApiKeyVisibility() {
 export function init() {
   let loginPass = safeGetElement('login-password');
   if (loginPass) { loginPass.addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); }); }
-  let reg邮箱 = safeGetElement('reg-email');
+  let regEmail = safeGetElement('reg-email');
   let regPass = safeGetElement('reg-password');
   let regConfirm = safeGetElement('reg-password2');
-  if (reg邮箱) { reg邮箱.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
+  if (regEmail) { regEmail.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
   if (regPass) { regPass.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
   if (regConfirm) { regConfirm.addEventListener('keydown', function(e) { if (e.key === 'Enter') doRegister(); }); }
 
@@ -621,15 +621,15 @@ export {
 if (typeof window !== 'undefined') {
   window.doResetPassword = function() {
     let passwordEl = document.getElementById('reset-password-token');
-    let new密码El = document.getElementById('reset-new-password');
+    let newPasswordEl = document.getElementById('reset-new-password');
     let confirmEl = document.getElementById('reset-new-password2');
     let token = passwordEl ? passwordEl.value.trim() : '';
-    let new密码 = new密码El ? new密码El.value.trim() : '';
-    let confirm密码 = confirmEl ? confirmEl.value.trim() : '';
+    let newPassword = newPasswordEl ? newPasswordEl.value.trim() : '';
+    let confirmPassword = confirmEl ? confirmEl.value.trim() : '';
     if (!token) { showToast('请输入重置 令牌'); return; }
-    if (!new密码 || new密码.length < 6) { showToast('新密码至少 6 个字符'); return; }
-    if (new密码 !== confirm密码) { showToast('两次密码不一致'); return; }
-    apiPost('/api/auth/password-reset/confirm', { token: token, new_password: new密码 }).then(function(data) {
+    if (!newPassword || newPassword.length < 6) { showToast('新密码至少 6 个字符'); return; }
+    if (newPassword !== confirmPassword) { showToast('两次密码不一致'); return; }
+    apiPost('/api/auth/password-reset/confirm', { token: token, new_password: newPassword }).then(function(data) {
       if (data && data.success) {
         showToast('密码重置成功，请重新登录');
         toggleAuthForm('login');
