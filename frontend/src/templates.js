@@ -439,7 +439,7 @@ export const APP_TEMPLATE = `</head>
 
       <div class="scan-input-wrap">
 
-        <input id="scan-url" type="url" placeholder="例如：https://示例.com" aria-label="目标网址" oninput="updateScan开始State()" />
+        <input id="scan-url" type="url" placeholder="例如：https://示例.com" aria-label="目标网址" oninput="updateScanStartState()" />
 
       </div>
 
@@ -461,7 +461,7 @@ export const APP_TEMPLATE = `</head>
 
       <label class="scan-checkbox" style="margin-bottom:12px">
 
-        <input id="auth-check-step1" type="checkbox" onchange="updateScan开始State()" />
+        <input id="auth-check-step1" type="checkbox" onchange="updateScanStartState()" />
 
         <span>我已确认拥有该域名或已获得授权扫描</span>
 
@@ -569,7 +569,7 @@ export const APP_TEMPLATE = `</head>
 
         <label class="scan-checkbox">
 
-          <input id="auth-check" type="checkbox" onchange="updateScan开始State()" />
+          <input id="auth-check" type="checkbox" onchange="updateScanStartState()" />
 
           <span>我已确认拥有该域名或已获得授权扫描</span>
 
