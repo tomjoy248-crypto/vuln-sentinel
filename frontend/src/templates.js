@@ -106,7 +106,7 @@ export const APP_TEMPLATE = `</head>
 
     <div id="ai-offline-notice" style="display:none;padding:8px 10px;background:#313335;border:1px solid #555555;border-radius:2px;font-size:12px;color:var(--text-secondary);text-align:center;margin-bottom:8px">
 
-      当前使用本地规则引擎；配置 LLM API Key 后回答更精准。
+      当前使用本地规则引擎；配置 LLM 接口密钥 后回答更精准。
 
     </div>
 
@@ -136,7 +136,7 @@ export const APP_TEMPLATE = `</head>
 
   <div class="ai-chat-input">
 
-    <input type="text" id="ai-input" placeholder="输入安全问题..." maxlength="200" onkeydown="if(event.key==='Enter')sendAIMessage()" />
+    <input type="text" id="ai-input" placeholder="输入安全问题…" maxlength="200" onkeydown="if(event.key==='Enter')sendAIMessage()" />
 
     <button onclick="sendAIMessage()" aria-label="发送">发送</button>
 
@@ -450,7 +450,7 @@ export const APP_TEMPLATE = `</head>
 
       <div class="scan-input-wrap">
 
-        <input id="scan-url" type="url" placeholder="例如：https://example.com" aria-label="目标网址" oninput="updateScan开始State()" />
+        <input id="scan-url" type="url" placeholder="例如：https://示例.com" aria-label="目标网址" oninput="updateScan开始State()" />
 
       </div>
 
@@ -512,13 +512,13 @@ export const APP_TEMPLATE = `</head>
 
       <p class="verify-desc">请选择一种验证方式，在目标网站添加以下验证信息：</p>
 
-      <div class="token-box">
+      <div class="令牌-box">
 
         <label>验证 令牌</label>
 
-        <code id="verify-token">vuln-sentinel-xxxx</code>
+        <code id="verify-令牌">vuln-sentinel-xxxx</code>
 
-        <button class="token-copy-btn" onclick="copyToken()" aria-label="复制验证令牌">复制</button>
+        <button class="令牌-copy-btn" onclick="copyToken()" aria-label="复制验证令牌">复制</button>
 
       </div>
 
@@ -824,7 +824,7 @@ export const APP_TEMPLATE = `</head>
 
         <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px">域名</label>
 
-        <input type="text" id="asset-domain" placeholder="example.com" style="width:100%;padding:8px 10px;border:1px solid #646464;border-radius:2px;background:#45494a;color:#bbbbbb;font-size:13px" />
+        <input type="text" id="asset-domain" placeholder="示例.com" style="width:100%;padding:8px 10px;border:1px solid #646464;border-radius:2px;background:#45494a;color:#bbbbbb;font-size:13px" />
 
       </div>
 
@@ -1074,7 +1074,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
-          <input type="text" id="reset-token-input" placeholder="重置 token" aria-label="重置 token" />
+          <input type="text" id="reset-令牌-input" placeholder="重置令牌" aria-label="重置令牌" />
 
         </div>
 
@@ -1150,7 +1150,7 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
-          <input type="text" id="verify-email-token" placeholder="邮箱验证 token（收到邮件后填写）" aria-label="邮箱验证 token" />
+          <input type="text" id="verify-email-令牌" placeholder="邮箱验证令牌（收到邮件后填写）" aria-label="邮箱验证 令牌" />
 
         </div>
 
@@ -1330,15 +1330,15 @@ export const APP_TEMPLATE = `</head>
 
 
 
-  <!-- API 令牌 -->
+  <!-- 接口令牌 -->
 
   <div class="settings-group">
 
-    <div class="settings-group-title">API 令牌</div>
+    <div class="settings-group-title">接口令牌</div>
 
     <div class="settings-row-static">
 
-      <input type="text" id="api-token-input" readonly value="登录后显示 令牌" style="flex:1;background:#2b2b2b;color:var(--text-secondary);font-family:monospace;font-size:11px" />
+      <input type="text" id="api-令牌-input" readonly value="登录后显示 令牌" style="flex:1;background:#2b2b2b;color:var(--text-secondary);font-family:monospace;font-size:11px" />
 
       <button class="fixer-btn secondary" style="height:32px;padding:0 12px;font-size:12px" onclick="copyApiToken()">复制</button>
 
@@ -1462,7 +1462,7 @@ export const APP_TEMPLATE = `</head>
 
       <div class="monitor-add-row">
 
-        <input type="url" id="monitor-url-input" placeholder="输入 URL，例如 https://example.com" />
+        <input type="url" id="monitor-url-input" placeholder="输入网址，例如 https://示例.com" />
 
         <select id="monitor-freq-select">
 
@@ -1562,7 +1562,7 @@ export const APP_TEMPLATE = `</head>
 
         <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">通知邮箱</label>
 
-        <input type="email" id="notify-email-input" placeholder="your@email.com" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:2px;font-size:13px;background:var(--bg);color:var(--text)" />
+        <input type="email" id="notify-email-input" placeholder="name@example.com" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:2px;font-size:13px;background:var(--bg);color:var(--text)" />
 
       </div>
 
@@ -1570,7 +1570,7 @@ export const APP_TEMPLATE = `</head>
 
         <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Webhook 地址</label>
 
-        <input type="url" id="notify-webhook-input" placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:2px;font-size:13px;background:var(--bg);color:var(--text)" />
+        <input type="url" id="notify-webhook-input" placeholder="https://oapi.dingtalk.com/robot/send?access_令牌=你的令牌" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:2px;font-size:13px;background:var(--bg);color:var(--text)" />
 
         <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">支持钉钉、企业微信、飞书等 Markdown Webhook</p>
 
@@ -1596,7 +1596,7 @@ export const APP_TEMPLATE = `</head>
 
       </div>
 
-      <button class="fixer-btn primary" style="width:100%" onclick="saveNotification设置()">保存设置</button>
+      <button class="fixer-btn primary" style="width:100%" onclick="save通知设置()">保存设置</button>
 
     </div>
 
@@ -1650,17 +1650,17 @@ export const APP_TEMPLATE = `</head>
 
       <div style="margin-top:14px">
 
-        <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">API Key</label>
+        <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">接口密钥</label>
 
         <div style="display:flex;gap:8px">
 
-          <input id="ai-config-apikey" type="password" placeholder="sk-..." style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:2px;font-size:13px;background:var(--bg);color:var(--text)" />
+          <input id="ai-config-apikey" type="password" placeholder="sk-你的密钥" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:2px;font-size:13px;background:var(--bg);color:var(--text)" />
 
           <button onclick="toggleApiKeyVisibility()" id="ai-config-eye" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:2px;padding:0 12px;cursor:pointer;font-size:13px;color:var(--text-secondary)">显示</button>
 
         </div>
 
-        <div style="font-size:11px;color:var(--text-lighter);margin-top:4px">API Key 仅保存在浏览器本地，不会上传到服务器。</div>
+        <div style="font-size:11px;color:var(--text-lighter);margin-top:4px">接口密钥 仅保存在浏览器本地，不会上传到服务器。</div>
 
       </div>
 
@@ -1680,7 +1680,7 @@ export const APP_TEMPLATE = `</head>
 
         <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">模型名称</label>
 
-        <input id="ai-config-model" type="text" placeholder="gpt-4o-mini" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:2px;font-size:13px;background:var(--bg);color:var(--text)" />
+        <input id="ai-config-model" type="text" placeholder="例如：gpt-4o-mini" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:2px;font-size:13px;background:var(--bg);color:var(--text)" />
 
       </div>
 
@@ -1732,7 +1732,7 @@ export const APP_TEMPLATE = `</head>
 
         <p style="font-size:12px;color:var(--text-lighter)">开源项目 | MIT License</p>
 
-        <p style="font-size:12px;color:var(--text-lighter);margin-top:4px">反馈: vuln-sentinel@example.com</p>
+        <p style="font-size:12px;color:var(--text-lighter);margin-top:4px">反馈：vuln-sentinel@example.com</p>
 
       </div>
 
@@ -1878,7 +1878,7 @@ export const APP_TEMPLATE = `</head>
 
     <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">每行一个 URL，最多 5 个。建议先用快速模式扫描公开演示站点：</div>
 
-    <textarea id="batch-urls" placeholder="https://example.com&#10;https://httpbin.org&#10;https://www.iana.org" style="width:100%;min-height:120px;padding:10px;border:1px solid var(--border);border-radius:2px;font-family:monospace;font-size:12px;background:var(--bg);color:var(--text);resize:vertical"></textarea>
+    <textarea id="batch-urls" placeholder="https://示例.com&#10;https://测试站点.com&#10;https://样例.org" style="width:100%;min-height:120px;padding:10px;border:1px solid var(--border);border-radius:2px;font-family:monospace;font-size:12px;background:var(--bg);color:var(--text);resize:vertical"></textarea>
 
     <div style="margin:10px 0;display:flex;align-items:center;gap:6px;font-size:12px">
 

@@ -987,8 +987,8 @@ function showEvolutionDetail(name) {
     html = '<div class="evo-detail">';
     html += '  <div class="evo-detail-title">添加监控</div>';
     html += '  <div class="evo-detail-form">';
-    html += '    <input id="mon-url" class="evo-input" placeholder="https://example.com" />';
-    html += '    <input id="mon-freq" class="evo-input" type="number" min="60" value="3600" placeholder="检查频率(秒)" />';
+    html += '    <input id="mon-url" class="evo-input" placeholder="https://示例.com" />';
+    html += '    <input id="mon-freq" class="evo-input" type="number" min="60" value="3600" placeholder="检查频率（秒）" />';
     html += '    <button class="evo-btn" onclick="createMonitor()">创建监控</button>';
     html += '  </div>';
     html += '  <div id="evo-mon-list"></div>';
@@ -1017,7 +1017,7 @@ function showEvolutionDetail(name) {
     html += '  </div>';
     // 输入区
     html += '  <div class="ai-input-bar">';
-    html += '    <textarea id="evo-ai-q" class="ai-input" rows="1" placeholder="问点什么…(Shift+Enter 换行)"></textarea>';
+    html += '    <textarea id="evo-ai-q" class="ai-input" rows="1" placeholder="想问什么…（Shift+Enter 换行）"></textarea>';
     html += '    <button class="ai-send-btn" id="ai-send-btn" onclick="aiAsk()">发送</button>';
     html += '  </div>';
     html += '</div>';
