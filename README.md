@@ -1,5 +1,10 @@
 # 漏洞哨兵 (Vuln Sentinel)
 
+## 下载
+
+- GitHub Release：<https://github.com/tomjoy248-crypto/vuln-sentinel/releases/tag/v11.0.1>
+- Windows 安装包：`Vuln Sentinel_11.0.1_x64-setup.exe`
+
 
 
 [![Tests](https://img.shields.io/badge/tests-已验证-brightgreen)](tests/)
