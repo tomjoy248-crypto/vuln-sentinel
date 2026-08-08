@@ -212,8 +212,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_title: str = "漏洞哨兵 11-S"
-    app_version: str = "11-S"
+    app_title: str = "漏洞哨兵 - 安全扫描与修复平台"
+    app_version: str = "11.0.1"
     build_time: str = "2026-06-25"
     port: int = 8000
     host: str = "0.0.0.0"  # nosec B104 - 默认监听所有接口，生产环境可通过环境变量覆盖

@@ -152,7 +152,7 @@ export const APP_TEMPLATE = `</head>
 
     <div class="home-hero-top">
       <div class="home-brand-dot"></div>
-      <div class="home-brand-title">Vuln Sentinel</div>
+      <div class="home-brand-title">漏洞哨兵</div>
     </div>
 
     <h1 class="home-hero-title">漏洞哨兵 Web Security Tools</h1>
