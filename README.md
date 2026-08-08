@@ -265,6 +265,13 @@ start.bat
 
 ## Windows 下载
 
+### GitHub Release 直链
+
+最新 Windows 安装包：
+
+- [v11.0.1 Release](https://github.com/tomjoy248-crypto/vuln-sentinel/releases/tag/v11.0.1)
+
+
 如果你要拿到可直接分发的 Windows 安装包，请先完成桌面壳打包，然后运行：
 
 ```powershell
@@ -291,7 +298,7 @@ powershell -ExecutionPolicy Bypass -File scripts\package_windows_release.ps1
 
 PDF 交付说明已整理到 `docs/pdf-delivery-guide.md`，用于给客户、研发和运维统一阅读口径。
 
-1. 运行 `artifacts/windows/Vuln-Sentinel-11.0.0-win64-setup.exe`。
+1. 运行 `artifacts/windows/Vuln-Sentinel-11.0.1-win64-setup.exe`。
 2. 检查是否可正常安装到当前用户目录。
 3. 验证桌面快捷方式与开始菜单入口是否存在。
 4. 启动后确认登录页、首页、扫描页、结果页可正常打开。
@@ -745,4 +752,5 @@ MIT License
 - GitHub: https://github.com/tomjoy248-crypto/vuln-sentinel
 
 - 在线环境: https://vuln-sentinel-v11-s.onrender.com
+
 
