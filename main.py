@@ -358,10 +358,6 @@ DB_PATH = os.path.join(db_base, settings.db_name)
 # 初始化 app.db.session 的数据库路径
 init_db_path(DB_PATH, settings.database_url)
 
-startup_issues = run_startup_self_check()
-if startup_issues:
-    logger.warning("Startup self-check issues: %s", startup_issues)
-
 # JWT Secret：开发环境未设则生成随机并落盘
 _SECRET_FILE = os.path.join(db_base, ".jwt_secret")
 if not settings.jwt_secret:
@@ -452,6 +448,9 @@ def run_startup_self_check() -> list[str]:
     return issues
 
 
+startup_issues = run_startup_self_check()
+if startup_issues:
+    logger.warning("Startup self-check issues: %s", startup_issues)
 async def get_current_user(
     authorization: str | None = Header(None),
 ) -> dict | None:
