@@ -272,8 +272,8 @@ def admin_recharge_user(
     admin_user: dict, target_user_id: int, credits: int, note: str = ""
 ) -> dict[str, Any]:
     """管理员直接给用户充值积分。"""
-    if admin_user.get("role") != "admin":
-        raise BusinessException("权限不足", code="FORBIDDEN", status_code=403)
+    from main import require_admin_user
+    require_admin_user(admin_user)
     if credits <= 0:
         raise BusinessException("充值积分必须大于 0", code="INVALID_AMOUNT", status_code=400)
 

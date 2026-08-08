@@ -23,8 +23,8 @@ async def api_admin_audit_logs(
     user: dict = Depends(require_login),
 ) -> dict:
     """管理员查询审计日志。"""
-    if user.get("role") != "admin":
-        raise HTTPException(403, "仅管理员可查询审计日志")
+    from main import require_admin_user
+    require_admin_user(user)
     from app.audit import get_audit_logs
 
     logs = get_audit_logs(

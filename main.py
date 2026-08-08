@@ -221,6 +221,7 @@ class Settings(BaseSettings):
 
     # JWT
     jwt_secret: str = Field(default="", min_length=0, repr=False)
+    admin_setup_token: str = Field(default="", repr=False)
     jwt_expire_seconds: int = 24 * 3600
 
     # Scan
@@ -244,6 +245,7 @@ class Settings(BaseSettings):
     llm_enabled: bool = False
     llm_provider: str = "openai"  # openai / custom
     llm_api_key: str = Field(default="", repr=False)
+    encryption_key: str = Field(default="", repr=False)
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
     llm_timeout: float = 15.0
@@ -356,6 +358,10 @@ DB_PATH = os.path.join(db_base, settings.db_name)
 # 初始化 app.db.session 的数据库路径
 init_db_path(DB_PATH, settings.database_url)
 
+startup_issues = run_startup_self_check()
+if startup_issues:
+    logger.warning("Startup self-check issues: %s", startup_issues)
+
 # JWT Secret：开发环境未设则生成随机并落盘
 _SECRET_FILE = os.path.join(db_base, ".jwt_secret")
 if not settings.jwt_secret:
@@ -379,7 +385,7 @@ if not settings.jwt_secret:
             logger.warning("Failed to chmod JWT secret file %s: %s", _SECRET_FILE, exc)
     except Exception as exc:
         logger.warning("Failed to persist JWT secret to %s: %s", _SECRET_FILE, exc)
-    logger.info("Generated JWT secret (len=%d)", len(settings.jwt_secret))
+    logger.info("Generated JWT secret")
 
 # ---------- Auth ----------
 
@@ -419,6 +425,31 @@ def verify_token(token: str) -> dict | None:
         return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
     except Exception:
         return None
+
+
+
+def require_admin_user(user: dict) -> dict:
+    """统一管理员权限守卫。"""
+    if not user:
+        raise HTTPException(status_code=401, detail="请先登录")
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="仅管理员可执行此操作")
+    return user
+
+
+def run_startup_self_check() -> list[str]:
+    """启动自检：检查关键配置与文件是否异常。"""
+    issues: list[str] = []
+    if not settings.jwt_secret or len(settings.jwt_secret.strip()) < 32:
+        issues.append("JWT 密钥不足或为空")
+    if settings.env == "production":
+        if not settings.cors_origins or "*" in settings.cors_origins:
+            issues.append("生产环境 CORS 配置不安全")
+        if not settings.database_url and settings.db_dir.strip() in {"/tmp", "/var/tmp", "/dev/shm"}:
+            issues.append("生产环境数据库目录指向临时目录")
+    if not os.path.exists(DB_PATH):
+        issues.append("数据库文件不存在")
+    return issues
 
 
 async def get_current_user(

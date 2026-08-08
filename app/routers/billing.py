@@ -105,8 +105,9 @@ async def api_billing_order_status(
     if not record:
         raise HTTPException(status_code=404, detail="订单不存在")
     # 用户只能查看自己的订单
-    if record.get("user_id") != user["user_id"] and user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="无权查看该订单")
+    from main import require_admin_user
+    if record.get("user_id") != user["user_id"]:
+        require_admin_user(user)
     status = get_order_status(transaction_id)
     return success_response(data=status)
 

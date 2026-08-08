@@ -59,8 +59,8 @@ async def api_admin_run_retention(
     user: dict = Depends(require_login),
 ) -> dict:
     """管理员手动触发数据保留策略清理。"""
-    if user.get("role") != "admin":
-        raise HTTPException(403, "仅管理员可执行此操作")
+    from main import require_admin_user
+    require_admin_user(user)
     from app.services.data_retention import run_retention_policy
 
     stats = run_retention_policy()
