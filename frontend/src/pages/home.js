@@ -2443,7 +2443,7 @@ function renderResult(data) {
   html += '<div class="card fade-in-up" style="animation-delay:0.05s;padding:14px;margin-top:12px;border:1px solid rgba(75,110,175,0.25);background:rgba(60,63,65,0.9)">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">';
   html += '<div style="font-size:13px;font-weight:700;color:var(--text-primary)">管理层摘要</div>';
-  html += '<div style="font-size:12px;color:var(--text-secondary)">' + (data.restricted ? '受限扫描，结论需复核' : '可直接进入修复与复核闭环') + '</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary)">' + (data.restricted ? '受限扫描，结论需人工复核' : '可直接进入修复与复核闭环') + '</div>';
   html += '</div>';
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.8">' + escapeHtml(managementSummary) + '</div>';
   html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-secondary)">';
