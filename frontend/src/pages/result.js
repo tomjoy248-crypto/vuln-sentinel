@@ -143,12 +143,13 @@ function renderQualityPanel(quality, dedupStats) {
             </div>
           </div>
           <div class="src-quality-section">
-            <div class="src-quality-section-title">结果可信度</div>
+            <div class="src-quality-section-title">结果可信度与复核</div>
             <div class="src-quality-section-body">
               <div class="src-quality-kv"><span>误报率</span><code>${fpRate}</code></div>
               <div class="src-quality-kv"><span>高置信度比例</span><code>${highConfRate}</code></div>
-              <div class="src-quality-kv"><span>潜在误报数</span><code>${reliabilityBreakdown.fp_count || 0}</code></div>
+              <div class="src-quality-kv"><span>待复核数</span><code>${reliabilityBreakdown.fp_count || 0}</code></div>
               <div class="src-quality-kv"><span>高置信度数</span><code>${reliabilityBreakdown.high_confidence_count || 0}</code></div>
+              <div class="src-quality-kv"><span>已验证数</span><code>${coverageBreakdown.confirmed_count || 0}</code></div>
             </div>
           </div>
         </div>
@@ -570,9 +571,9 @@ function renderEvidenceSection(evidence, finding) {
   html += `<div class="src-section-title">证据摘要</div>
     <div class="src-section-body src-evidence-meta">`;
   const confidenceState = finding.verification_status || (finding.is_likely_fp ? 'suspected' : 'probable');
-  const confidenceText = confidenceState === 'confirmed' ? '已验证' : confidenceState === 'probable' ? '可能存在' : '待复测';
+  const confidenceText = confidenceState === 'confirmed' ? '已验证' : confidenceState === 'probable' ? '可能存在' : '待人工复核';
   html += `<div class="src-evidence-row"><span class="src-evidence-label">可信度</span><span>${escapeHtml(confidenceText)}</span></div>`;
-  html += `<div class="src-evidence-row"><span class="src-evidence-label">误报概率</span><span>${finding.fp_score !== undefined ? ((finding.fp_score * 100).toFixed(0) + '%') : '—'}</span></div>`;
+  html += `<div class="src-evidence-row"><span class="src-evidence-label">复核建议</span><span>${finding.fp_score !== undefined ? ((finding.fp_score * 100).toFixed(0) + '%') : '—'}</span></div>`;
   if (requestSummary) {
     html += `<div class="src-evidence-row"><span class="src-evidence-label">请求摘要</span><span>${escapeHtml(requestSummary)}</span></div>`;
   }
