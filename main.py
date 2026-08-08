@@ -3693,11 +3693,17 @@ async def check_sensitive_paths(host: str, is_https: bool) -> list[dict]:
             }
 
         # 全局 forbidden 检测（WAF/反爬/登录页/错误页）
-        for fb in GLOBAL_FORBIDDEN:
-            if fb.lower() in text_lower:
+        global_matches = [fb for fb in GLOBAL_FORBIDDEN if fb.lower() in text_lower]
+        if global_matches:
+            match_set = set(global_matches)
+            # 单个泛词（如 login / error / 404）不直接下结论，避免把正常页面误判成拦截页
+            strong_signals = {"captcha", "安全验证", "请登录", "登录", "verify", "authentication", "waf_block", "punish", "forbidden", "denied", "访问被拒绝", "请验证"}
+            has_strong_signal = bool(match_set & strong_signals)
+            has_format_signal = any(token in text_lower for token in ("<form", "type=\"password\"", "cloudflare", "akamai", "access denied", "security check"))
+            if has_strong_signal and (has_format_signal or len(match_set) >= 2):
                 return {
                     "verdict": "suspect",
-                    "reason": f"响应内容包含 '{fb}'，疑似 WAF 拦截/登录页/错误页，需人工复核",
+                    "reason": f"响应内容命中 {', '.join(sorted(match_set)[:3])}，疑似 WAF 拦截/登录页/错误页，需人工复核",
                 }
 
         checks = CONTENT_CHECKS.get(path)
