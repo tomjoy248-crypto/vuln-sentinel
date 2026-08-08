@@ -148,34 +148,23 @@ export const APP_TEMPLATE = `</head>
 
 <div class="page active" id="page-home" role="main">
 
-  <!-- Workbench Header -->
+  <div class="home-hero card fade-in-up">
 
-  <div class="workbench-header">
-
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
-
-      <div style="min-width:280px;flex:1">
-
-        <h1 class="workbench-title">漏洞扫描与交付平台</h1>
-
-        <span class="workbench-subtitle">输入网址后自动完成扫描、证据收集、修复建议、复扫验证和审计留痕，面向上线前自查、客户交付和持续安全运营，支持演示、内测和小范围交付</span>
-
-      </div>
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-
-        <button onclick="navigateTo('scan')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">开始扫描</button>
-
-        <button onclick="navigateTo('result')" style="background:rgba(75,110,175,0.12);color:var(--primary);border:1px solid rgba(75,110,175,0.35);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">查看报告</button>
-
-        <button onclick="navigateTo('audit')" style="background:rgba(115,201,144,0.12);color:#73c990;border:1px solid rgba(115,201,144,0.35);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:700">审计闭环</button>
-
-        <button onclick="navigateTo('profile')" style="background:transparent;color:var(--text-secondary);border:1px solid var(--border);padding:10px 16px;border-radius:2px;cursor:pointer;font-size:13px">账号设置</button>
-
-      </div>
-
+    <div class="home-hero-top">
+      <div class="home-brand-dot"></div>
+      <div class="home-brand-title">Vuln Sentinel</div>
     </div>
 
+    <h1 class="home-hero-title">漏洞哨兵 Web Security Tools</h1>
+    <div class="home-hero-version">Version 11.0.0 - 20260808</div>
+
+    <div class="home-hero-actions">
+      <button onclick="navigateTo('home')" class="home-hero-icon" aria-label="首页">⌂</button>
+      <button onclick="navigateTo('scan')" class="home-hero-icon" aria-label="扫描">↗</button>
+      <button onclick="navigateTo('profile')" class="home-hero-icon" aria-label="账号">◉</button>
+    </div>
+
+    <div class="home-hero-footer">严禁使用本程序进行未经授权的安全测试，所有扫描需确保你拥有目标授权。</div>
   </div>
 
 
