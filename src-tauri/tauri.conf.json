@@ -42,7 +42,8 @@
         "languages": ["SimpChinese"],
         "installMode": "currentUser",
         "startMenuFolder": "Vuln Sentinel",
-        "uninstallerIcon": "icons/icon.ico"
+        "uninstallerIcon": "icons/icon.ico",
+        "installerHooks": "./windows/hooks.nsh"
       }
     },
     "useLocalToolsDir": true
