@@ -329,7 +329,7 @@ function renderFindingList(findings, selectedIndex) {
       const vStatus = f.verification_status;
       const vIcon = vStatus === 'confirmed' ? '<span class="src-list-v confirmed" title="已验证">✓</span>' :
                     vStatus === 'probable' ? '<span class="src-list-v probable" title="可能存在">?</span>' :
-                    vStatus === 'suspected' ? '<span class="src-list-v suspected" title="存疑">!</span>' : '';
+                    vStatus === 'suspected' ? '<span class="src-list-v suspected" title="待人工复核">!</span>' : '';
       const fbIcon = f.user_feedback ? (f.user_feedback.is_false_positive ? '<span class="src-list-fb fp" title="您已标记为误报">误报</span>' : '<span class="src-list-fb confirmed" title="您已确认有效">确认</span>') : '';
       const rawConfidence = String(f.adjusted_confidence || f.confidence || 'medium');
       const confidenceLabel = rawConfidence === 'high' ? '高可信' : rawConfidence === 'medium' ? '中可信' : rawConfidence === 'low' ? '低可信' : rawConfidence;
@@ -384,7 +384,7 @@ function renderFindingDetail(finding, index) {
       ${finding.cvss_score ? `<span class="src-detail-cvss" title="${escapeHtml(finding.cvss_vector || '')}">CVSS ${finding.cvss_score}</span>` : ''}
       ${finding.severity_score ? `<span class="src-detail-score">评分 ${finding.severity_score}/10</span>` : ''}
       <span class="src-detail-confidence">置信度 ${escapeHtml(finding.adjusted_confidence || finding.confidence || 'medium')}</span>
-      ${finding.verification_status ? `<span class="src-detail-verify-badge ${finding.verification_status}">${finding.verification_status === 'confirmed' ? '已验证' : finding.verification_status === 'probable' ? '可能存在' : '存疑'}</span>` : ''}
+      ${finding.verification_status ? `<span class="src-detail-verify-badge ${finding.verification_status}">${finding.verification_status === 'confirmed' ? '已验证' : finding.verification_status === 'probable' ? '可能存在' : '待人工复核'}</span>` : ''}
       ${finding.is_likely_fp ? '<span class="src-detail-fp-badge src-detail-fp-badge-alert">待人工复核</span>' : ''}
       ${finding.user_feedback ? (finding.user_feedback.is_false_positive ? '<span class="src-detail-fp-badge" title="您已标记为误报">已标记误报</span>' : '<span class="src-detail-verify-badge verified" title="您已确认有效">您已确认</span>') : ''}
     </div>
