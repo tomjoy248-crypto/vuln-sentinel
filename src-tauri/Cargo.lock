@@ -3636,12 +3636,13 @@ dependencies = [
 
 [[package]]
 name = "vuln-sentinel-desktop"
-version = "11.0.1"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "url",
 ]
 
 [[package]]
