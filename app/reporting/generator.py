@@ -90,7 +90,7 @@ def _normalize_verification_status(status: str) -> str:
         "confirmed": "已验证",
         "unverified": "待复核",
         "probable": "可能存在",
-        "suspected": "存疑",
+        "suspected": "待人工复核",
         "false positive": "误报",
         "false_positive": "误报",
     }
@@ -513,3 +513,4 @@ def generate_src_report(scan_data: dict[str, Any], format: str = "markdown") -> 
     ]
 
     return "\n".join(parts)
+

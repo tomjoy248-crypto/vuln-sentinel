@@ -4,7 +4,7 @@ PYTHON := python3
 PIP := $(PYTHON) -m pip
 
 help:
-	@echo "漏洞哨兵 11-S 常用命令"
+	@echo "Vuln Sentinel 常用命令"
 	@echo "  make install          安装 Python 依赖"
 	@echo "  make test             运行完整测试套件"
 	@echo "  make lint             运行 ruff 代码质量检查"
@@ -78,3 +78,4 @@ clean:
 	rm -rf static/assets 2>/dev/null || true
 	rm -rf htmlcov 2>/dev/null || true
 	rm -f .coverage 2>/dev/null || true
+

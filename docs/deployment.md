@@ -1,10 +1,9 @@
-# 漏洞哨兵 11-S 生产部署指南
+# Vuln Sentinel 生产部署指南
 
-本文档介绍如何将漏洞哨兵 11-S 部署到生产环境，包括 Docker Compose、支付网关配置与 CI/CD 说明。
+本文档介绍如何将 Vuln Sentinel 部署到生产环境，包括 Docker Compose、支付网关配置与 CI/CD 说明。
 
 ## 前置条件
-
-- Docker & Docker Compose
+- Docker 和 Docker Compose
 - 一个已解析到服务器的域名（用于 HTTPS 与支付回调）
 - （可选）Stripe 账号，用于真实收款
 
@@ -51,18 +50,18 @@ REDIS_URL=redis://redis:6379/0
 ## 4. 支付网关配置
 
 ### 4.1 Stripe（推荐海外收款）
-
 1. 在 Stripe Dashboard 获取密钥。
 2. 在 `.env` 中配置：
-   ```
-   STRIPE_PUBLISHABLE_KEY=pk_live_xxx
-   STRIPE_SECRET_KEY=sk_live_xxx
-   STRIPE_WEBHOOK_SECRET=whsec_xxx
-   ```
+
+```bash
+STRIPE_PUBLISHABLE_KEY=pk_live_xxx
+STRIPE_SECRET_KEY=sk_live_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+```
+
 3. 在 Stripe Dashboard 创建 Webhook Endpoint：
-   - URL: `https://your-domain.com/api/billing/webhook/stripe`
-   - 事件: `checkout.session.completed`
-4. 前端在 `window.__STRIPE_PUBLISHABLE_KEY__` 暴露公钥后，购买按钮将自动跳转 Stripe Checkout。
+- URL: `https://your-domain.com/api/billing/webhook/stripe`
+- 事件: `checkout.session.completed`
 
 ### 4.2 支付宝 / 微信支付
 
@@ -76,8 +75,7 @@ REDIS_URL=redis://redis:6379/0
 - 支付宝：`POST /api/billing/webhook/alipay`
 - 微信：`POST /api/billing/webhook/wechat`
 
-接入真实支付时需安装对应 SDK（如 `alipay-sdk-python`、`wechatpayv3`），并在 `app/services/billing_service.py` 中替换签名验证逻辑。
-生产环境请确保 `ALIPAY_MOCK`、`WECHAT_MOCK` 和 `MOCK_WEBHOOK_SECRET` 均未启用。
+接入真实支付时需安装对应 SDK，并在 `app/services/billing_service.py` 中替换签名验证逻辑。
 
 ## 5. Sentry 错误追踪（可选）
 
@@ -92,7 +90,7 @@ SENTRY_PROFILES_SAMPLE_RATE=0.1
 ## 6. CI/CD
 
 项目已包含 `.github/workflows/ci.yml`，每次 push / PR 会自动执行：
-- Python 质量检查（ruff）
+- Python 质量检查
 - 安全基线检查
 - 依赖漏洞扫描
 - 前端构建
@@ -113,7 +111,6 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 ## 8. 安全建议
-
 - 不要将 `.env` 提交到版本库（已加入 `.gitignore`）。
 - 生产环境必须设置 `JWT_SECRET`、`ALLOWED_ORIGINS`。
 - 保持 `TLS_VERIFY=1`，防止中间人攻击。

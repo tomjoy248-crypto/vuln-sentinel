@@ -293,7 +293,7 @@ def cleanup_old_backups(backup_dir: Path, prefix: str, retention: int) -> list[P
 def main() -> int:
     """命令行入口。"""
     parser = argparse.ArgumentParser(
-        description="漏洞哨兵数据库备份/恢复工具（支持 SQLite 与 PostgreSQL）"
+        description="Vuln Sentinel数据库备份/恢复工具（支持 SQLite 与 PostgreSQL）"
     )
     parser.add_argument(
         "--type",
@@ -359,3 +359,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

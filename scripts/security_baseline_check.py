@@ -203,7 +203,7 @@ def check_hardcoded_secrets() -> CheckResult:
 def main() -> int:
     """执行所有检查并输出报告。"""
     is_prod = _is_production()
-    _emit(f"漏洞哨兵 11-S 安全基线检查 — 识别为 {'生产' if is_prod else '开发'} 环境\n")
+    _emit(f"Vuln Sentinel 安全基线检查 — 识别为 {'生产' if is_prod else '开发'} 环境\n")
 
     checks = [
         check_jwt_secret(),
@@ -239,3 +239,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

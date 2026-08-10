@@ -112,7 +112,7 @@ export const APP_TEMPLATE = `</head>
 
     <div class="ai-msg bot">
 
-      安全顾问随时在线，可以帮你解读漏洞、生成修复建议、梳理扫描证据，并提示哪些结果待人工复核。<br><br>
+      安全顾问可辅助解读漏洞、梳理证据和复核结果。<br><br>
 
       快捷问题
 
@@ -155,8 +155,8 @@ export const APP_TEMPLATE = `</head>
       <div class="home-brand-title">漏洞哨兵</div>
     </div>
 
-    <h1 class="home-hero-title">漏洞哨兵 Web Security Tools</h1>
-    <div class="home-hero-version">Version 11.0.0 - 20260808</div>
+    <h1 class="home-hero-title">Vuln Sentinel Workbench</h1>
+    <div class="home-hero-version">Workbench</div>
 
     <div class="home-hero-actions">
       <button onclick="navigateTo('home')" class="home-hero-icon" aria-label="首页">⌂</button>
@@ -164,7 +164,7 @@ export const APP_TEMPLATE = `</head>
       <button onclick="navigateTo('profile')" class="home-hero-icon" aria-label="账号">◉</button>
     </div>
 
-    <div class="home-hero-footer">严禁使用本程序进行未经授权的安全测试，所有扫描需确保你拥有目标授权。</div>
+    <div class="home-hero-footer">仅用于已授权目标的安全检测、复测和交付。</div>
   </div>
 
 
@@ -175,11 +175,11 @@ export const APP_TEMPLATE = `</head>
 
       <div style="min-width:240px;flex:1">
 
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:6px">3 步开始你的第一次扫描</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:6px">3 步进入工作台扫描</div>
 
-        <div style="font-size:12px;color:var(--text-secondary);line-height:1.7">① 输入网址并确认授权 → ② 查看风险、证据与修复建议 → ③ 创建工单、复测并导出报告。
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.7">① 输入目标、确认授权、查看证据与建议，再进入复测和报告交付。
 
-        受控访问可先体验白名单站点，正式账号可保存记录、发工单、看审计信息和复测，适合内测、演示和交付前验收。</div>
+        适合内测、演示、交付前验收和真实安全体检。</div>
 
       </div>
 
@@ -219,7 +219,7 @@ export const APP_TEMPLATE = `</head>
 
         <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">闭环能力</div>
 
-        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">扫描、证据、修复、验证、工单、复测一条线打通</div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">扫描、证据、修复、验证、复测一条线打通</div>
 
       </div>
 
@@ -281,7 +281,7 @@ export const APP_TEMPLATE = `</head>
 
 
 
-  <!-- 11-S: 技术亮点（最醒目的位置） -->
+  <!-- Vuln Sentinel: 技术亮点（最醒目的位置） -->
 
   <div class="card fade-in-up" style="margin-top:18px;background:#3c3f41;border:1px solid #555555;border-radius:2px;overflow:hidden">
 
@@ -299,7 +299,7 @@ export const APP_TEMPLATE = `</head>
 
         </div>
 
-        <span style="font-size:10px;background:#4b6eaf;color:#fff;padding:2px 8px;border-radius:2px;font-weight:600">11-S 核心能力</span>
+        <span style="font-size:10px;background:#4b6eaf;color:#fff;padding:2px 8px;border-radius:2px;font-weight:600">Vuln Sentinel 核心能力</span>
 
       </div>
 
@@ -371,7 +371,7 @@ export const APP_TEMPLATE = `</head>
 
     <h2 class="card-title">安全扫描</h2>
 
-    <p class="card-desc">输入目标网站地址并确认授权后开始扫描，结果会进入报告和审计闭环。</p>
+    <p class="card-desc">输入目标并确认授权后开始扫描。</p>
 
 
 
@@ -391,7 +391,7 @@ export const APP_TEMPLATE = `</head>
 
 
 
-    <!-- 11-S: 安全趋势面板 -->
+    <!-- Vuln Sentinel: 安全趋势面板 -->
 
     <div id="trend-panel" style="display:none;margin-bottom:20px">
 
@@ -445,7 +445,7 @@ export const APP_TEMPLATE = `</head>
 
       <div id="scan-login-tip" style="background:#313335;border:1px solid #555555;border-radius:2px;padding:10px 14px;margin-bottom:10px;text-align:center;display:none">
 
-        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">登录后即可开始扫描，结果会自动进入报告、工单和审计记录</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">登录后即可开始扫描。</div>
 
         <button onclick="navigateTo('profile')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 18px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:500">立即登录 / 注册</button>
 
@@ -467,13 +467,13 @@ export const APP_TEMPLATE = `</head>
 
       </label>
 
-      <button class="scan-btn" id="scan-btn-step1" onclick="startScanDirect()" disabled>开始扫描并生成报告</button>
+      <button class="scan-btn" id="scan-btn-step1" onclick="startScanDirect()" disabled>开始扫描</button>
 
       <div style="text-align:center;margin-top:10px">
 
         <button onclick="goVerifyStep2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">域名归属验证（推荐）</button>
 
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">快速演示仅适用于自有目标或授权场景，正式交付建议完成归属验证</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">仅限授权目标</div>
 
       </div>
 
@@ -605,7 +605,7 @@ export const APP_TEMPLATE = `</head>
 
         </div>
 
-        <button class="scan-btn" id="scan-btn" onclick="startScan()" disabled>开始扫描并生成报告</button>
+        <button class="scan-btn" id="scan-btn" onclick="startScan()" disabled>开始扫描</button>
 
       </div>
 
@@ -673,7 +673,7 @@ export const APP_TEMPLATE = `</head>
 
     <h1 class="workbench-title">扫描结果</h1>
 
-    <span class="workbench-subtitle">查看漏洞发现、响应头与修复建议</span>
+    <span class="workbench-subtitle">查看漏洞发现、响应头与建议</span>
 
   </div>
 
@@ -769,7 +769,7 @@ export const APP_TEMPLATE = `</head>
 
 
 
-<!-- 进化页面 11-S -->
+<!-- 进化页面 Vuln Sentinel -->
 
 <div class="page" id="page-evolution">
 
@@ -1329,13 +1329,6 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="showProfileTab('about')">
-
-      <span>关于</span>
-
-      <span class="settings-arrow">&#x203A;</span>
-
-    </div>
 
   </div>
 
@@ -1717,21 +1710,6 @@ export const APP_TEMPLATE = `</head>
 
 
 
-  <!-- 关于面板 -->
-
-  <div id="profile-tab-about" class="profile-tab" style="display:none">
-
-    <div class="card">
-
-      <div class="card-title">关于</div>
-
-      <div style="text-align:left;font-size:13px;color:var(--text-secondary);line-height:2">
-
-        <p>基于 OWASP Top 10 安全标准</p>
-
-        <p>域名归属验证，确保授权扫描</p>
-
-        <p>智能检查，生成多平台修复配置</p>
 
         <p>账号级数据隔离</p>
 
@@ -1825,7 +1803,7 @@ export const APP_TEMPLATE = `</head>
 
     <div class="card-title">客户闭环</div>
 
-    <p class="card-desc" style="margin-bottom:14px">客户输入网址后，系统应该稳定完成扫描、证据展示、工单、修复、复测和报告导出。</p>
+    <p class="card-desc" style="margin-bottom:14px">客户输入网址后，系统应稳定完成扫描、证据、修复、复测和报告导出。</p>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
 
@@ -1833,7 +1811,7 @@ export const APP_TEMPLATE = `</head>
 
       <div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><strong>2. 证据展示</strong><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">检查请求、响应、命中签名、摘要和可信度是否清晰。</div></div>
 
-      <div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><strong>3. 工单修复</strong><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">检查工单、修复器、复测和报告是否形成闭环。</div></div>
+      <div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><strong>3. 工单修复</strong><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">检查工单、修复和复测是否闭环。</div></div>
 
       <div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><strong>4. 商业化</strong><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">检查套餐、额度、支付回调、导出权限和审计留痕。</div></div>
 
@@ -2004,4 +1982,5 @@ export const APP_TEMPLATE = `</head>
 </button>
 
 `;
+
 

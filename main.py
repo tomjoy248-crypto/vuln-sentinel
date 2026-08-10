@@ -1,6 +1,6 @@
-"""漏洞哨兵 11-S - FastAPI 安全扫描后端
+"""Vuln Sentinel - FastAPI 安全扫描后端
 
-11-S 核心改进：
+Vuln Sentinel 核心改进：
 1. 本地靶场：一键扫描→修复→复测完整闭环（nginx 真实配置修改）
 2. 置信度系统：每个 finding 标注高/中/低置信度，区分确定项与推测项
 3. 评分逻辑纠正：WAF 只加分不抵消真实缺失，Trusted Domains 白名单移除
@@ -9,7 +9,7 @@
 6. 测试便携性：所有测试使用相对路径，可在任意目录运行
 7. 安全加固：生产环境 JWT Secret 强制校验，凭证加密密钥可配置
 8. AI 顾问优化：基于真实 severity 排序，接入当前扫描报告上下文
-9. 版本统一：所有界面/文档/API 返回值统一为 11-S
+9. 版本统一：所有界面/文档/API 返回值统一为 Vuln Sentinel
 10. CI/CD 修复：GitHub Actions 工作流完整跑通测试+扫描+构建
 """
 
@@ -77,10 +77,14 @@ def _resolve_static_dir() -> str:
     candidates = []
     frozen_root = getattr(sys, "_MEIPASS", None)
     if frozen_root:
+        candidates.append(os.path.join(frozen_root, "frontend", "dist"))
         candidates.append(os.path.join(frozen_root, "static"))
     script_root = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(script_root, "frontend", "dist"))
     candidates.append(os.path.join(script_root, "static"))
+    candidates.append(os.path.join(os.path.dirname(script_root), "frontend", "dist"))
     candidates.append(os.path.join(os.path.dirname(script_root), "static"))
+    candidates.append(os.path.join(os.getcwd(), "frontend", "dist"))
     candidates.append(os.path.join(os.getcwd(), "static"))
     for candidate in candidates:
         if os.path.exists(os.path.join(candidate, "index.html")):
@@ -212,8 +216,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_title: str = "漏洞哨兵 - 安全扫描与修复平台"
-    app_version: str = "11.0.1"
+    app_title: str = "Vuln Sentinel - 安全扫描与修复平台"
+    app_version: str = "1.0.0"
     build_time: str = "2026-06-25"
     port: int = 8000
     host: str = "0.0.0.0"  # nosec B104 - 默认监听所有接口，生产环境可通过环境变量覆盖
@@ -250,7 +254,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_timeout: float = 15.0
 
-    # 自动巡检 (11-S 进化)
+    # 自动巡检 (Vuln Sentinel 进化)
     patrol_interval_hours: int = 6
     patrol_score_regression_threshold: int = 10
 
@@ -279,7 +283,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", description="日志级别")
     tls_verify: bool = Field(default=True, description="是否验证 TLS 证书")
     public_demo_enabled: bool = Field(
-        default=True, description="是否开放公开演示扫描端点"
+        default=False, description="是否开放公开演示扫描端点"
     )
 
 
@@ -330,7 +334,7 @@ if _IS_PRODUCTION:
         )
 
 # JWT Secret 强制：生产环境必须显式设置，否则拒绝启动
-# 11-S: 使用 _IS_PRODUCTION 统一判定，避免 PRODUCTION=1 绕过校验
+# Vuln Sentinel: 使用 _IS_PRODUCTION 统一判定，避免 PRODUCTION=1 绕过校验
 if _IS_PRODUCTION:
     if not settings.jwt_secret or len(settings.jwt_secret) < 32:
         raise RuntimeError(
@@ -946,7 +950,7 @@ def init_db() -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_user_id ON assets(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_domain ON assets(domain)")
-    # 11-S+：用户对 finding 的误报/确认反馈
+    # Vuln Sentinel：用户对 finding 的误报/确认反馈
     conn.execute(
         """CREATE TABLE IF NOT EXISTS finding_feedback (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -968,7 +972,7 @@ def init_db() -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_finding_feedback_name ON finding_feedback(finding_name)"
     )
-    # 审计日志表（11-S 专业化进化：阶段一）
+    # 审计日志表（Vuln Sentinel 专业化进化：阶段一）
     conn.execute(
         """CREATE TABLE IF NOT EXISTS audit_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -999,8 +1003,6 @@ def init_db() -> None:
     for col_name, col_def in _scans_columns:
         if not _column_exists(conn, "scans", col_name):
             conn.execute(col_def)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_scans_share_id ON scans(share_id)")
-    # 兼容旧 SHA256 账号：保留原哈希，登录时在 verify_password 中兼容校验
     try:
         old_users = conn.execute("SELECT id, username, password FROM users").fetchall()
         for uid, uname, pwd_hash in old_users:
@@ -1010,10 +1012,11 @@ def init_db() -> None:
                 logger.info("Legacy password hash preserved for user %s", uname)
     except Exception as e:
         logger.warning("Password migration inspection failed: %s", e)
-    # 如果数据库中没有任何用户，预置一个演示账号 demo/demo123，便于首次体验和测试
+    # 开发环境可预置演示账号；生产环境默认不自动创建弱口令示例账号
     try:
         any_user = conn.execute("SELECT id FROM users LIMIT 1").fetchone()
-        if not any_user:
+        seed_demo_user = (not _IS_PRODUCTION) and os.environ.get("SEED_DEMO_USER", "1").strip().lower() in ("1", "true", "yes", "on")
+        if not any_user and seed_demo_user:
             conn.execute(
                 "INSERT INTO users (username, password, email, role, team_id, credits, created_at) VALUES (?,?,?,?,?,?,?)",
                 (
@@ -1026,10 +1029,9 @@ def init_db() -> None:
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 ),
             )
-            logger.info("Seeded demo user (demo/demo123)")
+            logger.info("Seeded demo user (demo/demo123) for non-production environment")
     except Exception as e:
         logger.warning("Demo user seeding skipped: %s", e)
-    conn.commit()
     conn.close()
 
     # 性能优化：补加索引（CREATE INDEX IF NOT EXISTS，不影响已存在数据）
@@ -1760,7 +1762,7 @@ async def lifespan(app: FastAPI):
         logger.error("Production config validation failed: %s", e, exc_info=True)
         if _IS_PRODUCTION:
             raise
-    # 11-S+: 多 worker 部署时可通过 ENABLE_SCHEDULER=false 关闭定时任务，避免重复执行
+    # Vuln Sentinel: 多 worker 部署时可通过 ENABLE_SCHEDULER=false 关闭定时任务，避免重复执行
     _enable_scheduler = os.environ.get(
         "ENABLE_SCHEDULER", "true"
     ).strip().lower() not in ("0", "false", "no", "off")
@@ -1995,7 +1997,7 @@ async def request_logging_middleware(
     return response
 
 
-# 审计日志中间件：自动记录所有写操作 API（11-S 专业化进化：阶段一）
+# 审计日志中间件：自动记录所有写操作 API（Vuln Sentinel 专业化进化：阶段一）
 @app.middleware("http")
 async def _audit_logging_middleware(
     request: Request, call_next: Callable[[Request], Coroutine[Any, Any, Any]]
@@ -2070,7 +2072,7 @@ _MAX_RESPONSE_BODY_BYTES = 2 * 1024 * 1024  # 2 MB
 
 def _create_client() -> None:
     global _httpx_client
-    # 11-S：默认开启 TLS 验证（安全产品必须优先保证通信安全）
+    # Vuln Sentinel：默认开启 TLS 验证（安全产品必须优先保证通信安全）
     # 用户可显式设置 TLS_VERIFY=false 启用"不安全兼容模式"
     _raw = os.environ.get("TLS_VERIFY", "true").strip().lower()
     if _raw in ("0", "false", "no", "off"):
@@ -2360,7 +2362,7 @@ async def run_payload_tests(base_url, pages):
     return vulns, test_results
 
 
-# ---------- Code-Level Vulnerability Detection (11-S) ----------
+# ---------- Code-Level Vulnerability Detection (Vuln Sentinel) ----------
 
 
 def _build_test_url(url: str, param: str, payload: str) -> str:
@@ -3223,7 +3225,7 @@ async def fetch_headers(url: str) -> tuple[dict, bool, str, str | None]:
             except httpx.RemoteProtocolError:
                 last_err = "PROTOCOL_ERROR"
             except (ssl.SSLError, ssl.CertificateError) as e:
-                # 11-S 修复：SSL 错误（如证书过期、协议不匹配）→ 尝试用宽松 SSL 重试
+                # Vuln Sentinel 修复：SSL 错误（如证书过期、协议不匹配）→ 尝试用宽松 SSL 重试
                 last_err = f"SSL_ERROR:{str(e)[:40]}"
             except Exception as e:
                 last_err = f"REQUEST_FAIL:{str(e)[:60]}"
@@ -3235,7 +3237,7 @@ async def fetch_headers(url: str) -> tuple[dict, bool, str, str | None]:
         elif last_err == "PROTOCOL_ERROR":
             error = "协议错误，目标可能不支持 HTTPS 或使用了非标准端口"
         elif last_err and last_err.startswith("SSL_ERROR:"):
-            # 11-S：SSL 错误时，仅在用户显式关闭 TLS 验证后才允许跳过证书检查
+            # Vuln Sentinel：SSL 错误时，仅在用户显式关闭 TLS 验证后才允许跳过证书检查
             _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in (
                 "0",
                 "false",
@@ -3855,7 +3857,7 @@ async def check_sensitive_paths(host: str, is_https: bool) -> list[dict]:
     return results
 
 
-# 11-S: 详细验证步骤（三步验证法：命令行 + 浏览器 + 工具重扫）
+# Vuln Sentinel: 详细验证步骤（三步验证法：命令行 + 浏览器 + 工具重扫）
 VERIFY_METHODS = {
     "hsts": {
         "summary": "验证 HSTS 头是否生效",
@@ -5733,7 +5735,7 @@ def add_finding(
         "verify_steps": get_verify_steps(verify_key),
         "ai_advice": ai_advice,
     }
-    # 11-S：置信度（高/中/低）
+    # Vuln Sentinel：置信度（高/中/低）
     if confidence_level is not None:
         finding["confidence_level"] = confidence_level
     elif confidence is not None:
@@ -5743,7 +5745,7 @@ def add_finding(
         finding["confidence_level"] = "高"
     if confidence is not None and "confidence" not in finding:
         finding["confidence"] = confidence
-    # 11-S：交叉验证字段（可选）
+    # Vuln Sentinel：交叉验证字段（可选）
     if verified is not None:
         finding["verified"] = verified
     if cv_reason is not None:
@@ -5885,7 +5887,7 @@ async def analyze_security(
         "referrer-policy": "referrer",
         "permissions-policy": "permissions",
     }
-    # 11-S：WAF 只作为"纵深防御能力"单独展示，不消除真实缺失项
+    # Vuln Sentinel：WAF 只作为"纵深防御能力"单独展示，不消除真实缺失项
     # Trusted Domains 白名单已移除：不能以"知名"为由自动判定安全
     waf_protected = len(waf_list) > 0
     waf_name = waf_list[0].get("name", "WAF") if waf_list else ""
@@ -5910,7 +5912,7 @@ async def analyze_security(
             }
         )
         if not value:
-            # 11-S：所有站点统一扣分 + finding，WAF 不消除真实缺失项
+            # Vuln Sentinel：所有站点统一扣分 + finding，WAF 不消除真实缺失项
             if key in HIGH_CONFIG_HEADERS:
                 points = SCORE_DEDUCTION["high_config_missing"]
             else:
@@ -5937,7 +5939,7 @@ async def analyze_security(
                 confidence_level=conf_level,
             )
 
-    # 11-S: HSTS 强度评估
+    # Vuln Sentinel: HSTS 强度评估
     hsts_value = headers.get(
         "strict-transport-security", headers.get("Strict-Transport-Security", None)
     )
@@ -5971,7 +5973,7 @@ async def analyze_security(
             # 低风险提示，不额外扣分（已经扣过了）
             pass
 
-    # 11-S: CSP 强度评估
+    # Vuln Sentinel: CSP 强度评估
     csp_value = headers.get(
         "content-security-policy", headers.get("Content-Security-Policy", None)
     )
@@ -6021,7 +6023,7 @@ async def analyze_security(
         value = headers.get(key, headers.get(key.title(), None))
         if value:
             info_leaks.append({"name": key.title(), "value": value})
-            # 11-S：WAF 标识头不算泄露，但其它情况仍报告
+            # Vuln Sentinel：WAF 标识头不算泄露，但其它情况仍报告
             is_waf_signature = any(
                 w.get("value", "").lower() in value.lower()
                 or value.lower() in w.get("value", "").lower()
@@ -6033,7 +6035,7 @@ async def analyze_security(
                 pass
             elif has_version:
                 # 暴露了具体版本（nginx/1.18.0 等），扣分 + finding
-                # 11-S 优化：常见 Web 服务器 + 已检测到 WAF 时降级
+                # Vuln Sentinel 优化：常见 Web 服务器 + 已检测到 WAF 时降级
                 _common_servers = ["nginx", "apache", "cloudflare", "aws"]
                 _is_common_server = any(s in value.lower() for s in _common_servers)
                 _info_conf = "中" if (_is_common_server and waf_protected) else "高"
@@ -6150,7 +6152,7 @@ async def analyze_security(
             cors_details = {"value": cors, "risk": "低风险"}
 
     exposed = [p for p in sensitive_paths if p.get("exposed")]
-    # 11-S 优化：过滤软 404 误报（返回 200 但内容实际是 404 页面）
+    # Vuln Sentinel 优化：过滤软 404 误报（返回 200 但内容实际是 404 页面）
     SOFT_404_PATTERNS = [
         "page not found",
         "not found",
@@ -6204,7 +6206,7 @@ async def analyze_security(
     # suspect 路径：前端展示警告，但不扣分
     suspect_paths = [p for p in sensitive_paths if p.get("suspect")]
     if suspect_paths:
-        # 11-S 优化：suspect 疑似项不扣分，但记录为信息提示
+        # Vuln Sentinel 优化：suspect 疑似项不扣分，但记录为信息提示
         suspect_names = [p.get("path", "") for p in suspect_paths[:5]]
         add_finding(
             findings,
@@ -6223,7 +6225,7 @@ async def analyze_security(
             confidence_level="低",
         )
 
-    # 11-S: 代码层漏洞动态检测（插件化）
+    # Vuln Sentinel: 代码层漏洞动态检测（插件化）
     # 将原有直接调用迁移到插件架构，支持未来动态扩展和深度定制
     try:
         from app.plugins import ScanContext
@@ -6281,7 +6283,7 @@ async def analyze_security(
                 deduct(v.get("name", "漏洞"), 25, "critical", "检测到严重漏洞")
             elif sev == "high":
                 deduct(v.get("name", "漏洞"), 15, "high", "检测到高风险漏洞")
-            # 11-S: 补充 medium 和 low 的扣分逻辑，确保评分与 summary 统计一致
+            # Vuln Sentinel: 补充 medium 和 low 的扣分逻辑，确保评分与 summary 统计一致
             elif sev == "medium":
                 deduct(v.get("name", "漏洞"), 8, "medium", "检测到中风险漏洞")
             elif sev == "low":
@@ -6307,7 +6309,7 @@ async def analyze_security(
     a06_count = sum(1 for f in findings if "A06" in f.get("owasp", ""))
     a07_count = sum(1 for f in findings if "A07" in f.get("owasp", ""))
     a08_count = sum(1 for f in findings if "A08" in f.get("owasp", ""))
-    # 11-S 优化：如果某个类别只有 low 级别的 finding，降级为"需关注"
+    # Vuln Sentinel 优化：如果某个类别只有 low 级别的 finding，降级为"需关注"
     a01_all_low = has_a01 and all(
         f.get("severity") == "low" for f in findings if "A01" in f.get("owasp", "")
     )
@@ -6397,7 +6399,7 @@ async def analyze_security(
             # 如果已有条目（如 A02），保持原样
             pass
     owasp.sort(key=lambda x: int(x["category"][1:3]))
-    # 11-S：WAF 作为纵深防御能力，最多 +3 分奖励，不覆盖真实缺失项
+    # Vuln Sentinel：WAF 作为纵深防御能力，最多 +3 分奖励，不覆盖真实缺失项
     waf_bonus = 0
     if waf_protected:
         waf_bonus = 2
@@ -6457,13 +6459,13 @@ async def analyze_security(
                         restricted_code = "ANTI_BOT"
                     break
 
-    # 11-S：受限扫描时所有发现标记为"证据不足"（低置信度）
+    # Vuln Sentinel：受限扫描时所有发现标记为"证据不足"（低置信度）
     if restricted:
         for f in findings:
             f["confidence_level"] = "低"
             f["confidence"] = 40
 
-    # 11-S 优化：同一目标超过 15 个 findings 时，只展示前 15 个（按严重度排序）
+    # Vuln Sentinel 优化：同一目标超过 15 个 findings 时，只展示前 15 个（按严重度排序）
     _severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     if len(findings) > 15:
         findings.sort(key=lambda f: _severity_order.get(f.get("severity", "low"), 99))
@@ -6530,7 +6532,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     )
 
     _cn_font = "Helvetica"
-    # 11-S 修复：先尝试 WQY（TTF 格式，reportlab 完美支持）
+    # Vuln Sentinel 修复：先尝试 WQY（TTF 格式，reportlab 完美支持）
     # NotoSansCJK 是 CFF/OTF 格式，reportlab 的 TTFont 不支持
     for _fp in [
         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
@@ -6631,7 +6633,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     elements.append(Spacer(1, 60 * mm))
     elements.append(
         Paragraph(
-            "漏洞哨兵",
+            "Vuln Sentinel",
             ParagraphStyle(
                 name="CoverTitle",
                 fontName=_cn_font,
@@ -6690,7 +6692,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     elements.append(Spacer(1, 30 * mm))
     elements.append(
         Paragraph(
-            "本报告由漏洞哨兵自动生成，仅供参考。",
+            "本报告由Vuln Sentinel自动生成，仅供参考。",
             ParagraphStyle(
                 name="CoverNote",
                 fontName=_cn_font,
@@ -6952,7 +6954,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
                         (0, 0),
                         (-1, -1),
                         _cn_font,
-                    ),  # 11-S 修复：表格用中文字体
+                    ),  # Vuln Sentinel 修复：表格用中文字体
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                     ("FONTSIZE", (0, 0), (-1, -1), 7),
@@ -6984,7 +6986,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
                         (0, 0),
                         (-1, -1),
                         _cn_font,
-                    ),  # 11-S 修复：表格用中文字体
+                    ),  # Vuln Sentinel 修复：表格用中文字体
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                     ("FONTSIZE", (0, 0), (-1, -1), 8),
@@ -6999,7 +7001,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     elements.append(Paragraph("免责声明", styles["Heading2"]))
     elements.append(
         Paragraph(
-            "本报告由漏洞哨兵智能规则引擎自动生成，仅反映扫描时刻的目标网站安全配置状况。扫描结果可能存在误报或漏报，不构成完整的安全审计。建议结合专业安全评估和渗透测试综合判断。本工具不进行任何破坏性操作。",
+            "本报告由Vuln Sentinel智能规则引擎自动生成，仅反映扫描时刻的目标网站安全配置状况。扫描结果可能存在误报或漏报，不构成完整的安全审计。建议结合专业安全评估和渗透测试综合判断。本工具不进行任何破坏性操作。",
             styles["CN"],
         )
     )
@@ -7126,7 +7128,7 @@ def generate_src_markdown_report(
         [
             "---",
             "",
-            "> 本报告由漏洞哨兵自动生成，SRC 提交前建议人工复核证据与 CVSS 评分。",
+            "> 本报告由Vuln Sentinel自动生成，SRC 提交前建议人工复核证据与 CVSS 评分。",
             "",
         ]
     )
@@ -7372,7 +7374,7 @@ def generate_html_report(scan_data: dict) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>漏洞哨兵 - Web安全扫描报告</title>
+<title>Vuln Sentinel - Web安全扫描报告</title>
 <style>
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.6; }}
@@ -7414,7 +7416,7 @@ def generate_html_report(scan_data: dict) -> str:
 <div class="report-container">
     <!-- 封面 -->
     <div class="report-cover">
-        <h1>🔒 漏洞哨兵</h1>
+        <h1>🔒 Vuln Sentinel</h1>
         <div class="subtitle">Web 安全扫描报告</div>
         <div class="cover-info">
             <div class="cover-info-item">
@@ -7484,12 +7486,12 @@ def generate_html_report(scan_data: dict) -> str:
     <div class="section">
         <h2>📝 免责声明</h2>
         <div class="disclaimer">
-            本报告由漏洞哨兵智能规则引擎自动生成，仅反映扫描时刻的目标网站安全配置状况。扫描结果可能存在误报或漏报，不构成完整的安全审计。建议结合专业安全评估和渗透测试综合判断。本工具不进行任何破坏性操作，仅用于授权范围内的安全检测。
+            本报告由Vuln Sentinel智能规则引擎自动生成，仅反映扫描时刻的目标网站安全配置状况。扫描结果可能存在误报或漏报，不构成完整的安全审计。建议结合专业安全评估和渗透测试综合判断。本工具不进行任何破坏性操作，仅用于授权范围内的安全检测。
         </div>
     </div>
 
     <div class="report-footer">
-        漏洞哨兵 11-S · 自动生成于 {_html_escape(time_str)}
+        Vuln Sentinel · 自动生成于 {_html_escape(time_str)}
     </div>
 </div>
 </body>
@@ -8335,7 +8337,7 @@ async def api_scan(
     try:
         url = sanitize_url(req.url)
     except ValueError as e:
-        # 11-S fix: 返回友好的扫描失败结果，而不是 HTTP 422
+        # Vuln Sentinel fix: 返回友好的扫描失败结果，而不是 HTTP 422
         return ScanResponse(
             success=False,
             scan_id=0,
@@ -9084,7 +9086,7 @@ async def api_scan(
             )
         raise
     except Exception as e:
-        # 11-S: 通用异常兜底，避免返回 500
+        # Vuln Sentinel: 通用异常兜底，避免返回 500
         record_scan_end(_metrics_timer, status="error", depth=req.depth or "standard")
         logger.error("Scan failed with unexpected error: %s", e, exc_info=True)
         try:
@@ -9792,7 +9794,7 @@ async def simulate_fix(req: SimulateFixRequest, request: Request) -> dict:
     输入：scan findings 数组（使用真实 severity 字段 high/medium/low）+ 可选 scan_id
     输出：修复前 vs 修复后的评分对比
     """
-    # 11-S: 添加速率限制，防止滥用
+    # Vuln Sentinel: 添加速率限制，防止滥用
     await rate_limit_dependency(request)
     findings = req.findings or []
 
@@ -9831,7 +9833,7 @@ async def simulate_fix(req: SimulateFixRequest, request: Request) -> dict:
                 or f"修复 {f.get('name', '安全问题')}，消除 {SEVERITY_ZH.get(severity, '低')} 风险",
             }
         )
-    # 11-S：生成可执行的修复配置（按平台分类）
+    # Vuln Sentinel：生成可执行的修复配置（按平台分类）
     nginx_fixes = []
     for f in findings:
         fix_code = f.get("fix", "")
@@ -9997,7 +9999,7 @@ async def api_generate_fix_package(
 
     main_cfg = "\n\n".join(code_blocks)
     readme = f"""# {host} 安全配置包
-由漏洞哨兵 11-S 自动生成
+由Vuln Sentinel 自动生成
 平台：{platform.upper()}
 修复项数：{len(code_blocks)}
 生成时间：{time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -10048,7 +10050,7 @@ async def api_generate_fix_package(
 
 
 # ============================================================
-# 11-S 应用修复配置：用户授权凭证 → SSH 改服务器配置 → 验证 → 返结果
+# Vuln Sentinel 应用修复配置：用户授权凭证 → SSH 改服务器配置 → 验证 → 返结果
 # ============================================================
 
 # 生成 / 读取对称加密 key（用于加密用户凭证）
@@ -10065,7 +10067,7 @@ def _get_credential_key() -> bytes:
 
 _fernet = Fernet(_get_credential_key())
 
-# 11-S: 生产环境强制校验凭证加密密钥，禁止使用硬编码默认值
+# Vuln Sentinel: 生产环境强制校验凭证加密密钥，禁止使用硬编码默认值
 if _IS_PRODUCTION:
     _default_key = base64.urlsafe_b64encode(
         b"vulnsentinel-v11-default-credential-key-32!!".ljust(32, b"=")[:32]
@@ -10094,7 +10096,7 @@ def _generate_fix_patch(findings: list, platform: str = "nginx") -> str:
         lines = [
             "",
             "# ============================================",
-            "# 漏洞哨兵 11-S 自动应用的安全头",
+            "# Vuln Sentinel 自动应用的安全头",
             f"# 应用时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
             f"# 修复项数: {len(findings)}",
             "# ============================================",
@@ -10189,7 +10191,7 @@ def _ssh_execute(
 
 def _auto_fix_via_ssh(scan_data: dict, credentials: dict) -> dict:
     """
-    11-S 核心：通过 SSH 真正修复用户服务器
+    Vuln Sentinel 核心：通过 SSH 真正修复用户服务器
     流程：备份 → 追加修复配置 → 测试配置 → 重载 → 验证
     """
     # 安全最佳实践：验证 platform 白名单，防止命令注入
@@ -10317,7 +10319,7 @@ def _auto_fix_via_ssh(scan_data: dict, credentials: dict) -> dict:
 @app.post("/api/auto-fix")
 async def api_auto_fix(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    11-S 终极功能：端到端应用修复配置
+    Vuln Sentinel 终极功能：端到端应用修复配置
     接收：扫描结果 + 用户服务器凭证
     执行：SSH 备份 → 写配置 → 测试 → 重载 → 验证
     返回：完整执行日志 + 验证后的安全头列表
@@ -10393,7 +10395,7 @@ async def api_auto_fix_cloudflare(
     request: Request, user: dict = Depends(require_login)
 ) -> dict:
     """
-    11-S Cloudflare 应用修复配置：通过 Cloudflare API 改安全头（零 SSH 风险）
+    Vuln Sentinel Cloudflare 应用修复配置：通过 Cloudflare API 改安全头（零 SSH 风险）
     用户只需提供 CF API Token 即可一键应用 5+ 项安全头
     """
     try:
@@ -10513,11 +10515,11 @@ async def api_auto_fix_cloudflare(
 
 
 # ============================================================
-# 11-S 进化模块 1：智能学习 — 从历史自动学
+# Vuln Sentinel 进化模块 1：智能学习 — 从历史自动学
 # ============================================================
 def _learn_from_user_history(user_id: int) -> dict:
     """
-    11-S 进化：从用户的修复历史自动学习
+    Vuln Sentinel 进化：从用户的修复历史自动学习
     统计：用户最常修/不修的项、修复后真实效果、最佳修复顺序
     """
     conn = get_db()
@@ -10622,17 +10624,17 @@ def _learn_from_user_history(user_id: int) -> dict:
 
 @app.get("/api/learn/insights")
 async def api_learn_insights(user: dict = Depends(require_login)) -> dict:
-    """11-S 进化端点：智能学习洞察（基于用户历史）"""
+    """Vuln Sentinel 进化端点：智能学习洞察（基于用户历史）"""
     insights = _learn_from_user_history(user["user_id"])
     return insights
 
 
 # ============================================================
-# 11-S 进化模块 2：主动监控 — 定期扫描 + 告警
+# Vuln Sentinel 进化模块 2：主动监控 — 定期扫描 + 告警
 # ============================================================
 # 监控目标：用户可加自己的网站到监控列表
 def _init_monitoring_tables():
-    """11-S 新增：监控相关表"""
+    """Vuln Sentinel 新增：监控相关表"""
     conn = get_db()
     try:
         conn.executescript("""
@@ -10688,14 +10690,14 @@ def _init_monitoring_tables():
 try:
     _init_monitoring_tables()
 except Exception as e:
-    print(f"[11-S] monitor tables init warning: {e}")
+    print(f"[Vuln Sentinel] monitor tables init warning: {e}")
 
 
 @app.post("/api/monitors")
 async def api_create_monitor(
     request: Request, user: dict = Depends(require_login)
 ) -> dict:
-    """11-S 进化端点：添加监控目标"""
+    """Vuln Sentinel 进化端点：添加监控目标"""
     try:
         body = await request.json()
     except Exception:
@@ -10706,7 +10708,7 @@ async def api_create_monitor(
         return {"success": False, "error": "URL 必填"}
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
-    # 11-S fix: SSRF 防护 - 监控目标必须通过 URL 校验
+    # Vuln Sentinel fix: SSRF 防护 - 监控目标必须通过 URL 校验
     try:
         sanitize_url(url)
     except ValueError as e:
@@ -10742,7 +10744,7 @@ async def api_create_monitor(
 
 @app.get("/api/monitors")
 async def api_list_monitors(user: dict = Depends(require_login)) -> dict:
-    """11-S 进化端点：列出所有监控目标"""
+    """Vuln Sentinel 进化端点：列出所有监控目标"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -10762,7 +10764,7 @@ async def api_list_monitors(user: dict = Depends(require_login)) -> dict:
 async def api_delete_monitor(
     monitor_id: int, user: dict = Depends(require_login)
 ) -> dict:
-    """11-S 进化端点：删除监控目标"""
+    """Vuln Sentinel 进化端点：删除监控目标"""
     conn = get_db()
     try:
         conn.execute(
@@ -10776,7 +10778,7 @@ async def api_delete_monitor(
 
 
 def _check_monitors_sync():
-    """11-S：同步执行监控扫描（被 scheduler 调用）"""
+    """Vuln Sentinel：同步执行监控扫描（被 scheduler 调用）"""
     import asyncio
 
     conn = get_db()
@@ -10794,7 +10796,7 @@ def _check_monitors_sync():
                 continue
             # 到了扫描时间
             try:
-                # 11-S fix: SSRF 防护 + 正确调用扫描流程
+                # Vuln Sentinel fix: SSRF 防护 + 正确调用扫描流程
                 url = m["url"]
                 try:
                     sanitize_url(url)
@@ -11004,7 +11006,7 @@ def _check_monitors_sync():
 
 @app.get("/api/monitors/alerts")
 async def api_list_alerts(user: dict = Depends(require_login)) -> dict:
-    """11-S 进化端点：列出所有告警"""
+    """Vuln Sentinel 进化端点：列出所有告警"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -11024,12 +11026,12 @@ async def api_list_alerts(user: dict = Depends(require_login)) -> dict:
 
 
 # ============================================================
-# 11-S 进化模块 3：AI 洞察 — 会话记忆 + 个性化建议
+# Vuln Sentinel 进化模块 3：AI 洞察 — 会话记忆 + 个性化建议
 # ============================================================
 def _save_conversation(
     user_id: int, role: str, content: str, context: dict = None
 ) -> int:
-    """11-S：保存 AI 顾问对话历史（让 AI 记住用户）"""
+    """Vuln Sentinel：保存 AI 顾问对话历史（让 AI 记住用户）"""
     conn = get_db()
     try:
         conn.executescript("""
@@ -11061,7 +11063,7 @@ def _save_conversation(
 
 
 def _get_recent_conversations(user_id: int, limit: int = 10) -> list:
-    """11-S：取最近 N 条对话（用于上下文）"""
+    """Vuln Sentinel：取最近 N 条对话（用于上下文）"""
     conn = get_db()
     try:
         # 确保表存在
@@ -11085,7 +11087,7 @@ def _get_recent_conversations(user_id: int, limit: int = 10) -> list:
         conn.close()
 
 
-# =================== 11-S LLM 集成（OpenAI 兼容接口） ===================
+# =================== Vuln Sentinel LLM 集成（OpenAI 兼容接口） ===================
 
 
 def _build_llm_prompt(user_msg: str, history: list, insights: dict) -> list:
@@ -11101,7 +11103,7 @@ def _build_llm_prompt(user_msg: str, history: list, insights: dict) -> list:
         persistent_text = "暂无反复问题"
 
     system_prompt = (
-        "你是漏洞哨兵 11-S 的安全顾问，一位简洁专业的中文安全工程师。\n"
+        "你是Vuln Sentinel 的安全顾问，一位简洁专业的中文安全工程师。\n"
         f"用户统计：已扫描 {insights.get('total_scans', 0)} 次，"
         f"预测下次评分 {insights.get('predicted_next_score', '暂无')}。\n"
         f"{persistent_text}\n"
@@ -11137,7 +11139,7 @@ async def _call_llm(messages: list) -> str:
         "temperature": 0.3,
         "max_tokens": 600,
     }
-    # 11-S：LLM 请求也尊重 TLS_VERIFY 设置
+    # Vuln Sentinel：LLM 请求也尊重 TLS_VERIFY 设置
     _tls_off = os.environ.get("TLS_VERIFY", "true").strip().lower() in (
         "0",
         "false",
@@ -11199,7 +11201,7 @@ def _build_ai_advisor_llm_prompt(
 ) -> list:
     """为 AI 顾问构建 LLM prompt：系统提示 + 上下文 + 用户问题"""
     system_parts = [
-        "你是漏洞哨兵安全顾问，帮助用户理解和修复 Web 安全问题。",
+        "你是Vuln Sentinel安全顾问，帮助用户理解和修复 Web 安全问题。",
         "回答时请遵循以下结构：",
         "1. 结论：用一句话给出核心观点",
         "2. 详细解释：说明原理、风险场景",
@@ -11262,7 +11264,7 @@ def _build_ai_advisor_llm_prompt(
 @app.post("/api/ai/chat")
 async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> dict:
     """
-    11-S 进化端点：AI 顾问对话（带会话记忆）
+    Vuln Sentinel 进化端点：AI 顾问对话（带会话记忆）
     - 记住用户上次问了什么、修复进度
     - 基于用户历史给出个性化建议
     """
@@ -11340,7 +11342,7 @@ async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> 
             )
         elif any(k in user_msg for k in ["你好", "hi", "hello", "你是"]):
             response_text = (
-                f"👋 你好 {user['username']}！我是漏洞哨兵 11-S 智能顾问。\n\n"
+                f"👋 你好 {user['username']}！我是Vuln Sentinel 智能顾问。\n\n"
                 f"📊 你已扫描 {insights['total_scans']} 次\n"
                 f"🔄 {len(persistent)} 个反复问题\n"
                 f"📈 预测评分: {insights.get('predicted_next_score', 'N/A')}\n\n"
@@ -11385,7 +11387,7 @@ async def api_ai_chat(request: Request, user: dict = Depends(require_login)) -> 
 
 
 # ============================================================
-# 11-S 进化模块 4：协作 — 团队、角色、评论
+# Vuln Sentinel 进化模块 4：协作 — 团队、角色、评论
 # ============================================================
 def _init_team_tables():
     conn = get_db()
@@ -11422,14 +11424,14 @@ def _init_team_tables():
 try:
     _init_team_tables()
 except Exception as e:
-    print(f"[11-S] team tables init warning: {e}")
+    print(f"[Vuln Sentinel] team tables init warning: {e}")
 
 
 @app.post("/api/teams")
 async def api_create_team(
     request: Request, user: dict = Depends(require_login)
 ) -> dict:
-    """11-S 进化端点：创建团队"""
+    """Vuln Sentinel 进化端点：创建团队"""
     try:
         body = await request.json()
     except Exception:
@@ -11464,7 +11466,7 @@ async def api_create_team(
 async def api_add_comment(
     scan_id: int, request: Request, user: dict = Depends(require_login)
 ) -> dict:
-    """11-S 进化端点：给扫描报告添加评论（团队协作）"""
+    """Vuln Sentinel 进化端点：给扫描报告添加评论（团队协作）"""
     try:
         body = await request.json()
     except Exception:
@@ -11492,7 +11494,7 @@ async def api_add_comment(
 
 @app.get("/api/scans/{scan_id}/comments")
 async def api_list_comments(scan_id: int, user: dict = Depends(require_login)) -> dict:
-    """11-S 进化端点：列出扫描报告的所有评论"""
+    """Vuln Sentinel 进化端点：列出扫描报告的所有评论"""
     conn = get_db()
     try:
         rows = conn.execute(
@@ -11511,11 +11513,11 @@ async def api_list_comments(scan_id: int, user: dict = Depends(require_login)) -
 
 
 # ============================================================
-# 11-S 进化模块 5：综合仪表盘
+# Vuln Sentinel 进化模块 5：综合仪表盘
 # ============================================================
 @app.get("/api/evolution/dashboard")
 async def api_evolution_dashboard(user: dict = Depends(require_login)) -> dict:
-    """11-S 进化端点：综合仪表盘（学习+监控+协作+AI 一次全看）"""
+    """Vuln Sentinel 进化端点：综合仪表盘（学习+监控+协作+AI 一次全看）"""
     insights = _learn_from_user_history(user["user_id"])
     conn = get_db()
     try:
@@ -11564,7 +11566,7 @@ async def api_evolution_dashboard(user: dict = Depends(require_login)) -> dict:
 
 
 # ============================================================
-# 11-S 进化模块 5：自动巡检 — 定时回扫所有监控项
+# Vuln Sentinel 进化模块 5：自动巡检 — 定时回扫所有监控项
 # ============================================================
 
 
@@ -11707,7 +11709,7 @@ def _write_patrol_alert(
 
 
 # ============================================================
-# 11-S AI 顾问增强：LLM 配置端点
+# Vuln Sentinel AI 顾问增强：LLM 配置端点
 # ============================================================
 
 
@@ -11987,7 +11989,7 @@ async def api_report(
         else []
     )
     fixes = json.loads(scan["fixes_json"]) if scan.get("fixes_json") else {}
-    # 11-S：OWASP Top 10 完整覆盖（根据 findings 动态计算）
+    # Vuln Sentinel：OWASP Top 10 完整覆盖（根据 findings 动态计算）
     owasp_all = [
         {
             "category": "A01 访问控制失效",
@@ -12120,7 +12122,7 @@ async def api_src_report_export(
         "risk_level": scan["risk_level"],
         "findings": findings,
         "scan_duration_ms": details.get("duration_ms", 0),
-        "scanner_version": "v11-s-vuln-sentinel/11-S",
+        "scanner_version": "v11-s-vuln-sentinel/Vuln Sentinel",
         "raw_headers": details.get("raw_headers", {}),
         "ssl_info": details.get("ssl_info", {}),
         "summary": scan.get("summary", {}),
@@ -12294,7 +12296,7 @@ async def api_public_config() -> dict:
             "stripe_enabled": bool(stripe_pub),
             "stripe_publishable_key": stripe_pub,
             "public_base_url": os.environ.get("PUBLIC_BASE_URL", ""),
-            "public_demo_enabled": os.environ.get("PUBLIC_DEMO_ENABLED", "1") == "1",
+            "public_demo_enabled": os.environ.get("PUBLIC_DEMO_ENABLED", "0") == "1",
             "free_trial_enabled": os.environ.get("FREE_TRIAL_ENABLED", "1") == "1",
             "alipay_enabled": bool(os.environ.get("ALIPAY_APP_ID", "")),
             "wechat_enabled": bool(os.environ.get("WECHAT_MCH_ID", "")),
@@ -14738,7 +14740,7 @@ _AI_TOOL_KB = {
 
 # ---------- 通用回复 ----------
 _AI_GENERAL_REPLIES = {
-    "greeting": "你好呀！我是漏洞哨兵的安全顾问 🛡️\n\n我可以帮你：\n- 🔍 解释安全概念和漏洞原理\n- 🛠 给出具体的修复代码（多平台）\n- ✅ 告诉你怎么验证修复效果\n- 📊 分析你的扫描报告和扣分原因\n- 🎯 给出修复优先级建议\n\n直接问我就行，比如：\n- 「HSTS 是什么？」\n- 「CSP 怎么配置？」\n- 「SQL 注入怎么防？」\n- 「我应该先修什么？」",
+    "greeting": "你好呀！我是Vuln Sentinel的安全顾问 🛡️\n\n我可以帮你：\n- 🔍 解释安全概念和漏洞原理\n- 🛠 给出具体的修复代码（多平台）\n- ✅ 告诉你怎么验证修复效果\n- 📊 分析你的扫描报告和扣分原因\n- 🎯 给出修复优先级建议\n\n直接问我就行，比如：\n- 「HSTS 是什么？」\n- 「CSP 怎么配置？」\n- 「SQL 注入怎么防？」\n- 「我应该先修什么？」",
     "thanks": "不客气！能帮到你我很开心 😊\n\n安全是一场持久战，不是一劳永逸的事情。修完问题后记得定期扫描，保持网站的安全状态。\n\n有任何安全问题随时问我，也欢迎你把工具推荐给朋友～",
     "fallback": "我还在学习中，暂时不太理解你的问题 🤔\n\n你可以试试这样问：\n- 「HSTS 是什么？怎么修复？」\n- 「XSS 漏洞怎么防？」\n- 「我应该先修什么问题？」\n- 「评分规则是什么？」\n- 「怎么扫描网站？」\n\n或者告诉我你想了解哪方面的安全知识，我来给你推荐～",
 }
@@ -15282,7 +15284,7 @@ def _ai_resolve_reference(msg: str, history: list) -> str:
 async def ai_advisor(
     req: AIAdvisorRequest, request: Request, user=Depends(get_current_user)
 ):
-    """11-S 升级版 AI 安全顾问：智能匹配 + 上下文感知 + 多轮对话"""
+    """Vuln Sentinel 升级版 AI 安全顾问：智能匹配 + 上下文感知 + 多轮对话"""
     client_ip = get_client_ip(request)
     if not await limiter_ai.is_allowed(client_ip):
         raise HTTPException(
@@ -15660,7 +15662,7 @@ async def api_scan_asset(
         raise HTTPException(404, "资产不存在或无权限")
     domain = asset["domain"]
     url = "https://" + domain
-    # 11-S fix: SSRF 防护 - 确保资产域名不是内网地址
+    # Vuln Sentinel fix: SSRF 防护 - 确保资产域名不是内网地址
     try:
         sanitize_url(url)
     except ValueError as e:
@@ -15725,7 +15727,7 @@ def _build_frontend_config_script() -> str:
         "stripe_publishable_key": os.environ.get("STRIPE_PUBLISHABLE_KEY", ""),
         "stripe_enabled": bool(os.environ.get("STRIPE_SECRET_KEY", "")),
         "public_base_url": os.environ.get("PUBLIC_BASE_URL", ""),
-        "public_demo_enabled": os.environ.get("PUBLIC_DEMO_ENABLED", "1") == "1",
+        "public_demo_enabled": os.environ.get("PUBLIC_DEMO_ENABLED", "0") == "1",
         "free_trial_enabled": os.environ.get("FREE_TRIAL_ENABLED", "1") == "1",
         "alipay_enabled": bool(os.environ.get("ALIPAY_APP_ID", "")),
         "wechat_enabled": bool(os.environ.get("WECHAT_MCH_ID", "")),
@@ -15736,9 +15738,11 @@ def _build_frontend_config_script() -> str:
 
 @app.get("/")
 async def index() -> HTMLResponse:
-    static_index = os.path.join(STATIC_DIR, "index.html")
-    fallback_index = os.path.join(_BASE_DIR, "frontend", "dist", "index.html")
-    for path in (static_index, fallback_index):
+    preferred_indexes = [
+        os.path.join(_BASE_DIR, "frontend", "dist", "index.html"),
+        os.path.join(STATIC_DIR, "index.html"),
+    ]
+    for path in preferred_indexes:
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 html = f.read()
@@ -15753,8 +15757,8 @@ async def index() -> HTMLResponse:
     fallback_html = (
         '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
-        '<title>漏洞哨兵</title></head><body><div id="app"></div>'
-        '<script>document.body.innerHTML="<div style=\"padding:24px;font-size:18px;font-family:sans-serif\">漏洞哨兵正在准备界面，请稍候…</div>";</script>'
+        '<title>Vuln Sentinel</title></head><body><div id="app"></div>'
+        '<script>document.body.innerHTML="<div style=\"padding:24px;font-size:18px;font-family:sans-serif\">Vuln Sentinel正在准备界面，请稍候…</div>";</script>'
         '</body></html>'
     )
     return HTMLResponse(content=fallback_html)
@@ -15867,7 +15871,7 @@ def _demo_nginx_apply_security_headers() -> tuple[bool, str]:
 
             # 安全头修复块（使用正确的缩进）
             security_headers_block = """
-            # ===== VulnSentinel 11-S 应用修复配置：安全响应头 =====
+            # ===== VulnSentinel Vuln Sentinel 应用修复配置：安全响应头 =====
             add_header X-Frame-Options "SAMEORIGIN" always;
             add_header X-Content-Type-Options "nosniff" always;
             add_header Content-Security-Policy "default-src 'self'" always;
@@ -16330,7 +16334,7 @@ async def catch_all(path: str) -> Any:
     try:
         base = Path(STATIC_DIR).resolve()
         fp = (base / path).resolve()
-        # 11-S fix: is_file() 在路径过长时会抛出 OSError(Errno 36)，
+        # Vuln Sentinel fix: is_file() 在路径过长时会抛出 OSError(Errno 36)，
         # 同时 is_relative_to 也需要捕获异常，避免返回 500
         if not fp.is_relative_to(base):
             # 解析后路径已逃出静态目录 → 拒绝
@@ -16347,3 +16351,7 @@ if __name__ == "__main__":
 
     logger.info("Server starting on :%s", settings.port)
     uvicorn.run("main:app", host=settings.host, port=settings.port, reload=False)
+
+
+
+

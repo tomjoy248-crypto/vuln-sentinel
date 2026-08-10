@@ -27,8 +27,8 @@ def test_settings_app_version_is_11_s():
 
 
 def test_settings_app_title_is_v11_5():
-    """Settings.app_title 应为 漏洞哨兵 11-S"""
-    assert M.settings.app_title == "漏洞哨兵 11-S"
+    """Settings.app_title 应为 Vuln Sentinel"""
+    assert M.settings.app_title == "Vuln Sentinel"
 
 
 def test_api_version_endpoint_returns_11_s():
@@ -55,12 +55,12 @@ def test_health_endpoint_works():
 def test_index_html_title_is_v11_5():
     """生产环境入口 static/index.html 标题保持 11-S"""
     html = open(str(ROOT / "static/index.html")).read()
-    assert "<title>漏洞哨兵 11-S" in html
+    assert "<title>Vuln Sentinel" in html
 
 
 def test_index_html_meta_description_is_v11_5():
     html = open(str(ROOT / "static/index.html")).read()
-    assert 'name="description" content="漏洞哨兵 11-S' in html
+    assert 'name="description" content="Vuln Sentinel' in html
 
 
 def test_frontend_source_has_11_s_strings():
@@ -68,7 +68,7 @@ def test_frontend_source_has_11_s_strings():
     main_js = (ROOT / "frontend/src/main.js").read_text(encoding="utf-8")
     templates_js = (ROOT / "frontend/src/templates.js").read_text(encoding="utf-8")
     # AI 顾问话术
-    assert "我是漏洞哨兵 11-S" in main_js
+    assert "我是Vuln Sentinel" in main_js
     # 扫描深度档位还在
     assert "scan-depth-opt" in templates_js
 
@@ -118,3 +118,4 @@ def test_v115_has_ai_advisor_optimization():
     assert "WQY MicroHei" in css
     # 扫描深度档位修复还在
     assert "scan-depth-opt" in templates_js
+

@@ -1,4 +1,4 @@
-"""漏洞哨兵 11-S - 常量定义模块"""
+"""Vuln Sentinel - 常量定义模块"""
 
 import ipaddress
 import os
@@ -260,3 +260,4 @@ CMD_EXEC_SIGNATURES: list[str] = [
     "vuln_sentinel_cmdi",
 ]
 DESER_SIGNATURES: list[str] = ["rO0AB", "H4sIAAAAAAAA", "aced", "aced00", "ro0"]
+

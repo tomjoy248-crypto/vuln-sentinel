@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ==========================================
-echo  漏洞哨兵 11-S - 一键提交到 GitHub
+echo  Vuln Sentinel - 一键提交到 GitHub
 echo ==========================================
 echo.
 
@@ -73,3 +73,4 @@ echo 3. 点击 Manual Deploy → Deploy latest commit
 echo 4. 等待 3-5 分钟，状态变 Live
 echo.
 pause
+

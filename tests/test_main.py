@@ -269,7 +269,7 @@ def test_version():
 def test_index_html_served():
     r = client.get("/")
     assert r.status_code == 200
-    assert "漏洞哨兵" in r.text
+    assert "Vuln Sentinel" in r.text
     # 11-S 标题校验
     assert "11-S" in r.text
 
@@ -1596,4 +1596,5 @@ def test_cross_validate_cors():
         assert cv["verified"] is False
     finally:
         main.get_httpx_client = orig_get_client
+
 

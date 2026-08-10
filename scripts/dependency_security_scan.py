@@ -88,7 +88,7 @@ def _check_requirements_syntax() -> tuple[bool, str]:
 
 def main() -> int:
     """执行依赖安全扫描。"""
-    _emit("漏洞哨兵 11-S 依赖安全扫描\n")
+    _emit("Vuln Sentinel 依赖安全扫描\n")
 
     if not REQUIREMENTS.exists():
         _emit(f"✗ [FAIL] 未找到 {REQUIREMENTS}")
@@ -112,3 +112,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

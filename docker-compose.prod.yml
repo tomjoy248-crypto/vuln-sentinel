@@ -1,6 +1,6 @@
 version: "3.8"
 
-# 漏洞哨兵 11-S - 生产环境编排
+# Vuln Sentinel - 生产环境编排
 # 前置条件：
 #   1. 复制 .env.example 为 .env 并填写真实值（JWT_SECRET、ALLOWED_ORIGINS、SENTRY_DSN 等）
 #   2. 确保 .env 中 ENV=production / PRODUCTION=1
@@ -85,3 +85,4 @@ volumes:
   vuln-sentinel-data:
   vuln-sentinel-postgres:
   vuln-sentinel-redis:
+

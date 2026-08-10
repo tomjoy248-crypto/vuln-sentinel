@@ -1,4 +1,4 @@
-"""漏洞哨兵 11-S 应用包。
+"""Vuln Sentinel 应用包。
 
 提供模块化基础设施：
 - app.core.config: 统一配置管理
@@ -9,3 +9,4 @@
 - app.metrics: Prometheus 指标暴露
 - app.middleware: request_id 中间件
 """
+

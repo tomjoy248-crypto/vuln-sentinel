@@ -48,7 +48,7 @@
 - Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 
 
-所有对漏洞哨兵有意义的变更都会记录在此文件。
+所有对Vuln Sentinel有意义的变更都会记录在此文件。
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
@@ -172,3 +172,4 @@
 ## [V11.3] 及更早
 
 见 git history。
+

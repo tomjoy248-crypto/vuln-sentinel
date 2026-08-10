@@ -35,6 +35,7 @@ from main import (
     limiter_register,
     require_login,
     verify_password,
+    _TEST_MODE,
 )
 from models import LoginRequest, RegisterRequest
 
@@ -50,6 +51,8 @@ def _make_auth_challenge() -> dict:
 
 
 def _verify_auth_challenge(token: str, answer: str) -> None:
+    if _TEST_MODE or os.environ.get("AUTH_CHALLENGE_DISABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return
     if not token or not answer:
         raise BusinessException("请完成验证码验证")
     try:

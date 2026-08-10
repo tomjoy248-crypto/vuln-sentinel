@@ -1,4 +1,4 @@
-# 漏洞哨兵 11-S - 生产环境 Dockerfile（多阶段构建）
+# Vuln Sentinel - 生产环境 Dockerfile（多阶段构建）
 #
 # 构建：docker build -t vuln-sentinel .
 # 运行：docker run -p 8000:8000 -e JWT_SECRET=xxx vuln-sentinel
@@ -63,3 +63,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 
 # 生产环境使用 Gunicorn + Uvicorn Worker
 CMD ["sh", "-c", "gunicorn main:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8000} --access-logfile - --error-logfile -"]
+

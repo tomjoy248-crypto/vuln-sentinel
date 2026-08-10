@@ -440,7 +440,7 @@ def test_export_to_sarif_basic_structure():
     assert report["$schema"].endswith("sarif-schema-2.1.0.json")
     assert len(report["runs"]) == 1
     run = report["runs"][0]
-    assert run["tool"]["driver"]["name"] == "漏洞哨兵 11-S"
+    assert run["tool"]["driver"]["name"] == "Vuln Sentinel"
     assert run["tool"]["driver"]["version"] == "11-S"
     assert len(run["results"]) == 1
     assert run["invocations"][0]["executionSuccessful"] is True
@@ -605,7 +605,7 @@ def test_import_from_sarif_round_trip():
     assert finding["type"] == "sql_injection"
     assert finding["confidence_level"] == "高"
     assert finding["source"] == "sarif_import"
-    assert finding["source_tool"] == "漏洞哨兵 11-S"
+    assert finding["source_tool"] == "Vuln Sentinel"
     assert finding["evidence"] == {"payload": "' OR 1=1--", "matched": True}
 
 
@@ -1469,3 +1469,4 @@ def test_check_db_health_false_on_error(monkeypatch):
     monkeypatch.setattr(session, "_db_path", "/nonexistent_dir_xyz/test.db")
     monkeypatch.setattr(session, "_database_url", "")
     assert session.check_db_health() is False
+

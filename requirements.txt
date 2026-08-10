@@ -1,4 +1,4 @@
-# 漏洞哨兵 11-S - Python 依赖
+# Vuln Sentinel - Python 依赖
 # 安装：pip install -r requirements.txt
 
 # Web 框架
@@ -67,4 +67,5 @@ pytest-asyncio>=0.23
 # 代码质量检查（开发用）
 ruff>=0.4
 bandit>=1.7
+
 

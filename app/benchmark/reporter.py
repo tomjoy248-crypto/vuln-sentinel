@@ -271,7 +271,7 @@ def _render_header(report: BenchmarkReport) -> str:
 
     return f"""
     <div class="card">
-      <h1>漏洞哨兵 11-S · 已知漏洞靶场基准对比报告</h1>
+      <h1>Vuln Sentinel · 已知漏洞靶场基准对比报告</h1>
       <div class="subtitle">生成时间：{_esc(generated)} ｜
         目标数：{report.total_targets} ｜ 成功扫描：{report.successful_targets} ｜
         扫描模式：{'深度' if False else '标准'}（见各目标详情）</div>
@@ -603,14 +603,14 @@ def generate_html_report(report: BenchmarkReport) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>漏洞哨兵 11-S · 已知漏洞靶场基准对比报告</title>
+<title>Vuln Sentinel · 已知漏洞靶场基准对比报告</title>
 <style>{_INLINE_CSS}</style>
 </head>
 <body>
 <div class="container">
 {''.join(body)}
 <div class="card" style="text-align:center;color:#94a3b8;font-size:12px">
-  漏洞哨兵 11-S 基准对比系统 ｜ 生成于 {_esc(generated)}<br>
+  Vuln Sentinel 基准对比系统 ｜ 生成于 {_esc(generated)}<br>
   注：真实靶场的安全配置可能随时间变化，结果应结合时间戳解读。
 </div>
 </div>
@@ -623,3 +623,4 @@ def generate_json_report(report: BenchmarkReport) -> str:
     import json
 
     return json.dumps(report.to_dict(), ensure_ascii=False, indent=2)
+

@@ -44,7 +44,7 @@ def test_auto_fix_generates_correct_nginx_config():
     assert "Strict-Transport-Security" in patch
     assert "Content-Security-Policy" in patch
     assert "X-Frame-Options" in patch
-    assert "漏洞哨兵" in patch
+    assert "Vuln Sentinel" in patch
     assert "add_header" in patch
 
 
@@ -168,3 +168,4 @@ def test_ssh_execute_safety():
     except Exception as e:
         # 其他网络异常也算
         assert "失败" in str(e) or "connect" in str(e).lower() or "refused" in str(e).lower() or "timed out" in str(e).lower()
+

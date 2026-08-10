@@ -30,8 +30,8 @@ class AppSettings(BaseSettings):
     )
 
     # --- 基础信息 ---
-    app_title: str = "漏洞哨兵 11-S"
-    app_version: str = "11-S"
+    app_title: str = "Vuln Sentinel"
+    app_version: str = "1.0.0"
     build_time: str = "2026-06-25"
     port: int = 8000
     host: str = "0.0.0.0"  # nosec B104 - 默认监听所有接口，生产环境可通过环境变量覆盖
@@ -80,8 +80,10 @@ class AppSettings(BaseSettings):
     # --- 生产级新增配置 ---
     database_url: str = Field(
         default="",
-        description="数据库连接 URL。留空则使用 db_dir + db_name 的 SQLite 路径。"
-        "示例: postgresql://user:pass@localhost:5432/vuln_sentinel",
+        description=(
+            "数据库连接 URL。留空则使用 db_dir + db_name 的 SQLite 路径。"
+            "示例: postgresql://user:pass@localhost:5432/vuln_sentinel"
+        ),
     )
     redis_url: str = Field(
         default="",
@@ -140,9 +142,7 @@ def validate_production_config(settings: AppSettings) -> None:
         return
 
     if not settings.jwt_secret or len(settings.jwt_secret) < 32:
-        raise RuntimeError(
-            "生产环境必须设置 JWT_SECRET 环境变量，且长度不少于 32 字符。"
-        )
+        raise RuntimeError("生产环境必须设置 JWT_SECRET 环境变量，且长度不少于 32 字符。")
 
     from utils import parse_cors_origins
 
@@ -171,6 +171,12 @@ def validate_production_config(settings: AppSettings) -> None:
     if os.environ.get("DISABLE_API_DOCS", "").strip().lower() not in {"1", "true", "yes"}:
         raise RuntimeError("生产环境建议设置 DISABLE_API_DOCS=1。")
 
-    metrics_public = os.environ.get("METRICS_PUBLIC", "").strip().lower() in {"1", "true", "yes", "on"}
+    metrics_public = os.environ.get("METRICS_PUBLIC", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     if settings.enable_metrics and not metrics_public and not os.environ.get("METRICS_AUTH_TOKEN", "").strip():
         raise RuntimeError("生产环境启用 /metrics 时应配置 METRICS_AUTH_TOKEN 或关闭公开暴露。")
+

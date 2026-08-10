@@ -97,7 +97,7 @@ def _verification_html(verify_link: str) -> str:
 <body style="font-family:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;color:#333;max-width:560px;margin:0 auto;padding:24px;">
   <h2 style="color:#1a73e8;">验证你的邮箱地址</h2>
   <p>你好！</p>
-  <p>你正在为<strong>漏洞哨兵（Vuln Sentinel）</strong>账号绑定邮箱，请点击下方按钮完成邮箱验证：</p>
+  <p>你正在为<strong>Vuln Sentinel（Vuln Sentinel）</strong>账号绑定邮箱，请点击下方按钮完成邮箱验证：</p>
   <p style="margin:24px 0;">
     <a href="{verify_link}" style="display:inline-block;background:#1a73e8;color:#fff;text-decoration:none;padding:12px 28px;border-radius:6px;font-weight:600;">立即验证邮箱</a>
   </p>
@@ -105,7 +105,7 @@ def _verification_html(verify_link: str) -> str:
   <p style="word-break:break-all;color:#1a73e8;">{verify_link}</p>
   <p style="color:#999;font-size:13px;">该验证链接有效期为 24 小时。如果你没有发起此操作，请忽略本邮件。</p>
   <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
-  <p style="color:#999;font-size:12px;">漏洞哨兵 Vuln Sentinel · 安全扫描平台</p>
+  <p style="color:#999;font-size:12px;">Vuln Sentinel Vuln Sentinel · 安全扫描平台</p>
 </body>
 </html>"""
 
@@ -118,7 +118,7 @@ def _password_reset_html(reset_link: str) -> str:
 <body style="font-family:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;color:#333;max-width:560px;margin:0 auto;padding:24px;">
   <h2 style="color:#d93025;">重置你的密码</h2>
   <p>你好！</p>
-  <p>我们收到了你在<strong>漏洞哨兵（Vuln Sentinel）</strong>重置密码的请求，请点击下方按钮设置新密码：</p>
+  <p>我们收到了你在<strong>Vuln Sentinel（Vuln Sentinel）</strong>重置密码的请求，请点击下方按钮设置新密码：</p>
   <p style="margin:24px 0;">
     <a href="{reset_link}" style="display:inline-block;background:#d93025;color:#fff;text-decoration:none;padding:12px 28px;border-radius:6px;font-weight:600;">重置密码</a>
   </p>
@@ -126,7 +126,7 @@ def _password_reset_html(reset_link: str) -> str:
   <p style="word-break:break-all;color:#d93025;">{reset_link}</p>
   <p style="color:#999;font-size:13px;">该重置链接有效期为 30 分钟，过期后需重新申请。如果你没有发起此操作，请忽略本邮件，你的密码不会被修改。</p>
   <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
-  <p style="color:#999;font-size:12px;">漏洞哨兵 Vuln Sentinel · 安全扫描平台</p>
+  <p style="color:#999;font-size:12px;">Vuln Sentinel Vuln Sentinel · 安全扫描平台</p>
 </body>
 </html>"""
 
@@ -147,7 +147,7 @@ def send_verification_email(user_email: str, token: str, base_url: str) -> bool:
     base = (base_url or "").rstrip("/")
     verify_link = f"{base}/verify-email?token={token}"
     html = _verification_html(verify_link)
-    return _send_email(user_email, "【漏洞哨兵】邮箱验证", html)
+    return _send_email(user_email, "【Vuln Sentinel】邮箱验证", html)
 
 
 def send_password_reset_email(user_email: str, token: str, base_url: str) -> bool:
@@ -166,4 +166,5 @@ def send_password_reset_email(user_email: str, token: str, base_url: str) -> boo
     base = (base_url or "").rstrip("/")
     reset_link = f"{base}/reset-password?token={token}"
     html = _password_reset_html(reset_link)
-    return _send_email(user_email, "【漏洞哨兵】密码重置", html)
+    return _send_email(user_email, "【Vuln Sentinel】密码重置", html)
+

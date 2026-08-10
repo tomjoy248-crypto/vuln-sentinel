@@ -1,4 +1,4 @@
-"""漏洞哨兵 11-S - 数据模型模块"""
+"""Vuln Sentinel - 数据模型模块"""
 
 from typing import Any
 
@@ -382,3 +382,4 @@ class CreateOrderRequest(BaseModel):
     provider: str = Field(default="mock", pattern="^(mock|stripe|alipay|wechat)$", description="支付渠道")
     success_url: str | None = Field(default=None, max_length=500, description="支付成功跳转地址")
     cancel_url: str | None = Field(default=None, max_length=500, description="支付取消跳转地址")
+

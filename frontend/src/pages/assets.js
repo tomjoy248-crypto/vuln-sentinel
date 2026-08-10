@@ -100,7 +100,7 @@ export function renderAssets(assets) {
   assets.forEach(function(a) {
     let verified = a.verified || false;
     let badgeClass = verified ? 'verified' : 'pending';
-    let badgeText = verified ? '已验证' : '待验证';
+    let badgeText = verified ? '已验证' : '待人工复核';
     let score = a.score;
     let scoreClass = 'high';
     if (score === null || score === undefined) {
@@ -216,3 +216,4 @@ export function scanAsset(assetId, domain) {
   if (window.navigateTo) window.navigateTo('scan');
   if (window.startScanDirect) window.startScanDirect();
 }
+

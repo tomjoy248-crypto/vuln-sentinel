@@ -130,12 +130,12 @@ function renderQualityPanel(quality, dedupStats) {
             <span class="src-quality-bar-val">${depth}</span>
           </div>
         </div>
-        <button class="src-quality-expand" id="src-quality-expand-btn">查看明细</button>
+        <button class="src-quality-expand" id="src-quality-expand-btn">展开</button>
       </div>
       <div class="src-quality-detail" id="src-quality-detail" style="display:none">
         <div class="src-quality-grid">
           <div class="src-quality-section">
-            <div class="src-quality-section-title">覆盖面说明</div>
+            <div class="src-quality-section-title">覆盖说明</div>
             <div class="src-quality-section-body">
               <div class="src-quality-kv"><span>检测漏洞类型</span><code>${typesDetected.length} 种</code></div>
               <div class="src-quality-kv"><span>类型列表</span><code>${escapeHtml(typesDetected.join(', ') || '-')}</code></div>
@@ -143,20 +143,20 @@ function renderQualityPanel(quality, dedupStats) {
             </div>
           </div>
           <div class="src-quality-section">
-            <div class="src-quality-section-title">结果可信度与复核</div>
+            <div class="src-quality-section-title">可信度与复核</div>
             <div class="src-quality-section-body">
               <div class="src-quality-kv"><span>误报率</span><code>${fpRate}</code></div>
               <div class="src-quality-kv"><span>高置信度比例</span><code>${highConfRate}</code></div>
-              <div class="src-quality-kv"><span>待人工复核数</span><code>${reliabilityBreakdown.fp_count || 0}</code></div>
+              <div class="src-quality-kv"><span>待复核数</span><code>${reliabilityBreakdown.fp_count || 0}</code></div>
               <div class="src-quality-kv"><span>高置信度数</span><code>${reliabilityBreakdown.high_confidence_count || 0}</code></div>
-              <div class="src-quality-kv"><span>已验证数</span><code>${coverageBreakdown.confirmed_count || 0}</code></div>
+              <div class="src-quality-kv"><span>确认数</span><code>${coverageBreakdown.confirmed_count || 0}</code></div>
             </div>
           </div>
         </div>
         ${dedupHtml}
         ${recommendations.length > 0 ? `
           <div class="src-quality-recommendations">
-            <div class="src-quality-section-title">交付建议</div>
+            <div class="src-quality-section-title">建议</div>
             <ul class="src-quality-rec-list">
               ${recommendations.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
             </ul>
@@ -176,7 +176,7 @@ function bindQualityPanelEvents() {
     if (e.target === btn) return;
     const visible = detail.style.display !== 'none';
     detail.style.display = visible ? 'none' : 'block';
-    btn.textContent = visible ? '查看明细' : '收起明细';
+    btn.textContent = visible ? '查看明细' : '收起';
   });
   btn.addEventListener('click', function(e) {
     e.stopPropagation();
@@ -230,7 +230,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
   const vBadge = vStats.enabled
     ? `<span class="meta-item verification-badge">
         <span class="v-confirmed" title="已验证">${vStats.confirmed || 0}</span>
-        <span class="v-probable" title="待确认">${vStats.probable || 0}</span>
+        <span class="v-probable" title="可疑">${vStats.probable || 0}</span>
         <span class="v-suspected" title="待人工复核">${vStats.suspected || 0}</span>
        </span>`
     : '';
@@ -248,10 +248,10 @@ function renderHeader(score, riskLevel, summary, url, data) {
     : mediumCount > 0
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
-  const reportSummary = '本次扫描共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
-  const reportIntro = '本报告面向客户交付、上线前验收和复扫留档，突出已验证问题、待复核风险与待人工复核项，并可直接作为交付附件、复测记录和修复跟踪底稿。';
+  const reportSummary = '共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
+  const reportIntro = '本报告用于复测、留档和交付。';
   const actionHint = data.scan_id
-    ? '<div class="src-report-action-hint src-report-action-hint-alert">建议优先处理“已验证”和“待人工复核”项；待人工复核通常表示证据不足或环境干扰，请先复核后再进入工单。</div>'
+    ? '<div class="src-report-action-hint src-report-action-hint-alert">优先处理已确认和待复核项。</div>'
     : '';
 
   return `
@@ -287,15 +287,15 @@ function renderHeader(score, riskLevel, summary, url, data) {
         <div class="src-report-summary">${escapeHtml(reportSummary)}</div>
         <div class="src-report-intro">${escapeHtml(reportIntro)}</div>
         <div class="src-report-exec-summary">
-          <div class="src-report-exec-title">客户摘要</div>
-          <div class="src-report-exec-text">本次结果已按风险优先级、验证状态和可信度整理，便于直接确认需要修复的问题、待人工复核项和疑似误报项。建议先关闭高危与已验证项，再复测中低风险项并保留证据链，适合作为客户沟通与交付附件。</div>
+          <div class="src-report-exec-title">概览</div>
+          <div class="src-report-exec-text">结果已按风险、验证状态和可信度整理，可直接用于确认修复优先级、复测范围和交付附件。</div>
         </div>
         <div class="src-report-next-step">
-          <div class="src-report-next-step-title">交付建议</div>
-          <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已自动识别 ' + fpCount + ' 项潜在误报，系统默认优先显示更可信的结果。' : ''}</div>
+          <div class="src-report-next-step-title">建议</div>
+          <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已识别 ' + fpCount + ' 项可疑结果，默认优先显示可信项。' : ''}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-            <button class="src-filter-btn" onclick="navigateTo('tickets')">去工单</button>
-            <button class="src-filter-btn" onclick="navigateTo('fixer')">去修复器</button>
+            <button class="src-filter-btn" onclick="navigateTo('tickets')">工单</button>
+            <button class="src-filter-btn" onclick="navigateTo('fixer')">修复</button>
           </div>
           ${actionHint}
         </div>
@@ -307,13 +307,13 @@ function renderHeader(score, riskLevel, summary, url, data) {
 function renderFindingList(findings, selectedIndex) {
   let visibleFindings = _hideLikelyFp ? findings.filter((item) => !item.is_likely_fp) : findings;
   let hiddenCount = findings.length - visibleFindings.length;
-  let html = '<div class="src-list-header">漏洞列表 <span class="src-list-count">' + visibleFindings.length + '</span>';
+  let html = '<div class="src-list-header">结果列表 <span class="src-list-count">' + visibleFindings.length + '</span>';
   html += '<button class="src-filter-btn" data-action="toggle-fp-filter" title="切换可疑项显示">' + (_hideLikelyFp ? '显示全部' : '优先可信项') + '</button>';
   if (hiddenCount > 0) html += '<span class="src-filter-note">已隐藏 ' + hiddenCount + ' 项</span>';
   html += '</div>';
   html += '<div class="src-list-items">';
   if (findings.length === 0) {
-    html += '<div class="src-empty">' + (_hideLikelyFp ? '当前筛选下没有结果' : '未发现漏洞') + '</div>';
+    html += '<div class="src-empty">' + (_hideLikelyFp ? '筛选下没有结果' : '暂无结果') + '</div>';
   } else {
     visibleFindings.forEach((f, i) => {
       const sev = (f.severity || 'info').toLowerCase();
@@ -323,14 +323,14 @@ function renderFindingList(findings, selectedIndex) {
       const typeLabel = f.type ? `<span class="src-list-type">${escapeHtml(f.type.toUpperCase())}</span>` : '';
       const host = f.url ? new URL(f.url, window.location.href).hostname : '';
       const path = f.url ? new URL(f.url, window.location.href).pathname : '';
-      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag src-list-fp-tag-alert" title="需要人工复测">待人工复核</span>' : '';
+      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag src-list-fp-tag-alert" title="待复核">待人工复核</span>' : '';
       const corrGroup = f.correlation_group ? `<span class="src-list-corr" title="关联组 ${escapeAttr(f.correlation_group)}（${f.correlation_size || 0} 个相关）">${escapeHtml(f.correlation_group)}</span>` : '';
       const mergedCount = f.merged_count > 1 ? `<span class="src-list-merged" title="合并了 ${f.merged_count} 个重复项">×${f.merged_count}</span>` : '';
       const vStatus = f.verification_status;
       const vIcon = vStatus === 'confirmed' ? '<span class="src-list-v confirmed" title="已验证">✓</span>' :
                     vStatus === 'probable' ? '<span class="src-list-v probable" title="可能存在">?</span>' :
                     vStatus === 'suspected' ? '<span class="src-list-v suspected" title="待人工复核">!</span>' : '';
-      const fbIcon = f.user_feedback ? (f.user_feedback.is_false_positive ? '<span class="src-list-fb fp" title="您已标记为误报">误报</span>' : '<span class="src-list-fb confirmed" title="您已确认有效">确认</span>') : '';
+      const fbIcon = f.user_feedback ? (f.user_feedback.is_false_positive ? '<span class="src-list-fb fp" title="已标记误报">误报</span>' : '<span class="src-list-fb confirmed" title="已确认">确认</span>') : '';
       const rawConfidence = String(f.adjusted_confidence || f.confidence || 'medium');
       const confidenceLabel = rawConfidence === 'high' ? '高可信' : rawConfidence === 'medium' ? '中可信' : rawConfidence === 'low' ? '低可信' : rawConfidence;
       html += `
@@ -357,7 +357,7 @@ function renderFindingList(findings, selectedIndex) {
 
 function renderFindingDetail(finding, index) {
   if (!finding) {
-    return '<div class="src-empty-detail">请从左侧选择漏洞查看详情</div>';
+    return '<div class="src-empty-detail">从左侧选择一项查看证据和建议</div>';
   }
   const sev = (finding.severity || 'info').toLowerCase();
   const cls = SEVERITY_ZH_CLASS[sev] || 'info';
@@ -386,7 +386,7 @@ function renderFindingDetail(finding, index) {
       <span class="src-detail-confidence">置信度 ${escapeHtml(finding.adjusted_confidence || finding.confidence || 'medium')}</span>
       ${finding.verification_status ? `<span class="src-detail-verify-badge ${finding.verification_status}">${finding.verification_status === 'confirmed' ? '已验证' : finding.verification_status === 'probable' ? '可能存在' : '待人工复核'}</span>` : ''}
       ${finding.is_likely_fp ? '<span class="src-detail-fp-badge src-detail-fp-badge-alert">待人工复核</span>' : ''}
-      ${finding.user_feedback ? (finding.user_feedback.is_false_positive ? '<span class="src-detail-fp-badge" title="您已标记为误报">已标记误报</span>' : '<span class="src-detail-verify-badge verified" title="您已确认有效">您已确认</span>') : ''}
+      ${finding.user_feedback ? (finding.user_feedback.is_false_positive ? '<span class="src-detail-fp-badge" title="您误报">已标记误报</span>' : '<span class="src-detail-verify-badge verified" title="您已确认">您已确认</span>') : ''}
     </div>
   </div>`;
 
@@ -469,9 +469,9 @@ function renderFindingDetail(finding, index) {
 
   // 修复面板
   html += `<div class="src-detail-panel" data-panel="fix">`;
-  const fixText = finding.fix_suggestion || '暂无修复建议';
+  const fixText = finding.fix_suggestion || '暂无建议';
   const fixLines = fixText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const fixLead = fixLines[0] || '暂无修复建议';
+  const fixLead = fixLines[0] || '暂无建议';
   const fixSteps = fixLines.slice(1, 4);
   html += `<div class="src-detail-section">
     <div class="src-section-title">修复结论</div>
@@ -518,7 +518,7 @@ function renderFindingDetail(finding, index) {
       <button class="src-action-btn verify" data-action="verify" data-finding-id="${escapeAttr(finding.id || '')}" title="重新请求目标并尝试验证是否仍可复现">验证复现</button>
       <button class="src-action-btn false-positive" data-action="fp" data-finding-id="${escapeAttr(finding.id || '')}" title="如果你判断该项不是实际漏洞，可标记为误报或观察项">标记误报</button>
       <button class="src-action-btn confirm" data-action="confirm" data-finding-id="${escapeAttr(finding.id || '')}" title="如果你确认该项真实存在，可标记为有效漏洞并进入修复流程">确认有效</button>
-      <button class="src-action-btn ticket" data-action="ticket" data-finding-id="${escapeAttr(finding.id || '')}" title="将该漏洞转为修复工单并跟踪处理">创建工单</button>
+      <button class="src-action-btn ticket" data-action="ticket" data-finding-id="${escapeAttr(finding.id || '')}" title="将该漏洞转为修复工单并跟踪处理">工单</button>
     </div>`;
   }
 
@@ -568,7 +568,7 @@ function renderEvidenceSection(evidence, finding) {
     html += `</div>`;
   }
 
-  html += `<div class="src-section-title">证据摘要</div>
+  html += `<div class="src-section-title">证据</div>
     <div class="src-section-body src-evidence-meta">`;
   const confidenceState = finding.verification_status || (finding.is_likely_fp ? 'suspected' : 'probable');
   const confidenceText = confidenceState === 'confirmed' ? '已验证' : confidenceState === 'probable' ? '可能存在' : '待人工复核';
@@ -614,7 +614,7 @@ function renderEvidenceSection(evidence, finding) {
   }
 
   if (!hasRequest && !hasResponse && !hasPayload && !hasScreenshot && !hasNotes && !hasSignature) {
-    html += `<div class="src-section-title">技术证据</div>
+    html += `<div class="src-section-title">证据</div>
     <div class="src-section-body"><div class="src-no-evidence">无详细技术证据</div></div>`;
   }
 
@@ -819,7 +819,7 @@ async function onFindingAction(e) {
   }
 
   const loadingText = action === 'fp' ? '标记中...' : action === 'ticket' ? '创建中...' : '提交中...';
-  const idleText = action === 'fp' ? '标记误报' : action === 'ticket' ? '创建工单' : '确认有效';
+  const idleText = action === 'fp' ? '标记误报' : action === 'ticket' ? '工单' : '确认有效';
   btn.textContent = loadingText;
   btn.disabled = true;
   try {
@@ -832,10 +832,10 @@ async function onFindingAction(e) {
         notes: finding.fix_suggestion || finding.description || '',
       });
       if (res && res.success) {
-        showToast('工单已创建，已进入修复列表');
+        showToast('工单已创建');
         setTimeout(function () { navigateTo('tickets'); }, 300);
       } else {
-        showToast('工单创建失败：' + (res && res.error ? res.error : '未知错误'));
+        showToast('工单失败：' + (res && res.error ? res.error : '未知错误'));
       }
     } else {
       const res = await findingFeedback({
@@ -846,7 +846,7 @@ async function onFindingAction(e) {
         is_confirmed: action === 'confirm',
       });
       if (res && res.success) {
-        showToast(action === 'fp' ? '已标记为误报，后续会用于优化检测' : '已确认漏洞，已记录到反馈闭环');
+        showToast(action === 'fp' ? '误报，后续会用于优化检测' : '已确认漏洞，已记录到反馈闭环');
       } else {
         showToast('反馈提交失败：' + (res && res.error ? res.error : '未知错误'));
       }
@@ -1077,3 +1077,4 @@ export function injectSRCStyles() {
 export function init() {
   injectSRCStyles();
 }
+

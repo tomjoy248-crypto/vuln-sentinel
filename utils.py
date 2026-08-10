@@ -1,4 +1,4 @@
-"""漏洞哨兵 11-S - 工具函数模块"""
+"""Vuln Sentinel - 工具函数模块"""
 
 import ipaddress
 import logging
@@ -198,3 +198,4 @@ def _html_escape(text: str) -> str:
         .replace('"', "&quot;")
         .replace("'", "&#x27;")
     )
+

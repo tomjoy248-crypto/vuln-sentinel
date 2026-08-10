@@ -57,7 +57,7 @@ def _print_console_summary(report: object) -> None:
     matrix = report.matrix  # type: ignore[attr-defined]
     metrics = report.metrics  # type: ignore[attr-defined]
     print("\n" + "=" * 64)
-    print("漏洞哨兵 11-S · 已知漏洞靶场基准测试结果")
+    print("Vuln Sentinel · 已知漏洞靶场基准测试结果")
     print("=" * 64)
     print(f"目标总数:   {report.total_targets}")  # type: ignore[attr-defined]
     print(f"成功扫描:   {report.successful_targets}")  # type: ignore[attr-defined]
@@ -205,3 +205,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

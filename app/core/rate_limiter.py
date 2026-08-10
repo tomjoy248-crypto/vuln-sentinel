@@ -389,16 +389,22 @@ rate_limiter = create_rate_limiter()
 
 def get_client_ip(request: Request) -> str:
     """Best-effort client IP extraction with reverse-proxy support."""
-    forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
-    if forwarded_for:
-        candidate = forwarded_for.split(",", 1)[0].strip()
-        if candidate:
-            return candidate
-    forwarded = request.headers.get("X-Real-IP", "").strip()
-    if forwarded:
-        return forwarded
+    trust_proxy_headers = os.environ.get("TRUST_PROXY_HEADERS", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    if trust_proxy_headers:
+        forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
+        if forwarded_for:
+            candidate = forwarded_for.split(",", 1)[0].strip()
+            if candidate:
+                return candidate
+        forwarded = request.headers.get("X-Real-IP", "").strip()
+        if forwarded:
+            return forwarded
     return request.client.host if request.client else "unknown"
-
 
 def get_identifier(request: Request) -> str:
     """从请求中提取限流标识。

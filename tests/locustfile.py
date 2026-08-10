@@ -1,4 +1,4 @@
-"""漏洞哨兵 11-S API 负载测试。
+"""Vuln Sentinel API 负载测试。
 
 使用方法：
     pip install locust
@@ -45,3 +45,4 @@ class VulnSentinelUser(HttpUser):
             token = resp.json().get("token", "")
             headers = {"Authorization": f"Bearer {token}"}
             self.client.get("/api/me/credits", headers=headers)
+

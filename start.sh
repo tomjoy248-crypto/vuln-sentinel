@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 漏洞哨兵 V11-S - 一键启动脚本（本地 Docker Compose）
+# Vuln Sentinel - 一键启动脚本（本地 Docker Compose）
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,7 +25,7 @@ if [ ! -f .env ]; then
 fi
 
 # 构建并启动
-echo "正在构建并启动 漏洞哨兵 V11-S..."
+echo "正在构建并启动 Vuln Sentinel..."
 if docker compose version &> /dev/null; then
     docker compose up --build -d
 else
@@ -39,3 +39,4 @@ echo "  - 健康检查：http://localhost:8000/api/health"
 echo ""
 echo "查看日志：docker compose logs -f"
 echo "停止服务：docker compose down"
+

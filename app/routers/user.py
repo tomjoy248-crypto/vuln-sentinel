@@ -20,7 +20,8 @@ router = APIRouter(tags=["用户信息"])
 async def api_me(user: dict | None = Depends(get_current_user)) -> dict:
     if not user:
         raise UnauthorizedException("未登录")
-    # 11-S: 从数据库读取最新 role/team_id/credits，确保和数据库一致
+
+    # 从数据库读取最新 role/team_id/credits，确保和数据库一致
     conn = get_db()
     try:
         row = conn.execute(

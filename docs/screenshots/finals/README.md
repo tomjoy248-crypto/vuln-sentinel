@@ -1,11 +1,5 @@
-# 漏洞哨兵 11-S - 产品功能截图集
-
-本目录包含 12 张精选截图，覆盖 11-S 的全部核心流程。
-可直接用于：技术博客、产品文档、产品介绍、案例展示。
-
-## 截图清单
-
-| # | 文件 | 场景 | 核心信息点 | 建议使用位置 |
+# Vuln Sentinel - 产品功能截图集 本目录包含 12 张精选截图，覆盖 的全部核心流程。
+可直接用于：技术博客、产品文档、产品介绍、案例展示。 ## 截图清单 | # | 文件 | 场景 | 核心信息点 | 建议使用位置 |
 |---|------|------|----------|------------|
 | 01 | `01-home.png` | 产品首页 | 品牌定位、4 大特性（真实扫描/账号隔离/PDF/可分享）、3 个一键演示目标（example.com / iana.org / httpbin.org） | 产品文档的"产品概览" |
 | 02 | `02-scanning.png` | 扫描进行中 | 实时扫描公开测试站、按钮 loading 状态 | 产品文档的"功能演示"第一张 |
@@ -18,40 +12,23 @@
 | 09 | `09-assets-empty.png` | 资产管理 | 添加资产表单、空状态引导 | 产品文档的"资产管理模块" |
 | 10 | `10-tickets.png` | 修复工单 | 待修复/修复中/已修复/已忽略 4 状态流转、批量操作 | 产品文档的"工单跟踪" |
 | 11 | `11-mobile.png` | 移动端视图 | 响应式布局、底部 tab 导航、卡片堆叠 | 产品文档的"全平台适配" |
-| 12 | `12-iana-report.png` | 反例对比 | iana.org 96 分、0 高 0 中 2 低、关键安全头全配 | 产品文档的"误报率低" |
-
-## 推荐组合（用于产品文档）
-
-### 方案 A：完整闭环演示（6 张）
-1. 01-home -> 02-scanning -> 03-findings-detail -> 04-findings-and-fix -> 08-fix-compare -> 12-iana-report
-
-### 方案 B：技术深度展示（8 张）
-1. 01-home -> 03-findings-detail -> 04-findings-and-fix -> 06-fix-generator -> 07-fix-diff -> 08-fix-compare -> 10-tickets -> 12-iana-report
-
-### 方案 C：差异化亮点（5 张）
-1. 01-home -> 04-findings-and-fix（8 平台 tab）-> 07-fix-diff（4 高 2 中 2 低）-> 08-fix-compare（Diff 高亮）-> 12-iana-report（高安全 96 分）
-
-## 截图元数据
-
-- **尺寸**：1280x自动（响应式）
+| 12 | `12-iana-report.png` | 反例对比 | iana.org 96 分、0 高 0 中 2 低、关键安全头全配 | 产品文档的"误报率低" | ## 推荐组合（用于产品文档） ### 方案 A：完整闭环演示（6 张）
+1. 01-home -> 02-scanning -> 03-findings-detail -> 04-findings-and-fix -> 08-fix-compare -> 12-iana-report ### 方案 B：技术深度展示（8 张）
+1. 01-home -> 03-findings-detail -> 04-findings-and-fix -> 06-fix-generator -> 07-fix-diff -> 08-fix-compare -> 10-tickets -> 12-iana-report ### 方案 C：差异化亮点（5 张）
+1. 01-home -> 04-findings-and-fix（8 平台 tab）-> 07-fix-diff（4 高 2 中 2 低）-> 08-fix-compare（Diff 高亮）-> 12-iana-report（高安全 96 分） ## 截图元数据 - **尺寸**：1280x自动（响应式）
 - **格式**：PNG
 - **总大小**：约 1.2 MB
 - **拍摄日期**：2026-06-24
 - **目标用户**：产品用户 / 客户 / 投资人
-- **登录账号**：demo / demo123
-
-## 重新生成
-
-```bash
+- **登录账号**：demo / demo123 ## 重新生成 ```bash
 # 启动服务
 cd /workspace/v11.4
-python3 main.py &
-
-# 用浏览器/Playwright 打开 http://localhost:8000/?v=6
+python3 main.py & # 用浏览器/Playwright 打开 http://localhost:8000/?v=6
 # 按顺序点击：
 # 1. 立即扫描 example.com -> 等待 1-3 秒
 # 2. 截报告
 # 3. 点修复器 -> 加载示例 -> 分析配置 -> 截对比
 # 4. 点资产/工单 -> 截
 # 5. 模拟移动端 -> 截
-```
+``` 
+

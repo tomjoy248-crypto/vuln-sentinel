@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""漏洞哨兵 - 端到端扫描功能自动化测试脚本
+"""Vuln Sentinel - 端到端扫描功能自动化测试脚本
 
 验证修复后的扫描功能在不同网络环境下的表现：
 1. 正常网络环境：扫描真实公网站点
@@ -58,7 +58,7 @@ class TestReport:
         failed = len(self.results) - passed
         lines = [
             "=" * 70,
-            "  漏洞哨兵 - 端到端扫描功能测试报告",
+            "  Vuln Sentinel - 端到端扫描功能测试报告",
             "=" * 70,
             f"  总用例数: {len(self.results)}",
             f"  通过: {passed}",
@@ -476,14 +476,14 @@ def test_rate_limiting(client: ScanTestClient) -> TestResult:
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="漏洞哨兵端到端扫描测试")
+    parser = argparse.ArgumentParser(description="Vuln Sentinel端到端扫描测试")
     parser.add_argument("--host", default="localhost", help="服务器地址")
     parser.add_argument("--port", type=int, default=8099, help="服务器端口")
     parser.add_argument("--timeout", type=float, default=60.0, help="请求超时（秒）")
     args = parser.parse_args()
 
     base_url = f"http://{args.host}:{args.port}"
-    print(f"\n漏洞哨兵端到端扫描测试")
+    print(f"\nVuln Sentinel端到端扫描测试")
     print(f"目标服务: {base_url}")
     print(f"超时设置: {args.timeout}s\n")
 
@@ -576,3 +576,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

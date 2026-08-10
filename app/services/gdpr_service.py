@@ -71,6 +71,17 @@ def _fetch_user_rows(conn: sqlite3.Connection, table: str, user_id: int) -> list
         return []
 
 
+
+
+def _redact_sensitive_fields(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """从导出结果中移除高敏感字段。"""
+    redacted: list[dict[str, Any]] = []
+    for row in rows:
+        cleaned = dict(row)
+        for key in ("token", "password", "secret", "api_key", "apiKey"):
+            cleaned.pop(key, None)
+        redacted.append(cleaned)
+    return redacted
 def export_user_data(user_id: int) -> dict[str, Any]:
     """导出用户所有数据。
 
@@ -97,17 +108,17 @@ def export_user_data(user_id: int) -> dict[str, Any]:
             result["user"] = None
 
         # 扫描历史
-        result["scans"] = _fetch_user_rows(conn, "scans", user_id)
+        result["scans"] = _redact_sensitive_fields(_fetch_user_rows(conn, "scans", user_id))
         # 充值记录
-        result["recharge_records"] = _fetch_user_rows(conn, "recharge_records", user_id)
+        result["recharge_records"] = _redact_sensitive_fields(_fetch_user_rows(conn, "recharge_records", user_id))
         # 积分记录（usage_logs）
-        result["usage_logs"] = _fetch_user_rows(conn, "usage_logs", user_id)
+        result["usage_logs"] = _redact_sensitive_fields(_fetch_user_rows(conn, "usage_logs", user_id))
         # 审计日志
-        result["audit_logs"] = _fetch_user_rows(conn, "audit_logs", user_id)
+        result["audit_logs"] = _redact_sensitive_fields(_fetch_user_rows(conn, "audit_logs", user_id))
         # 修复工单
-        result["fix_tickets"] = _fetch_user_rows(conn, "fix_tickets", user_id)
+        result["fix_tickets"] = _redact_sensitive_fields(_fetch_user_rows(conn, "fix_tickets", user_id))
         # 反馈记录
-        result["finding_feedback"] = _fetch_user_rows(conn, "finding_feedback", user_id)
+        result["finding_feedback"] = _redact_sensitive_fields(_fetch_user_rows(conn, "finding_feedback", user_id))
 
         logger.info("用户数据导出完成: user_id=%s", user_id)
         return result
@@ -220,3 +231,5 @@ def anonymize_user_data(user_id: int) -> dict:
         return {"success": False, "message": f"匿名化失败：{exc}"}
     finally:
         conn.close()
+
+

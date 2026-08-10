@@ -1,6 +1,6 @@
 version: "3.8"
 
-# 漏洞哨兵 11-S - 本地开发 / 快速体验编排
+# Vuln Sentinel - 本地开发 / 快速体验编排
 # 用法：docker compose up --build
 # 自定义配置：docker compose --env-file .env.docker up --build
 
@@ -45,3 +45,4 @@ services:
 volumes:
   vuln-sentinel-data:
   vuln-sentinel-redis:
+

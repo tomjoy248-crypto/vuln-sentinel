@@ -37,7 +37,7 @@ EXECUTIVE_SUMMARY_TEMPLATE = """## 一、执行摘要
 | 风险等级 | **{risk_level}** |
 | 总发现数 | {total_findings} |
 | 已验证 | {verified_count} |
-| 待验证 | {unverified_count} |
+| 待人工复核 | {unverified_count} |
 | 误报 | {false_positive_count} |
 | 扫描耗时 | {scan_duration} |
 | 扫描器版本 | {scanner_version} |
@@ -252,3 +252,4 @@ TOOL_ITEM = "- {tool_name}: {tool_description}"
 
 # 限制列表单项模板
 LIMITATION_ITEM = "- {limitation_text}"
+

@@ -79,7 +79,7 @@
 --score-rules-bg: #313335;
 --pr-info-bg: #313335;
 --pr-step-bg: #313335;
-/* 11-S fix: AI 聊天 & 进化中心使用的变量 */
+/* Vuln Sentinel fix: AI 聊天 & 进化中心使用的变量 */
 --card: #3c3f41;
 --card-bg: #3c3f41;
 --bg-primary: #2b2b2b;
@@ -131,7 +131,7 @@
 --score-rules-bg: #313335;
 --pr-info-bg: #313335;
 --pr-step-bg: #313335;
-/* 11-S fix: AI 聊天 & 进化中心使用的变量（暗色模式） */
+/* Vuln Sentinel fix: AI 聊天 & 进化中心使用的变量（暗色模式） */
 --card: #3c3f41;
 --card-bg: #3c3f41;
 --bg-primary: #2b2b2b;
@@ -430,8 +430,8 @@ margin-top: 2px;
 /* Scan Input */
 .scan-section {
 background: #3c3f41;
-border-radius: 2px;
 border: 1px solid #555555;
+border-radius: 2px;
 padding: 16px;
 box-shadow:none;
 margin-bottom: 20px;
@@ -473,7 +473,7 @@ min-width: 80px;
 .scan-btn:active { background: #5574b6; }
 .scan-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
-/* 11-S: 扫描按钮脉冲动画（已禁用） */
+/* Vuln Sentinel: 扫描按钮脉冲动画（已禁用） */
 .scan-btn:not(:disabled) {
 position: relative;
 overflow: hidden;
@@ -485,7 +485,7 @@ content: none;
 0%, 50%, 100% { opacity: 0; transform: none; }
 }
 
-/* 11-S: 卡片悬浮增强 */
+/* Vuln Sentinel: 卡片悬浮增强 */
 .card {
   transition: border-color 0.15s ease;
 }
@@ -494,13 +494,13 @@ content: none;
   box-shadow:none;
 }
 
-/* 11-S: 按钮通用波纹效果 */
+/* Vuln Sentinel: 按钮通用波纹效果 */
 .auth-form-btn, .fixer-btn, .nav-item {
 position: relative;
 overflow: hidden;
 }
 
-/* 11-S: Toast 动画增强（堆叠队列模式）- 已禁用动态效果 */
+/* Vuln Sentinel: Toast 动画增强（堆叠队列模式）- 已禁用动态效果 */
 .toast {
 animation:none;
 }
@@ -516,7 +516,7 @@ from { opacity: 1; transform: none; }
 to { opacity: 0; transform: none; }
 }
 
-/* 11-S: 页面切换动画增强 - 已禁用 */
+/* Vuln Sentinel: 页面切换动画增强 - 已禁用 */
 .page {
 animation:none;
 }
@@ -525,7 +525,7 @@ from { opacity: 1; transform: none; }
 to { opacity: 1; transform: none; }
 }
 
-/* 11-S: 导航激活指示器 */
+/* Vuln Sentinel: 导航激活指示器 */
 .nav-item.active::after { content: none; }
 @keyframes nav-indicator { from { opacity: 0; } to { opacity: 0; } }
 .scan-checkbox {
@@ -971,7 +971,7 @@ overflow: hidden;
 text-overflow: ellipsis;
 white-space: nowrap;
 }
-/* 11-S: 优先级标签 */
+/* Vuln Sentinel: 优先级标签 */
 .finding-priority {
 font-size: 9px;
 font-weight: 700;
@@ -1030,7 +1030,7 @@ color: var(--text);
 }
 .finding-section ul { padding-left: 20px; }
 .finding-section li { margin-bottom: 4px; }
-/* 11-S+ 置信度 + 误报反馈 */
+/* Vuln Sentinel 置信度 + 误报反馈 */
 .finding-feedback-row {
 display: flex; align-items: center; gap: 8px;
 margin-top: 12px; padding-top: 10px;
@@ -1094,6 +1094,8 @@ border: 1px solid #555555;
 
 /* Result Workbench Layout */
 .result-workbench {
+background: #313335;
+border: 1px solid #555555;
 display: grid;
 grid-template-columns: 320px 1fr;
 gap: 12px;
@@ -2382,7 +2384,7 @@ font-weight: 500; white-space: nowrap; transition: background 0.15s;
 .pdf-download-btn:hover { background: #d86a66; box-shadow:none; transform: none; }
 .pdf-download-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
-/* 11-S: 报告下载下拉菜单 */
+/* Vuln Sentinel: 报告下载下拉菜单 */
 .report-download-dropdown {
 position: relative;
 display: inline-block;
@@ -2714,7 +2716,7 @@ font-size: 12px;
 .asset-actions { justify-content: flex-end; }
 }
 
-/* AI 顾问聊天界面 11-S — 移动端优化 */
+/* AI 顾问聊天界面 Vuln Sentinel — 移动端优化 */
 .ai-chat-wrap { display: flex; flex-direction: column; height: min(75vh, 600px); padding: 0; }
 .ai-status-bar {
 display: flex; align-items: center; gap: 8px;
@@ -2814,7 +2816,7 @@ font-family: "JetBrains Mono", "Consolas", "Monaco", "Courier New", monospace;
 .ai-input { font-size: 16px; } /* 防止 iOS 缩放 */
 }
 
-/* 进化中心 11-S */
+/* 进化中心 Vuln Sentinel */
 .evo-score-card {
 background: #3c3f41;
 border: 1px solid #555555;
@@ -2873,14 +2875,15 @@ color: #bbbbbb;
 .evo-ai-input { display: flex; gap: 8px; }
 .evo-ai-input .evo-input { flex: 1; }
 
-.home-hero { margin-top: 10px; min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: radial-gradient(circle at center, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 50%, transparent 75%), #3c3f41; border: 1px solid #555555; }
-.home-hero-top { display:flex; align-items:center; gap:10px; align-self:flex-start; margin-bottom: 28px; }
+.home-hero { margin-top: 10px; min-height: 190px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; text-align: left; background: #3c3f41; border: 1px solid #555555; padding: 18px 20px; }
+.home-hero-top { display:flex; align-items:center; gap:10px; align-self:flex-start; margin-bottom: 14px; }
 .home-brand-dot { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #c75450, #73c990); }
 .home-brand-title { font-size: 18px; letter-spacing: .3px; color: #fff; font-weight: 600; }
-.home-hero-title { margin: 40px 0 10px; font-size: clamp(28px, 5vw, 52px); font-weight: 400; color: #fff; letter-spacing: .2px; }
-.home-hero-version { color: #e5e7eb; font-size: 14px; margin-bottom: 30px; }
-.home-hero-actions { display: flex; gap: 22px; margin-bottom: 28px; }
-.home-hero-icon { width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.08); color: #fff; cursor: pointer; font-size: 18px; display:flex; align-items:center; justify-content:center; }
-.home-hero-footer { margin-top: 34px; padding: 10px 16px; border-radius: 18px; background: rgba(255,255,255,0.06); color: #fff; font-size: 13px; max-width: 680px; }
+.home-hero-title { margin: 0 0 10px; font-size: clamp(22px, 4vw, 34px); font-weight: 600; color: #bbbbbb; letter-spacing: .2px; font-family: "JetBrains Mono", "Consolas", "Monaco", "Courier New", monospace; }
+.home-hero-version { color: #808080; font-size: 12px; margin-bottom: 14px; }
+.home-hero-actions { display: flex; gap: 8px; margin-bottom: 14px; }
+.home-hero-icon { width: 32px; height: 32px; border-radius: 2px; border: 1px solid #555555; background: #45494a; color: #bbbbbb; cursor: pointer; font-size: 16px; display:flex; align-items:center; justify-content:center; }
+.home-hero-footer { margin-top: 6px; padding: 8px 12px; border-radius: 2px; background: #313335; color: #808080; font-size: 12px; max-width: 760px; border: 1px solid #555555; }
 @media (max-width: 900px) { .bottom-nav { width: 70px; } .page { padding-left: 90px; } .nav-item { padding: 12px 4px; font-size: 10px; } .nav-item svg { width: 18px; height: 18px; } }
 @media (max-width: 640px) { .bottom-nav { width: 64px; } .page { padding-left: 76px; padding-right: 12px; } .home-hero-title { font-size: 30px; } .home-hero-version { font-size: 12px; } }
+

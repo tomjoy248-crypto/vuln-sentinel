@@ -77,7 +77,7 @@ let _scanTexts = [
   '检测 Cookie 安全标志...',
   '检查服务器信息泄露...',
   '计算安全评分...',
-  '生成修复建议...',
+  '生成建议...',
   '生成安全报告...',
 ];
 let _history对比Mode = false;
@@ -520,7 +520,7 @@ function loadDashboard() {
       el4.textContent = '-';
     }
   }).catch(function() {});
-  // 11-S: 加载安全趋势
+  // Vuln Sentinel: 加载安全趋势
   loadTrend();
   // 加载顶部风险趋势图（7天/30天切换）
   loadTrendChart(30);
@@ -734,7 +734,7 @@ async function loadPublicDemo() {
     });
     let data = await r.json();
     if (r.ok && data.success) {
-      window._lastScanId = data.scan_id || data.scanId || null;  // 11-S: 保存 scan_id 供自动修复用
+      window._lastScanId = data.scan_id || data.scanId || null;  // Vuln Sentinel: 保存 scan_id 供自动修复用
       window._lastScanResult = data;  // V11.4 fix: 保存扫描结果供自动修复使用
       renderDemoReport(data);
     } else {
@@ -845,7 +845,7 @@ function renderDemoReport(d) {
       let priority = priorityMap[f.severity] || 'P3';
       let priorityColors = { P0: '#c75450', P1: '#f0a732', P2: '#f0a732', P3: '#73c990' };
       html += '<span style="font-size:11px;padding:2px 6px;border-radius:2px;background:#2b2b2b;color:' + priorityColors[priority] + ';font-weight:600;margin-left:6px;border:1px solid ' + priorityColors[priority] + '">' + priority + '</span></div>';
-      // 11-S: 代码层漏洞分类标签
+      // Vuln Sentinel: 代码层漏洞分类标签
       let codeVulnTypes = ['sqli', 'xss', 'cmdi', 'traversal', 'deserialization', 'ssrf'];
       if (codeVulnTypes.indexOf(f.type || '') >= 0) {
         html += '<div style="margin-top:4px"><span style="font-size:11px;padding:2px 8px;border-radius:2px;background:#2b2b2b;color:#c75450;font-weight:600;border:1px solid #c75450">代码层漏洞</span></div>';
@@ -853,13 +853,13 @@ function renderDemoReport(d) {
       if (f.owasp) html += '<div style="font-size:11px;color:#a5b4fc;margin-top:2px">OWASP: ' + f.owasp + '</div>';
       if (f.detail) html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">' + escapeHtml(f.detail) + '</div>';
       if (f.recommendation) html += '<div style="font-size:12px;color:#73c990;margin-top:4px">建议：' + escapeHtml(f.recommendation) + '</div>';
-      // 修复方法代码（11-S: 真实修复建议直接显示）
+      // 修复方法代码（Vuln Sentinel: 真实建议直接显示）
       if (fixText) {
-        html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--primary);font-weight:600">修复建议</summary>';
+        html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--primary);font-weight:600">建议</summary>';
         html += '<pre style="margin-top:4px;padding:8px;background:#0f172a;color:#a7f3d0;border-radius:2px;font-size:12px;line-height:1.4;overflow-x:auto;white-space:pre-wrap;word-break:break-all">' + escapeHtml(fixText) + '</pre>';
         html += '</details>';
       }
-      // 11-S: 验证方法（增强版：显示三步验证法摘要）
+      // Vuln Sentinel: 验证方法（增强版：显示三步验证法摘要）
       if (fixText) {
         if (f && f.verify_steps && f.verify_steps.length > 0) {
           html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--success);font-weight:600">如何验证修复</summary>';
@@ -878,13 +878,13 @@ function renderDemoReport(d) {
         }
       }
       // 误报说明
-      html += '<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">说明：如认为此项需要复测，可结合修复建议、响应证据和二次扫描结果综合判断。</div>';
+      html += '<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">说明：如认为此项需要复测，可结合建议、响应证据和二次扫描结果综合判断。</div>';
       html += '</div>';
     });
     html += '</div></details>';
   }
 
-  // 11-S：完整修复建议摘要（6 平台 tab，登录后展示）
+  // Vuln Sentinel：完整建议摘要（6 平台 tab，登录后展示）
   if (d && d.fixes && Object.keys(d.fixes).length > 0) {
     let fixPlatforms2 = d.fixes;
     let platformNames2 = { nginx: 'Nginx', apache: 'Apache', express: 'Express', flask: 'Flask', spring_boot: 'Spring Boot', cloudflare: 'Cloudflare', python: 'Python', nodejs: 'Node.js' };
@@ -892,7 +892,7 @@ function renderDemoReport(d) {
     let availableP2 = platformOrder2.filter(function(p) { return fixPlatforms2[p] && fixPlatforms2[p].length > 0 });
     if (availableP2.length > 0) {
       html += '<div style="margin-top:12px;padding:14px;border:1px solid #73c990;background:#2b2b2b;border-radius:2px">';
-      html += '<div style="font-size:14px;font-weight:600;margin-bottom:8px;color:#73c990">完整修复建议（' + availableP2.length + ' 种平台）</div>';
+      html += '<div style="font-size:14px;font-weight:600;margin-bottom:8px;color:#73c990">完整建议（' + availableP2.length + ' 种平台）</div>';
       html += '<div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap">';
       availableP2.forEach(function(p, i) {
         let active = i === 0;
@@ -1062,7 +1062,7 @@ function renderFixComparison(d) {
   html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
   if (isLoggedIn()) {
     html += '<button onclick="navigateTo(\'fixer\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600">进入修复器获取完整补丁</button>';
-    // 11-S 新增：自动修复按钮
+    // Vuln Sentinel 新增：自动修复按钮
     html += '<button onclick="showAutoFixDialog(\'' + (window._lastScanId || '') + '\', ' + (d.fixed_count || 0) + ')" style="background:#73c990;color:#fff;border:none;padding:8px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600">应用修复</button>';
   } else {
     html += '<button onclick="navigateTo(\'profile\')" style="background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600">登录后获取完整补丁代码</button>';
@@ -1263,7 +1263,7 @@ async function executeAutoFix(scanId) {
 
 // ----- showBatchScanModal,closeBatchScanModal,doBatchScan -----
 function showBatchScanModal() {
-  if (!isLoggedIn()) { showToast('请先登录'); navigateTo('profile'); return; }
+  if (!isLoggedIn() && !isPublicDemoTarget(url)) { showToast('请先登录'); navigateTo('profile'); return; }
   let modal = document.getElementById('batch-scan-modal');
   if (modal) modal.style.display = 'flex';
   let res = document.getElementById('batch-results');
@@ -1358,7 +1358,7 @@ function startScanDirect() {
     if (urlInput) urlInput.value = url;
   }
   if (!isLoggedIn()) { showToast('请先登录'); navigateTo('profile'); return; }
-  // 11-S fix: 同步首页授权状态到扫描页，避免 step1 勾了但 step3 没勾导致卡住
+  // Vuln Sentinel fix: 同步首页授权状态到扫描页，避免 step1 勾了但 step3 没勾导致卡住
   // authStep1 已在函数开头声明，此处复用
   let authStep3 = document.getElementById('auth-check');
   if (authStep1 && authStep3 && authStep1.checked) {
@@ -1367,7 +1367,7 @@ function startScanDirect() {
     let scanBtn = document.getElementById('scan-btn');
     if (scanBtn) scanBtn.disabled = false;
   }
-  // 11-S：已登录用户跳过 step3 二次确认，直接开始扫描（合规授权已在 step1 完成）
+  // Vuln Sentinel：已登录用户跳过 step3 二次确认，直接开始扫描（合规授权已在 step1 完成）
   // 同时把 URL 也填到 step3 输入框，保留 step3 备用
   let confirmedInput = document.getElementById('scan-url-confirmed');
   if (confirmedInput) confirmedInput.value = url;
@@ -1379,7 +1379,7 @@ function startScanDirect() {
     _scanInProgress = false;
     setButtonLoading("scan-btn", false);
     setButtonLoading("scan-btn-step1", false);
-    showToast('扫描启动失败：' + (e.message || String(e)));
+    showToast('启动失败：' + (e.message || String(e)));
   }
 }
 
@@ -1466,7 +1466,7 @@ function quickDemo(url) {
   startScanDirect();
   } catch (e) {
     console.error('quickDemo error:', e);
-    showToast('启动扫描失败：' + (e.message || String(e)), 'error');
+    showToast('启动未完成：' + (e.message || String(e)), 'error');
   }
 }
 
@@ -1629,7 +1629,7 @@ function calculateScore(findings, hasFixConfig, hasPR) {
 function startScan() {
   try {
   if (_scanInProgress) { showToast("扫描进行中，请稍候"); return; }
-  if (!isLoggedIn()) { showToast('请先登录后再使用扫描功能'); navigateTo('profile'); return; }
+  if (!isLoggedIn() && !isPublicDemoTarget(url)) { showToast('请先登录后再使用扫描功能'); navigateTo('profile'); return; }
   _scanInProgress = true;
   setButtonLoading("scan-btn", true);
   setButtonLoading("scan-btn-step1", true);
@@ -1653,7 +1653,7 @@ function startScan() {
       body: JSON.stringify({ authorized_at: authTime })
     }).catch(function(){});
   } catch(e) {}
-  // 11-S 兼容：如果 scan-url-confirmed 是空（直接走 startScan），用 scan-url 兜底
+  // Vuln Sentinel 兼容：如果 scan-url-confirmed 是空（直接走 startScan），用 scan-url 兜底
   let confirmedInput = document.getElementById('scan-url-confirmed');
   let url = confirmedInput ? confirmedInput.value.trim() : '';
   if (!url) {
@@ -1711,7 +1711,7 @@ function startScan() {
   let scanDepthInput = document.querySelector('input[name="scan-depth"]:checked');
   let scanDepth = (scanDepthInput && scanDepthInput.value) || 'standard';
   let deepScan = scanDepth === 'deep';
-  startRealScan(url, host, deepScan);
+  startRealScan(url, host, deepScan, auth);
   } catch (e) {
     console.error('startScan error:', e);
     _scanInProgress = false;
@@ -1719,9 +1719,9 @@ function startScan() {
     setButtonLoading("scan-btn-step1", false);
     let rc = document.getElementById('result-content');
     if (rc) {
-      rc.innerHTML = '<div class="card" style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">错误：</div><h3 style="color:var(--danger);margin-bottom:8px">扫描启动失败</h3><p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">页面在启动扫描时遇到问题。</p><p style="color:var(--text-lighter);font-size:12px;margin-bottom:16px">错误信息：' + escapeHtml(e.message || String(e)) + '</p><button class="btn btn-primary" onclick="navigateTo(\'home\')"> 返回首页</button></div>';
+      rc.innerHTML = '<div class="card" style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">错误：</div><h3 style="color:var(--danger);margin-bottom:8px">启动失败</h3><p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">页面在启动扫描时遇到问题。</p><p style="color:var(--text-lighter);font-size:12px;margin-bottom:16px">错误信息：' + escapeHtml(e.message || String(e)) + '</p><button class="btn btn-primary" onclick="navigateTo(\'home\')"> 返回首页</button></div>';
     } else {
-      showToast('扫描启动失败：' + (e.message || String(e)), 'error');
+      showToast('启动失败：' + (e.message || String(e)), 'error');
     }
   }
 }
@@ -1744,7 +1744,7 @@ function cancelScan() {
 }
 
 // ----- startRealScan -----
-function startRealScan(url, host, deepScan) {
+function startRealScan(url, host, deepScan, authorized) {
   // 启动多阶段动画
   animateStages();
 
@@ -1766,7 +1766,7 @@ function startRealScan(url, host, deepScan) {
   // Try /api/scan
   authFetch('/api/scan', {
     method: 'POST',
-    body: JSON.stringify({ url: url, depth: deepScan ? 'deep' : 'standard', authorized: !!((authCb && authCb.checked) || (authStep1 && authStep1.checked)) })
+    body: JSON.stringify({ url: url, depth: deepScan ? 'deep' : 'standard', authorized: !!authorized })
   }).then(function(resp) {
     if (_scanCancelled) return;
     clearTimeout(timeoutId);
@@ -1804,7 +1804,7 @@ function startRealScan(url, host, deepScan) {
         let errMsg = extractError(data);
         // 对常见 HTTP 状态码补充提示
         if (data._status === 403) {
-          errMsg = errMsg + '\n\n如需扫描自有域名，请先完成域名归属验证。';
+          errMsg = errMsg + '\n\n如需扫描自有域名，请先完成域名归属验证；如果只是体验功能，请改用 example.com、httpbin.org 等公开演示站点。';
         } else if (data._status === 429) {
           errMsg = '扫描请求过于频繁，请等待 1 分钟后重试。';
         }
@@ -1942,13 +1942,14 @@ function renderScanError(errorMsg, url) {
     html += '<p style="color:var(--text-secondary);margin:0 0 20px;font-size:13px">为了符合安全要求，深度扫描（爬虫 + 漏洞探测）需要先证明您拥有该域名。</p>';
     html += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">';
     html += '<button onclick="document.getElementById(\'scan-url\').value=\'' + safeUrl + '\'; goVerifyStep2();" class="btn-primary" style="padding:10px 20px;border-radius:2px;border:none;background:#4b6eaf;color:white;cursor:pointer;font-size:14px">立即验证域名</button>';
+
     html += '<button onclick="startScanDirect(\'' + safeUrl + '\', false)" class="btn-secondary" style="padding:10px 20px;border-radius:2px;border:1px solid var(--border);background:transparent;color:var(--text-primary);cursor:pointer;font-size:14px">改用普通扫描</button>';
     html += '</div></div>';
     container.innerHTML = html;
     return;
   }
 
-  let title = '无法完成扫描';
+  let title = '扫描未完成';
   let subtitle = errorMsg;
   let reasons = [
     '&#x2022; 目标站点可能拒绝自动化请求（反爬机制）',
@@ -1968,7 +1969,7 @@ function renderScanError(errorMsg, url) {
 
   let html = '<div class="report-header fade-in-up">';
   html += '<div style="margin-bottom:12px">';
-  html += '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(199,84,80,0.15);color:#c75450;border:1px solid rgba(199,84,80,0.3);border-radius:2px;padding:4px 12px;font-size:12px;font-weight:700">扫描失败</span>';
+  html += '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(199,84,80,0.15);color:#c75450;border:1px solid rgba(199,84,80,0.3);border-radius:2px;padding:4px 12px;font-size:12px;font-weight:700">扫描未完成</span>';
   html += '</div>';
   html += '<div class="score-ring-wrap">';
   html += '<div class="score-ring" style="background:#3c3f41">';
@@ -1977,7 +1978,7 @@ function renderScanError(errorMsg, url) {
   html += '</div></div>';
   html += '<div class="report-url">' + safeUrl + '</div>';
   html += '<div class="report-time">' + new Date().toLocaleString('zh-CN') + '</div>';
-  html += '<span class="risk-badge high">无法扫描</span>';
+  html += '<span class="risk-badge high">未完成</span>';
   html += '</div>';
 
   html += '<div class="card fade-in-up" style="animation-delay:0.1s;text-align:center;padding:40px 20px">';
@@ -2076,7 +2077,7 @@ function retryScan() {
     { id: 'ssl', label: 'SSL 证书检查', detail: '证书链/有效期' },
     { id: 'sensitive', label: '敏感路径扫描', detail: '12 个路径' },
     { id: 'waf', label: 'WAF 识别', detail: '6 类厂商指纹' },
-    { id: 'report', label: '生成报告', detail: '评分/修复建议' }
+    { id: 'report', label: '报告', detail: '评分/建议' }
   ];
   let stagesHtml = stages.map(function(s, i) {
     return '<div id="stage-' + s.id + '" class="scan-stage" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:2px;margin-bottom:6px;opacity:0.4;transition:all 0.3s">' +
@@ -2189,7 +2190,7 @@ function finishStages() {
   let stages = ['dns', 'connect', 'headers', 'ssl', 'sensitive', 'waf', 'report'];
   stages.forEach(function(s) { updateStage(s, 'done'); });
   // 进度条完成
-  setScanProgress(100, '扫描完成，正在生成报告...');
+  setScanProgress(100, '扫描完成，报告...');
 }
 
 // ----- startProgressAnimation -----
@@ -2302,7 +2303,7 @@ function buildRadarSvg(data) {
   let cx = 150, cy = 150, r = 110;
   let n = dims.length;
   let points = [];
-  let html = '<svg viewBox="0 0 300 300" style="max-width:300px;margin:0 auto;display:block" aria-label="安全维度雷达图">';
+  let html = '<svg viewBox="0 0 300 300" style="max-width:300px;margin:0 auto;display:block" aria-label="安全维度">';
   for (let g = 1; g <= 5; g++) {
     let rg = r * g / 5;
     let gp = [];
@@ -2434,7 +2435,7 @@ function renderResult(data) {
 
   let managementSummary = '';
   if (highCount + medCount > 0) {
-    managementSummary = '当前结果显示存在 ' + highCount + ' 个高风险和 ' + medCount + ' 个中风险项，建议优先修复对外暴露面并在发布前复测。';
+    managementSummary = '当前结果包含 ' + highCount + ' 个高风险和 ' + medCount + ' 个中风险项，建议先修复高风险项，再复测确认。';
   } else if (lowCount > 0) {
     managementSummary = '当前风险以低危和提示项为主，建议保持修复节奏并持续监控。';
   } else {
@@ -2442,11 +2443,13 @@ function renderResult(data) {
   }
   html += '<div class="card fade-in-up" style="animation-delay:0.05s;padding:14px;margin-top:12px;border:1px solid rgba(75,110,175,0.25);background:rgba(60,63,65,0.9)">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">';
-  html += '<div style="font-size:13px;font-weight:700;color:var(--text-primary)">管理层摘要</div>';
-  html += '<div style="font-size:12px;color:var(--text-secondary)">' + (data.restricted ? '受限扫描，结论需复核' : '可直接进入修复与复核闭环') + '</div>';
+  html += '<div style="font-size:13px;font-weight:700;color:var(--text-primary)">概览</div>';
+  html += '<div style="font-size:12px;color:var(--text-secondary)">' + (data.restricted ? '受限扫描，结论需复核' : '可直接进入修复与复测') + '</div>';
   html += '</div>';
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.8">' + escapeHtml(managementSummary) + '</div>';
+
   html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-secondary)">';
+
   html += '<span>总发现：' + (data.findings.length || 0) + '</span>';
   html += '<span>高/中风险：' + highCount + '/' + medCount + '</span>';
   html += '<span>最近评分：' + data.score + '</span>';
@@ -2462,13 +2465,13 @@ function renderResult(data) {
 
   // 雷达图：5 个 OWASP 维度得分
   html += '<div class="card fade-in-up" style="animation-delay:0.15s">';
-  html += '<div class="card-title">安全维度雷达</div>';
+  html += '<div class="card-title">安全维度</div>';
   html += '<div id="radar-chart-container" style="display:flex;justify-content:center"></div>';
   html += '</div>';
 
-  // 风险演示按钮
+  // 演示按钮
   html += '<div class="card fade-in-up" style="animation-delay:0.2s">';
-  html += '<div class="card-title">风险演示</div>';
+  html += '<div class="card-title">演示</div>';
   html += '<p style="margin:0 0 14px 0;font-size:12px;color:var(--text-secondary)">展示常见风险场景，用于说明问题影响</p>';
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
   html += '<button onclick="simulateCSRF(\'' + escapeAttr(data.url) + '\')" style="padding:10px 8px;border:1px solid rgba(199,84,80,0.3);background:rgba(199,84,80,0.08);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;color:#dc2626;transition:background 0.15s" onmouseover="this.style.background=\'rgba(199,84,80,0.15)\'" onmouseout="this.style.background=\'rgba(199,84,80,0.08)\'">';
@@ -2629,7 +2632,7 @@ function renderResult(data) {
 
   // Radar chart (5 维度)
   html += '<div class="card fade-in-up" style="animation-delay:0.12s;text-align:center;padding:20px">';
-  html += '<div class="card-title">安全维度雷达图</div>';
+  html += '<div class="card-title">安全维度</div>';
   html += buildRadarSvg(data);
   html += '</div>';
 
@@ -2733,17 +2736,17 @@ function renderResult(data) {
 
   // 漏洞项 - Burp workbench layout: left list + right detail
   html += '<div class="section-title fade-in-up" style="animation-delay:0.3s">漏洞详情</div>';
-  // 11-S: 0 漏洞时显示提示
+  // Vuln Sentinel: 0 漏洞时显示提示
   if (!data.findings || data.findings.length === 0) {
     html += '<div class="card fade-in-up" style="animation-delay:0.35s;text-align:center;padding:40px 20px;background:#3c3f41;border:1px solid #555555">';
     html += '<h3 style="margin:0 0 8px;color:#73c990;font-size:16px">安全状况良好</h3>';
-    html += '<p style="color:var(--text-secondary);margin:0 0 16px;font-size:13px;line-height:1.6">本次扫描未发现明显的安全配置问题。<br/>建议保留当前结果作为基线，并在版本变更后复测。</p>';
+    html += '<p style="color:var(--text-secondary);margin:0 0 16px;font-size:13px;line-height:1.6">当前未发现明显问题。<br/>建议保留结果作为基线，并在版本变更后复测。</p>';
     html += '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">';
     html += '<button onclick="navigateTo(\'scan\')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:8px 16px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">重新扫描</button>';
     html += '<button onclick="navigateTo(\'evolution\')" style="background:transparent;color:var(--text);border:1px solid var(--border);padding:8px 16px;border-radius:2px;cursor:pointer;font-size:12px">查看进化中心</button>';
     html += '</div></div>';
   }
-  // 11-S: 给没有置信度的 finding 自动设置默认值（响应头检测=高，敏感路径=中，信息泄露=高）
+  // Vuln Sentinel: 给没有置信度的 finding 自动设置默认值（响应头检测=高，敏感路径=中，信息泄露=高）
   data.findings.forEach(function(f) {
     if (!f.confidence_level && typeof f.confidence !== 'number') {
       let name = f.name || '';
@@ -2771,7 +2774,7 @@ function renderResult(data) {
     let fpClass = fbInitial && fbInitial.is_false_positive ? ' fp-marked' : '';
     let confClass = fbInitial && fbInitial.is_confirmed ? ' confirmed' : '';
     
-    // 11-S: 优先级标签
+    // Vuln Sentinel: 优先级标签
     let priorityLabel = '';
     let priorityClass = '';
     let fLevel = f.level || f.severity || '';
@@ -2818,7 +2821,7 @@ function renderResult(data) {
       detailHtml += '</div></div>';
     }
     detailHtml += '<div class="finding-section"><h4>智能检查</h4><p>' + escapeHtml(f.ai_advice).replace(/\n/g, '<br>') + '</p></div>';
-    detailHtml += '<div class="finding-section"><h4>修复建议</h4><p>' + escapeHtml(f.fix) + '</p></div>';
+    detailHtml += '<div class="finding-section"><h4>建议</h4><p>' + escapeHtml(f.fix) + '</p></div>';
     // 判断依据 evidence
     let evidenceText = '';
     if (f.evidence) {
@@ -2844,7 +2847,7 @@ function renderResult(data) {
         detailHtml += '<details class="finding-section" style="cursor:pointer"><summary style="font-weight:600;font-size:13px;color:var(--text-primary);padding:6px 0;list-style:none">展开技术细节</summary><div style="background:#313335;border:1px solid #555555;padding:10px;border-radius:2px;margin-top:6px;font-size:12px;color:var(--text-lighter)">无额外技术细节</div></details>';
       }
     }
-    // 多平台修复建议 Tab
+    // 多平台建议 Tab
     if (f.fixes && Object.keys(f.fixes).length > 0) {
       let fixPlatforms = f.fixes;
       let platformNames = {
@@ -2902,7 +2905,7 @@ function renderResult(data) {
         detailHtml += '<div class="finding-section"><h4>验证方法</h4><p>' + escapeHtml(f.remediation.verify) + '</p></div>';
       }
     }
-    // 11-S: 详细验证步骤（三步验证法）
+    // Vuln Sentinel: 详细验证步骤（三步验证法）
     if (f.verify_steps && f.verify_steps.length > 0) {
       detailHtml += '<div class="finding-section">';
       detailHtml += '<h4>验证修复（三步验证法）</h4>';
@@ -2947,7 +2950,7 @@ function renderResult(data) {
       }
       detailHtml += '</div>';
     }
-    // 11-S 置信度（高/中/低）+ 误报反馈行
+    // Vuln Sentinel 置信度（高/中/低）+ 误报反馈行
     let confLevel = f.confidence_level || '';
     let conf = (typeof f.confidence === 'number') ? f.confidence : null;
     let cvReason = f.cv_reason || '';
@@ -2973,9 +2976,9 @@ function renderResult(data) {
     if (cvReason) {
       detailHtml += '<span style="font-size:12px;color:var(--text-lighter)">· ' + escapeHtml(cvReason) + '</span>';
     }
-    // 建议人工复测标签（suspect 项）
+    // 待复核标签（suspect 项）
     if (f.review_required || confLevel === '中') {
-      detailHtml += '<span style="font-size:11px;background:var(--warning);color:#000;padding:1px 6px;border-radius:2px;margin-left:6px">建议人工复测</span>';
+      detailHtml += '<span style="font-size:11px;background:var(--warning);color:#000;padding:1px 6px;border-radius:2px;margin-left:6px">待复核</span>';
     }
     // 反馈按钮
     let btnDisabled = (fbInitial && (fbInitial.is_false_positive || fbInitial.is_confirmed)) ? ' disabled' : '';
@@ -2997,7 +3000,7 @@ function renderResult(data) {
     html += '</div>';
   }
 
-  // 修复建议 - 多平台 Tab（报告级别）
+  // 建议 - 多平台 Tab（报告级别）
   if (data.fixes && Object.keys(data.fixes).length > 0) {
     let fixPlatforms = data.fixes;
     let platformNames = {
@@ -3009,7 +3012,7 @@ function renderResult(data) {
 
     if (availablePlatforms.length > 0) {
       html += '<div class="card fade-in-up" style="animation-delay:0.3s;border:2px solid rgba(115,201,144,0.4);background:#3c3f41,rgba(115,201,144,0.01))">';
-      html += '<div style="font-weight:700;font-size:16px;margin-bottom:10px;color:var(--success)"> 修复建议（' + availablePlatforms.length + ' 种平台）</div>';
+      html += '<div style="font-weight:700;font-size:16px;margin-bottom:10px;color:var(--success)"> 建议（' + availablePlatforms.length + ' 种平台）</div>';
       html += '<div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">';
       availablePlatforms.forEach(function(p, i) {
         let active = i === 0;
@@ -3036,7 +3039,7 @@ function renderResult(data) {
   // Generate Fix
   html += '<div class="gen-fix-section fade-in-up" style="animation-delay:0.4s">';
   html += '<h3> 一键生成修复配置</h3>';
-  html += '<p class="card-desc" style="margin-bottom:14px">输入您的配置，系统将根据扫描结果生成可直接参考的修复建议</p>';
+  html += '<p class="card-desc" style="margin-bottom:14px">输入您的配置，系统将根据扫描结果生成可直接参考的建议</p>';
   html += '<div class="gen-fix-row">';
   html += '<input type="text" id="gen-fix-input" placeholder="粘贴配置或输入 server 块..." />';
   html += '<button class="gen-fix-btn" onclick="generateFixFromResult()"> 生成</button>';
@@ -3100,7 +3103,7 @@ function renderResult(data) {
       html += '<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:rgba(59,130,246,0.15);color:#4b6eaf;border:1px solid rgba(59,130,246,0.3);border-radius:2px;font-size:12px;font-weight:600">' + escapeHtml(w.name) + '</span>';
     });
     html += '</div>';
-    // 11-S：明确说明 WAF 不能替代安全响应头
+    // Vuln Sentinel：明确说明 WAF 不能替代安全响应头
     html += '<div style="padding:8px 12px;background:rgba(59,130,246,0.06);border-radius:2px;font-size:12px;color:var(--text-light);line-height:1.5">';
     html += 'WAF 提供应用层防护，但不能替代 HSTS、CSP、Cookie 安全策略等配置。下方发现的缺失项仍需修复。';
     html += '</div>';
@@ -3242,7 +3245,7 @@ function renderResult(data) {
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.8">';
   html += '<div> <strong>风险摘要</strong>：确认漏洞数 / 疑似风险数 / 配置缺失数总览</div>';
   html += '<div> <strong>证据详情</strong>：每个 finding 的响应头值、敏感路径内容片段、WAF 检测依据</div>';
-  html += '<div> <strong>修复建议</strong>：按服务器类型（Nginx、Apache、Express、Flask、Spring Boot、Cloudflare）分类的修复配置，含优先级排序</div>';
+  html += '<div> <strong>建议</strong>：按服务器类型（Nginx、Apache、Express、Flask、Spring Boot、Cloudflare）分类的修复配置，含优先级排序</div>';
   html += '<div> <strong>复测结果</strong>：上次 vs 本次分数对比、新增问题、已修复问题列表</div>';
   html += '<div> <strong>评分变化</strong>：如有历史记录，展示分数变化趋势</div>';
   html += '</div>';
@@ -3284,7 +3287,7 @@ function renderResult(data) {
     html += '<div style="color:var(--danger)"> 确认漏洞：' + exposedCount + ' 个敏感文件可直接访问，需立即修复</div>';
   }
   if (suspectCount > 0) {
-    html += '<div style="color:var(--warning)">疑似风险：' + suspectCount + ' 个路径返回 200，但内容命中 WAF/登录页/反爬特征，因此不判定为真实泄露，建议人工复测</div>';
+    html += '<div style="color:var(--warning)">疑似风险：' + suspectCount + ' 个路径返回 200，但内容命中 WAF/登录页/反爬特征，因此不判定为真实泄露，待复核</div>';
   }
   if (infoCount > 0) {
     html += '<div style="color:var(--primary)">信息： 公开信息：' + infoCount + ' 个路径为公开协议文件（如 robots.txt），仅作为信息项展示</div>';
@@ -3298,7 +3301,7 @@ function renderResult(data) {
   if (data.restricted) {
     html += '<div style="margin-top:10px;padding:8px 12px;background:rgba(240,167,50,0.1);border-radius:2px;color:var(--warning);font-size:12px;line-height:1.6">';
     html += '<strong>受限扫描提示</strong><br/>';
-    html += '目标站点存在 WAF / CDN / 登录 / 反爬限制，本次扫描可能未获取完整信息。建议先扫描首页或主域名，必要时联系站点管理员获取授权后再做深度扫描。';
+    html += '目标存在 WAF / CDN / 登录 / 反爬限制，可能影响结果完整性。建议优先扫主域名，必要时先完成验证。';
     html += '</div>';
   } else if (exposedCount === 0 && suspectCount === 0 && (headerMissingCount > 0 || configCount > 0)) {
     html += '<div style="margin-top:10px;padding:8px 12px;background:rgba(115,201,144,0.08);border-radius:2px;color:var(--success);font-size:12px">';
@@ -3405,9 +3408,9 @@ function renderResult(data) {
   html += '<div style="margin-top:4px">不进行：破坏性攻击、密码爆破、权限绕过、主动利用和深度渗透测试。</div>';
   html += '<div style="margin-top:4px;color:var(--text-light)">如需全面安全评估，建议配合专业安全服务。</div>';
   html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
-  html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据摘要，再结合二次扫描结果和原始响应确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
+  html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据，再结合二次扫描结果和原始响应确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
   html += '<div style="margin-top:8px;font-weight:600">证据分层</div>';
-  html += '<div>「已验证」表示已完成交叉验证或用户确认；「可能存在」表示有较强线索但建议人工复核；「待人工复核」表示证据较弱或不完整，建议先复核再进入工单。</div>';
+  html += '<div>“已确认”表示已验证；“可疑”表示建议复核；“待复核”表示证据较弱。</div>';
   html += '<div style="margin-top:8px;font-weight:600">审计范围</div>';
   html += '<div>本报告覆盖 HTTP/TLS 配置、安全响应头、Cookie 标记、CORS、敏感路径和 WAF 识别，不包含破坏性利用或深度渗透动作。</div>';
   html += '<div style="margin-top:8px;font-weight:600">免责声明</div>';
@@ -3475,7 +3478,7 @@ function showPdfDownloadTip() {
   html += '报告包含以下内容：<br>';
   html += ' 风险摘要（确认漏洞、疑似风险、配置缺失）<br>';
   html += ' 证据详情（响应头值、敏感路径片段、WAF 检测依据）<br>';
-  html += ' 修复建议（按服务器类型分类，含优先级排序）<br>';
+  html += ' 建议（按服务器类型分类，含优先级排序）<br>';
   html += ' 复测结果（上次与本次分数对比、新增与已修复问题）<br>';
   html += ' 评分变化趋势（如有历史记录）';
   html += '</div>';
@@ -3677,7 +3680,7 @@ function renderFixResult(fixes, score) {
 
   html += '<div class="card fade-in-up">';
   html += '<div class="card-title">' + langIcons[lang] + ' ' + langLabels[lang] + ' 修复代码</div>';
-  html += '<div style="font-size:12px;color:var(--text-lighter);margin-bottom:10px">共 ' + lines.length + ' 条修复建议，评分: ' + (typeof score === 'number' && !isNaN(score) ? score : 0) + '</div>';
+  html += '<div style="font-size:12px;color:var(--text-lighter);margin-bottom:10px">共 ' + lines.length + ' 条建议，评分: ' + (typeof score === 'number' && !isNaN(score) ? score : 0) + '</div>';
 
   if (lines.length === 0) {
     html += '<p style="color:var(--success);font-size:13px"> 未检测到需要修复的配置问题</p>';
@@ -3808,7 +3811,7 @@ async function downloadAllFixes() {
     scan_id: lastScanResult.scan_id || null,
     score: typeof lastScanResult.score === 'number' ? lastScanResult.score : null,
     findings: Array.isArray(lastScanResult.findings) ? lastScanResult.findings.length : 0,
-    version: '11-S'
+    version: 'Vuln Sentinel'
   };
   zip.file('manifest.json', JSON.stringify(manifest, null, 2));
   zip.file('README.txt', [
@@ -3833,7 +3836,7 @@ async function downloadAllFixes() {
     zip.file(p + '.txt', content);
   });
   if (!hasContent) {
-    zip.file('USAGE.txt', '当前扫描结果没有直接生成平台配置片段。请先查看报告中的漏洞证据与修复建议，再重新生成修复包。\n');
+    zip.file('USAGE.txt', '当前扫描结果没有直接生成平台配置片段。请先查看报告中的漏洞证据与建议，再重新生成修复包。\n');
   }
   let blob = await zip.generateAsync({ type: 'blob' });
   let url = URL.createObjectURL(blob);
@@ -4448,3 +4451,4 @@ window.addEventListener('load', function() {
   let authStep3 = document.getElementById('auth-check');
   if (authStep3) authStep3.addEventListener('change', refreshScanStartStateSoon);
 });
+
