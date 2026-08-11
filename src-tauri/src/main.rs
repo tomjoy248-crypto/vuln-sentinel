@@ -1,7 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::fs::OpenOptions;
 use std::net::{TcpListener, TcpStream};
+use std::process::Stdio;
 use std::os::windows::process::CommandExt;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
@@ -15,24 +18,86 @@ fn pick_free_port() -> Option<u16> {
     .and_then(|listener| listener.local_addr().ok().map(|addr| addr.port()))
 }
 
-fn try_start_local_backend(app: &tauri::AppHandle, port: u16) {
-  let backend_path = match app.path().resolve("vuln-sentinel-backend.exe", BaseDirectory::Resource) {
-    Ok(path) => path,
-    Err(_) => return,
-  };
+fn candidate_backend_paths(app: &tauri::AppHandle) -> Vec<PathBuf> {
+  let mut candidates = vec![
+    app.path().resolve("vuln-sentinel-backend.exe", BaseDirectory::Resource),
+    app.path().resolve("backend-dist/vuln-sentinel-backend.exe", BaseDirectory::Resource),
+    app.path().resolve("backend/vuln-sentinel-backend.exe", BaseDirectory::Resource),
+  ];
 
-  if !backend_path.exists() {
+  if let Ok(resource_dir) = app.path().resource_dir() {
+    candidates.push(Ok(resource_dir.join("vuln-sentinel-backend.exe")));
+    candidates.push(Ok(resource_dir.join("backend-dist").join("vuln-sentinel-backend.exe")));
+    candidates.push(Ok(resource_dir.join("resources").join("backend-dist").join("vuln-sentinel-backend.exe")));
+  }
+
+  if let Ok(exe) = std::env::current_exe() {
+    if let Some(dir) = exe.parent() {
+      candidates.push(Ok(dir.join("vuln-sentinel-backend.exe")));
+      candidates.push(Ok(dir.join("backend-dist").join("vuln-sentinel-backend.exe")));
+    }
+  }
+
+  candidates
+    .into_iter()
+    .filter_map(Result::ok)
+    .filter(|path| Path::new(path).exists())
+    .collect()
+}
+
+fn walk_for_backend(dir: &Path, depth: usize, found: &mut Vec<PathBuf>) {
+  if depth == 0 {
     return;
   }
+  let entries = match std::fs::read_dir(dir) {
+    Ok(entries) => entries,
+    Err(_) => return,
+  };
+  for entry in entries.flatten() {
+    let path = entry.path();
+    if path.is_dir() {
+      walk_for_backend(&path, depth - 1, found);
+    } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+      let lower = name.to_ascii_lowercase();
+      if lower == "vuln-sentinel-backend.exe" || lower.starts_with("vuln-sentinel-backend") && lower.ends_with(".exe") {
+        found.push(path);
+      }
+    }
+  }
+}
+
+fn try_start_local_backend(app: &tauri::AppHandle, port: u16) -> Option<PathBuf> {
+  let mut found = candidate_backend_paths(app);
+  if found.is_empty() {
+    if let Ok(exe) = std::env::current_exe() {
+      if let Some(dir) = exe.parent() {
+        walk_for_backend(dir, 4, &mut found);
+      }
+    }
+  }
+  let backend_path = found.into_iter().next()?;
+
+  let log_path = std::env::temp_dir().join("vuln-sentinel-backend-startup.log");
+  let log_file = OpenOptions::new().create(true).append(true).open(&log_path).ok();
 
   let mut command = Command::new(&backend_path);
   if let Some(parent) = backend_path.parent() {
     command.current_dir(parent);
   }
-  let _ = command
-    .env("PORT", port.to_string())
+  if let Some(file) = log_file {
+    if let Ok(stderr_file) = file.try_clone() {
+      command.stdout(Stdio::from(file));
+      command.stderr(Stdio::from(stderr_file));
+    }
+  }
+  match command
+    .env("PORT", "8011")
     .creation_flags(0x08000000)
-    .spawn();
+    .spawn()
+  {
+    Ok(_) => Some(backend_path),
+    Err(_) => None,
+  }
 }
 
 fn wait_for_backend_ready(addr: &str, timeout_seconds: u64) -> bool {
@@ -72,22 +137,31 @@ fn show_loading(window: &tauri::WebviewWindow, message: &str) {
   let _ = window.eval(&script);
 }
 
+fn show_backend_fallback(window: &tauri::WebviewWindow, backend_hint: &str) {
+  let banner_text = format!(
+    "本地服务暂未启动，界面已打开。请检查防火墙或重新启动安装包。后端路径：{}",
+    backend_hint
+  );
+  let escaped = escape_js_text(&banner_text);
+  let script = format!(
+    r#"(function() {{
+      var boot = document.getElementById('boot-screen');
+      if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
+      var banner = document.createElement('div');
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#7c2d12;color:#fff;padding:10px 16px;font-size:13px;line-height:1.5;font-family:system-ui,-apple-system,Segoe UI,Microsoft YaHei,sans-serif';
+      banner.textContent = `{}`;
+      document.body.appendChild(banner);
+    }})();"#,
+    escaped
+  );
+  let _ = window.eval(&script);
+}
+
 fn main() {
   tauri::Builder::default()
     .setup(|app| {
-      let port = pick_free_port().unwrap_or(8000);
-      let local_web_url = format!("http://127.0.0.1:{port}/");
-      let local_backend_addr = format!("127.0.0.1:{port}");
-      try_start_local_backend(&app.handle().clone(), port);
-      if let Some(window) = app.get_webview_window("main") {
-        show_loading(&window, "正在检查本地服务并加载主界面，请稍候。");
-        if wait_for_backend_ready(&local_backend_addr, 20) {
-          let script = format!("window.location.replace({:?});", local_web_url);
-          let _ = window.eval(&script);
-        } else {
-          show_loading(&window, "本地服务启动失败，请重新打开安装包或检查防火墙。");
-        }
-      }
+      let port = 8011;
+      let _ = try_start_local_backend(&app.handle().clone(), port);
       Ok(())
     })
     .run(tauri::generate_context!())

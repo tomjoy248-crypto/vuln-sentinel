@@ -1,6 +1,7 @@
 /** 后端 API 封装 */
 
-export const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : '';
+const __DEFAULT_API_BASE__ = (typeof window !== 'undefined' && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) ? '' : 'http://127.0.0.1:8011';
+export const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : __DEFAULT_API_BASE__;
 
 export function getToken() {
   try { return localStorage.getItem('vs_token'); } catch (e) { return null; }

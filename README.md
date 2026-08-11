@@ -4,7 +4,7 @@ Vuln Sentinel 是一款面向中小团队的安全扫描与修复工具，强调
 
 ## 下载
 - GitHub Release: <https://github.com/tomjoy248-crypto/vuln-sentinel/releases/latest>
-- Windows 安装包: `Vuln Sentinel_1.0.6_x64-setup.exe`
+- Windows 安装包: `Vuln Sentinel_1.0.8_x64-setup.exe`
 
 ## 产品定位
 - 输入目标网址后执行授权扫描

@@ -1,6 +1,6 @@
 [package]
 name = "vuln-sentinel-desktop"
-version = "1.0.6"
+version = "1.0.8"
 edition = "2021"
 build = "build.rs"
 
@@ -12,6 +12,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = '2', features = [] }
 url = '2'
+windows-sys = { version = '0.59', features = ['Win32_Foundation', 'Win32_System_Threading'] }
 
 [package.metadata.tauri]
 

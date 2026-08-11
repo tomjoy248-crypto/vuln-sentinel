@@ -1329,10 +1329,14 @@ async function doBatchScan() {
 }
 
 // ----- startScanDirect -----
-function startScanDirect() {
+function startScanDirect(urlOverride) {
   try {
   let urlInput = document.getElementById('scan-url');
   let url = urlInput ? urlInput.value.trim() : '';
+  if (!url && urlOverride) {
+    url = String(urlOverride).trim();
+    if (urlInput) urlInput.value = url;
+  }
   if (!url) { showToast('请输入目标网址'); return; }
   // 授权确认检查
   let authStep1 = document.getElementById('auth-check-step1');
@@ -1386,6 +1390,10 @@ function startScanDirect() {
 function updateScanStartState() {
   let urlInput = document.getElementById('scan-url');
   let url = urlInput ? urlInput.value.trim() : '';
+  if (!url && urlOverride) {
+    url = String(urlOverride).trim();
+    if (urlInput) urlInput.value = url;
+  }
   let hasUrl = !!url;
   let authStep1 = document.getElementById('auth-check-step1');
   let authStep3 = document.getElementById('auth-check');
@@ -1481,6 +1489,10 @@ function showFullScanDetail() {
 function goVerifyStep2() {
   let urlInput = document.getElementById('scan-url');
   let url = urlInput ? urlInput.value.trim() : '';
+  if (!url && urlOverride) {
+    url = String(urlOverride).trim();
+    if (urlInput) urlInput.value = url;
+  }
   if (!url) { showToast('请输入目标网址'); return; }
   // 自动补全协议
   if (!/^https?:\/\//i.test(url)) {
@@ -1546,6 +1558,10 @@ function skipVerification() {
   if (!isLoggedIn()) { showToast('请先登录'); navigateTo('profile'); return; }
   let urlInput = document.getElementById('scan-url');
   let url = urlInput ? urlInput.value.trim() : '';
+  if (!url && urlOverride) {
+    url = String(urlOverride).trim();
+    if (urlInput) urlInput.value = url;
+  }
   if (!url) { showToast('请输入目标网址'); return; }
   // 自动补全协议
   if (!/^https?:\/\//i.test(url)) {
@@ -1572,6 +1588,10 @@ function confirmVerification() {
   let btn = document.getElementById('verify-confirm-btn');
   let urlInput = document.getElementById('scan-url');
   let url = urlInput ? urlInput.value.trim() : '';
+  if (!url && urlOverride) {
+    url = String(urlOverride).trim();
+    if (urlInput) urlInput.value = url;
+  }
   if (!url) { showToast('请输入目标网址'); return; }
   // 自动补全协议
   if (!/^https?:\/\//i.test(url)) {
@@ -3875,13 +3895,13 @@ function verifyFix() {
       return;
     }
     if (data.success) {
-      let old评分 = lastScanResult.score;
-      let new评分 = data.new_score;
-      let msg = '重新扫描完成！评分: ' + old评分 + ' → ' + new评分;
-      if (new评分 > old评分) {
-        msg += ' (提升 ' + (new评分 - old评分) + ' 分)';
-      } else if (new评分 < old评分) {
-        msg += ' (下降 ' + (old评分 - new评分) + ' 分)';
+      let oldScore = lastScanResult.score;
+      let newScore = data.new_score;
+      let msg = '重新扫描完成！评分: ' + oldScore + ' → ' + newScore;
+      if (newScore > oldScore) {
+        msg += ' (提升 ' + (newScore - oldScore) + ' 分)';
+      } else if (newScore < oldScore) {
+        msg += ' (下降 ' + (oldScore - newScore) + ' 分)';
       } else {
         msg += ' (无变化)';
       }
