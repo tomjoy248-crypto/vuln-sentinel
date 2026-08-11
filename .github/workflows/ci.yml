@@ -107,6 +107,10 @@ jobs:
       - name: Build desktop backend
         run: cargo build --release --manifest-path src-tauri/Cargo.toml
 
+      - name: Build desktop installer
+        working-directory: src-tauri
+        run: npx tauri build --config D:/vuln-sentinel/src-tauri/tauri.conf.json
+
       - name: Verify desktop bundle inputs
         shell: pwsh
         run: |
@@ -115,6 +119,7 @@ jobs:
           if (-not (Test-Path frontend/dist/index.html)) { throw 'frontend/dist/index.html missing after build' }
           if (-not (Test-Path runtime/backend-dist/vuln-sentinel-backend.exe)) { throw 'backend executable missing' }
           if (-not (Test-Path src-tauri/target/release/vuln-sentinel-desktop.exe)) { throw 'desktop exe missing after build' }
+          if (-not (Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -ErrorAction SilentlyContinue)) { throw 'installer missing after tauri build' }
           Write-Host 'Windows desktop smoke checks passed.'
 
   docker-build:
