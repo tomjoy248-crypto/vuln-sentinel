@@ -1,0 +1,52 @@
+﻿# Vuln Sentinel 当前状态
+
+> 更新时间：2026-08-11
+>
+> 这个页面用于让 GitHub 访问者快速判断：软件现在能做什么、还不稳定什么、下一步该看哪里。
+
+## 一句话结论
+
+Vuln Sentinel 已经不是纯原型，当前更接近“可演示、可内测、可小范围交付”的工作台版本。
+
+## 当前可用
+
+- Windows 桌面包可构建并启动
+- Web / 桌面主界面已收口为“扫描工作台”
+- 扫描入口、登录页、结果页、修复建议页已能串联
+- 前端回归测试已接入 GitHub 工作流
+- 本地构建和安装包已验证
+
+## 仍需重点关注
+
+- 真实站点上的误报 / 漏报仍需要继续压测
+- WAF、CDN、软 404、强登录态、重定向这类场景仍可能扫不稳
+- Windows 安装包还需要继续做实机验收
+- 若本地资源缓存未刷新，旧 `_up_` 资源可能影响首次体验
+
+## 已完成的 GitHub 可见项
+
+- `frontend/src/templates.test.js`：首页工作台结构回归测试
+- GitHub Actions：已包含 Python 测试、前端构建、Docker 构建
+- `README.md`：已链接到当前状态说明
+
+## 能力边界
+
+| 场景 | 当前判断 |
+|---|---|
+| 常见安全响应头 / 基础配置体检 | 相对稳定 |
+| 证据展示 / 复测闭环 | 已可用 |
+| WAF / CDN / 软 404 | 仍需人工复核 |
+| 强登录态 / 多步流程 | 仍需继续优化 |
+| 全站全漏洞覆盖 | 不承诺 |
+
+## 最新发布
+
+- GitHub Release：`v1.0.8`
+- Windows 安装包：`Vuln Sentinel_1.0.8_x64-setup.exe`
+
+## 相关文件
+
+- `README.md`
+- `PRODUCT_CAPABILITY_MATRIX.md`
+- `WINDOWS_TAURI_STATUS.md`
+- `WINDOWS_DESKTOP_BUILD_AND_START.md`

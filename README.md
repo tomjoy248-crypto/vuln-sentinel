@@ -1,10 +1,16 @@
-# Vuln Sentinel
+﻿# Vuln Sentinel
 
 Vuln Sentinel 是一款面向中小团队的安全扫描与修复工具，强调真实证据、可复测结果和可交付报告。
 
+## 当前状态
+
+- [查看当前软件状态](STATUS.md)
+- [查看能力边界](PRODUCT_CAPABILITY_MATRIX.md)
+- [查看 Windows 构建与启动说明](WINDOWS_DESKTOP_BUILD_AND_START.md)
+
 ## 下载
 - GitHub Release: <https://github.com/tomjoy248-crypto/vuln-sentinel/releases/latest>
-- Windows 安装包: `Vuln Sentinel_1.0.8_x64-setup.exe`
+- Windows 安装包：`Vuln Sentinel_1.0.8_x64-setup.exe`
 
 ## 产品定位
 - 输入目标网址后执行授权扫描
@@ -29,11 +35,12 @@ Vuln Sentinel 是一款面向中小团队的安全扫描与修复工具，强调
 3. 查看结果、修复建议与复测信息。
 
 ## 安全提示
-- 仅对已授权目标执行扫描
-- 生产环境请设置 `JWT_SECRET`、`ALLOWED_ORIGINS`、`PUBLIC_BASE_URL`
-- `PUBLIC_DEMO_ENABLED` 默认关闭，如需公开演示请明确开启
+- 仅对已授权目标执行扫描。
+- 生产环境请配置 `JWT_SECRET`、`ALLOWED_ORIGINS`、`PUBLIC_BASE_URL`。
+- `PUBLIC_DEMO_ENABLED` 默认关闭，如需公开演示请明确开启。
 
-## 相关文档
+## 相关文件
 - [安全策略](SECURITY.md)
 - [生产部署指南](docs/deployment.md)
 - [Windows 验收清单](docs/windows-acceptance-checklist.md)
+- [当前状态](STATUS.md)
