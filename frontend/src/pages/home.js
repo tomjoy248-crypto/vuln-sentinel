@@ -1333,10 +1333,6 @@ function startScanDirect(urlOverride) {
   try {
   let urlInput = document.getElementById('scan-url');
   let url = urlInput ? urlInput.value.trim() : '';
-  if (!url && urlOverride) {
-    url = String(urlOverride).trim();
-    if (urlInput) urlInput.value = url;
-  }
   if (!url) { showToast('请输入目标网址'); return; }
   // 授权确认检查
   let authStep1 = document.getElementById('auth-check-step1');
@@ -1390,10 +1386,6 @@ function startScanDirect(urlOverride) {
 function updateScanStartState() {
   let urlInput = document.getElementById('scan-url');
   let url = urlInput ? urlInput.value.trim() : '';
-  if (!url && urlOverride) {
-    url = String(urlOverride).trim();
-    if (urlInput) urlInput.value = url;
-  }
   let hasUrl = !!url;
   let authStep1 = document.getElementById('auth-check-step1');
   let authStep3 = document.getElementById('auth-check');
@@ -1489,10 +1481,6 @@ function showFullScanDetail() {
 function goVerifyStep2() {
   let urlInput = document.getElementById('scan-url');
   let url = urlInput ? urlInput.value.trim() : '';
-  if (!url && urlOverride) {
-    url = String(urlOverride).trim();
-    if (urlInput) urlInput.value = url;
-  }
   if (!url) { showToast('请输入目标网址'); return; }
   // 自动补全协议
   if (!/^https?:\/\//i.test(url)) {
@@ -1558,10 +1546,6 @@ function skipVerification() {
   if (!isLoggedIn()) { showToast('请先登录'); navigateTo('profile'); return; }
   let urlInput = document.getElementById('scan-url');
   let url = urlInput ? urlInput.value.trim() : '';
-  if (!url && urlOverride) {
-    url = String(urlOverride).trim();
-    if (urlInput) urlInput.value = url;
-  }
   if (!url) { showToast('请输入目标网址'); return; }
   // 自动补全协议
   if (!/^https?:\/\//i.test(url)) {
