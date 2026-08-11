@@ -1,5 +1,7 @@
 ﻿# Vuln Sentinel
 
+![CI](https://github.com/tomjoy248-crypto/vuln-sentinel/actions/workflows/ci.yml/badge.svg)
+
 Vuln Sentinel 是一款面向中小团队的安全扫描与修复工具，强调真实证据、可复测结果和可交付报告。
 
 ## 当前状态
