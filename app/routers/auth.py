@@ -10,6 +10,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.core.rate_limiter import get_client_ip
+from app.core.config import is_production
 from pydantic import BaseModel, Field
 
 from app.core.exceptions import (
@@ -51,7 +52,7 @@ def _make_auth_challenge() -> dict:
 
 
 def _verify_auth_challenge(token: str, answer: str) -> None:
-    if _TEST_MODE or os.environ.get("AUTH_CHALLENGE_DISABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
+    if _TEST_MODE or not is_production(__import__("main").settings) or os.environ.get("AUTH_CHALLENGE_DISABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
         return
     if not token or not answer:
         raise BusinessException("请完成验证码验证")

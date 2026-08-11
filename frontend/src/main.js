@@ -44,16 +44,35 @@ mountAppShell();
 
 (function removeBootScreenWhenReady() {
   function clearBoot() {
-    var boot = document.getElementById('boot-screen');
-    if (boot && boot.parentNode) {
-      boot.parentNode.removeChild(boot);
-    }
+    try {
+      var boot = document.getElementById('boot-screen');
+      if (boot && boot.parentNode) {
+        boot.parentNode.removeChild(boot);
+      }
+      if (document.body && document.body.style) {
+        document.body.style.margin = '0';
+      }
+      if (!location.hash || location.hash === '#') {
+        location.hash = '#page-scan';
+      }
+      if (typeof window.navigateTo === 'function') {
+        window.navigateTo('home');
+      }
+      var scanSection = document.getElementById('scan-section');
+      if (scanSection && typeof scanSection.scrollIntoView === 'function') {
+        scanSection.scrollIntoView({ behavior: 'auto', block: 'start' });
+      }
+    } catch (e) {}
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function() {
-      setTimeout(clearBoot, 0);
+      clearBoot();
+      setTimeout(clearBoot, 50);
+      setTimeout(clearBoot, 300);
     });
   } else {
-    setTimeout(clearBoot, 0);
+    clearBoot();
+    setTimeout(clearBoot, 50);
+    setTimeout(clearBoot, 300);
   }
 })();

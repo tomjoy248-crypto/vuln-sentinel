@@ -147,526 +147,107 @@ export const APP_TEMPLATE = `</head>
 
 
 <div class="page active" id="page-home" role="main">
-
-  <div class="home-hero card fade-in-up">
-
-    <div class="home-hero-top">
-      <div class="home-brand-dot"></div>
-      <div class="home-brand-title">漏洞哨兵</div>
-    </div>
-
-    <h1 class="home-hero-title">Vuln Sentinel Workbench</h1>
-    <div class="home-hero-version">Workbench</div>
-
-    <div class="home-hero-actions">
-      <button onclick="navigateTo('home')" class="home-hero-icon" aria-label="首页">⌂</button>
-      <button onclick="navigateTo('scan')" class="home-hero-icon" aria-label="扫描">↗</button>
-      <button onclick="navigateTo('profile')" class="home-hero-icon" aria-label="账号">◉</button>
-    </div>
-
-    <div class="home-hero-footer">仅用于已授权目标的安全检测、复测和交付。</div>
-  </div>
-
-
-
-  <div id="home-onboarding-banner" class="card fade-in-up" style="display:none;margin-top:14px;padding:14px;border:1px solid rgba(75,110,175,0.35);background:linear-gradient(135deg, rgba(75,110,175,0.12), rgba(115,201,144,0.08))">
-
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
-
-      <div style="min-width:240px;flex:1">
-
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:6px">3 步进入工作台扫描</div>
-
-        <div style="font-size:12px;color:var(--text-secondary);line-height:1.7">① 输入目标、确认授权、查看证据与建议，再进入复测和报告交付。
-
-        适合内测、演示、交付前验收和真实安全体检。</div>
-
+  <div class="card fade-in-up" style="padding:14px 16px;margin-bottom:14px;border:1px solid rgba(75,110,175,0.25);background:linear-gradient(180deg,rgba(15,23,42,0.92),rgba(17,24,39,0.96));">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
+      <div>
+        <div style="font-size:13px;color:#73c990;font-weight:700;letter-spacing:.04em;text-transform:uppercase">Vuln Sentinel</div>
+        <h1 style="margin:6px 0 6px;font-size:26px;line-height:1.15;color:var(--text-primary)">???????</h1>
+        <div style="color:var(--text-secondary);font-size:14px;line-height:1.7;max-width:760px">?????????????????????????????????????????????</div>
       </div>
-
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-
-        <button onclick="navigateTo('scan')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">开始扫描</button>
-
-        <button onclick="navigateTo('profile')" style="background:rgba(75,110,175,0.12);color:var(--primary);border:1px solid rgba(75,110,175,0.35);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">账号设置</button>
-
-        <button onclick="navigateTo('audit')" style="background:rgba(115,201,144,0.12);color:#73c990;border:1px solid rgba(115,201,144,0.35);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">上线审计</button>
-
-        <button onclick="dismissHomeOnboarding()" style="background:transparent;color:var(--text-secondary);border:1px solid var(--border);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px">不再提示</button>
-
+        <button onclick="navigateTo('scan')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">????</button>
+        <button onclick="navigateTo('profile')" style="background:rgba(75,110,175,0.12);color:var(--primary);border:1px solid rgba(75,110,175,0.35);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">?? / ??</button>
+        <button onclick="navigateTo('result')" style="background:rgba(115,201,144,0.12);color:#73c990;border:1px solid rgba(115,201,144,0.35);padding:8px 14px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:600">????</button>
       </div>
-
     </div>
-
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:14px">
-
-      <div style="padding:10px 12px;background:rgba(60,63,65,0.7);border:1px solid var(--border);border-radius:2px">
-
-        <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">适合谁</div>
-
-        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">安全团队、研发、运维、甲方安全负责人</div>
-
-      </div>
-
-      <div style="padding:10px 12px;background:rgba(60,63,65,0.7);border:1px solid var(--border);border-radius:2px">
-
-        <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">产出什么</div>
-
-        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">可直接给老板、研发和客户看的结果报告</div>
-
-      </div>
-
-      <div style="padding:10px 12px;background:rgba(60,63,65,0.7);border:1px solid var(--border);border-radius:2px">
-
-        <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">闭环能力</div>
-
-        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">扫描、证据、修复、验证、复测一条线打通</div>
-
-      </div>
-
-    </div>
-
   </div>
 
-
-
-  <!-- 核心数据总览 -->
-
-  <div class="card fade-in-up dashboard-stats" style="margin-top:14px;padding:12px;background:#3c3f41;border:1px solid #555555">
-
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
-
-      <div class="stat-cell">
-
-        <div class="stat-value" style="color:#73c990" id="home-stat-scan-count">-</div>
-
-        <div class="stat-label">总扫描次数</div>
-
-        <div class="stat-sub">真实运行记录</div>
-
-      </div>
-
-      <div class="stat-cell">
-
-        <div class="stat-value" style="color:#4b6eaf" id="home-stat-high-risk">-</div>
-
-        <div class="stat-label">高风险发现</div>
-
-        <div class="stat-sub">需要优先处理</div>
-
-      </div>
-
-      <div class="stat-cell">
-
-        <div class="stat-value" style="color:#f0a732" id="home-stat-fixed-count">-</div>
-
-        <div class="stat-label">已修复项</div>
-
-        <div class="stat-sub">复测确认关闭</div>
-
-      </div>
-
-      <div class="stat-cell">
-
-        <div class="stat-value" style="color:#c75450" id="home-stat-score">-</div>
-
-        <div class="stat-label">最近评分</div>
-
-        <div class="stat-sub">最近一次扫描</div>
-
-      </div>
-
+  <section id="scan-section" class="card scan-section" style="margin-bottom:14px">
+    <div class="card-title">????</div>
+    <div class="scan-input-wrap">
+      <input id="scan-url" type="url" placeholder="???https://example.com" aria-label="????" oninput="updateScanStartState()" />
     </div>
 
-  </div>
-
-
-
-  <!-- Vuln Sentinel: 技术亮点（最醒目的位置） -->
-
-  <div class="card fade-in-up" style="margin-top:18px;background:#3c3f41;border:1px solid #555555;border-radius:2px;overflow:hidden">
-
-    <!-- 顶部标题栏 -->
-
-    <div style="padding:12px 12px 10px;background:#313335;border-bottom:1px solid #555555">
-
-      <div style="display:flex;align-items:center;gap:10px">
-
-        <div style="flex:1">
-
-          <div style="font-size:13px;font-weight:600;color:#bbbbbb">安全闭环：扫描 → 风险定位 → 修复配置生成 → 复测对比 → 报告导出</div>
-
-          <div style="font-size:11px;color:#808080;margin-top:2px">多平台修复配置生成 · 交叉验证降低误报 · 导出专业报告</div>
-
-        </div>
-
-        <span style="font-size:10px;background:#4b6eaf;color:#fff;padding:2px 8px;border-radius:2px;font-weight:600">Vuln Sentinel 核心能力</span>
-
-      </div>
-
+    <div id="scan-login-tip" style="background:#313335;border:1px solid #555555;border-radius:2px;padding:10px 14px;margin-bottom:10px;text-align:center;display:none">
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">??????????</div>
+      <button onclick="navigateTo('profile')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 18px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:500">???? / ??</button>
     </div>
 
-    <!-- 三大技术亮点 -->
-
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#555555;margin:0">
-
-      <div style="padding:12px 10px;background:#3c3f41;text-align:center">
-
-        <div style="font-size:12px;font-weight:600;color:#bbbbbb;margin-bottom:4px">置信度分级</div>
-
-        <div style="font-size:11px;color:#808080;line-height:1.5">高/中/低三级标注<br>辅助优先级排序</div>
-
-      </div>
-
-      <div style="padding:12px 10px;background:#3c3f41;text-align:center">
-
-        <div style="font-size:12px;font-weight:600;color:#bbbbbb;margin-bottom:4px">反馈闭环</div>
-
-          <div style="font-size:11px;color:#808080;line-height:1.5">用户反馈结果<br>持续优化检测模型</div>
-
-      </div>
-
-      <div style="padding:12px 10px;background:#3c3f41;text-align:center">
-
-        <div style="font-size:12px;font-weight:600;color:#bbbbbb;margin-bottom:4px">安全闭环</div>
-
-        <div style="font-size:11px;color:#808080;line-height:1.5">扫描 → 风险定位 → 修复配置 → 复测 → 报告</div>
-
-      </div>
-
+    <div id="scan-credits-hint" style="display:none;background:rgba(75,110,175,0.08);border:1px solid rgba(75,110,175,0.25);border-radius:2px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--text-secondary);line-height:1.6">
+      <strong style="color:var(--primary)">????</strong><br/>
+      ?????<span id="scan-credits-value">--</span> ? ?????? 1 ? ?????? 3
     </div>
 
-    <!-- 本地扫描入口（登录后显示） -->
+    <label class="scan-checkbox" style="margin-bottom:12px">
+      <input id="auth-check-step1" type="checkbox" onchange="updateScanStartState()" />
+      <span>????????????????</span>
+    </label>
 
-  </div>
+    <button class="scan-btn" id="scan-btn-step1" onclick="startScanDirect()" disabled>????</button>
 
-
-
-  <!-- 风险趋势图 -->
-
-  <div class="card fade-in-up" style="margin-top:18px">
-
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-
-      <strong style="font-size:14px;color:var(--text-primary)">风险趋势</strong>
-
-      <div style="display:flex;gap:6px">
-
-        <button onclick="loadTrendChart(7)" class="trend-range" data-days="7" style="padding:4px 10px;min-height:0;font-size:12px;border:1px solid #555555;background:#45494a;border-radius:2px;cursor:pointer;color:#808080;font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace">7天</button>
-
-        <button onclick="loadTrendChart(30)" class="trend-range" data-days="30" style="padding:4px 10px;min-height:0;font-size:12px;border:1px solid #555555;background:#45494a;border-radius:2px;cursor:pointer;color:#808080;font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace">30天</button>
-
-      </div>
-
+    <div style="text-align:center;margin-top:10px">
+      <button onclick="goVerifyStep2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">??????????</button>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">??????</div>
     </div>
 
-    <div id="trend-chart" style="min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">扫描几个目标后，即可查看分数变化趋势。</div>
-
-  </div>
-
-
-
-
-
-  <section class="scan-section card fade-in-up" style="animation-delay:0.1s">
-
-    <h2 class="card-title">安全扫描</h2>
-
-    <p class="card-desc">输入目标并确认授权后开始扫描。</p>
-
-
-
-    <!-- 仪表盘概览（已登录时显示） -->
-
-    <div id="dashboard-overview" style="display:none;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
-
-      <div class="stat-card" style="background:#313335;padding:12px;border:1px solid #555555;border-radius:2px;text-align:center"><div style="font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace;font-size:22px;font-weight:600;color:#4b6eaf" id="stat-total">-</div><div style="font-size:11px;color:#808080;margin-top:6px;text-transform:uppercase;letter-spacing:0.3px">总扫描次数</div></div>
-
-      <div class="stat-card" style="background:#313335;padding:12px;border:1px solid #555555;border-radius:2px;text-align:center"><div style="font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace;font-size:22px;font-weight:600;color:#c75450" id="stat-high">-</div><div style="font-size:11px;color:#808080;margin-top:6px;text-transform:uppercase;letter-spacing:0.3px">高风险</div></div>
-
-      <div class="stat-card" style="background:#313335;padding:12px;border:1px solid #555555;border-radius:2px;text-align:center"><div style="font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace;font-size:22px;font-weight:600;color:#73c990" id="stat-fixed">-</div><div style="font-size:11px;color:#808080;margin-top:6px;text-transform:uppercase;letter-spacing:0.3px">已修复</div></div>
-
-      <div class="stat-card" style="background:#313335;padding:12px;border:1px solid #555555;border-radius:2px;text-align:center"><div style="font-family:'JetBrains Mono','Consolas','Monaco','Courier New',monospace;font-size:22px;font-weight:600;color:#f0a732" id="stat-score">-</div><div style="font-size:11px;color:#808080;margin-top:6px;text-transform:uppercase;letter-spacing:0.3px">最近评分</div></div>
-
+    <div style="text-align:center;margin-top:8px">
+      <button onclick="showBatchScanModal()" style="background:none;border:1px dashed var(--border);color:var(--text-secondary);padding:8px 16px;border-radius:2px;cursor:pointer;font-size:12px;width:100%">????????? 5 ? URL?</button>
     </div>
 
-
-
-    <!-- Vuln Sentinel: 安全趋势面板 -->
-
-    <div id="trend-panel" style="display:none;margin-bottom:20px">
-
-      <div class="card" style="padding:16px">
-
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-
-          <div style="display:flex;align-items:center;gap:8px">
-
-            <h3 style="margin:0;font-size:15px;font-weight:700">安全评分趋势</h3>
-
-          </div>
-
-          <div id="trend-summary" style="display:flex;gap:12px;flex-wrap:wrap"></div>
-
-        </div>
-
-        <div id="trend-chart-container" style="position:relative;width:100%;height:200px;background:#313335;border:1px solid #555555;border-radius:2px;overflow:hidden">
-
-          <canvas id="trend-canvas" style="width:100%;height:100%"></canvas>
-
-          <div id="trend-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:13px">暂无扫描数据，完成首次扫描后即可查看趋势</div>
-
-        </div>
-
-        <div id="trend-legend" style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap"></div>
-
-      </div>
-
-    </div>
-
-
-
-    <!-- Step 1: Input URL -->
-
-    <div id="verify-step-1" class="verify-step">
-
+    <div id="verify-step-2" class="verify-step" style="display:none;margin-top:16px">
       <div class="verify-step-header">
-
-        <span class="verify-num">1</span>
-
-        <span>输入目标网址</span>
-
-      </div>
-
-      <div class="scan-input-wrap">
-
-        <input id="scan-url" type="url" placeholder="例如：https://示例.com" aria-label="目标网址" oninput="updateScanStartState()" />
-
-      </div>
-
-      <div id="scan-login-tip" style="background:#313335;border:1px solid #555555;border-radius:2px;padding:10px 14px;margin-bottom:10px;text-align:center;display:none">
-
-        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">登录后即可开始扫描。</div>
-
-        <button onclick="navigateTo('profile')" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 18px;border-radius:2px;cursor:pointer;font-size:13px;font-weight:500">立即登录 / 注册</button>
-
-      </div>
-
-      <div id="scan-credits-hint" style="display:none;background:rgba(75,110,175,0.08);border:1px solid rgba(75,110,175,0.25);border-radius:2px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--text-secondary);line-height:1.6">
-
-        <strong style="color:var(--primary)">额度提示</strong><br/>
-
-        当前额度：<span id="scan-credits-value">--</span> · 标准扫描消耗 1 · 深度扫描消耗 3
-
-      </div>
-
-      <label class="scan-checkbox" style="margin-bottom:12px">
-
-        <input id="auth-check-step1" type="checkbox" onchange="updateScanStartState()" />
-
-        <span>我已确认拥有该域名或已获得授权扫描</span>
-
-      </label>
-
-      <button class="scan-btn" id="scan-btn-step1" onclick="startScanDirect()" disabled>开始扫描</button>
-
-      <div style="text-align:center;margin-top:10px">
-
-        <button onclick="goVerifyStep2()" style="background:none;border:none;color:var(--primary);font-size:13px;padding:8px;cursor:pointer">域名归属验证（推荐）</button>
-
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">仅限授权目标</div>
-
-      </div>
-
-      <div style="text-align:center;margin-top:8px">
-
-        <button onclick="showBatchScanModal()" style="background:none;border:1px dashed var(--border);color:var(--text-secondary);padding:8px 16px;border-radius:2px;cursor:pointer;font-size:12px;width:100%">批量扫描（一次最多 5 个 URL，适合交付前巡检）</button>
-
-      </div>
-
-    </div>
-
-
-
-    <!-- Step 2: Generate Verification 令牌 -->
-
-    <div id="verify-step-2" class="verify-step" style="display:none">
-
-      <div class="verify-step-header">
-
         <span class="verify-num">2</span>
-
-        <span>域名归属验证</span>
-
+        <span>??????</span>
       </div>
-
-      <p class="verify-desc">请选择一种验证方式，在目标网站添加以下验证信息：</p>
-
-      <div class="令牌-box">
-
-        <label>验证 令牌</label>
-
-        <code id="verify-令牌">vuln-sentinel-xxxx</code>
-
-        <button class="令牌-copy-btn" onclick="copyToken()" aria-label="复制验证令牌">复制</button>
-
+      <p class="verify-desc">????????????????????????</p>
+      <div class="???-box">
+        <label>????</label>
+        <code id="verify-???">vuln-sentinel-xxxx</code>
+        <button class="???-copy-btn" onclick="copyToken()" aria-label="??????">??</button>
       </div>
-
       <div class="verify-methods">
-
         <div class="verify-method" onclick="selectVerifyMethod(this, 'dns')">
-
-          <strong>DNS TXT 验证</strong>
-
-          <p>添加 TXT 记录：<code id="dns-record">_vuln-sentinel.example.com TXT "vuln-sentinel-xxxx"</code></p>
-
+          <strong>DNS TXT ??</strong>
+          <p>?? TXT ???<code id="dns-record">_vuln-sentinel.example.com TXT &quot;vuln-sentinel-xxxx&quot;</code></p>
         </div>
-
         <div class="verify-method" onclick="selectVerifyMethod(this, 'file')">
-
-          <strong>网站文件验证</strong>
-
-          <p>在网站根目录创建文件：<code>vuln-sentinel-verification.txt</code>，内容为 令牌</p>
-
+          <strong>??????</strong>
+          <p>???????? <code>vuln-sentinel-verification.txt</code>???????</p>
         </div>
-
       </div>
-
       <div class="verify-method-selected" id="verify-method-info">
-
-        <p>选择一种验证方式</p>
-
+        <p>?????????</p>
       </div>
-
-      <button class="scan-btn" onclick="confirmVerification()" id="verify-confirm-btn" disabled>已添加验证信息，确认验证</button>
-
-      <button onclick="skipVerification()" id="verify-skip-btn" style="background:none;border:none;color:var(--primary);font-size:13px;padding:10px;margin-top:6px;cursor:pointer;width:100%;text-align:center">快速测试（跳过 DNS/文件验证）</button>
-
+      <div style="margin-top:12px;text-align:right">
+        <button class="scan-btn" style="width:auto;padding:8px 16px" onclick="startScanDirect()">???????</button>
+      </div>
     </div>
-
-
-
-    <!-- Step 3: Ready to Scan -->
-
-    <div id="verify-step-3" class="verify-step" style="display:none">
-
-      <div class="verify-step-header done">
-
-        <span class="verify-num done">OK</span>
-
-        <span>准备开始扫描</span>
-
-      </div>
-
-      <div class="verify-passed">
-
-        <p>已确认目标网址，勾选授权声明后开始扫描。</p>
-
-        <div class="scan-input-wrap">
-
-          <input id="scan-url-confirmed" type="url" readonly aria-label="已确认的目标网址" />
-
-        </div>
-
-        <label class="scan-checkbox">
-
-          <input id="auth-check" type="checkbox" onchange="updateScanStartState()" />
-
-          <span>我已确认拥有该域名或已获得授权扫描</span>
-
-        </label>
-
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-
-          <span style="font-size:13px;color:var(--text-secondary)">扫描深度：</span>
-
-          <div id="scan-depth-group" style="display:inline-flex;border:1px solid var(--border);border-radius:2px;overflow:hidden">
-
-            <label class="scan-depth-opt" data-value="quick" style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--bg);color:var(--text);border:none;user-select:none;-webkit-tap-highlight-color:transparent">
-
-              <input type="radio" name="scan-depth" value="quick" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" /> 快速
-
-            </label>
-
-            <label class="scan-depth-opt active" data-value="standard" style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--primary);color:#fff;border:none;user-select:none;-webkit-tap-highlight-color:transparent">
-
-              <input type="radio" name="scan-depth" value="standard" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" checked /> 标准
-
-            </label>
-
-            <label class="scan-depth-opt" data-value="deep" style="padding:6px 12px;cursor:pointer;font-size:12px;background:var(--bg);color:var(--text);border:none;user-select:none;-webkit-tap-highlight-color:transparent">
-
-              <input type="radio" name="scan-depth" value="deep" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" /> 深度
-
-            </label>
-
-          </div>
-
-          <span id="depth-hint" style="font-size:12px;color:var(--text-secondary);margin-left:4px">约 3-5 秒 · 推荐</span>
-
-        </div>
-
-        <button class="scan-btn" id="scan-btn" onclick="startScan()" disabled>开始扫描</button>
-
-      </div>
-
-    </div>
-
   </section>
 
-
-
-  <!-- 公开演示扫描 -->
-
   <div class="card public-report-card" id="public-report-card" style="margin-top:18px">
-
     <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-
       <div>
-
-        <span style="font-size:13px">公开演示扫描</span>
-
-        <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">无需登录，即时检测公开站点</span>
-
+        <span style="font-size:13px">??????</span>
+        <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">?????????????</span>
       </div>
-
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-
         <select id="public-report-host" onchange="loadPublicDemo()" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:5px 10px;border-radius:2px;font-size:12px;cursor:pointer">
-
           <option value="https://example.com">example.com</option>
-
           <option value="https://www.iana.org">iana.org</option>
-
           <option value="https://httpbin.org">httpbin.org</option>
-
-          <option value="https://testphp.vulnweb.com">testphp.vulnweb.com（公开演示）</option>
-
+          <option value="https://testphp.vulnweb.com">testphp.vulnweb.com??????</option>
         </select>
-
-        <button onclick="loadPublicDemo()" id="public-report-refresh" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:5px 12px;border-radius:2px;font-size:12px;cursor:pointer;font-weight:500">刷新报告</button>
-
+        <button onclick="loadPublicDemo()" id="public-report-refresh" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:5px 12px;border-radius:2px;font-size:12px;cursor:pointer;font-weight:500">????</button>
       </div>
-
     </div>
-
     <div id="public-report-content">
-
       <div style="padding:16px;text-align:center;color:var(--text-secondary);background:var(--bg);border-radius:2px;margin-top:12px;border:1px dashed var(--border)">
-
-        <div style="font-size:12px;margin-bottom:8px;color:var(--text)">选择公开演示站点，立即查看扫描结果</div>
-
-        <div style="margin-top:10px"><button onclick="loadPublicDemo()" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">查看公开演示结果</button></div>
-
+        <div style="font-size:12px;margin-bottom:8px;color:var(--text)">?????????????????</div>
+        <div style="margin-top:10px"><button onclick="loadPublicDemo()" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">????????</button></div>
       </div>
-
     </div>
-
   </div>
-
 </div>
-
-
-
 <div class="page" id="page-result">
 
   <div class="workbench-header">
