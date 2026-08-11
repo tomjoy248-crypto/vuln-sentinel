@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::fs::OpenOptions;
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream;
 use std::process::Stdio;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -11,12 +11,6 @@ use std::time::Duration;
 
 use tauri::path::BaseDirectory;
 use tauri::Manager;
-
-fn pick_free_port() -> Option<u16> {
-  TcpListener::bind(("127.0.0.1", 0))
-    .ok()
-    .and_then(|listener| listener.local_addr().ok().map(|addr| addr.port()))
-}
 
 fn candidate_backend_paths(app: &tauri::AppHandle) -> Vec<PathBuf> {
   let mut candidates = vec![
@@ -91,7 +85,7 @@ fn try_start_local_backend(app: &tauri::AppHandle, port: u16) -> Option<PathBuf>
     }
   }
   match command
-    .env("PORT", "8011")
+    .env("PORT", port.to_string())
     .env("AUTH_CHALLENGE_DISABLED", "1")
     .env("ENV", "development")
     .creation_flags(0x08000000)
@@ -163,7 +157,29 @@ fn main() {
   tauri::Builder::default()
     .setup(|app| {
       let port = 8011;
-      let _ = try_start_local_backend(&app.handle().clone(), port);
+      let address = format!("127.0.0.1:{}", port);
+      let backend_path = if TcpStream::connect(&address).is_ok() {
+        None
+      } else {
+        try_start_local_backend(&app.handle().clone(), port)
+      };
+
+      if let Some(window) = app.get_webview_window("main") {
+        show_loading(&window, "正在启动本地安全扫描服务，请稍候。");
+        thread::spawn(move || {
+          if wait_for_backend_ready(&address, 30) {
+            if let Ok(url) = url::Url::parse(&format!("http://127.0.0.1:{}/", port)) {
+              let _ = window.navigate(url);
+            }
+          } else {
+            let hint = backend_path
+              .as_ref()
+              .map(|path| path.display().to_string())
+              .unwrap_or_else(|| "未找到后端可执行文件".to_string());
+            show_backend_fallback(&window, &hint);
+          }
+        });
+      }
       Ok(())
     })
     .run(tauri::generate_context!())
