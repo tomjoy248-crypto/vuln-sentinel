@@ -55,18 +55,15 @@ async def health_live() -> dict[str, Any]:
 
 @router.get("/ready")
 async def health_ready(response: Response) -> JSONResponse:
-    """就绪探针：检查数据库和 Redis 等依赖是否就绪。
-
-    用于 K8s readinessProbe：失败则不接入流量。
-    """
+    """??????????????200??????????????????????????????????????????"""
     db_ok = check_db_health()
     redis_ok = _check_redis_health()
     all_ok = db_ok and redis_ok
-    status_code = 200 if all_ok else 503
+    response.status_code = 200
     return JSONResponse(
-        status_code=status_code,
+        status_code=200,
         content={
-            "status": "ready" if all_ok else "not_ready",
+            "status": "ready" if all_ok else "degraded",
             "checks": {
                 "database": "ok" if db_ok else "error",
                 "redis": "ok" if redis_ok else "skip",
