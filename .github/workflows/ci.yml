@@ -89,6 +89,9 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
@@ -101,6 +104,9 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Build desktop backend
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+
       - name: Verify desktop bundle inputs
         shell: pwsh
         run: |
@@ -108,6 +114,7 @@ jobs:
           if ($config -notmatch 'Vuln Sentinel') { throw 'Missing product name in Tauri config' }
           if (-not (Test-Path frontend/dist/index.html)) { throw 'frontend/dist/index.html missing after build' }
           if (-not (Test-Path runtime/backend-dist/vuln-sentinel-backend.exe)) { throw 'backend executable missing' }
+          if (-not (Test-Path src-tauri/target/release/vuln-sentinel-desktop.exe)) { throw 'desktop exe missing after build' }
           Write-Host 'Windows desktop smoke checks passed.'
 
   docker-build:
