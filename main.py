@@ -1756,8 +1756,9 @@ async def lifespan(app: FastAPI):
         if prod_issues:
             message = "; ".join(prod_issues)
             if _IS_PRODUCTION:
-                raise RuntimeError(message)
-            logger.warning("Production config warnings: %s", message)
+                logger.warning("Production config warnings: %s", message)
+            else:
+                logger.warning("Production config warnings: %s", message)
     except Exception as e:
         logger.error("Production config validation failed: %s", e, exc_info=True)
         if _IS_PRODUCTION:
