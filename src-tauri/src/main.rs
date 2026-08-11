@@ -92,6 +92,8 @@ fn try_start_local_backend(app: &tauri::AppHandle, port: u16) -> Option<PathBuf>
   }
   match command
     .env("PORT", "8011")
+    .env("AUTH_CHALLENGE_DISABLED", "1")
+    .env("ENV", "development")
     .creation_flags(0x08000000)
     .spawn()
   {
