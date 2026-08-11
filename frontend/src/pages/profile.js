@@ -154,13 +154,17 @@ function doLogin() {
   if (!usernameEl || !passwordEl) { showToast('登录表单加载失败'); return; }
   let username = usernameEl.value.trim();
   let password = passwordEl.value.trim();
+  let challengeTokenEl = document.getElementById('auth-challenge-token');
+  let challengeAnswerEl = document.getElementById('login-challenge-answer');
+  let challengeToken = challengeTokenEl ? challengeTokenEl.value.trim() : (loginChallengeState.token || '');
+  let challengeAnswer = challengeAnswerEl ? challengeAnswerEl.value.trim() : '';
   if (errEl) errEl.textContent = '';
   if (!username || !password) { if (errEl) errEl.textContent = '请输入用户名和密码'; return; }
 
   authFetch('/api/login', {
     skipAuthExpiry: true,
     method: 'POST',
-    body: JSON.stringify({ username: username, password: password })
+    body: JSON.stringify({ username: username, password: password, challenge_token: challengeToken, challenge_answer: challengeAnswer })
   }).then(function(resp) { return resp.json(); }).then(function(data) {
     let token = data.token || (data.data && data.data.token);
     let resolvedUsername = data.username || (data.data && data.data.username) || username;
@@ -192,12 +196,16 @@ function doRegister() {
   let email = emailEl ? emailEl.value.trim() : '';
   let password = passwordEl.value.trim();
   let password2 = password2El.value.trim();
+  let challengeTokenEl = document.getElementById('auth-challenge-token-reg');
+  let challengeAnswerEl = document.getElementById('reg-challenge-answer');
+  let challengeToken = challengeTokenEl ? challengeTokenEl.value.trim() : (loginChallengeState.token || '');
+  let challengeAnswer = challengeAnswerEl ? challengeAnswerEl.value.trim() : '';
   if (errEl) errEl.textContent = '';
   if (!username || !password) { if (errEl) errEl.textContent = '请输入用户名和密码'; return; }
   if (password !== password2) { if (errEl) errEl.textContent = '两次密码不一致'; return; }
   if (password.length < 6) { if (errEl) errEl.textContent = '密码至少 6 个字符'; return; }
 
-  let payload = { username: username, password: password };
+  let payload = { username: username, password: password, challenge_token: challengeToken, challenge_answer: challengeAnswer };
   if (email) { payload.email = email; }
 
   authFetch('/api/register', {
@@ -659,5 +667,9 @@ if (typeof window !== 'undefined') {
 
 
 if (typeof window !== 'undefined') {
-  window.refreshAuthChallenge = window.refreshAuthChallenge || function(){};
+  window.refreshAuthChallenge = function() {
+    return loadAuthChallenge();
+  };
 }
+
+loadAuthChallenge();
