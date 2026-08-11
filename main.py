@@ -366,14 +366,24 @@ if not settings.jwt_secret:
     if os.path.isfile(_SECRET_FILE):
         try:
             with open(_SECRET_FILE, encoding="utf-8") as secret_file:
-                settings.jwt_secret = secret_file.read().strip()
-            if len(settings.jwt_secret) < 32:
+                loaded_secret = secret_file.read().strip()
+            if len(loaded_secret) < 32:
                 raise ValueError("persisted secret too short")
+            settings.jwt_secret = loaded_secret
         except Exception as exc:
             logger.warning("Failed to load persisted JWT secret, regenerating: %s", exc)
             settings.jwt_secret = secrets.token_urlsafe(48)
     else:
         settings.jwt_secret = secrets.token_urlsafe(48)
+    try:
+        with open(_SECRET_FILE, "w", encoding="utf-8") as secret_file:
+            secret_file.write(settings.jwt_secret)
+        try:
+            os.chmod(_SECRET_FILE, 0o600)
+        except Exception as exc:
+            logger.debug("Failed to chmod secret file: %s", exc)
+    except Exception as exc:
+        logger.warning("Failed to persist JWT secret: %s", exc)
     try:
         with open(_SECRET_FILE, "w", encoding="utf-8") as secret_file:
             secret_file.write(settings.jwt_secret)
