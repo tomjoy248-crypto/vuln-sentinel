@@ -1798,7 +1798,7 @@ font-family: var(--font);
 .steps-grid { grid-template-columns: repeat(2, 1fr); }
 .trust-grid { grid-template-columns: repeat(3, 1fr); }
 .compare-grid { grid-template-columns: 1fr 1fr; }
-.page { padding: 0 20px 24px; }
+.page { padding: 20px 24px 36px 110px; }
 .hero h1 { font-size: 36px; }
 .score-rings { gap: 60px; }
 }
