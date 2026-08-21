@@ -205,6 +205,27 @@ XSS_PAYLOADS_V2: list[str] = [
     "javascript:alert(1)",
 ]
 
+SSTI_PAYLOADS: list[str] = [
+    "{{'vuln' ~ 'sentinel' ~ 'probe'}}",
+    "{{7*7}}",
+    "<%= 7*7 %>",
+    "49",
+]
+
+OPEN_REDIRECT_PARAMS: list[str] = [
+    "next",
+    "redirect",
+    "url",
+    "return",
+    "return_url",
+    "continue",
+    "target",
+    "dest",
+    "destination",
+]
+
+OPEN_REDIRECT_TARGET = "https://example.com/redirect-check"
+
 CMDI_PAYLOADS: list[str] = [
     "; cat /etc/passwd",
     "| whoami",

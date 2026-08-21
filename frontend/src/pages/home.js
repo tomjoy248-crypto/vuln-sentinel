@@ -3540,76 +3540,84 @@ function generateFixFromFindings(findings, config) {
   try {
     if (!Array.isArray(findings)) findings = [];
     if (typeof config !== 'string') config = '';
-  let fixed = config;
-  let hasServerBlock = /server\s*\{/.test(fixed);
 
-  if (!hasServerBlock) {
-    fixed = 'server {\n    listen 80;\n    server_name example.com;\n    root /var/www/html;\n    index index.html;\n\n';
-  }
+    let fixed = config;
+    let hasServerBlock = /server\s*\{/.test(fixed);
 
-  let headers = [];
-  let rules = [];
+    if (!hasServerBlock) {
+      fixed = `server {
+    listen 80;
+    server_name example.com;
+    root /var/www/html;
+    index index.html;
 
-  findings.forEach(function(f) {
-    let name = f.name || '';
-    let type = f.type || 'config';
-    let fix = f.fix || '';
-    // 通用匹配：任何"缺少 X" 安全头都进 headers
-    if (name.indexOf('缺少 ') === 0 && (name.indexOf('HSTS') >= 0 || name.indexOf('CSP') >= 0 ||
-        name.indexOf('X-Frame') >= 0 || name.indexOf('X-Content') >= 0 ||
-        name.indexOf('Referrer') >= 0 || name.indexOf('Permissions') >= 0)) {
-      if (fix) headers.push(fix);
-    } else if (name.indexOf('敏感路径') >= 0 || name.indexOf('敏感文件') >= 0) {
-      // 敏感路径类进 rules
-      rules.push('location ~ /(\\.env|\\.git|.*\\.sql|.*\\.zip|.*\\.bak) {\n    deny all;\n    return 403;\n}');
-    } else if (name.indexOf('信息泄露') >= 0 || name.indexOf('Server') >= 0) {
-      headers.push('server_tokens off;');
-    } else if (name.indexOf('Cookie') >= 0) {
-      headers.push('proxy_cookie_path / /; HttpOnly; Secure; SameSite=Strict;');
-    } else if (name.indexOf('CORS') >= 0) {
-      headers.push("add_header Access-Control-Allow-Origin 'https://your-domain.com' always;");
-    } else if (type === 'XSS' && fix) {
-      headers.push('add_header Content-Security-Policy "default-src \'self\'; script-src \'self\'" always;');
-    } else if (type === 'SQLi' && fix) {
-      rules.push('# ModSecurity: SecRule ARGS "(OR|UNION)" "deny,status:403"');
+`;
     }
-  });
 
-  if (headers.length > 0 || rules.length > 0) {
-    if (hasServerBlock) {
-      let insertPos = fixed.lastIndexOf('}');
-      let before = fixed.substring(0, insertPos);
-      let after = fixed.substring(insertPos);
-      if (headers.length > 0) {
-        before += '\n    # === 安全响应头（由漏洞哨兵生成） ===\n';
-        headers.forEach(function(h) {
-          let lines = h.split('\n');
-          lines.forEach(function(line) {
-            if (line.trim()) before += '    ' + line.trim() + '\n';
+    let headers = [];
+    let rules = [];
+
+    findings.forEach(function(f) {
+      let name = f.name || '';
+      let type = f.type || 'config';
+      let fix = f.fix || '';
+      if (name.indexOf('缺少 ') === 0 && (name.indexOf('HSTS') >= 0 || name.indexOf('CSP') >= 0 ||
+          name.indexOf('X-Frame') >= 0 || name.indexOf('X-Content') >= 0 ||
+          name.indexOf('Referrer') >= 0 || name.indexOf('Permissions') >= 0)) {
+        if (fix) headers.push(fix);
+      } else if (name.indexOf('敏感路径') >= 0 || name.indexOf('敏感文件') >= 0) {
+        rules.push('location ~ /(\.env|\.git|.*\.sql|.*\.zip|.*\.bak) {\n    deny all;\n    return 403;\n}');
+      } else if (name.indexOf('信息泄露') >= 0 || name.indexOf('Server') >= 0) {
+        headers.push('server_tokens off;');
+      } else if (name.indexOf('Cookie') >= 0) {
+        headers.push('proxy_cookie_path / /; HttpOnly; Secure; SameSite=Strict;');
+      } else if (name.indexOf('CORS') >= 0) {
+        headers.push("add_header Access-Control-Allow-Origin 'https://your-domain.com' always;");
+      } else if (type === 'XSS' && fix) {
+        headers.push("add_header Content-Security-Policy \"default-src 'self'; script-src 'self'\" always;");
+      } else if ((type === 'ssti' || name.indexOf('模板注入') >= 0) && fix) {
+        rules.push('# Template engine: enable auto-escaping and never concatenate user input into expressions.');
+      } else if ((type === 'open_redirect' || name.indexOf('开放重定向') >= 0) && fix) {
+        rules.push('# Redirects: validate targets against a whitelist and allow only trusted relative paths.');
+      } else if (type === 'SQLi' && fix) {
+        rules.push('# ModSecurity: SecRule ARGS "(OR|UNION)" "deny,status:403"');
+      }
+    });
+
+    if (headers.length > 0 || rules.length > 0) {
+      if (hasServerBlock) {
+        let insertPos = fixed.lastIndexOf('}');
+        let before = fixed.substring(0, insertPos);
+        let after = fixed.substring(insertPos);
+        if (headers.length > 0) {
+          before += '\n    # === 安全响应头（由漏洞哨兵生成） ===\n';
+          headers.forEach(function(h) {
+            let lines = h.split('\n');
+            lines.forEach(function(line) {
+              if (line.trim()) before += '    ' + line.trim() + '\n';
+            });
           });
-        });
+        }
+        if (rules.length > 0) {
+          before += '\n    # === 拦截规则（由漏洞哨兵生成） ===\n';
+          rules.forEach(function(r) {
+            before += '    ' + r + '\n';
+          });
+        }
+        fixed = before + after;
+      } else {
+        headers.forEach(function(h) { fixed += h + '\n'; });
+        rules.forEach(function(r) { fixed += r + '\n'; });
+        fixed += '}\n';
       }
-      if (rules.length > 0) {
-        before += '\n    # === 拦截规则（由漏洞哨兵生成） ===\n';
-        rules.forEach(function(r) {
-          before += '    ' + r + '\n';
-        });
-      }
-      fixed = before + after;
-    } else {
-      headers.forEach(function(h) { fixed += h + '\n'; });
-      rules.forEach(function(r) { fixed += r + '\n'; });
-      fixed += '}\n';
     }
-  }
 
-  return { fixed: fixed };
+    return { fixed: fixed };
   } catch (e) {
     console.error('generateFixFromFindings error:', e);
     return { fixed: config || '', error: e.message || String(e) };
   }
 }
-
 // ----- goToFixerWithScanResult -----
 function goToFixerWithScanResult() {
   if (!lastScanResult) { showToast('请先完成扫描'); return; }

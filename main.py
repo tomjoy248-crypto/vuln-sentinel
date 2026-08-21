@@ -235,6 +235,9 @@ from constants import (
     SQLI_ERROR_PATTERNS,
     SQLI_PAYLOADS,
     SQLI_PAYLOADS_V2,
+    SSTI_PAYLOADS,
+    OPEN_REDIRECT_PARAMS,
+    OPEN_REDIRECT_TARGET,
     TRAVERSAL_PAYLOADS,
     WAF_SIGNATURES,
     WINDOWS_HOSTS_SIGNATURES,
@@ -2403,6 +2406,111 @@ async def test_sqli_on_url(client, url, param, payload):
     return None
 
 
+async def detect_ssti(url: str, params: list[str]) -> list[dict]:
+    """模板注入检测：发送模板表达式，检查响应中是否出现渲染后的唯一标记。"""
+    if not params:
+        return []
+    findings: list[dict] = []
+    client = get_httpx_client()
+
+    baseline_body = ""
+    try:
+        resp = await client.get(url, timeout=10.0, follow_redirects=True)
+        baseline_body = _safe_read_body(resp).lower()
+    except Exception:
+        pass
+
+    payload_markers = {
+        "{{'vuln' ~ 'sentinel' ~ 'probe'}}": "vulnsentinelprobe",
+        "{{'vuln' + 'sentinel' + 'probe'}}": "vulnsentinelprobe",
+        "<%= 'vuln' + 'sentinel' + 'probe' %>": "vulnsentinelprobe",
+        "{{7*7}}": "49",
+    }
+
+    for param in params[:3]:
+        for payload in SSTI_PAYLOADS[:4]:
+            test_url = _build_test_url(url, param, payload)
+            try:
+                resp = await client.get(test_url, timeout=10.0, follow_redirects=True)
+                body = _safe_read_body(resp)
+                body_lower = body.lower()
+                marker = payload_markers.get(payload, "")
+                if marker and marker in body_lower and payload.lower() not in body_lower and body_lower != baseline_body:
+                    findings.append(
+                        {
+                            "name": "模板注入漏洞（SSTI）",
+                            "severity": "high",
+                            "level": "高风险",
+                            "level_zh": "高风险",
+                            "owasp": "A03:2021 - Injection",
+                            "summary": f"参数 '{param}' 的模板表达式被渲染，疑似存在 SSTI。",
+                            "fix": (
+                                "不要将用户输入拼接进模板表达式；所有显示内容都应作为纯文本输出。\n"
+                                "Python/Jinja2: {{ user_input | e }}\n"
+                                "Node.js: 使用模板默认转义并关闭危险表达式。"
+                            ),
+                            "type": "ssti",
+                            "evidence": {
+                                "param": param,
+                                "payload": payload[:60],
+                                "rendered_marker": marker,
+                                "url": test_url[:200],
+                            },
+                            "confidence_level": "中",
+                            "location": {
+                                "type": "url_parameter",
+                                "target": param,
+                                "detail": "参数疑似存在模板注入",
+                            },
+                            "ai_advice": f"**漏洞**：模板注入（SSTI）\n**优先级**：高\n**影响**：参数 '{param}' 可能被模板引擎执行\n**修复**：禁止将用户输入拼接进模板表达式",
+                        }
+                    )
+            except Exception as e:
+                logger.warning("SSTI detection error on %s: %s", test_url[:120], e)
+    return findings
+
+
+async def detect_open_redirect(url: str, params: list[str]) -> list[dict]:
+    """开放重定向检测：检查跳转参数是否会把 Location 指向外部目标。"""
+    if not params:
+        params = list(OPEN_REDIRECT_PARAMS)
+    findings: list[dict] = []
+    client = get_httpx_client()
+    target = OPEN_REDIRECT_TARGET
+
+    for param in params[:4]:
+        test_url = _build_test_url(url, param, target)
+        try:
+            resp = await client.get(test_url, timeout=10.0, follow_redirects=False)
+            location = (resp.headers.get("location") or "").lower()
+            if resp.status_code in {301, 302, 303, 307, 308} and "example.com/redirect-check" in location:
+                findings.append(
+                    {
+                        "name": "开放重定向漏洞",
+                        "severity": "medium",
+                        "level": "中风险",
+                        "level_zh": "中风险",
+                        "owasp": "A04:2021 - Insecure Design",
+                        "summary": f"参数 '{param}' 可控制跳转目标到外部地址。",
+                        "fix": "对跳转目标使用白名单校验，只允许站内合法路径或可信域名。",
+                        "type": "open_redirect",
+                        "evidence": {
+                            "param": param,
+                            "location": location[:200],
+                            "url": test_url[:200],
+                        },
+                        "confidence_level": "高",
+                        "location": {
+                            "type": "url_parameter",
+                            "target": param,
+                            "detail": "参数存在开放重定向风险",
+                        },
+                        "ai_advice": f"**漏洞**：开放重定向\n**优先级**：中\n**影响**：参数 '{param}' 可被用于跳转到外部站点\n**修复**：仅允许白名单目标或站内相对路径",
+                    }
+                )
+        except Exception as e:
+            logger.warning("Open redirect detection error on %s: %s", test_url[:120], e)
+    return findings
 
 
 def _extract_passive_exposure_findings(base_url: str, pages: list[dict]) -> list[dict]:
@@ -2468,60 +2576,101 @@ async def run_payload_tests(base_url, pages):
     passive = _extract_passive_exposure_findings(base_url, pages)
     for finding in passive:
         vulns.append(finding)
-        test_results.append({"url": finding.get("evidence", {}).get("url", base_url)[:100], "param": "", "type": "Exposure", "payload": finding.get("name", "")[:40], "vulnerable": True})
+        test_results.append({
+            "url": finding.get("evidence", {}).get("url", base_url)[:100],
+            "param": "",
+            "type": "Exposure",
+            "payload": finding.get("name", "")[:40],
+            "vulnerable": True,
+        })
     client = get_httpx_client()
     test_urls = {page["url"] for page in pages[:4]}
+    probe_params = ["id", "q", "search", "page", "next", "redirect", "url", "return"]
     for test_url in list(test_urls):
         params = [
             p.split("=")[0] for p in urlparse(test_url).query.split("&") if "=" in p
         ]
-        if params:
-            for param in params[:3]:
-                for payload in XSS_PAYLOADS[:2]:
-                    result = await test_xss_on_url(client, test_url, param, payload)
-                    if result:
-                        vulns.append(result)
-                    test_results.append(
-                        {
-                            "url": test_url[:100],
-                            "param": param,
-                            "type": "XSS",
-                            "payload": payload[:40],
-                            "vulnerable": result is not None,
-                        }
-                    )
-                for payload in SQLI_PAYLOADS[:2]:
-                    result = await test_sqli_on_url(client, test_url, param, payload)
-                    if result:
-                        vulns.append(result)
-                    test_results.append(
-                        {
-                            "url": test_url[:100],
-                            "param": param,
-                            "type": "SQLi",
-                            "payload": payload[:40],
-                            "vulnerable": result is not None,
-                        }
-                    )
-        else:
-            for param in ["id", "q", "search", "page"]:
+        candidate_params = params[:3] if params else probe_params[:4]
+        for param in candidate_params:
+            for payload in XSS_PAYLOADS[:2]:
+                result = await test_xss_on_url(client, test_url, param, payload)
+                if result:
+                    vulns.append(result)
+                test_results.append({
+                    "url": test_url[:100],
+                    "param": param,
+                    "type": "XSS",
+                    "payload": payload[:40],
+                    "vulnerable": result is not None,
+                })
+            for payload in SQLI_PAYLOADS[:2]:
+                result = await test_sqli_on_url(client, test_url, param, payload)
+                if result:
+                    vulns.append(result)
+                test_results.append({
+                    "url": test_url[:100],
+                    "param": param,
+                    "type": "SQLi",
+                    "payload": payload[:40],
+                    "vulnerable": result is not None,
+                })
+            ssti_results = await detect_ssti(test_url, [param])
+            if ssti_results:
+                vulns.extend(ssti_results)
+            test_results.append({
+                "url": test_url[:100],
+                "param": param,
+                "type": "SSTI",
+                "payload": "template probe",
+                "vulnerable": bool(ssti_results),
+            })
+            redirect_results = await detect_open_redirect(test_url, [param])
+            if redirect_results:
+                vulns.extend(redirect_results)
+            test_results.append({
+                "url": test_url[:100],
+                "param": param,
+                "type": "Open Redirect",
+                "payload": OPEN_REDIRECT_TARGET,
+                "vulnerable": bool(redirect_results),
+            })
+        if not params:
+            for param in probe_params[:4]:
                 for payload in XSS_PAYLOADS[:1]:
                     result = await test_xss_on_url(client, test_url, param, payload)
                     if result:
                         vulns.append(result)
-                    test_results.append(
-                        {
-                            "url": test_url[:100],
-                            "param": param,
-                            "type": "XSS",
-                            "payload": payload[:40],
-                            "vulnerable": result is not None,
-                        }
-                    )
+                    test_results.append({
+                        "url": test_url[:100],
+                        "param": param,
+                        "type": "XSS",
+                        "payload": payload[:40],
+                        "vulnerable": result is not None,
+                    })
+                ssti_results = await detect_ssti(test_url, [param])
+                if ssti_results:
+                    vulns.extend(ssti_results)
+                test_results.append({
+                    "url": test_url[:100],
+                    "param": param,
+                    "type": "SSTI",
+                    "payload": "template probe",
+                    "vulnerable": bool(ssti_results),
+                })
+                redirect_results = await detect_open_redirect(test_url, [param])
+                if redirect_results:
+                    vulns.extend(redirect_results)
+                test_results.append({
+                    "url": test_url[:100],
+                    "param": param,
+                    "type": "Open Redirect",
+                    "payload": OPEN_REDIRECT_TARGET,
+                    "vulnerable": bool(redirect_results),
+                })
     return vulns, test_results
 
 
-# ---------- Code-Level Vulnerability Detection (Vuln Sentinel) ----------
+# ---------- Code-Level Vulnerability Detection (Vuln Sentinel) ----------# ---------- Code-Level Vulnerability Detection (Vuln Sentinel) ----------
 
 
 def _build_test_url(url: str, param: str, payload: str) -> str:
@@ -7965,6 +8114,27 @@ def generate_fixes(
             add(
                 "spring_boot",
                 "# Java: JdbcTemplate.query('SELECT * FROM users WHERE id=?', new Object[]{userId})",
+            )
+        elif ftype == "ssti":
+            add("python", "# Jinja2: {{ user_input | e }}")
+            add("nodejs", "// 避免将用户输入拼接到模板字符串中")
+            add("flask", "# Flask/Jinja2: 所有模板变量都使用自动转义")
+            add(
+                "express",
+                "// 禁止把用户输入传给模板表达式；仅作为纯文本渲染",
+            )
+            add(
+                "spring_boot",
+                "# Thymeleaf/Freemarker: 使用转义输出，禁止拼接表达式",
+            )
+        elif ftype == "open_redirect":
+            add("python", "# 仅允许白名单相对路径或可信域名")
+            add("nodejs", "// 使用白名单校验跳转目标，禁止任意外跳")
+            add("flask", "# Flask: redirect() 前先校验目标是否在允许列表")
+            add("express", "// Express: res.redirect() 前校验目标 URL")
+            add(
+                "spring_boot",
+                "# Spring Boot: RedirectView 仅允许站内相对路径或白名单",
             )
         elif ftype == "xss":
             add("python", "# Jinja2: {{ user_input | e }}")
