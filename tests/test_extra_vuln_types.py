@@ -117,15 +117,21 @@ async def test_detect_csrf_forms_missing_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_payload_tests_collects_new_types(monkeypatch):
+    deser_sig = next(iter(main.DESER_SIGNATURES))
+    cmd_sig = next(iter(main.CMD_EXEC_SIGNATURES))
+
     def handler(request):
         decoded = urllib.parse.unquote(str(request.url))
         if "etc/passwd" in decoded:
             return httpx.Response(200, text="root:x:0:0:root:/root:/bin/bash")
         if "169.254.169.254" in decoded or "127.0.0.1" in decoded:
             return httpx.Response(200, text="instance-id\nami-id\nlocal-ipv4")
+        if "command" in decoded:
+            return httpx.Response(200, text=f"output {cmd_sig}")
         return httpx.Response(
             200,
             text="<html><body><form method='post'><input name='username'><input type='password' name='password'></form></body></html>",
+            headers={"Set-Cookie": f"session={deser_sig}; Path=/"},
         )
 
     client = install_mock_client(monkeypatch, handler)
@@ -143,9 +149,13 @@ async def test_run_payload_tests_collects_new_types(monkeypatch):
     assert "csrf" in vuln_types
     assert "traversal" in vuln_types
     assert "ssrf" in vuln_types
+    assert "cmdi" in vuln_types or any(item["type"] == "cmdi" for item in vulns)
+    assert "deserialization" in vuln_types or any(item["type"] == "deserialization" for item in vulns)
     assert "csrf" in result_types
     assert "traversal" in result_types
     assert "ssrf" in result_types
+    assert "cmdi" in result_types
+    assert "deserialization" in result_types
 
 
 @pytest.mark.asyncio
@@ -175,3 +185,32 @@ async def test_detect_sqli_and_time_based_paths(monkeypatch):
     assert any(item["type"] == "sqli" for item in findings)
     assert timed["vulnerable"] is True
     assert timed["method"] == "simulated"
+
+
+@pytest.mark.asyncio
+async def test_detect_command_injection_with_exec_signature(monkeypatch):
+    sig = next(iter(main.CMD_EXEC_SIGNATURES))
+
+    def handler(request):
+        return httpx.Response(200, text=f"command output {sig}")
+
+    client = install_mock_client(monkeypatch, handler)
+    try:
+        findings = await main.detect_command_injection("https://target.test/run?command=1", ["command"])
+    finally:
+        await client.aclose()
+
+    assert findings
+    assert any(item["type"] == "cmdi" for item in findings)
+    assert any(item["name"] == "命令注入漏洞" for item in findings)
+
+
+@pytest.mark.asyncio
+async def test_detect_deserialization_with_cookie_signature(monkeypatch):
+    sig = next(iter(main.DESER_SIGNATURES))
+
+    findings = await main.detect_insecure_deserialization({"Set-Cookie": f"session={sig}; Path=/"}, "https://target.test/")
+
+    assert findings
+    assert any(item["type"] == "deserialization" for item in findings)
+    assert any("反序列化" in item["name"] for item in findings)

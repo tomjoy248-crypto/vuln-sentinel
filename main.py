@@ -2666,6 +2666,34 @@ async def run_payload_tests(base_url, pages):
                 "vulnerable": bool(redirect_results),
             })
 
+            cmdi_results = await detect_command_injection(test_url, [param])
+            for item in cmdi_results:
+                add_finding(item)
+            test_results.append({
+                "url": test_url[:100],
+                "param": param,
+                "type": "cmdi",
+                "payload": "command probe",
+                "vulnerable": bool(cmdi_results),
+            })
+
+        try:
+            baseline_resp = await client.get(test_url, timeout=10.0, follow_redirects=True)
+            baseline_headers = dict(baseline_resp.headers)
+        except Exception:
+            baseline_headers = {}
+
+        deserialization_results = await detect_insecure_deserialization(baseline_headers, test_url)
+        for item in deserialization_results:
+            add_finding(item)
+        test_results.append({
+            "url": test_url[:100],
+            "param": "",
+            "type": "deserialization",
+            "payload": "response-header probe",
+            "vulnerable": bool(deserialization_results),
+        })
+
         if not params:
             for param in probe_params[:4]:
                 for payload in XSS_PAYLOADS[:1]:

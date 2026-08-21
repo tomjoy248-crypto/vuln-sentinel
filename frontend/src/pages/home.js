@@ -3583,6 +3583,10 @@ function generateFixFromFindings(findings, config) {
         rules.push('# Traversal: normalize paths and restrict access to an allowed base directory.');
       } else if ((typeLower === 'ssrf' || name.toLowerCase().indexOf('ssrf') >= 0) && fix) {
         rules.push('# SSRF: validate targets, block private IP ranges, and resolve DNS before fetching.');
+      } else if ((typeLower === 'cmdi' || name.toLowerCase().indexOf('command injection') >= 0 || name.indexOf('命令注入') >= 0) && fix) {
+        rules.push('# Command injection: avoid shell=True, use argument arrays, and whitelist every executable argument.');
+      } else if ((typeLower === 'deserialization' || name.toLowerCase().indexOf('deserialization') >= 0 || name.indexOf('反序列化') >= 0) && fix) {
+        rules.push('# Deserialization: forbid untrusted object graphs, add allowlists, and sign payloads before loading.');
       } else if ((typeLower === 'ssti' || name.indexOf('模板注入') >= 0) && fix) {
         rules.push('# Template engine: enable auto-escaping and never concatenate user input into expressions.');
       } else if ((typeLower === 'open_redirect' || name.indexOf('开放重定向') >= 0) && fix) {
