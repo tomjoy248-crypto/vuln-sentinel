@@ -1,4 +1,4 @@
-﻿// Auto-generated from static/index.html body content.
+// Auto-generated from static/index.html body content.
 
 // Pages mount this content into #app on first render.
 
@@ -463,7 +463,7 @@ export const APP_TEMPLATE = `</head>
 
         <input id="auth-check-step1" type="checkbox" onchange="updateScanStartState()" />
 
-        <span>我已确认拥有该域名或已获得授权扫描</span>
+        <span>我已确认拥有该域名或已获得授权扫描，且不属于政府等受限目标</span>
 
       </label>
 
@@ -571,7 +571,7 @@ export const APP_TEMPLATE = `</head>
 
           <input id="auth-check" type="checkbox" onchange="updateScanStartState()" />
 
-          <span>我已确认拥有该域名或已获得授权扫描</span>
+          <span>我已确认拥有该域名或已获得授权扫描，且不属于政府等受限目标</span>
 
         </label>
 
@@ -1729,7 +1729,7 @@ export const APP_TEMPLATE = `</head>
 
         <p>基于 OWASP Top 10 安全标准</p>
 
-        <p>域名归属验证，确保授权扫描</p>
+        <p>域名归属验证，确保授权扫描与敏感目标拦截</p>
 
         <p>智能检查，生成多平台修复配置</p>
 
@@ -1903,7 +1903,7 @@ export const APP_TEMPLATE = `</head>
 
       <input id="batch-auth-check" type="checkbox" onchange="document.getElementById('batch-go-btn').disabled=!this.checked" />
 
-      <span>我已确认拥有上述域名或已获得授权扫描</span>
+      <span>我已确认拥有上述域名或已获得授权扫描，且不属于政府等受限目标</span>
 
     </label>
 
@@ -2004,4 +2004,5 @@ export const APP_TEMPLATE = `</head>
 </button>
 
 `;
+
 

@@ -46,6 +46,7 @@ from datetime import datetime, timedelta
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape as html_escape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -92,6 +93,81 @@ def _resolve_static_dir() -> str:
     return candidates[0] if candidates else script_root
 
 STATIC_DIR = _resolve_static_dir()
+
+def _text_snippet(value: Any, limit: int = 72) -> str:
+    return html_escape(str(value or "")[:limit], quote=True)
+
+
+def _build_evidence_screenshot_uri(finding: dict[str, Any], page_url: str) -> str:
+    evidence = finding.get("evidence") if isinstance(finding, dict) else {}
+    if not isinstance(evidence, dict):
+        evidence = {}
+    title = str(finding.get("name") or finding.get("title") or "漏洞证据")
+    location = str(
+        evidence.get("location")
+        or evidence.get("parameter")
+        or evidence.get("param")
+        or evidence.get("header")
+        or evidence.get("path")
+        or evidence.get("selector")
+        or evidence.get("url")
+        or "命中位置"
+    )
+    reason = str(evidence.get("reason") or finding.get("description") or "")
+    severity = str(finding.get("level_zh") or finding.get("severity") or "unknown")
+    risk_color = {
+        "严重": "#7f1d1d",
+        "高风险": "#b91c1c",
+        "中风险": "#d97706",
+        "低风险": "#2563eb",
+        "信息": "#0f766e",
+        "critical": "#7f1d1d",
+        "high": "#b91c1c",
+        "medium": "#d97706",
+        "low": "#2563eb",
+        "info": "#0f766e",
+    }.get(severity, "#334155")
+    svg = "".join([
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680">',
+        '<rect width="1200" height="680" rx="28" fill="#0f172a"/>',
+        '<rect x="40" y="40" width="1120" height="600" rx="20" fill="#111827" stroke="#334155"/>',
+        f'<rect x="40" y="40" width="1120" height="72" rx="20" fill="{risk_color}" opacity="0.95"/>',
+        '<text x="72" y="85" fill="#ffffff" font-size="30" font-weight="700" font-family="Microsoft YaHei, Arial, sans-serif">证据位置图</text>',
+        f'<text x="72" y="160" fill="#e2e8f0" font-size="28" font-weight="700" font-family="Microsoft YaHei, Arial, sans-serif">{_text_snippet(title, 36)}</text>',
+        f'<text x="72" y="212" fill="#cbd5e1" font-size="22" font-family="Microsoft YaHei, Arial, sans-serif">目标：{_text_snippet(page_url, 92)}</text>',
+        f'<text x="72" y="256" fill="#cbd5e1" font-size="22" font-family="Microsoft YaHei, Arial, sans-serif">命中位置：{_text_snippet(location, 92)}</text>',
+        f'<text x="72" y="304" fill="#cbd5e1" font-size="20" font-family="Microsoft YaHei, Arial, sans-serif">证据说明：{_text_snippet(reason, 118)}</text>',
+        '<rect x="72" y="364" width="1056" height="196" rx="18" fill="#020617" stroke="#334155"/>',
+        '<text x="96" y="416" fill="#38bdf8" font-size="18" font-family="Consolas, monospace">▶ 命中点已标注到扫描证据</text>',
+        '<text x="96" y="456" fill="#e2e8f0" font-size="20" font-family="Consolas, monospace">- 请求参数 / 响应头 / 页面路径 / DOM 选择器</text>',
+        '<text x="96" y="496" fill="#e2e8f0" font-size="20" font-family="Consolas, monospace">- 结果页可直接展示请求、响应和复测信息</text>',
+        '<text x="96" y="536" fill="#e2e8f0" font-size="20" font-family="Consolas, monospace">- 如需更精确定位，可继续补截图裁剪与坐标标注</text>',
+        '</svg>',
+    ])
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
+
+
+def _attach_evidence_snapshots(findings: list[dict[str, Any]], page_url: str) -> list[dict[str, Any]]:
+    updated = []
+    for finding in findings or []:
+        item = dict(finding)
+        evidence = dict(item.get("evidence") or {})
+        if not evidence.get("screenshot"):
+            evidence["screenshot"] = _build_evidence_screenshot_uri(item, page_url)
+        location = (
+            evidence.get("location")
+            or evidence.get("parameter")
+            or evidence.get("param")
+            or evidence.get("header")
+            or evidence.get("path")
+            or evidence.get("selector")
+            or evidence.get("url")
+            or "命中位置"
+        )
+        evidence.setdefault("location", str(location))
+        item["evidence"] = evidence
+        updated.append(item)
+    return updated
 
 # ---------- 代码拆分模块导入 ----------
 import src_scanner
@@ -2192,6 +2268,7 @@ async def crawl_site(url: str, max_pages: int = settings.max_crawl_pages) -> lis
                 "forms": 0,
                 "inputs": 0,
                 "links": 0,
+                "signals": [],
             }
             # 安全读取响应体：限制最大 512KB，超大页面直接截断避免内存爆炸
             try:
@@ -2215,6 +2292,14 @@ async def crawl_site(url: str, max_pages: int = settings.max_crawl_pages) -> lis
             if title_match:
                 page_info["title"] = title_match.group(1).strip()[:100]
             page_info["forms"] = len(re.findall(r"<form", body_text, re.I))
+            if re.search(r"sourceMappingURL=|\.map\b", body_text, re.I):
+                page_info["signals"].append("source_map")
+            if re.search(r"swagger|openapi|/docs|/redoc|api-docs", body_text, re.I):
+                page_info["signals"].append("api_docs")
+            if re.search(r"<!--.*?-->", body_text, re.S):
+                page_info["signals"].append("html_comment")
+            if re.search(r"(directory listing|index of /|parent directory)", body_text, re.I):
+                page_info["signals"].append("directory_index")
             page_info["inputs"] = len(re.findall(r"<input", body_text, re.I))
             for link in parser.links:
                 lp = urlparse(link)
@@ -2231,6 +2316,7 @@ async def crawl_site(url: str, max_pages: int = settings.max_crawl_pages) -> lis
                     "forms": 0,
                     "inputs": 0,
                     "links": 0,
+                    "signals": [],
                 }
             )
         except Exception as e:
@@ -2317,8 +2403,72 @@ async def test_sqli_on_url(client, url, param, payload):
     return None
 
 
+
+
+def _extract_passive_exposure_findings(base_url: str, pages: list[dict]) -> list[dict]:
+    findings: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for page in pages or []:
+        url = str(page.get("url") or "")
+        signals = set(page.get("signals") or [])
+        title = str(page.get("title") or "")
+        if "api_docs" in signals and (url, "api_docs") not in seen:
+            seen.add((url, "api_docs"))
+            findings.append({
+                "name": "暴露 API 文档入口",
+                "severity": "medium",
+                "level": "中风险",
+                "level_zh": "中风险",
+                "owasp": "A05 安全配置错误",
+                "summary": "页面暴露了 Swagger / OpenAPI / API 文档类入口，攻击面更大。",
+                "fix": "生产环境关闭公开 API 文档或增加鉴权 / IP 白名单。",
+                "type": "exposure",
+                "evidence": {"url": url, "location": "页面正文 / 路由链接", "reason": title or "API 文档相关关键字"},
+                "confidence_level": "高",
+                "location": {"type": "page", "target": url, "detail": "发现 API 文档相关入口"},
+                "ai_advice": "**漏洞**：暴露 API 文档入口\n**优先级**：中等\n**建议**：生产环境关闭公开文档或加鉴权。",
+            })
+        if "source_map" in signals and (url, "source_map") not in seen:
+            seen.add((url, "source_map"))
+            findings.append({
+                "name": "暴露源码映射文件",
+                "severity": "medium",
+                "level": "中风险",
+                "level_zh": "中风险",
+                "owasp": "A05 安全配置错误",
+                "summary": "页面引用了 source map 或 .map 资源，可能泄露前端源码结构。",
+                "fix": "生产环境移除 source map 或限制其访问权限。",
+                "type": "exposure",
+                "evidence": {"url": url, "location": "sourceMappingURL / .map 引用", "reason": title or "发现 source map 引用"},
+                "confidence_level": "高",
+                "location": {"type": "page", "target": url, "detail": "发现 source map 泄露风险"},
+                "ai_advice": "**漏洞**：暴露源码映射文件\n**优先级**：中等\n**建议**：关闭或保护 source map。",
+            })
+        if "directory_index" in signals and (url, "directory_index") not in seen:
+            seen.add((url, "directory_index"))
+            findings.append({
+                "name": "目录列表暴露",
+                "severity": "high",
+                "level": "高风险",
+                "level_zh": "高风险",
+                "owasp": "A05 安全配置错误",
+                "summary": "页面表现出目录索引特征，可能暴露备份、源码或配置文件。",
+                "fix": "关闭目录浏览，检查 Web 根目录权限与索引配置。",
+                "type": "exposure",
+                "evidence": {"url": url, "location": "目录索引页面", "reason": title or "目录列表特征"},
+                "confidence_level": "高",
+                "location": {"type": "page", "target": url, "detail": "发现目录索引暴露"},
+                "ai_advice": "**漏洞**：目录列表暴露\n**优先级**：高\n**建议**：关闭目录浏览并清理敏感文件。",
+            })
+
+    return findings
+
 async def run_payload_tests(base_url, pages):
     vulns, test_results = [], []
+    passive = _extract_passive_exposure_findings(base_url, pages)
+    for finding in passive:
+        vulns.append(finding)
+        test_results.append({"url": finding.get("evidence", {}).get("url", base_url)[:100], "param": "", "type": "Exposure", "payload": finding.get("name", "")[:40], "vulnerable": True})
     client = get_httpx_client()
     test_urls = {page["url"] for page in pages[:4]}
     for test_url in list(test_urls):
@@ -8742,6 +8892,7 @@ async def api_scan(
 
         # 合并响应：以 SRC 格式为主，附加旧字段兼容
         result = src_result.copy()
+        result["findings"] = _attach_evidence_snapshots(result.get("findings", []), url)
         result.update(
             {
                 "scan_type": "deep" if req.deep else "real",
@@ -13919,6 +14070,7 @@ async def free_trial_scan(req: FreeTrialRequest, request: Request):
         except Exception as e:
             logger.warning("free trial legacy metadata failed: %s", e)
             legacy = {}
+        result["findings"] = _attach_evidence_snapshots(result.get("findings", []), url)
         result.update(
             {
                 "scan_type": "real",
@@ -16360,6 +16512,13 @@ if __name__ == "__main__":
 
     logger.info("Server starting on :%s", settings.port)
     uvicorn.run("main:app", host=settings.host, port=settings.port, reload=False)
+
+
+
+
+
+
+
 
 
 

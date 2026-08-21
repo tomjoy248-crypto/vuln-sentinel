@@ -572,7 +572,11 @@ function renderEvidenceSection(evidence, finding) {
     <div class="src-section-body src-evidence-meta">`;
   const confidenceState = finding.verification_status || (finding.is_likely_fp ? 'suspected' : 'probable');
   const confidenceText = confidenceState === 'confirmed' ? '已验证' : confidenceState === 'probable' ? '可能存在' : '待人工复核';
+  const locationText = evidence.location || evidence.position || evidence.selector || evidence.header || evidence.parameter || evidence.path || evidence.url || "";
   html += `<div class="src-evidence-row"><span class="src-evidence-label">可信度</span><span>${escapeHtml(confidenceText)}</span></div>`;
+  if (locationText) {
+    html += `<div class="src-evidence-row"><span class="src-evidence-label">命中位置</span><span>${escapeHtml(locationText)}</span></div>`;
+  }
   html += `<div class="src-evidence-row"><span class="src-evidence-label">误报概率</span><span>${finding.fp_score !== undefined ? ((finding.fp_score * 100).toFixed(0) + '%') : '—'}</span></div>`;
   if (requestSummary) {
     html += `<div class="src-evidence-row"><span class="src-evidence-label">请求摘要</span><span>${escapeHtml(requestSummary)}</span></div>`;
@@ -1077,4 +1081,7 @@ export function injectSRCStyles() {
 export function init() {
   injectSRCStyles();
 }
+
+
+
 

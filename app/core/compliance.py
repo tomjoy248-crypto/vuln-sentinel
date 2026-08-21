@@ -157,7 +157,7 @@ def validate_scan_target(
 
     # 3. 禁止受限域名
     if _is_restricted_domain(host):
-        return False, "该目标属于受限类型，请确认您拥有合法授权后再扫描"
+        return False, "该目标属于政府、金融、教育或其他受限类型，请勿在未获明确授权时扫描"
 
     # 4. 禁止常见非 Web 端口
     if port and port not in {80, 443, 8080, 8443, 3000, 5000, 8000, 9000}:
@@ -272,3 +272,4 @@ def get_compliance_summary() -> dict:
         "blocked_networks": [str(n) for n in BLOCKED_NETWORKS],
         "requires_authorization": True,
     }
+
