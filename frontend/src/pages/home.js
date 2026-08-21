@@ -846,7 +846,7 @@ function renderDemoReport(d) {
       let priorityColors = { P0: '#c75450', P1: '#f0a732', P2: '#f0a732', P3: '#73c990' };
       html += '<span style="font-size:11px;padding:2px 6px;border-radius:2px;background:#2b2b2b;color:' + priorityColors[priority] + ';font-weight:600;margin-left:6px;border:1px solid ' + priorityColors[priority] + '">' + priority + '</span></div>';
       // Vuln Sentinel: 代码层漏洞分类标签
-      let codeVulnTypes = ['sqli', 'xss', 'csrf', 'ssti', 'open_redirect', 'cmdi', 'traversal', 'deserialization', 'ssrf', 'xxe', 'idor'];
+      let codeVulnTypes = ['sqli', 'xss', 'csrf', 'ssti', 'open_redirect', 'cmdi', 'traversal', 'deserialization', 'ssrf', 'xxe', 'idor', 'info_leak'];
       let vulnType = String(f.type || '').toLowerCase();
       if (codeVulnTypes.indexOf(vulnType) >= 0) {
         html += '<div style="margin-top:4px"><span style="font-size:11px;padding:2px 8px;border-radius:2px;background:#2b2b2b;color:#c75450;font-weight:600;border:1px solid #c75450">代码层漏洞</span></div>';
@@ -4479,4 +4479,5 @@ window.addEventListener('load', function() {
   let authStep3 = document.getElementById('auth-check');
   if (authStep3) authStep3.addEventListener('change', refreshScanStartStateSoon);
 });
+
 

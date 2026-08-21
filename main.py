@@ -2303,6 +2303,10 @@ async def crawl_site(url: str, max_pages: int = settings.max_crawl_pages) -> lis
                 page_info["signals"].append("html_comment")
             if re.search(r"(directory listing|index of /|parent directory)", body_text, re.I):
                 page_info["signals"].append("directory_index")
+            if re.search(r"(var_dump|print_r|console\.log|debug\s*=\s*true|stack\s*trace)", body_text, re.I):
+                page_info["signals"].append("debug_marker")
+            if re.search(r"(traceback \(most recent call last\)|exception in thread|stack trace|fatal error|undefined index|warning:|notice:)", body_text, re.I):
+                page_info["signals"].append("stack_trace")
             page_info["inputs"] = len(re.findall(r"<input", body_text, re.I))
             for link in parser.links:
                 lp = urlparse(link)
@@ -2688,6 +2692,54 @@ def _extract_passive_exposure_findings(base_url: str, pages: list[dict]) -> list
                 "location": {"type": "page", "target": url, "detail": "发现目录索引暴露"},
                 "ai_advice": "**漏洞**：目录列表暴露\n**优先级**：高\n**建议**：关闭目录浏览并清理敏感文件。",
             })
+        if "source_map" in signals and (url, "source_map_info") not in seen:
+            seen.add((url, "source_map_info"))
+            findings.append({
+                "name": "信息泄露（Source Map）",
+                "severity": "medium",
+                "level": "中风险",
+                "level_zh": "中风险",
+                "owasp": "A05:2021 - Security Misconfiguration",
+                "summary": "页面暴露 source map，可能帮助攻击者还原前端源码和接口结构。",
+                "fix": "生产环境移除 source map 或限制访问权限。",
+                "type": "info_leak",
+                "evidence": {"url": url, "location": "sourceMappingURL / .map 引用", "reason": title or "source map 泄露"},
+                "confidence_level": "高",
+                "location": {"type": "page", "target": url, "detail": "发现 source map 泄露"},
+                "ai_advice": "**漏洞**：信息泄露\n**优先级**：中\n**建议**：关闭或保护 source map。",
+            })
+        if "html_comment" in signals and (url, "html_comment_info") not in seen:
+            seen.add((url, "html_comment_info"))
+            findings.append({
+                "name": "信息泄露（HTML 注释）",
+                "severity": "medium",
+                "level": "中风险",
+                "level_zh": "中风险",
+                "owasp": "A05:2021 - Security Misconfiguration",
+                "summary": "页面源码中存在可疑 HTML 注释，可能泄露内部路径、调试说明或接口信息。",
+                "fix": "清理生产页面中的调试注释和内部说明。",
+                "type": "info_leak",
+                "evidence": {"url": url, "location": "HTML 注释", "reason": title or "HTML 注释内容"},
+                "confidence_level": "高",
+                "location": {"type": "page", "target": url, "detail": "发现 HTML 注释泄露"},
+                "ai_advice": "**漏洞**：信息泄露\n**优先级**：中\n**建议**：移除生产环境 HTML 注释。",
+            })
+        if ("debug_marker" in signals or "stack_trace" in signals) and (url, "debug_info") not in seen:
+            seen.add((url, "debug_info"))
+            findings.append({
+                "name": "信息泄露（调试/堆栈）",
+                "severity": "high",
+                "level": "高风险",
+                "level_zh": "高风险",
+                "owasp": "A05:2021 - Security Misconfiguration",
+                "summary": "页面存在调试标记或堆栈信息，可能暴露框架、路径和内部逻辑。",
+                "fix": "关闭 debug 模式，隐藏异常堆栈并使用统一错误页面。",
+                "type": "info_leak",
+                "evidence": {"url": url, "location": "调试标记 / 堆栈信息", "reason": title or "debug / stack trace"},
+                "confidence_level": "高",
+                "location": {"type": "page", "target": url, "detail": "发现调试或堆栈泄露"},
+                "ai_advice": "**漏洞**：信息泄露\n**优先级**：高\n**建议**：关闭调试输出与详细堆栈。",
+            })
 
     return findings
 
@@ -2716,7 +2768,7 @@ async def run_payload_tests(base_url, pages):
         test_results.append({
             "url": finding.get("evidence", {}).get("url", base_url)[:100],
             "param": "",
-            "type": "Exposure",
+            "type": finding.get("type", "exposure"),
             "payload": finding.get("name", "")[:40],
             "vulnerable": True,
         })

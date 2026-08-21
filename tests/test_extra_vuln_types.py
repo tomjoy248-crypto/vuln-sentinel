@@ -59,6 +59,20 @@ async def test_detect_open_redirect_with_location_header(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_extract_passive_info_leak_findings():
+    findings = main._extract_passive_exposure_findings(
+        "https://target.test/",
+        [
+            {"url": "https://target.test/app.js", "signals": ["source_map", "debug_marker"], "title": "source map + debug"},
+            {"url": "https://target.test/page", "signals": ["html_comment"], "title": "html comment"},
+        ],
+    )
+
+    assert any(item["type"] == "info_leak" for item in findings)
+    assert any("信息泄露" in item["name"] for item in findings)
+
+
+@pytest.mark.asyncio
 async def test_detect_directory_traversal_with_passwd_signature(monkeypatch):
     def handler(request):
         decoded = urllib.parse.unquote(str(request.url))
@@ -147,6 +161,7 @@ async def test_run_payload_tests_collects_new_types(monkeypatch):
             [
                 {"url": "https://target.test/download?file=1"},
                 {"url": "https://target.test/service.xml?id=1"},
+                {"url": "https://target.test/app.js", "signals": ["source_map", "debug_marker"], "title": "source map + debug"},
             ],
         )
     finally:
@@ -169,6 +184,7 @@ async def test_run_payload_tests_collects_new_types(monkeypatch):
     assert "deserialization" in result_types
     assert "xxe" in result_types
     assert "idor" in result_types
+    assert "info_leak" in result_types
 
 
 @pytest.mark.asyncio
