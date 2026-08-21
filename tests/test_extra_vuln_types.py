@@ -108,3 +108,11 @@ async def test_run_payload_tests_collects_new_types(monkeypatch):
     assert "csrf" in result_types
     assert "traversal" in result_types
     assert "ssrf" in result_types
+
+
+@pytest.mark.asyncio
+async def test_generate_fix_patch_supports_apache_fallback():
+    patch = main._generate_fix_patch([], "apache")
+    assert "平台: APACHE" in patch
+    assert "Header set X-Content-Type-Options" in patch
+    assert "暂未实现" not in patch

@@ -10553,39 +10553,67 @@ def _decrypt_credential(cipher_text: str) -> str:
 
 def _generate_fix_patch(findings: list, platform: str = "nginx") -> str:
     """生成修复补丁（用于追加到现有配置文件）"""
-    if platform == "nginx":
-        lines = [
-            "",
-            "# ============================================",
-            "# Vuln Sentinel 自动应用的安全头",
-            f"# 应用时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
-            f"# 修复项数: {len(findings)}",
-            "# ============================================",
-            "",
-        ]
-        # 修复模板（与 simulate-fix 保持一致）
-        TEMPLATES = {
-            "HSTS": 'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;',
-            "CSP": "add_header Content-Security-Policy 'upgrade-insecure-requests' always;",
-            "X-Frame-Options": 'add_header X-Frame-Options "SAMEORIGIN" always;',
-            "X-Content-Type-Options": 'add_header X-Content-Type-Options "nosniff" always;',
-            "Referrer-Policy": 'add_header Referrer-Policy "strict-origin-when-cross-origin" always;',
-            "Permissions-Policy": 'add_header Permissions-Policy "camera=(), microphone=()" always;',
+    platform = (platform or "nginx").lower()
+    fixes_map = generate_fixes(findings, {}, True, "your-domain.com")
+    platform_fixes = fixes_map.get(platform) or fixes_map.get("nginx") or []
+
+    lines = [
+        "",
+        "# ============================================",
+        "# Vuln Sentinel 自动应用的安全头/修复配置",
+        f"# 平台: {platform.upper()}",
+        f"# 应用时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"# 修复项数: {len(findings)}",
+        "# ============================================",
+        "",
+    ]
+
+    code_blocks: list[str] = []
+    for item in platform_fixes[:30]:
+        if isinstance(item, dict):
+            code = item.get("code") or item.get("snippet") or item.get("text") or ""
+            note = item.get("risk_note") or item.get("title") or ""
+            if code:
+                if note:
+                    code_blocks.append(f"# {note}")
+                code_blocks.append(str(code).rstrip())
+        else:
+            code_blocks.append(str(item).rstrip())
+
+    if not code_blocks:
+        fallback_templates = {
+            "nginx": [
+                'add_header X-Content-Type-Options "nosniff" always;',
+                'add_header Referrer-Policy "strict-origin-when-cross-origin" always;',
+            ],
+            "apache": [
+                'Header set X-Content-Type-Options "nosniff"',
+                'Header set Referrer-Policy "strict-origin-when-cross-origin"',
+            ],
+            "express": [
+                "const helmet = require('helmet');",
+                "app.use(helmet());",
+            ],
+            "flask": [
+                "@app.after_request\ndef add_security_headers(resp):\n    resp.headers['X-Content-Type-Options'] = 'nosniff'\n    return resp",
+            ],
+            "spring_boot": [
+                "// Use Spring Security headers or a WebSecurityConfigurerAdapter equivalent",
+            ],
+            "cloudflare": [
+                "# Cloudflare Transform Rule placeholder for security headers",
+            ],
+            "python": [
+                "# Use framework middleware to set security headers",
+            ],
+            "nodejs": [
+                "// Use helmet or a similar middleware to set security headers",
+            ],
         }
-        applied = set()
-        for f in findings:
-            name = f.get("name", "") if isinstance(f, dict) else str(f)
-            for k, v in TEMPLATES.items():
-                if k in name and k not in applied:
-                    lines.append(f"# 修复: {name[:50]}")
-                    lines.append(v)
-                    applied.add(k)
-                    break
-        if not applied:
-            lines.append("# （未匹配到可生成修复配置的项）")
-        return "\n".join(lines)
-    else:
-        return f"# 平台 {platform} 修复配置补丁（暂未实现）\n"
+        code_blocks = fallback_templates.get(platform, ["# （未匹配到可生成修复配置的项）"])
+
+    lines.extend(code_blocks)
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _ssh_execute(
