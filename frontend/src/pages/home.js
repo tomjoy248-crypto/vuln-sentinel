@@ -846,7 +846,7 @@ function renderDemoReport(d) {
       let priorityColors = { P0: '#c75450', P1: '#f0a732', P2: '#f0a732', P3: '#73c990' };
       html += '<span style="font-size:11px;padding:2px 6px;border-radius:2px;background:#2b2b2b;color:' + priorityColors[priority] + ';font-weight:600;margin-left:6px;border:1px solid ' + priorityColors[priority] + '">' + priority + '</span></div>';
       // Vuln Sentinel: 代码层漏洞分类标签
-      let codeVulnTypes = ['sqli', 'xss', 'csrf', 'ssti', 'open_redirect', 'cmdi', 'traversal', 'deserialization', 'ssrf'];
+      let codeVulnTypes = ['sqli', 'xss', 'csrf', 'ssti', 'open_redirect', 'cmdi', 'traversal', 'deserialization', 'ssrf', 'xxe', 'idor'];
       let vulnType = String(f.type || '').toLowerCase();
       if (codeVulnTypes.indexOf(vulnType) >= 0) {
         html += '<div style="margin-top:4px"><span style="font-size:11px;padding:2px 8px;border-radius:2px;background:#2b2b2b;color:#c75450;font-weight:600;border:1px solid #c75450">代码层漏洞</span></div>';
@@ -3585,6 +3585,10 @@ function generateFixFromFindings(findings, config) {
         rules.push('# SSRF: validate targets, block private IP ranges, and resolve DNS before fetching.');
       } else if ((typeLower === 'cmdi' || name.toLowerCase().indexOf('command injection') >= 0 || name.indexOf('命令注入') >= 0) && fix) {
         rules.push('# Command injection: avoid shell=True, use argument arrays, and whitelist every executable argument.');
+      } else if ((typeLower === 'xxe' || name.toLowerCase().indexOf('xxe') >= 0 || name.indexOf('xml external entity') >= 0) && fix) {
+        rules.push('# XXE: disable DTD and external entities, and use safe XML parser settings.');
+      } else if ((typeLower === 'idor' || name.toLowerCase().indexOf('idor') >= 0 || name.indexOf('对象级') >= 0) && fix) {
+        rules.push('# IDOR: enforce object-level authorization on every record lookup.');
       } else if ((typeLower === 'deserialization' || name.toLowerCase().indexOf('deserialization') >= 0 || name.indexOf('反序列化') >= 0) && fix) {
         rules.push('# Deserialization: forbid untrusted object graphs, add allowlists, and sign payloads before loading.');
       } else if ((typeLower === 'ssti' || name.indexOf('模板注入') >= 0) && fix) {

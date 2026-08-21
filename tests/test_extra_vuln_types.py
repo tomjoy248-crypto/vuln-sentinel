@@ -121,13 +121,19 @@ async def test_run_payload_tests_collects_new_types(monkeypatch):
     cmd_sig = next(iter(main.CMD_EXEC_SIGNATURES))
 
     def handler(request):
-        decoded = urllib.parse.unquote(str(request.url))
+        decoded = urllib.parse.unquote(str(request.url)).lower()
         if "etc/passwd" in decoded:
             return httpx.Response(200, text="root:x:0:0:root:/root:/bin/bash")
         if "169.254.169.254" in decoded or "127.0.0.1" in decoded:
             return httpx.Response(200, text="instance-id\nami-id\nlocal-ipv4")
         if "command" in decoded:
             return httpx.Response(200, text=f"output {cmd_sig}")
+        if decoded.endswith('.xml') or 'application/xml' in str(request.headers.get('content-type', '')).lower():
+            return httpx.Response(200, text='xml parser error: DOCTYPE not allowed')
+        if 'id=1' in decoded:
+            return httpx.Response(200, text='Account profile: Alice | status: active | permissions: read-write | notes: standard user account')
+        if 'id=2' in decoded:
+            return httpx.Response(200, text='Account profile: Bob | status: active | permissions: read-write | notes: standard user account')
         return httpx.Response(
             200,
             text="<html><body><form method='post'><input name='username'><input type='password' name='password'></form></body></html>",
@@ -138,7 +144,10 @@ async def test_run_payload_tests_collects_new_types(monkeypatch):
     try:
         vulns, results = await main.run_payload_tests(
             "https://target.test/download?file=1",
-            [{"url": "https://target.test/download?file=1"}],
+            [
+                {"url": "https://target.test/download?file=1"},
+                {"url": "https://target.test/service.xml?id=1"},
+            ],
         )
     finally:
         await client.aclose()
@@ -151,11 +160,15 @@ async def test_run_payload_tests_collects_new_types(monkeypatch):
     assert "ssrf" in vuln_types
     assert "cmdi" in vuln_types or any(item["type"] == "cmdi" for item in vulns)
     assert "deserialization" in vuln_types or any(item["type"] == "deserialization" for item in vulns)
+    assert "xxe" in vuln_types or any(item["type"] == "xxe" for item in vulns)
+    assert "idor" in vuln_types or any(item["type"] == "idor" for item in vulns)
     assert "csrf" in result_types
     assert "traversal" in result_types
     assert "ssrf" in result_types
     assert "cmdi" in result_types
     assert "deserialization" in result_types
+    assert "xxe" in result_types
+    assert "idor" in result_types
 
 
 @pytest.mark.asyncio
@@ -214,3 +227,42 @@ async def test_detect_deserialization_with_cookie_signature(monkeypatch):
     assert findings
     assert any(item["type"] == "deserialization" for item in findings)
     assert any("反序列化" in item["name"] for item in findings)
+
+
+@pytest.mark.asyncio
+async def test_detect_xxe_with_xml_probe(monkeypatch):
+    def handler(request):
+        if request.method == 'POST':
+            return httpx.Response(200, text='xml parser error: DOCTYPE not allowed')
+        return httpx.Response(200, text='ok')
+
+    client = install_mock_client(monkeypatch, handler)
+    try:
+        findings = await main.detect_xxe('https://target.test/service.xml?id=1', ['id'])
+    finally:
+        await client.aclose()
+
+    assert findings
+    assert any(item['type'] == 'xxe' for item in findings)
+    assert any('XXE' in item['name'] for item in findings)
+
+
+@pytest.mark.asyncio
+async def test_detect_idor_risk_with_adjacent_ids(monkeypatch):
+    def handler(request):
+        decoded = urllib.parse.unquote(str(request.url)).lower()
+        if 'id=1' in decoded:
+            return httpx.Response(200, text='Account profile: Alice | status: active | permissions: read-write | notes: standard user account')
+        if 'id=2' in decoded:
+            return httpx.Response(200, text='Account profile: Bob | status: active | permissions: read-write | notes: standard user account')
+        return httpx.Response(200, text='ok')
+
+    client = install_mock_client(monkeypatch, handler)
+    try:
+        findings = await main.detect_idor_risk('https://target.test/profile?id=1', ['id'])
+    finally:
+        await client.aclose()
+
+    assert findings
+    assert any(item['type'] == 'idor' for item in findings)
+    assert any('IDOR' in item['name'] for item in findings)

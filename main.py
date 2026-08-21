@@ -2513,6 +2513,126 @@ async def detect_open_redirect(url: str, params: list[str]) -> list[dict]:
     return findings
 
 
+def _looks_like_xml_target(url: str, body: str = "") -> bool:
+    """判断目标是否像 XML/Soap 场景，避免到处乱发 XML 探测。"""
+    candidate = f"{url}\n{body}".lower()
+    return any(token in candidate for token in (".xml", "xml", "soap", "wsdl", "upload", "import", "xxe"))
+
+
+async def detect_xxe(url: str, params: list[str]) -> list[dict]:
+    """XXE 低风险探测：仅对 XML/Soap 类目标发送最小化 XML 载荷。"""
+    if not params:
+        return []
+    findings: list[dict] = []
+    client = get_httpx_client()
+    probe_xml = "<?xml version='1.0'?><!DOCTYPE foo [<!ENTITY xxe 'vuln-sentinel-xxe-probe'>]><foo>&xxe;</foo>"
+    error_hints = ("doctype", "entity", "xml parser", "saxparseexception", "expaterror", "parse error", "invalid token", "external entity")
+
+    for param in params[:2]:
+        test_url = _build_test_url(url, param, probe_xml)
+        if not _looks_like_xml_target(test_url):
+            continue
+        try:
+            resp = await client.post(
+                test_url,
+                content=probe_xml.encode("utf-8"),
+                headers={"Content-Type": "application/xml"},
+                timeout=10.0,
+                follow_redirects=True,
+            )
+            body = _safe_read_body(resp).lower()
+            if "vuln-sentinel-xxe-probe" in body or any(h in body for h in error_hints):
+                findings.append(
+                    {
+                        "name": "XXE 风险",
+                        "severity": "high",
+                        "level": "高风险",
+                        "level_zh": "高风险",
+                        "owasp": "A03:2021 - Injection",
+                        "summary": f"参数 '{param}' 对 XML/DTD 载荷表现出可疑解析行为，存在 XXE 风险。",
+                        "fix": "禁用外部实体与 DTD，使用安全 XML 解析器并限制输入格式。",
+                        "type": "xxe",
+                        "evidence": {
+                            "param": param,
+                            "payload": probe_xml[:120],
+                            "url": test_url[:200],
+                        },
+                        "confidence_level": "中",
+                        "location": {
+                            "type": "url_parameter",
+                            "target": param,
+                            "detail": "XML 载荷可疑反射/报错",
+                        },
+                        "ai_advice": "**漏洞**：XXE 风险\n**优先级**：高\n**修复**：禁用 DTD / 外部实体，使用安全 XML 解析配置。",
+                    }
+                )
+        except Exception as e:
+            logger.warning("XXE detection error on %s: %s", test_url[:120], e)
+    return findings
+
+
+async def detect_idor_risk(url: str, params: list[str]) -> list[dict]:
+    """IDOR 风险探测：对数字型资源标识做相邻值对比。"""
+    if not params:
+        return []
+    findings: list[dict] = []
+    client = get_httpx_client()
+    candidate_names = {"id", "uid", "user_id", "account_id", "order_id", "item_id", "doc_id", "file_id"}
+
+    for param in params[:4]:
+        if param.lower() not in candidate_names:
+            continue
+        parsed = urlparse(url)
+        current_value = None
+        for part in parsed.query.split("&"):
+            if not part.startswith(f"{param}="):
+                continue
+            current_value = part.split("=", 1)[1]
+            break
+        if current_value is None or not current_value.isdigit():
+            continue
+        try:
+            base_resp = await client.get(url, timeout=10.0, follow_redirects=True)
+            alt_url = _build_test_url(url, param, str(int(current_value) + 1))
+            alt_resp = await client.get(alt_url, timeout=10.0, follow_redirects=True)
+            base_body = _safe_read_body(base_resp)
+            alt_body = _safe_read_body(alt_resp)
+            if base_resp.status_code == 200 and alt_resp.status_code == 200:
+                if len(base_body) > 80 and len(alt_body) > 80:
+                    from difflib import SequenceMatcher
+                    similarity = SequenceMatcher(None, base_body[:2000], alt_body[:2000]).ratio()
+                    if similarity >= 0.92 and base_body != alt_body:
+                        findings.append(
+                            {
+                                "name": "IDOR 风险",
+                                "severity": "high",
+                                "level": "高风险",
+                                "level_zh": "高风险",
+                                "owasp": "A01:2021 - Broken Access Control",
+                                "summary": f"参数 '{param}' 为可枚举资源标识，相邻编号返回内容高度相似，存在 IDOR 风险。",
+                                "fix": "对资源访问进行服务端鉴权与对象级权限校验，不要仅依赖前端隐藏字段。",
+                                "type": "idor",
+                                "evidence": {
+                                    "param": param,
+                                    "current": current_value,
+                                    "next": str(int(current_value) + 1),
+                                    "similarity": round(similarity, 3),
+                                    "url": url[:200],
+                                },
+                                "confidence_level": "中",
+                                "location": {
+                                    "type": "url_parameter",
+                                    "target": param,
+                                    "detail": "相邻资源 ID 对比相似",
+                                },
+                                "ai_advice": "**漏洞**：IDOR 风险\n**优先级**：高\n**修复**：增加对象级鉴权与权限检查，避免仅靠 ID 访问资源。",
+                            }
+                        )
+        except Exception as e:
+            logger.warning("IDOR detection error on %s: %s", url[:120], e)
+    return findings
+
+
 def _extract_passive_exposure_findings(base_url: str, pages: list[dict]) -> list[dict]:
     findings: list[dict] = []
     seen: set[tuple[str, str]] = set()
@@ -2759,6 +2879,28 @@ async def run_payload_tests(base_url, pages):
             "type": "ssrf",
             "payload": "127.0.0.1 metadata probe",
             "vulnerable": bool(ssrf_results),
+        })
+
+        xxe_results = await detect_xxe(test_url, active_params)
+        for item in xxe_results:
+            add_finding(item)
+        test_results.append({
+            "url": test_url[:100],
+            "param": ",".join(active_params[:3]),
+            "type": "xxe",
+            "payload": "xml dtd probe",
+            "vulnerable": bool(xxe_results),
+        })
+
+        idor_results = await detect_idor_risk(test_url, active_params)
+        for item in idor_results:
+            add_finding(item)
+        test_results.append({
+            "url": test_url[:100],
+            "param": ",".join(active_params[:3]),
+            "type": "idor",
+            "payload": "adjacent id probe",
+            "vulnerable": bool(idor_results),
         })
 
         csrf_results = await detect_csrf_forms(test_url)
