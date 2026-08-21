@@ -116,3 +116,24 @@ async def test_generate_fix_patch_supports_apache_fallback():
     assert "平台: APACHE" in patch
     assert "Header set X-Content-Type-Options" in patch
     assert "暂未实现" not in patch
+
+
+@pytest.mark.asyncio
+async def test_detect_sqli_and_time_based_paths(monkeypatch):
+    def handler(request):
+        decoded = urllib.parse.unquote(str(request.url)).lower()
+        if "sleep(0.01)" in decoded or "union" in decoded or "or '1'='1" in decoded:
+            return httpx.Response(200, text="SQL syntax error near 'union' on database")
+        return httpx.Response(200, text="ok")
+
+    client = install_mock_client(monkeypatch, handler)
+    monkeypatch.setattr(main, "sanitize_url", lambda value: value)
+    try:
+        findings = await main.detect_sqli("https://target.test/search?q=1", ["q"])
+        timed = await main.detect_time_based_sqli("https://target.test/search?q=1' AND SLEEP(0.01) --", threshold=0.001)
+    finally:
+        await client.aclose()
+
+    assert any(item["type"] == "sqli" for item in findings)
+    assert timed["vulnerable"] is True
+    assert timed["method"] == "simulated"

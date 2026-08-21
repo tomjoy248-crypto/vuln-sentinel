@@ -2635,6 +2635,16 @@ async def run_payload_tests(base_url, pages):
                     "payload": payload[:40],
                     "vulnerable": result is not None,
                 })
+            sqli_results = await detect_sqli(test_url, [param])
+            for item in sqli_results:
+                add_finding(item)
+            test_results.append({
+                "url": test_url[:100],
+                "param": param,
+                "type": "SQLi-Enhanced",
+                "payload": "enhanced sql probe",
+                "vulnerable": bool(sqli_results),
+            })
             ssti_results = await detect_ssti(test_url, [param])
             for item in ssti_results:
                 add_finding(item)
