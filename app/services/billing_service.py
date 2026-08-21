@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from app.core.exceptions import BusinessException
+from app.core.exceptions import BusinessException, ForbiddenException, ForbiddenException
 from app.db.session import get_db
 from app.services.credits_service import add_credits
 
@@ -272,8 +272,10 @@ def admin_recharge_user(
     admin_user: dict, target_user_id: int, credits: int, note: str = ""
 ) -> dict[str, Any]:
     """管理员直接给用户充值积分。"""
-    from main import require_admin_user
-    require_admin_user(admin_user)
+    # 服务层必须返回统一的业务异常，不能把路由层 HTTPException 泄漏给调用方。
+    # 空用户或非管理员都按权限不足处理，避免服务接口出现 401/403 契约分裂。
+    if not admin_user or admin_user.get("role") != "admin":
+        raise ForbiddenException("仅管理员可执行此操作")
     if credits <= 0:
         raise BusinessException("充值积分必须大于 0", code="INVALID_AMOUNT", status_code=400)
 
@@ -661,3 +663,4 @@ def handle_wechat_notify(payload: dict[str, Any]) -> dict[str, Any]:
 
     logger.warning("wechatpay_signature_verify_not_implemented")
     raise BusinessException("微信支付签名验证未实现", code="NOT_IMPLEMENTED", status_code=501)
+
