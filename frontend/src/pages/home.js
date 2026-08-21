@@ -846,7 +846,7 @@ function renderDemoReport(d) {
       let priorityColors = { P0: '#c75450', P1: '#f0a732', P2: '#f0a732', P3: '#73c990' };
       html += '<span style="font-size:11px;padding:2px 6px;border-radius:2px;background:#2b2b2b;color:' + priorityColors[priority] + ';font-weight:600;margin-left:6px;border:1px solid ' + priorityColors[priority] + '">' + priority + '</span></div>';
       // Vuln Sentinel: 代码层漏洞分类标签
-      let codeVulnTypes = ['sqli', 'xss', 'csrf', 'ssti', 'open_redirect', 'cmdi', 'traversal', 'deserialization', 'ssrf', 'xxe', 'idor', 'info_leak'];
+      let codeVulnTypes = ['sqli', 'xss', 'csrf', 'ssti', 'open_redirect', 'cmdi', 'traversal', 'deserialization', 'ssrf', 'xxe', 'idor', 'info_leak', 'auth_weakness', 'bruteforce_protection', 'unauthorized_access'];
       let vulnType = String(f.type || '').toLowerCase();
       if (codeVulnTypes.indexOf(vulnType) >= 0) {
         html += '<div style="margin-top:4px"><span style="font-size:11px;padding:2px 8px;border-radius:2px;background:#2b2b2b;color:#c75450;font-weight:600;border:1px solid #c75450">代码层漏洞</span></div>';
@@ -3583,6 +3583,12 @@ function generateFixFromFindings(findings, config) {
         rules.push('# Traversal: normalize paths and restrict access to an allowed base directory.');
       } else if ((typeLower === 'ssrf' || name.toLowerCase().indexOf('ssrf') >= 0) && fix) {
         rules.push('# SSRF: validate targets, block private IP ranges, and resolve DNS before fetching.');
+      } else if ((typeLower === 'auth_weakness' || name.indexOf('认证') >= 0 || name.indexOf('登录') >= 0) && fix) {
+        rules.push('# Authentication: add CSRF tokens, secure cookies, X-Frame-Options, and centralized auth middleware.');
+      } else if ((typeLower === 'bruteforce_protection' || name.indexOf('防爆破') >= 0 || name.indexOf('限流') >= 0) && fix) {
+        rules.push('# Brute force protection: add login throttling, account lockout, CAPTCHA/2FA, and audit logging.');
+      } else if ((typeLower === 'unauthorized_access' || name.indexOf('未授权') >= 0 || name.indexOf('越权') >= 0) && fix) {
+        rules.push('# Unauthorized access: protect sensitive routes with authentication and object-level authorization.');
       } else if ((typeLower === 'cmdi' || name.toLowerCase().indexOf('command injection') >= 0 || name.indexOf('命令注入') >= 0) && fix) {
         rules.push('# Command injection: avoid shell=True, use argument arrays, and whitelist every executable argument.');
       } else if ((typeLower === 'xxe' || name.toLowerCase().indexOf('xxe') >= 0 || name.indexOf('xml external entity') >= 0) && fix) {

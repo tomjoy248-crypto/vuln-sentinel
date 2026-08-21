@@ -2966,7 +2966,314 @@ async def run_payload_tests(base_url, pages):
             "vulnerable": bool(csrf_results),
         })
 
+    auth_results = await detect_auth_weaknesses(base_url)
+    for item in auth_results:
+        add_finding(item)
+    test_results.append({
+        "url": base_url[:100],
+        "param": "",
+        "type": "auth_weakness",
+        "payload": "login page security probe",
+        "vulnerable": any(item.get("type") == "auth_weakness" for item in auth_results),
+    })
+    test_results.append({
+        "url": base_url[:100],
+        "param": "",
+        "type": "bruteforce_protection",
+        "payload": "login page anti-bruteforce probe",
+        "vulnerable": any(item.get("type") == "bruteforce_protection" for item in auth_results),
+    })
+
+    unauthorized_results = await detect_unauthorized_access(base_url)
+    for item in unauthorized_results:
+        add_finding(item)
+    test_results.append({
+        "url": base_url[:100],
+        "param": "",
+        "type": "unauthorized_access",
+        "payload": "protected route probe",
+        "vulnerable": bool(unauthorized_results),
+    })
+
     return vulns, test_results
+
+
+LOGIN_PATH_HINTS = [
+    "/login",
+    "/signin",
+    "/sign-in",
+    "/user/login",
+    "/admin",
+    "/admin/login",
+    "/wp-login.php",
+    "/auth/login",
+    "/account/login",
+    "/member/login",
+]
+
+LOGIN_ANTI_BOT_HINTS = (
+    "captcha",
+    "验证码",
+    "二次验证",
+    "双重验证",
+    "mfa",
+    "2fa",
+    "otp",
+    "短信验证码",
+    "邮箱验证码",
+    "security code",
+    "authenticator",
+)
+
+PROTECTED_PATH_HINTS = [
+    "/admin",
+    "/admin/dashboard",
+    "/dashboard",
+    "/account",
+    "/profile",
+    "/settings",
+    "/user",
+    "/user/profile",
+    "/api/me",
+    "/api/user",
+    "/api/account",
+    "/api/admin",
+]
+
+
+async def _probe_login_page_security(base_url: str) -> dict[str, Any]:
+    """探测登录页并返回认证安全问题。"""
+    result: dict[str, Any] = {
+        "login_page_found": False,
+        "login_path": "",
+        "issues": [],
+    }
+    client = get_httpx_client()
+    parsed = urlparse(base_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    try:
+        for path in LOGIN_PATH_HINTS:
+            try:
+                resp = await client.get(
+                    urljoin(origin, path),
+                    timeout=8.0,
+                    follow_redirects=True,
+                    headers={"User-Agent": "Mozilla/5.0"},
+                )
+                if resp.status_code != 200:
+                    continue
+                body = _safe_read_body(resp)
+                if not re.search(r'<input[^>]*type=["\']password["\']', body, re.IGNORECASE):
+                    continue
+
+                result["login_page_found"] = True
+                result["login_path"] = path
+                issues: list[str] = []
+                form_match = re.search(r"<form[^>]*>.*?</form>", body, re.IGNORECASE | re.DOTALL)
+                if form_match:
+                    form_html = form_match.group(0)
+                    form_lower = form_html.lower()
+                    body_lower = body.lower()
+                    if 'autocomplete="off"' not in form_lower and "autocomplete='off'" not in form_lower:
+                        issues.append("login_page_no_autocomplete_off")
+
+                    csrf_found = False
+                    for input_tag in re.findall(r"<input[^>]*>", form_html, re.IGNORECASE):
+                        tag_lower = input_tag.lower()
+                        if 'type="hidden"' not in tag_lower and "type='hidden'" not in tag_lower:
+                            continue
+                        name_match = re.search(r'\bname=["\']([^"\']*)["\']', input_tag, re.IGNORECASE)
+                        if not name_match:
+                            continue
+                        name = name_match.group(1).lower()
+                        if not any(token in name for token in ("csrf", "token", "nonce")):
+                            continue
+                        value_match = re.search(r'\bvalue=["\']([^"\']*)["\']', input_tag, re.IGNORECASE)
+                        if value_match and value_match.group(1).strip():
+                            csrf_found = True
+                            break
+                    if not csrf_found:
+                        issues.append("csrf_token_missing")
+                    if not any(hint in body_lower for hint in LOGIN_ANTI_BOT_HINTS):
+                        issues.append("bruteforce_protection_missing")
+
+                    login_headers = {k.lower(): v for k, v in resp.headers.items()}
+                    if "x-frame-options" not in login_headers:
+                        issues.append("login_page_no_xfo")
+
+                result["issues"] = issues
+                return result
+            except Exception:
+                continue
+    except Exception as e:
+        result["evidence"] = f"login probe exception: {str(e)[:80]}"
+    return result
+
+
+async def detect_auth_weaknesses(base_url: str) -> list[dict]:
+    """把登录页安全缺陷汇总成更明确的认证类 finding。"""
+    findings: list[dict] = []
+    try:
+        probe = await _probe_login_page_security(base_url)
+    except Exception as e:
+        logger.warning("Auth weakness probe failed on %s: %s", base_url[:120], e)
+        return findings
+
+    if not probe.get("login_page_found"):
+        return findings
+
+    issues = set(probe.get("issues") or [])
+    login_path = probe.get("login_path") or "/login"
+    evidence = {
+        "login_path": login_path,
+        "issues": sorted(issues),
+        "url": base_url[:200],
+    }
+
+    auth_issues = []
+    if "csrf_token_missing" in issues:
+        auth_issues.append("登录表单缺少 CSRF token")
+    if "login_page_no_xfo" in issues:
+        auth_issues.append("登录页缺少 X-Frame-Options")
+    if "login_page_no_autocomplete_off" in issues:
+        auth_issues.append("登录表单未关闭自动补全")
+
+    if auth_issues:
+        severity = "high" if "csrf_token_missing" in issues else "medium"
+        findings.append(
+            {
+                "name": "认证保护不足",
+                "severity": severity,
+                "level": "高风险" if severity == "high" else "中风险",
+                "level_zh": "高风险" if severity == "high" else "中风险",
+                "owasp": "A07:2021 - Identification and Authentication Failures",
+                "summary": "登录页缺少关键认证防护：" + "、".join(auth_issues),
+                "fix": "为登录表单补充 CSRF token、autocomplete=\"off\"、X-Frame-Options、SameSite Cookie，并配合 Origin/Referer 校验。",
+                "type": "auth_weakness",
+                "evidence": evidence,
+                "confidence_level": "高" if severity == "high" else "中",
+                "location": {
+                    "type": "login_form",
+                    "target": login_path,
+                    "detail": "登录页存在可见的认证防护缺陷",
+                },
+                "ai_advice": f"**漏洞**：认证保护不足\n**优先级**：{'高' if severity == 'high' else '中'}\n**影响**：{'、'.join(auth_issues)}\n**修复**：为登录表单加入 CSRF token、X-Frame-Options、autocomplete=\"off\" 和 SameSite Cookie。",
+            }
+        )
+
+    if "bruteforce_protection_missing" in issues:
+        findings.append(
+            {
+                "name": "登录防爆破不足",
+                "severity": "medium",
+                "level": "中风险",
+                "level_zh": "中风险",
+                "owasp": "A07:2021 - Identification and Authentication Failures",
+                "summary": "登录页未发现验证码、二次验证或明显的防爆破提示。",
+                "fix": "为登录与找回密码接口增加验证码、二次验证、IP/账号级限流、失败锁定和审计日志。",
+                "type": "bruteforce_protection",
+                "evidence": evidence,
+                "confidence_level": "中",
+                "location": {
+                    "type": "login_form",
+                    "target": login_path,
+                    "detail": "未发现明显的防爆破/多因素验证提示",
+                },
+                "ai_advice": "**漏洞**：登录防爆破不足\n**优先级**：中\n**影响**：未发现验证码、二次验证或明显的防爆破提示\n**修复**：增加验证码、限流、失败锁定和审计日志。",
+            }
+        )
+
+    return findings
+
+
+async def detect_unauthorized_access(base_url: str) -> list[dict]:
+    """探测是否存在未登录即可访问的敏感页面或接口。"""
+    findings: list[dict] = []
+    client = get_httpx_client()
+    parsed = urlparse(base_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    protected_keywords = (
+        "dashboard",
+        "admin",
+        "account",
+        "profile",
+        "settings",
+        "logout",
+        "个人中心",
+        "用户中心",
+        "管理",
+        "权限",
+        "邮箱",
+        "role",
+        "permission",
+    )
+    login_keywords = (
+        "login",
+        "sign in",
+        "signin",
+        "authentication required",
+        "请先登录",
+        "请登录",
+    )
+    try:
+        for path in PROTECTED_PATH_HINTS:
+            try:
+                resp = await client.get(
+                    urljoin(origin, path),
+                    timeout=8.0,
+                    follow_redirects=True,
+                    headers={"User-Agent": "Mozilla/5.0"},
+                )
+                if resp.status_code in (401, 403):
+                    continue
+                body = _safe_read_body(resp)
+                body_lower = body.lower()
+                if any(term in body_lower for term in login_keywords):
+                    continue
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    location = (resp.headers.get("location") or "").lower()
+                    if any(term in location for term in login_keywords):
+                        continue
+                if resp.status_code != 200:
+                    continue
+
+                has_sensitive_json = path.startswith("/api/") and (
+                    body.strip().startswith("{") or body.strip().startswith("[")
+                )
+                has_sensitive_text = any(term in body_lower for term in protected_keywords)
+                if not has_sensitive_json and not has_sensitive_text:
+                    continue
+
+                severity = "high" if path.startswith("/api/") or "admin" in path else "medium"
+                findings.append(
+                    {
+                        "name": "未授权访问风险",
+                        "severity": severity,
+                        "level": "高风险" if severity == "high" else "中风险",
+                        "level_zh": "高风险" if severity == "high" else "中风险",
+                        "owasp": "A01:2021 - Broken Access Control",
+                        "summary": f"未登录即可访问敏感路由 {path}。",
+                        "fix": "对敏感路由统一加认证中间件和权限校验，确保未登录返回 401/302，不要直接暴露管理页或用户信息接口。",
+                        "type": "unauthorized_access",
+                        "evidence": {
+                            "url": urljoin(origin, path)[:200],
+                            "status_code": resp.status_code,
+                            "excerpt": body[:240],
+                        },
+                        "confidence_level": "高" if has_sensitive_json else "中",
+                        "location": {
+                            "type": "route",
+                            "target": path,
+                            "detail": "匿名访问返回了敏感内容",
+                        },
+                        "ai_advice": f"**漏洞**：未授权访问风险\n**优先级**：{'高' if severity == 'high' else '中'}\n**影响**：匿名访问 {path} 返回了敏感内容\n**修复**：在路由层统一增加认证与对象级授权检查。",
+                    }
+                )
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning("Unauthorized access probe failed on %s: %s", base_url[:120], e)
+    return findings
 
 
 # ---------- Code-Level Vulnerability Detection (Vuln Sentinel) ----------# ---------- Code-Level Vulnerability Detection (Vuln Sentinel) ----------
@@ -5473,6 +5780,19 @@ async def cross_validate_findings(
         "/account/login",
         "/member/login",
     ]
+    LOGIN_ANTI_BOT_HINTS = (
+        "captcha",
+        "验证码",
+        "二次验证",
+        "双重验证",
+        "mfa",
+        "2fa",
+        "otp",
+        "短信验证码",
+        "邮箱验证码",
+        "security code",
+        "authenticator",
+    )
 
     async def _d13_auth_probe() -> dict[str, Any]:
         """D13: 检测登录页面及认证表单的安全配置问题。
@@ -5520,6 +5840,13 @@ async def cross_validate_findings(
                             )
                             if form_match:
                                 form_html = form_match.group(0)
+                                form_lower = form_html.lower()
+                                body_lower = body.lower()
+                                if (
+                                    'autocomplete="off"' not in form_lower
+                                    and "autocomplete='off'" not in form_lower
+                                ):
+                                    issues.append("login_page_no_autocomplete_off")
                                 # 检查 CSRF token：必须是隐藏字段，且 name 包含 csrf/token/nonce，同时具有非空 value
                                 # 逐个解析 <input> 标签，避免属性顺序导致的漏报
                                 csrf_found = False
@@ -5555,6 +5882,10 @@ async def cross_validate_findings(
                                         break
                                 if not csrf_found:
                                     issues.append("csrf_token_missing")
+                                if not any(
+                                    hint in body_lower for hint in LOGIN_ANTI_BOT_HINTS
+                                ):
+                                    issues.append("bruteforce_protection_missing")
                             # 检查登录页安全头
                             login_headers = {
                                 k.lower(): v for k, v in resp.headers.items()
@@ -5568,6 +5899,188 @@ async def cross_validate_findings(
         except Exception as e:
             result["evidence"] = f"D13: 异常 {str(e)[:80]}"
         return result
+
+
+async def detect_auth_weaknesses(base_url: str) -> list[dict]:
+    """把登录页安全缺陷汇总成更明确的认证类 finding。"""
+    findings: list[dict] = []
+    try:
+        probe = await _probe_login_page_security(base_url)
+    except Exception as e:
+        logger.warning("Auth weakness probe failed on %s: %s", base_url[:120], e)
+        return findings
+
+    if not probe.get("login_page_found"):
+        return findings
+
+    issues = set(probe.get("issues") or [])
+    login_path = probe.get("login_path") or "/login"
+    evidence = {
+        "login_path": login_path,
+        "issues": sorted(issues),
+        "url": base_url[:200],
+    }
+
+    auth_issues = []
+    if "csrf_token_missing" in issues:
+        auth_issues.append("登录表单缺少 CSRF token")
+    if "login_page_no_xfo" in issues:
+        auth_issues.append("登录页缺少 X-Frame-Options")
+    if "login_page_no_autocomplete_off" in issues:
+        auth_issues.append("登录表单未关闭自动补全")
+
+    if auth_issues:
+        severity = "high" if "csrf_token_missing" in issues else "medium"
+        findings.append(
+            {
+                "name": "认证保护不足",
+                "severity": severity,
+                "level": "高风险" if severity == "high" else "中风险",
+                "level_zh": "高风险" if severity == "high" else "中风险",
+                "owasp": "A07:2021 - Identification and Authentication Failures",
+                "summary": "登录页缺少关键认证防护：" + "、".join(auth_issues),
+                "fix": "为登录表单补充 CSRF token、autocomplete=\"off\"、X-Frame-Options、SameSite Cookie，并配合 Origin/Referer 校验。",
+                "type": "auth_weakness",
+                "evidence": evidence,
+                "confidence_level": "高" if severity == "high" else "中",
+                "location": {
+                    "type": "login_form",
+                    "target": login_path,
+                    "detail": "登录页存在可见的认证防护缺陷",
+                },
+                "ai_advice": f"**漏洞**：认证保护不足\n**优先级**：{'高' if severity == 'high' else '中'}\n**影响**：{'、'.join(auth_issues)}\n**修复**：为登录表单加入 CSRF token、X-Frame-Options、autocomplete=\"off\" 和 SameSite Cookie。",
+            }
+        )
+
+    if "bruteforce_protection_missing" in issues:
+        findings.append(
+            {
+                "name": "登录防爆破不足",
+                "severity": "medium",
+                "level": "中风险",
+                "level_zh": "中风险",
+                "owasp": "A07:2021 - Identification and Authentication Failures",
+                "summary": "登录页未发现验证码、二次验证或明显的防爆破提示。",
+                "fix": "为登录与找回密码接口增加验证码、二次验证、IP/账号级限流、失败锁定和审计日志。",
+                "type": "bruteforce_protection",
+                "evidence": evidence,
+                "confidence_level": "中",
+                "location": {
+                    "type": "login_form",
+                    "target": login_path,
+                    "detail": "未发现明显的防爆破/多因素验证提示",
+                },
+                "ai_advice": "**漏洞**：登录防爆破不足\n**优先级**：中\n**影响**：未发现验证码、二次验证或明显的防爆破提示\n**修复**：增加验证码、限流、失败锁定和审计日志。",
+            }
+        )
+
+    return findings
+
+
+PROTECTED_PATH_HINTS = [
+    "/admin",
+    "/admin/dashboard",
+    "/dashboard",
+    "/account",
+    "/profile",
+    "/settings",
+    "/user",
+    "/user/profile",
+    "/api/me",
+    "/api/user",
+    "/api/account",
+    "/api/admin",
+]
+
+
+async def detect_unauthorized_access(base_url: str) -> list[dict]:
+    """探测是否存在未登录即可访问的敏感页面或接口。"""
+    findings: list[dict] = []
+    client = get_httpx_client()
+    parsed = urlparse(base_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    protected_keywords = (
+        "dashboard",
+        "admin",
+        "account",
+        "profile",
+        "settings",
+        "logout",
+        "个人中心",
+        "用户中心",
+        "管理",
+        "权限",
+        "邮箱",
+        "role",
+        "permission",
+    )
+    login_keywords = (
+        "login",
+        "sign in",
+        "signin",
+        "authentication required",
+        "请先登录",
+        "请登录",
+    )
+    try:
+        for path in PROTECTED_PATH_HINTS:
+            try:
+                resp = await client.get(
+                    urljoin(origin, path),
+                    timeout=8.0,
+                    follow_redirects=True,
+                    headers={"User-Agent": "Mozilla/5.0"},
+                )
+                if resp.status_code in (401, 403):
+                    continue
+                body = _safe_read_body(resp)
+                body_lower = body.lower()
+                if any(term in body_lower for term in login_keywords):
+                    continue
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    location = (resp.headers.get("location") or "").lower()
+                    if any(term in location for term in login_keywords):
+                        continue
+                if resp.status_code != 200:
+                    continue
+
+                has_sensitive_json = path.startswith("/api/") and (
+                    body.strip().startswith("{") or body.strip().startswith("[")
+                )
+                has_sensitive_text = any(term in body_lower for term in protected_keywords)
+                if not has_sensitive_json and not has_sensitive_text:
+                    continue
+
+                severity = "high" if path.startswith("/api/") or "admin" in path else "medium"
+                findings.append(
+                    {
+                        "name": "未授权访问风险",
+                        "severity": severity,
+                        "level": "高风险" if severity == "high" else "中风险",
+                        "level_zh": "高风险" if severity == "high" else "中风险",
+                        "owasp": "A01:2021 - Broken Access Control",
+                        "summary": f"未登录即可访问敏感路由 {path}。",
+                        "fix": "对敏感路由统一加认证中间件和权限校验，确保未登录返回 401/302，不要直接暴露管理页或用户信息接口。",
+                        "type": "unauthorized_access",
+                        "evidence": {
+                            "url": urljoin(origin, path)[:200],
+                            "status_code": resp.status_code,
+                            "excerpt": body[:240],
+                        },
+                        "confidence_level": "高" if has_sensitive_json else "中",
+                        "location": {
+                            "type": "route",
+                            "target": path,
+                            "detail": "匿名访问返回了敏感内容",
+                        },
+                        "ai_advice": f"**漏洞**：未授权访问风险\n**优先级**：{'高' if severity == 'high' else '中'}\n**影响**：匿名访问 {path} 返回了敏感内容\n**修复**：在路由层统一增加认证与对象级授权检查。",
+                    }
+                )
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning("Unauthorized access probe failed on %s: %s", base_url[:120], e)
+    return findings
 
     # ========== D14: A08 软件完整性 - SRI 子资源完整性检测 ==========
     async def _d14_sri_probe() -> dict[str, Any]:
@@ -8401,6 +8914,84 @@ def generate_fixes(
                 '# Spring Boot: @CrossOrigin(origins = "https://your-domain.com")',
             )
             add("cloudflare", "# Cloudflare: CORS policy > allowed origins")
+        elif ftype in ("auth_weakness", "auth", "authentication") or "认证" in name:
+            add(
+                "nginx",
+                "location /admin/ { auth_request /auth; }\n# 配合 rate limiting 与验证码网关",
+            )
+            add(
+                "python",
+                "# Flask: @login_required + CSRFProtect(app) + session cookie SameSite=Lax/Strict",
+            )
+            add(
+                "nodejs",
+                "// Express: app.use('/admin', requireAuth, requireRole('admin'))",
+            )
+            add(
+                "flask",
+                "# Flask: 使用 Flask-Login / @login_required，并为登录表单添加 CSRF token",
+            )
+            add(
+                "express",
+                "// Express: 使用统一认证中间件，登录页关闭 autocomplete 并补充 CSRF token",
+            )
+            add(
+                "spring_boot",
+                "# Spring Boot: http.authorizeHttpRequests(auth -> auth.requestMatchers('/admin/**').authenticated())",
+            )
+            add(
+                "cloudflare",
+                "# Cloudflare: WAF / Access / Managed Challenge 保护登录和管理路由",
+            )
+        elif ftype == "bruteforce_protection" or "防爆破" in name or "限流" in name:
+            add(
+                "nginx",
+                "limit_req_zone $binary_remote_addr zone=login_zone:10m rate=5r/m;\nlocation /login { limit_req zone=login_zone burst=10 nodelay; }",
+            )
+            add("python", "# Flask: Flask-Limiter + 失败锁定 + CAPTCHA/2FA")
+            add("nodejs", "// Express: express-rate-limit + 登录失败锁定 + CAPTCHA/2FA")
+            add(
+                "flask",
+                "# Flask: Flask-Limiter 为登录接口做 IP/账号双维度限流，并记录审计日志",
+            )
+            add(
+                "express",
+                "// Express: express-rate-limit + 账号失败次数阈值 + 验证码",
+            )
+            add(
+                "spring_boot",
+                "# Spring Boot: Bucket4j / Resilience4j 限流 + 登录失败锁定 + 二次验证",
+            )
+            add("cloudflare", "# Cloudflare: Rate Limiting Rules + Managed Challenge")
+        elif ftype == "unauthorized_access" or "未授权" in name or "越权" in name:
+            add(
+                "nginx",
+                "location /api/ { auth_request /auth; }\n# 所有敏感路由在边缘层前置鉴权",
+            )
+            add(
+                "python",
+                "# Flask: 在每个敏感视图前调用权限检查，禁止匿名访问管理接口",
+            )
+            add(
+                "nodejs",
+                "// Express: 所有 /api/admin、/api/user 等路由挂载 requireAuth + requireRole",
+            )
+            add(
+                "flask",
+                "# Flask: 使用 Flask-Login + 对象级权限校验，匿名请求返回 401/302",
+            )
+            add(
+                "express",
+                "// Express: 统一鉴权中间件 + 对象级授权校验，未登录返回 401",
+            )
+            add(
+                "spring_boot",
+                "# Spring Boot: @PreAuthorize + @Secured + 方法级对象权限校验",
+            )
+            add(
+                "cloudflare",
+                "# Cloudflare: 仅允许已认证用户访问受保护路径，WAF 自定义规则拦截匿名请求",
+            )
         elif "敏感路径" in name:
             add(
                 "nginx",
@@ -8542,6 +9133,29 @@ def generate_fixes(
             add(
                 "spring_boot", "# Java: Apache HttpClient + 自定义 DNSResolver 拦截内网"
             )
+        elif ftype == "auth_weakness" or "认证" in name:
+            add("python", "# Flask: @login_required + CSRFProtect(app) + session cookie SameSite=Lax/Strict")
+            add("nodejs", "// Express: app.use('/admin', requireAuth, requireRole('admin'))")
+            add("flask", "# Flask: 使用 Flask-Login / @login_required，并为登录表单添加 CSRF token")
+            add("express", "// Express: 使用统一认证中间件，登录页关闭 autocomplete 并补充 CSRF token")
+            add("spring_boot", "# Spring Boot: http.authorizeHttpRequests(auth -> auth.requestMatchers('/admin/**').authenticated())")
+            add("cloudflare", "# Cloudflare: WAF / Access / Managed Challenge 保护登录和管理路由")
+        elif ftype == "bruteforce_protection" or "防爆破" in name or "限流" in name:
+            add("nginx", "limit_req_zone $binary_remote_addr zone=login_zone:10m rate=5r/m;\nlocation /login { limit_req zone=login_zone burst=10 nodelay; }")
+            add("python", "# Flask: Flask-Limiter + 失败锁定 + CAPTCHA/2FA")
+            add("nodejs", "// Express: express-rate-limit + 登录失败锁定 + CAPTCHA/2FA")
+            add("flask", "# Flask: Flask-Limiter 为登录接口做 IP/账号双维度限流，并记录审计日志")
+            add("express", "// Express: express-rate-limit + 账号失败次数阈值 + 验证码")
+            add("spring_boot", "# Spring Boot: Bucket4j / Resilience4j 限流 + 登录失败锁定 + 二次验证")
+            add("cloudflare", "# Cloudflare: Rate Limiting Rules + Managed Challenge")
+        elif ftype == "unauthorized_access" or "未授权" in name or "越权" in name:
+            add("nginx", "location /api/ { auth_request /auth; }\n# 所有敏感路由在边缘层前置鉴权")
+            add("python", "# Flask: 在每个敏感视图前调用权限检查，禁止匿名访问管理接口")
+            add("nodejs", "// Express: 所有 /api/admin、/api/user 等路由挂载 requireAuth + requireRole")
+            add("flask", "# Flask: 使用 Flask-Login + 对象级权限校验，匿名请求返回 401/302")
+            add("express", "// Express: 统一鉴权中间件 + 对象级授权校验，未登录返回 401")
+            add("spring_boot", "# Spring Boot: @PreAuthorize + @Secured + 方法级对象权限校验")
+            add("cloudflare", "# Cloudflare: 仅允许已认证用户访问受保护路径，WAF 自定义规则拦截匿名请求")
         else:
             # 兜底：把 fix_text 直接当作 nginx 行
             if fix_text:
@@ -15386,6 +16000,59 @@ _AI_KNOWLEDGE_BASE = {
         "risk": "🟢 **低风险**\n- 帮助攻击者缩小攻击范围，针对特定版本找已知漏洞\n- 降低攻击门槛，提高攻击效率\n- 本身不直接造成危害，但会放大其他漏洞的影响\n- 属于安全加固的一部分",
         "fix_code": "**各平台隐藏版本号方法**：\n\n**Nginx**：\n```nginx\nserver_tokens off;  # 隐藏 Nginx 版本号\n\n# 如需完全隐藏 Server 头（需要第三方模块或 Nginx Plus）\n# more_clear_headers 'Server' 'X-Powered-By';\n```\n\n**Apache**：\n```apache\nServerTokens Prod\nServerSignature Off\nHeader unset X-Powered-By\n```\n\n**PHP**：\n```ini\n# php.ini\nexpose_php = Off\n```\n\n**Express**：\n```javascript\napp.disable('x-powered-by');\n```\n\n**Flask**：\n```python\n@app.after_request\ndef remove_headers(resp):\n    resp.headers.pop('Server', None)\n    return resp\n```\n\n**错误页面**：\n- 自定义 4xx/5xx 错误页面\n- 不要暴露堆栈信息、SQL 错误详情\n- 生产环境关闭 debug 模式",
         "verify": "**验证方法**：\n\n1. **响应头检查**：\n```bash\ncurl -sI https://yourdomain.com | grep -iE 'server|x-powered|x-asp'\n```\n\n2. **错误页面测试**：\n- 访问不存在的页面（404）看错误信息\n- 故意触发 500 错误看是否泄露堆栈\n\n3. **页面源码检查**：\n- 查看 HTML 源码，看注释中有没有敏感信息\n- 检查 JS 中有没有硬编码的密钥、路径\n\n4. **指纹识别工具**：用 Wappalyzer、WhatWeb 等工具看能识别出多少信息",
+    },
+    "auth_weakness": {
+        "name": "认证保护不足",
+        "category": "vulnerability",
+        "severity": "medium",
+        "aliases": [
+            "认证保护不足",
+            "认证失败",
+            "登录保护不足",
+            "弱认证",
+            "认证绕过",
+            "auth weakness",
+            "authentication weakness",
+        ],
+        "principle": "认证保护不足通常表现为登录页、登录表单或会话机制缺少基础防护，例如 CSRF Token、X-Frame-Options、SameSite Cookie、自动补全限制和登录失败保护。\n\n**常见问题**：\n- 登录表单没有 CSRF Token\n- 登录页可被 iframe 嵌入\n- 登录输入框不关闭自动补全\n- 没有验证码、二次验证或登录失败锁定\n- 认证与授权职责混在一起，导致边界不清",
+        "risk": "🟠 **中高风险**\n- 攻击者更容易发起撞库、钓鱼嵌入和会话滥用\n- 登录态和敏感操作更容易被冒用\n- 认证边界不清会放大越权与未授权访问问题\n- 对外开放业务系统应优先修复",
+        "fix_code": "**核心修复**：\n\n**1. 登录表单补齐防护**\n- 添加 CSRF Token\n- 设置 `autocomplete=\"off\"`\n- 配置 `X-Frame-Options` 或 CSP `frame-ancestors`\n\n**2. 登录态与 Cookie 加固**\n- 统一设置 `HttpOnly`、`Secure`、`SameSite`\n- 敏感会话只在 HTTPS 下传输\n\n**3. 增加防爆破能力**\n- 登录失败计数与锁定\n- IP/账号双维度限流\n- 验证码或二次验证\n\n**4. 统一认证中间件**\n- 所有敏感路由都走认证中间件\n- 不要在业务代码中散落校验逻辑",
+        "verify": "**验证方法**：\n\n1. **页面源码检查**：\n- 确认登录表单包含 CSRF Token\n- 确认输入框带有 `autocomplete=\"off\"`\n\n2. **安全头检查**：\n```bash\ncurl -sI https://yourdomain.com/login | grep -iE 'x-frame-options|content-security-policy|set-cookie'\n```\n\n3. **功能测试**：\n- 多次输错密码，确认是否出现限流、验证码或锁定提示\n- 观察匿名访问管理页是否会被重定向到登录页",
+    },
+    "bruteforce_protection": {
+        "name": "登录防爆破不足",
+        "category": "vulnerability",
+        "severity": "medium",
+        "aliases": [
+            "防爆破",
+            "登录限流",
+            "撞库防护",
+            "brute force",
+            "bruteforce",
+            "rate limit",
+            "登录锁定",
+        ],
+        "principle": "登录防爆破不足是指登录和找回密码流程缺少验证码、限流、锁定或二次验证，攻击者可以通过自动化脚本反复尝试密码。\n\n**常见问题**：\n- 登录接口没有 IP/账号限流\n- 多次失败后没有锁定\n- 没有验证码、OTP 或 MFA\n- 没有审计日志或告警\n- 异常尝试频率不会触发保护",
+        "risk": "🟠 **中风险**\n- 容易被撞库和弱口令攻击打穿\n- 会话和账户安全依赖用户名密码本身\n- 对互联网暴露的登录入口尤为重要",
+        "fix_code": "**推荐修复**：\n\n**1. 限流**\n- 按 IP、账号、设备指纹做双维度限流\n- 对登录与找回密码接口使用更严格的阈值\n\n**2. 锁定**\n- 失败 N 次后临时锁定\n- 重要账户增加人工解锁流程\n\n**3. 二次验证**\n- CAPTCHA / 2FA / OTP\n- 高风险地区或异常频率时强制验证\n\n**4. 审计日志**\n- 记录登录失败、锁定和解锁事件\n- 方便后续追踪和风控",
+        "verify": "**验证方法**：\n\n1. **连续失败测试**：\n- 连续输入错误密码多次，观察是否出现锁定/验证码/限流\n\n2. **状态码观察**：\n- 关注是否出现 429、403、验证码页面或临时封禁提示\n\n3. **日志检查**：\n- 确认失败登录被记录到审计日志\n- 验证告警/锁定流程是否生效",
+    },
+    "unauthorized_access": {
+        "name": "未授权访问风险",
+        "category": "vulnerability",
+        "severity": "high",
+        "aliases": [
+            "未授权访问",
+            "越权",
+            "访问控制缺失",
+            "授权绕过",
+            "unauthorized access",
+            "broken access control",
+        ],
+        "principle": "未授权访问风险是指匿名用户或低权限用户可以直接访问管理页、用户信息接口或敏感操作接口，说明认证与授权边界没有被正确强制。\n\n**常见问题**：\n- 管理后台直接暴露\n- 用户详情接口没有对象级授权\n- 只做了前端隐藏，后端没做权限校验\n- 敏感接口能被匿名请求直接返回数据",
+        "risk": "🔴 **高风险**\n- 直接暴露敏感数据或管理能力\n- 可能造成账号、订单、资产、配置等泄露\n- 很容易演变成横向越权与垂直越权\n- 属于必须优先修复的访问控制问题",
+        "fix_code": "**核心修复**：\n\n**1. 后端统一拦截**\n- 敏感路由统一加认证中间件\n- 未登录返回 401/302，禁止直接渲染敏感页\n\n**2. 对象级授权**\n- 每次访问资源时都校验当前用户是否有权限\n- 不要只相信前端传来的 ID\n\n**3. 最小权限**\n- 管理员、普通用户、运营、审计员分权\n- 默认拒绝，按需放行\n\n**4. 审计与告警**\n- 记录访问敏感路由和失败尝试\n- 高风险接口增加风控和告警",
+        "verify": "**验证方法**：\n\n1. **匿名访问测试**：\n- 直接访问 `/admin`、`/dashboard`、`/api/user` 等路径，确认返回 401/302\n\n2. **低权限测试**：\n- 用普通用户访问管理员接口，确认被拒绝\n\n3. **接口审计**：\n- 检查敏感接口是否全部经过统一认证与授权中间件",
     },
 }
 

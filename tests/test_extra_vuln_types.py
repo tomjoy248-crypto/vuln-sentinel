@@ -130,6 +130,46 @@ async def test_detect_csrf_forms_missing_token(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_detect_auth_weaknesses_and_bruteforce_protection(monkeypatch):
+    def handler(request):
+        decoded = urllib.parse.unquote(str(request.url)).lower()
+        if decoded.endswith("/login") or "/login?" in decoded:
+            return httpx.Response(
+                200,
+                text="<html><body><form method='post'><input name='username'><input type='password' name='password'></form></body></html>",
+            )
+        return httpx.Response(404, text="not found")
+
+    client = install_mock_client(monkeypatch, handler)
+    try:
+        findings = await main.detect_auth_weaknesses("https://target.test")
+    finally:
+        await client.aclose()
+
+    types = {item["type"] for item in findings}
+    assert "auth_weakness" in types
+    assert "bruteforce_protection" in types
+
+
+@pytest.mark.asyncio
+async def test_detect_unauthorized_access_on_sensitive_routes(monkeypatch):
+    def handler(request):
+        decoded = urllib.parse.unquote(str(request.url)).lower()
+        if decoded.endswith("/admin") or "/api/user" in decoded:
+            return httpx.Response(200, text="Admin dashboard | logout | user center")
+        return httpx.Response(404, text="not found")
+
+    client = install_mock_client(monkeypatch, handler)
+    try:
+        findings = await main.detect_unauthorized_access("https://target.test")
+    finally:
+        await client.aclose()
+
+    assert findings
+    assert any(item["type"] == "unauthorized_access" for item in findings)
+
+
+@pytest.mark.asyncio
 async def test_run_payload_tests_collects_new_types(monkeypatch):
     deser_sig = next(iter(main.DESER_SIGNATURES))
     cmd_sig = next(iter(main.CMD_EXEC_SIGNATURES))
@@ -142,6 +182,10 @@ async def test_run_payload_tests_collects_new_types(monkeypatch):
             return httpx.Response(200, text="instance-id\nami-id\nlocal-ipv4")
         if "command" in decoded:
             return httpx.Response(200, text=f"output {cmd_sig}")
+        if decoded.endswith('/login'):
+            return httpx.Response(200, text="<html><body><form method='post'><input name='username'><input type='password' name='password'></form></body></html>")
+        if decoded.endswith('/admin') or '/api/user' in decoded:
+            return httpx.Response(200, text='Admin dashboard | logout | user center')
         if decoded.endswith('.xml') or 'application/xml' in str(request.headers.get('content-type', '')).lower():
             return httpx.Response(200, text='xml parser error: DOCTYPE not allowed')
         if 'id=1' in decoded:
@@ -177,6 +221,9 @@ async def test_run_payload_tests_collects_new_types(monkeypatch):
     assert "deserialization" in vuln_types or any(item["type"] == "deserialization" for item in vulns)
     assert "xxe" in vuln_types or any(item["type"] == "xxe" for item in vulns)
     assert "idor" in vuln_types or any(item["type"] == "idor" for item in vulns)
+    assert "auth_weakness" in vuln_types or any(item["type"] == "auth_weakness" for item in vulns)
+    assert "bruteforce_protection" in vuln_types or any(item["type"] == "bruteforce_protection" for item in vulns)
+    assert "unauthorized_access" in vuln_types or any(item["type"] == "unauthorized_access" for item in vulns)
     assert "csrf" in result_types
     assert "traversal" in result_types
     assert "ssrf" in result_types
@@ -185,6 +232,9 @@ async def test_run_payload_tests_collects_new_types(monkeypatch):
     assert "xxe" in result_types
     assert "idor" in result_types
     assert "info_leak" in result_types
+    assert "auth_weakness" in result_types
+    assert "bruteforce_protection" in result_types
+    assert "unauthorized_access" in result_types
 
 
 @pytest.mark.asyncio
