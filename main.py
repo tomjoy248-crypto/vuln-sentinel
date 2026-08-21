@@ -2995,6 +2995,17 @@ async def run_payload_tests(base_url, pages):
         "vulnerable": bool(unauthorized_results),
     })
 
+    api_auth_results = await detect_api_auth_missing(base_url)
+    for item in api_auth_results:
+        add_finding(item)
+    test_results.append({
+        "url": base_url[:100],
+        "param": "",
+        "type": "api_auth_missing",
+        "payload": "anonymous API authorization probe",
+        "vulnerable": bool(api_auth_results),
+    })
+
     return vulns, test_results
 
 
@@ -3273,6 +3284,98 @@ async def detect_unauthorized_access(base_url: str) -> list[dict]:
                 continue
     except Exception as e:
         logger.warning("Unauthorized access probe failed on %s: %s", base_url[:120], e)
+    return findings
+
+
+async def detect_api_auth_missing(base_url: str) -> list[dict]:
+    """探测匿名可访问且返回敏感 JSON 的 API 路由。"""
+    findings: list[dict] = []
+    client = get_httpx_client()
+    parsed = urlparse(base_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    candidates = (
+        "/api/me",
+        "/api/user",
+        "/api/account",
+        "/api/profile",
+        "/api/admin",
+        "/api/users",
+        "/api/settings",
+    )
+    auth_signals = (
+        "login",
+        "signin",
+        "authentication required",
+        "unauthorized",
+        "未登录",
+        "请登录",
+        "请先登录",
+        "token required",
+    )
+    sensitive_keys = (
+        "email",
+        "username",
+        "user_id",
+        "userid",
+        "role",
+        "permission",
+        "password",
+        "token",
+        "secret",
+        "admin",
+        "settings",
+    )
+    try:
+        for path in candidates:
+            try:
+                resp = await client.get(
+                    urljoin(origin, path),
+                    timeout=8.0,
+                    follow_redirects=False,
+                    headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
+                )
+                if resp.status_code != 200:
+                    continue
+                content_type = (resp.headers.get("content-type") or "").lower()
+                body = _safe_read_body(resp)
+                body_lower = body.lower()
+                if any(signal in body_lower for signal in auth_signals):
+                    continue
+                if not ("json" in content_type or body.lstrip().startswith(("{", "["))):
+                    continue
+                matched = [key for key in sensitive_keys if f'"{key.lower()}"' in body_lower]
+                if not matched:
+                    continue
+                findings.append(
+                    {
+                        "name": "API 鉴权缺失",
+                        "severity": "high" if path in ("/api/admin", "/api/users") else "medium",
+                        "level": "高风险" if path in ("/api/admin", "/api/users") else "中风险",
+                        "level_zh": "高风险" if path in ("/api/admin", "/api/users") else "中风险",
+                        "owasp": "A01:2021 - Broken Access Control",
+                        "summary": f"匿名请求 {path} 返回了疑似敏感 JSON 数据。",
+                        "fix": "为 API 统一增加 Bearer/会话认证和对象级授权，匿名请求返回 401；不要依赖前端隐藏或仅校验请求参数。",
+                        "type": "api_auth_missing",
+                        "evidence": {
+                            "url": urljoin(origin, path)[:200],
+                            "status_code": resp.status_code,
+                            "content_type": content_type,
+                            "matched_keys": matched[:8],
+                            "excerpt": body[:300],
+                        },
+                        "confidence_level": "高" if len(matched) >= 2 else "中",
+                        "location": {
+                            "type": "api_route",
+                            "target": path,
+                            "detail": "匿名请求返回敏感 JSON 字段",
+                        },
+                        "ai_advice": f"**漏洞**：API 鉴权缺失\n**优先级**：高\n**影响**：匿名访问 {path} 返回字段 {', '.join(matched[:5])}\n**修复**：统一接入认证和对象级授权，匿名请求返回 401。",
+                    }
+                )
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning("API auth probe failed on %s: %s", base_url[:120], e)
     return findings
 
 
@@ -7336,53 +7439,35 @@ async def analyze_security(
             cors_details = {"value": cors, "risk": "低风险"}
 
     exposed = [p for p in sensitive_paths if p.get("exposed")]
-    # Vuln Sentinel 优化：过滤软 404 误报（返回 200 但内容实际是 404 页面）
-    SOFT_404_PATTERNS = [
-        "page not found",
-        "not found",
-        "404 not found",
-        "file not found",
-        "无法找到",
-        "页面不存在",
-        "找不到页面",
-        "资源不存在",
-    ]
-    real_exposed = []
-    soft404_moved = []
-    for p in exposed:
-        snippet = (p.get("snippet", "") or "").lower()
-        if any(pat in snippet for pat in SOFT_404_PATTERNS):
-            # 软 404：标记为 suspect，不扣分
-            p["exposed"] = False
-            p["suspect"] = True
-            p["reason"] = p.get("reason", "") + "（疑似软404误报，响应内容为404页面）"
-            soft404_moved.append(p)
-        else:
-            real_exposed.append(p)
-    exposed = real_exposed
     if exposed:
-        # 确认漏洞：敏感路径暴露，扣 15 分
+        config_exposed = [
+            p for p in exposed
+            if str(p.get("path", "")).lower().endswith((
+                ".env", ".env.local", ".git/config", ".svn/entries",
+                ".htaccess", ".yml", ".yaml", ".sql", ".bak",
+            ))
+        ]
+        finding_name = "敏感配置暴露" if config_exposed else "敏感路径暴露"
+        finding_type = "sensitive_config_exposure" if config_exposed else "exposed_path"
         deduct(
-            "敏感路径暴露",
+            finding_name,
             SCORE_DEDUCTION["exposed_path"],
             "high",
             f"发现 {len(exposed)} 个敏感路径可访问",
         )
         add_finding(
             findings,
-            "敏感路径暴露",
+            finding_name,
             "high",
             "A01 访问控制失效",
-            "发现 "
-            + str(len(exposed))
-            + " 个敏感路径可访问: "
-            + ", ".join([p["path"] for p in exposed[:3]]),
+            "发现 " + str(len(exposed)) + " 个敏感路径可访问: " + ", ".join([p["path"] for p in exposed[:3]]),
             "限制敏感路径访问或移除。",
             evidence={
                 "paths": [p["path"] for p in exposed[:5]],
                 "reason": f"发现 {len(exposed)} 个敏感路径可访问",
                 "impact": "攻击者可获取配置文件、源代码等敏感信息",
             },
+            vuln_type=finding_type,
             verify_key="info",
             confidence_level="高",
         )
@@ -9133,6 +9218,22 @@ def generate_fixes(
             add(
                 "spring_boot", "# Java: Apache HttpClient + 自定义 DNSResolver 拦截内网"
             )
+        elif ftype == "api_auth_missing" or "API 鉴权" in name:
+            add("nginx", "location /api/ { auth_request /auth; }")
+            add("python", "# FastAPI/Flask: 统一依赖 require_user + 对象级权限校验")
+            add("nodejs", "// Express: router.use(requireAuth); router.get('/me', requireOwner)")
+            add("flask", "# Flask: @login_required + 对象级授权，匿名请求返回 401")
+            add("express", "// Express: Bearer/session auth middleware + per-resource authorization")
+            add("spring_boot", "# Spring Security: .requestMatchers('/api/**').authenticated() + @PreAuthorize")
+            add("cloudflare", "# Cloudflare Access: protect /api/* with identity-aware policy")
+        elif ftype == "sensitive_config_exposure" or "敏感配置" in name:
+            add("nginx", r"location ~ /(\.env|\.git|.*\.sql|.*\.bak|.*\.yml|.*\.yaml) { deny all; return 403; }")
+            add("python", "# 不要从静态目录提供 .env/.git/备份文件；密钥改用环境变量或密钥管理服务")
+            add("nodejs", "// 禁止静态目录暴露 .env/.git/备份文件，并轮换已泄露密钥")
+            add("flask", "# Flask: 将配置文件放在 web root 外，生产环境关闭 debug")
+            add("express", "// Express: static denylist for .env/.git/backups + rotate exposed secrets")
+            add("spring_boot", "# Spring Boot: 将 application secrets 放入 Secret Manager，不打包进静态资源")
+            add("cloudflare", "# Cloudflare WAF: block /.env, /.git, *.sql, *.bak, *.yml, *.yaml")
         elif ftype == "auth_weakness" or "认证" in name:
             add("python", "# Flask: @login_required + CSRFProtect(app) + session cookie SameSite=Lax/Strict")
             add("nodejs", "// Express: app.use('/admin', requireAuth, requireRole('admin'))")

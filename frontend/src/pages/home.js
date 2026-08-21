@@ -846,7 +846,7 @@ function renderDemoReport(d) {
       let priorityColors = { P0: '#c75450', P1: '#f0a732', P2: '#f0a732', P3: '#73c990' };
       html += '<span style="font-size:11px;padding:2px 6px;border-radius:2px;background:#2b2b2b;color:' + priorityColors[priority] + ';font-weight:600;margin-left:6px;border:1px solid ' + priorityColors[priority] + '">' + priority + '</span></div>';
       // Vuln Sentinel: 代码层漏洞分类标签
-      let codeVulnTypes = ['sqli', 'xss', 'csrf', 'ssti', 'open_redirect', 'cmdi', 'traversal', 'deserialization', 'ssrf', 'xxe', 'idor', 'info_leak', 'auth_weakness', 'bruteforce_protection', 'unauthorized_access'];
+      let codeVulnTypes = ['sqli', 'xss', 'csrf', 'ssti', 'open_redirect', 'cmdi', 'traversal', 'deserialization', 'ssrf', 'xxe', 'idor', 'info_leak', 'auth_weakness', 'bruteforce_protection', 'unauthorized_access', 'api_auth_missing', 'sensitive_config_exposure'];
       let vulnType = String(f.type || '').toLowerCase();
       if (codeVulnTypes.indexOf(vulnType) >= 0) {
         html += '<div style="margin-top:4px"><span style="font-size:11px;padding:2px 8px;border-radius:2px;background:#2b2b2b;color:#c75450;font-weight:600;border:1px solid #c75450">代码层漏洞</span></div>';
@@ -3589,6 +3589,10 @@ function generateFixFromFindings(findings, config) {
         rules.push('# Brute force protection: add login throttling, account lockout, CAPTCHA/2FA, and audit logging.');
       } else if ((typeLower === 'unauthorized_access' || name.indexOf('未授权') >= 0 || name.indexOf('越权') >= 0) && fix) {
         rules.push('# Unauthorized access: protect sensitive routes with authentication and object-level authorization.');
+      } else if ((typeLower === 'api_auth_missing' || name.indexOf('API 鉴权') >= 0) && fix) {
+        rules.push('# API authorization: require authentication and object-level authorization for every sensitive endpoint.');
+      } else if ((typeLower === 'sensitive_config_exposure' || name.indexOf('敏感配置') >= 0) && fix) {
+        rules.push('# Sensitive config: deny access to .env/.git/backups and remove secrets from public artifacts.');
       } else if ((typeLower === 'cmdi' || name.toLowerCase().indexOf('command injection') >= 0 || name.indexOf('命令注入') >= 0) && fix) {
         rules.push('# Command injection: avoid shell=True, use argument arrays, and whitelist every executable argument.');
       } else if ((typeLower === 'xxe' || name.toLowerCase().indexOf('xxe') >= 0 || name.indexOf('xml external entity') >= 0) && fix) {

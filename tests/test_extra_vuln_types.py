@@ -170,6 +170,26 @@ async def test_detect_unauthorized_access_on_sensitive_routes(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_detect_api_auth_missing_with_sensitive_json(monkeypatch):
+    def handler(request):
+        decoded = str(request.url).lower()
+        if "/api/me" in decoded:
+            return httpx.Response(200, headers={"content-type": "application/json"}, text='{"user_id": 7, "email": "owner@example.test", "role": "user"}')
+        return httpx.Response(404, text="not found")
+
+    client = install_mock_client(monkeypatch, handler)
+    try:
+        findings = await main.detect_api_auth_missing("https://target.test")
+    finally:
+        await client.aclose()
+
+    assert findings
+    assert findings[0]["type"] == "api_auth_missing"
+    assert findings[0]["confidence_level"] == "高"
+
+
+@pytest.mark.asyncio
 async def test_run_payload_tests_collects_new_types(monkeypatch):
     deser_sig = next(iter(main.DESER_SIGNATURES))
     cmd_sig = next(iter(main.CMD_EXEC_SIGNATURES))
