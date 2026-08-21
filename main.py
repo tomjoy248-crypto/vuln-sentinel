@@ -6004,6 +6004,763 @@ async def cross_validate_findings(
         return result
 
 
+    # ========== D14: A08 软件完整性 - SRI 子资源完整性检测 ==========
+    async def _d14_sri_probe() -> dict[str, Any]:
+        """D14: 检测第三方 JS/CSS 资源是否使用了 SRI (Subresource Integrity)。
+
+        没有 SRI 时，如果 CDN 被劫持，第三方脚本会被篡改，
+        直接影响整个网站安全。属于 OWASP A08 范畴。
+        """
+        result: dict[str, Any] = {
+            "total_external_resources": 0,
+            "sri_protected": 0,
+            "unprotected_resources": [],
+            "sri_supported": False,
+        }
+        try:
+            client = get_httpx_client()
+            protocol = "https" if is_https else "http"
+            resp = await asyncio.wait_for(
+                client.get(
+                    f"{protocol}://{host}/",
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    follow_redirects=True,
+                ),
+                timeout=8.0,
+            )
+            if resp.status_code == 200:
+                body = (await resp.aread()).decode("utf-8", errors="ignore")
+                # 匹配 <script src=...> 和 <link rel="stylesheet" href=...>
+                # 只统计外部域名资源（跨域的才需要 SRI）
+                from urllib.parse import urlparse as _up
+
+                script_pattern = re.compile(
+                    r'<script[^>]*src=["\'](https?://[^"\']+)["\'][^>]*>',
+                    re.IGNORECASE,
+                )
+                link_pattern = re.compile(
+                    r'<link[^>]*href=["\'](https?://[^"\']+)["\'][^>]*>',
+                    re.IGNORECASE,
+                )
+                all_ext_resources = []
+                # 检查 script 标签
+                for m in script_pattern.finditer(body):
+                    src = m.group(1)
+                    tag = m.group(0)
+                    try:
+                        p = _up(src)
+                        # 只统计跨域资源
+                        if p.hostname and p.hostname != host.split(":")[0]:
+                            all_ext_resources.append(
+                                {"url": src[:120], "type": "script", "tag": tag}
+                            )
+                    except Exception:
+                        pass
+                # 检查 link 标签（只统计 stylesheet）
+                for m in link_pattern.finditer(body):
+                    href = m.group(1)
+                    tag = m.group(0)
+                    if "stylesheet" not in tag.lower():
+                        continue
+                    try:
+                        p = _up(href)
+                        if p.hostname and p.hostname != host.split(":")[0]:
+                            all_ext_resources.append(
+                                {"url": href[:120], "type": "css", "tag": tag}
+                            )
+                    except Exception:
+                        pass
+
+                result["total_external_resources"] = len(all_ext_resources)
+                sri_count = 0
+                unprotected = []
+                for res in all_ext_resources:
+                    has_integrity = bool(
+                        re.search(r'integrity=["\']sha', res["tag"], re.IGNORECASE)
+                    )
+                    if has_integrity:
+                        sri_count += 1
+                    else:
+                        unprotected.append(
+                            {
+                                "url": res["url"],
+                                "type": res["type"],
+                            }
+                        )
+                result["sri_protected"] = sri_count
+                result["unprotected_resources"] = unprotected[:10]  # 最多返回 10 个
+                result["sri_supported"] = sri_count > 0
+        except Exception as e:
+            result["evidence"] = f"D14: 异常 {str(e)[:80]}"
+        return result
+
+    # ========== D15: A04 不安全设计 - 开放重定向检测 ==========
+    async def _d15_redirect_probe() -> dict[str, Any]:
+        """D15: 检测常见的开放重定向漏洞参数。
+
+        检测方式：在首页、登录页、授权回调等常见入口的 redirect/url 参数
+        注入外部 URL，观察是否发生 302/301 跳转到注入的域名。
+
+        注意：本检测属于黑盒探测，只能覆盖常见的开放重定向参数和入口，
+        不能穷尽所有业务跳转点。未命中不代表完全不存在开放重定向。
+        """
+        result: dict[str, Any] = {
+            "vulnerable": False,
+            "vulnerable_params": [],
+            "tested_params": [],
+            "tested_paths": [],
+        }
+        REDIRECT_PARAMS = [
+            "redirect",
+            "url",
+            "next",
+            "go",
+            "return",
+            "return_url",
+            "redirect_url",
+            "target",
+            "callback",
+            "continue",
+        ]
+        EXTERNAL_URL = "https://example.com/redirect-test"
+        # 常见可能存在跳转功能的入口路径
+        REDIRECT_PATHS = [
+            "/",
+            "/login",
+            "/signin",
+            "/auth",
+            "/oauth",
+            "/logout",
+            "/sso",
+        ]
+        try:
+            client = get_httpx_client()
+            protocol = "https" if is_https else "http"
+            for path in REDIRECT_PATHS:
+                for param in REDIRECT_PARAMS:
+                    test_url = f"{protocol}://{host}{path}?{param}={EXTERNAL_URL}"
+                    try:
+                        resp = await asyncio.wait_for(
+                            client.get(
+                                test_url,
+                                headers={"User-Agent": "Mozilla/5.0"},
+                                follow_redirects=False,
+                            ),
+                            timeout=3.5,
+                        )
+                        result["tested_params"].append(param)
+                        if resp.status_code in (301, 302, 303, 307, 308):
+                            location = resp.headers.get("location", "")
+                            if (
+                                location.startswith(EXTERNAL_URL)
+                                or "example.com" in location
+                            ):
+                                result["vulnerable"] = True
+                                result["vulnerable_params"].append(
+                                    {
+                                        "param": param,
+                                        "path": path,
+                                        "redirect_to": location[:120],
+                                        "status_code": resp.status_code,
+                                    }
+                                )
+                                if path not in result["tested_paths"]:
+                                    result["tested_paths"].append(path)
+                    except Exception:
+                        continue
+        except Exception as e:
+            result["evidence"] = f"D15: 异常 {str(e)[:80]}"
+        return result
+
+    async def _d11_info_leak_probe() -> dict[str, bool]:
+        """D11: 在首页 + 1 个子页面（/index.html 或 /robots.txt）找相同信息泄露模式。
+
+        找的模式：HTML 注释中的可疑串、Stack Trace 关键词、debug 标记。
+        返回 {模式名: 是否在两页同时出现}
+        """
+        # 注释：<!-- ... -->
+        # Stack trace: "Traceback", "at line", "Exception in", "FATAL"
+        # Debug: "DEBUG=True", "var_dump", "print_r", "console.log", "TODO", "FIXME"
+        leak_patterns = {
+            "html_comment": re.compile(
+                r"<!--[^>]{20,}(?:password|secret|token|api[_-]?key|admin|user)[^>]*-->",
+                re.IGNORECASE,
+            ),
+            "stack_trace": re.compile(
+                r"(?:Traceback \(most recent call last\)|at line \d+|FATAL\s*:|Exception in thread)",
+                re.IGNORECASE,
+            ),
+            "debug_marker": re.compile(
+                r"(?:var_dump|print_r|console\.log|debug\s*=\s*True|stack\s*trace\s*on)",
+                re.IGNORECASE,
+            ),
+        }
+        result = {k: False for k in leak_patterns}
+        try:
+            parsed_d11 = urlparse(url)
+            base = f"{parsed_d11.scheme}://{parsed_d11.netloc}"
+            sub_path = (
+                "/index.html"
+                if (parsed_d11.path or "").rstrip("/") != "/index.html"
+                else "/robots.txt"
+            )
+            client = get_httpx_client()
+            tasks = [
+                asyncio.wait_for(
+                    client.get(url, follow_redirects=False), timeout=_CV_TIMEOUT
+                ),
+                asyncio.wait_for(
+                    client.get(base + sub_path, follow_redirects=False),
+                    timeout=_CV_TIMEOUT,
+                ),
+            ]
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+            pages_text = []
+            for r in responses:
+                if isinstance(r, Exception):
+                    pages_text.append("")
+                else:
+                    pages_text.append(r.text or "")
+            # 两页都命中才算 D11 命中
+            for name, pat in leak_patterns.items():
+                hit_main = bool(pat.search(pages_text[0]))
+                hit_sub = bool(pat.search(pages_text[1]))
+                result[name] = hit_main and hit_sub
+        except Exception as e:
+            logger.warning("CV D11 info leak probe error: %s", e)
+        return result
+
+    # ========== D10: SSL/TLS 协议版本重新验证（同步 ssl 模块） ==========
+    def _d10_ssl_check() -> dict[str, object]:
+        """D10: 用 Python ssl 模块重连验证协议版本。
+
+        返回 {"reachable": bool, "version": str, "weak": bool, "cipher": str, "evidence": str}
+        """
+        out: dict[str, object] = {
+            "reachable": False,
+            "version": "",
+            "weak": False,
+            "cipher": "",
+            "evidence": "D10: 未执行（仅 HTTPS 验证）",
+        }
+        try:
+            # 仅当原 URL 是 HTTPS 时才有意义
+            parsed_d10 = urlparse(url)
+            if (parsed_d10.scheme or "").lower() != "https":
+                out["evidence"] = "D10: 当前 URL 非 HTTPS，跳过"
+                return out
+            import socket
+            import ssl
+
+            host = parsed_d10.hostname or ""
+            port = parsed_d10.port or 443
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            # 强制所有协议都允许，再用 negotiated version 判断
+            try:
+                ctx.minimum_version = ssl.TLSVersion.TLSv1
+            except Exception as e:
+                logger.warning("SSL context minimum_version not supported: %s", e)
+            with socket.create_connection((host, port), timeout=3) as raw_sock:
+                with ctx.wrap_socket(raw_sock, server_hostname=host) as ssock:
+                    out["reachable"] = True
+                    out["version"] = ssock.version() or ""
+                    out["cipher"] = (ssock.cipher() or ["", "", ""])[0] or ""
+                    # 弱协议判定
+                    v = (out["version"] or "").upper()
+                    out["weak"] = v in ("SSLv3", "SSLv2", "TLSv1", "TLSv1.0", "TLSv1.1")
+                    out["evidence"] = (
+                        f"D10: 重连 version={out['version']!r}, weak={out['weak']}"
+                    )
+        except Exception as e:
+            out["evidence"] = f"D10: 重连异常 {str(e)[:80]}"
+        return out
+
+    # 10+1 组并发：D1, D2, D3, D6, D7+D8, D9, D11, D12, D13, D14, D15（D10 同步，避免阻塞）
+    d13_auth: dict[str, Any] = {"login_page_found": False, "issues": []}
+    d14_sri: dict[str, Any] = {
+        "total_external_resources": 0,
+        "sri_protected": 0,
+        "unprotected_resources": [],
+    }
+    d15_redirect: dict[str, Any] = {"vulnerable": False, "vulnerable_params": []}
+    try:
+        (
+            d1_merged,
+            d2_merged,
+            html,
+            d6_map,
+            d78_cors,
+            d9_cookie,
+            d11_leak,
+            _d12_vuln,
+            d13_auth,
+            d14_sri,
+            d15_redirect,
+        ) = await asyncio.gather(
+            _with_sem(_d1_probe()),
+            _with_sem(_d2_probe()),
+            _with_sem(_d3_probe()),
+            _with_sem(_d6_sensitive_probe()),
+            _with_sem(_d7_d8_cors_probe()),
+            _with_sem(_d9_cookie_probe()),
+            _with_sem(_d11_info_leak_probe()),
+            _with_sem(_d12_outdated_components_probe()),
+            _with_sem(_d13_auth_probe()),
+            _with_sem(_d14_sri_probe()),
+            _with_sem(_d15_redirect_probe()),
+            return_exceptions=False,
+        )
+    except Exception:
+        d1_merged, d2_merged, html = {}, {}, ""
+        d6_map, d78_cors, d9_cookie, d11_leak = {}, {}, {}, {}
+    # D10 同步执行（避免阻塞事件循环；3s 超时）
+    d10_ssl: dict[str, object] = {}
+    try:
+        d10_ssl = await asyncio.wait_for(
+            asyncio.to_thread(_d10_ssl_check),
+            timeout=4.0,
+        )
+    except Exception as e:
+        d10_ssl = {
+            "reachable": False,
+            "weak": False,
+            "version": "",
+            "cipher": "",
+            "evidence": f"D10: 异常 {str(e)[:80]}",
+        }
+
+    # 统计 D1
+    try:
+        for f_name, h_key in _FINDING_HEADER_KEY.items():
+            if has_header(d1_merged or {}, h_key):
+                d1_present_counts[f_name] = 2
+                d1_missing_counts[f_name] = 0
+                d1_evidence[f_name] = f"D1: 2次请求中 header {h_key} 至少出现 1 次"
+            else:
+                d1_missing_counts[f_name] = 2
+                d1_present_counts[f_name] = 0
+                d1_evidence[f_name] = "D1: 2次请求均未发现"
+    except Exception:
+        for f_name in _FINDING_HEADER_KEY:
+            d1_missing_counts.setdefault(f_name, 0)
+            d1_present_counts.setdefault(f_name, 0)
+            d1_evidence.setdefault(f_name, "D1: 请求异常，未能完成多次验证")
+
+    # 统计 D2
+    try:
+        for f_name, h_key in _FINDING_HEADER_KEY.items():
+            if has_header(d2_merged or {}, h_key):
+                d2_present[f_name] = True
+                d2_evidence[f_name] = f"D2: 子路径扫描中发现 {h_key}"
+            else:
+                d2_present[f_name] = False
+                d2_evidence[f_name] = "D2: 子路径扫描均未发现"
+    except Exception:
+        for f_name in _FINDING_HEADER_KEY:
+            d2_evidence.setdefault(f_name, "D2: 请求异常，未完成子路径扫描")
+            d2_present.setdefault(f_name, False)
+
+    # 统计 D3
+    try:
+        meta_re = re.compile(
+            r'<meta[^>]+http-equiv\s*=\s*["\']?([^"\'>\s]+)[^>]*content\s*=\s*["\']([^"\']+)["\']',
+            re.IGNORECASE,
+        )
+        meta_pairs: dict[str, str] = {}
+        for m in meta_re.finditer(html or ""):
+            meta_pairs[m.group(1).strip().lower()] = m.group(2).strip()
+        for f_name, h_key in _FINDING_HEADER_KEY.items():
+            meta_name = _META_EQUIV_HEADERS.get(h_key, "").lower()
+            if meta_name and meta_name in meta_pairs:
+                d3_meta_found[f_name] = True
+                d3_evidence[f_name] = (
+                    f'D3: <meta http-equiv="{_META_EQUIV_HEADERS[h_key]}" '
+                    f'content="{meta_pairs[meta_name][:80]}">'
+                )
+            else:
+                d3_meta_found[f_name] = False
+                d3_evidence[f_name] = (
+                    f'D3: HTML 中未发现 <meta http-equiv="{_META_EQUIV_HEADERS.get(h_key, h_key)}">'
+                )
+    except Exception:
+        for f_name in _FINDING_HEADER_KEY:
+            d3_meta_found.setdefault(f_name, False)
+            d3_evidence.setdefault(f_name, "D3: 请求异常，未完成 meta 扫描")
+
+    # ========== D4 + D5: 上下文过滤 + 置信度评分 ==========
+    # CSP frame-ancestors 覆盖 X-Frame-Options
+    csp_value = get_header_value(headers, "content-security-policy")
+    has_csp_frame_ancestors = bool(csp_value and "frame-ancestors" in csp_value.lower())
+    # Server 头是否经 CDN 设置（cloudflare/aws/aliyun 等会强制覆盖）
+    server_val = get_header_value(headers, "server") or ""
+    cdn_signatures = (
+        "cloudflare",
+        "cloudfront",
+        "aws",
+        "fastly",
+        "akamai",
+        "alicdn",
+        "qcloud",
+    )
+    is_cdn_server = (
+        any(s in server_val.lower() for s in cdn_signatures)
+        or bool(d3_meta_found.get("缺少 CSP")) is False
+        and any(
+            (k.lower() in ("cf-ray", "x-amz-cf-id", "x-served-by", "x-cache"))
+            for k in (headers or {}).keys()
+        )
+    )
+    # D0：用户提供的已知 CDN 列表命中 → 也视为 CDN
+    is_cdn_server = is_cdn_server or bool(d0_match.get("Server 头由 CDN 注入", False))
+
+    for f in findings or []:
+        name = f.get("name", "")
+        h_key = _FINDING_HEADER_KEY.get(name)
+        # 非安全头类 finding（如 Server 信息泄露、敏感路径、CORS、Cookie、SSL/TLS、信息泄露）走专用维度
+        if h_key is None:
+            # ===== D6: 敏感路径暴露 =====
+            if "敏感路径" in name or "敏感文件" in name:
+                # 汇总 D6 结果
+                if d6_map:
+                    # 全部路径都 reproducible + content_confirmed → 95
+                    all_repro = all(v.get("reproducible") for v in d6_map.values())
+                    all_content = all(
+                        v.get("content_confirmed") for v in d6_map.values()
+                    )
+                    any_ok = any((v.get("ok_count") or 0) >= 1 for v in d6_map.values())
+                    if all_repro and all_content:
+                        confidence = 95
+                        reason = f"D6: {len(d6_map)} 条路径 2次重访均稳定且内容特征命中"
+                    elif any_ok:
+                        # 部分路径 1/2 命中 / 部分路径 2/2 命中但内容未确认
+                        confidence = 70
+                        hit = sum((v.get("ok_count") or 0) for v in d6_map.values())
+                        total = 2 * len(d6_map)
+                        reason = f"D6: 部分路径 2次重访可重现（命中 {hit}/{total} 次）"
+                    else:
+                        confidence = 50
+                        reason = (
+                            "D6: 路径未稳定重现（首次命中但重访失败），建议人工确认"
+                        )
+                    evidences = "; ".join(
+                        v.get("evidence", "") for v in d6_map.values()
+                    )
+                    result[name] = {
+                        "verified": confidence >= 60,
+                        "confidence": confidence,
+                        "reason": reason,
+                        "evidence_d1_d5": evidences or "D6: 无可重访的暴露路径",
+                    }
+                else:
+                    # 没有 sensitive_paths 数据，原始 finding
+                    result[name] = {
+                        "verified": True,
+                        "confidence": 80,
+                        "reason": "原始 finding，未提供 sensitive_paths 数据做交叉验证",
+                        "evidence_d1_d5": "D6: 跳过（无 sensitive_paths）",
+                    }
+                continue
+
+            # ===== D7+D8: CORS 通配符 =====
+            if "CORS" in name:
+                d78_ev = (
+                    d78_cors.get("evidence", "") if isinstance(d78_cors, dict) else ""
+                )
+                main_wild = (
+                    d78_cors.get("allow_origin_wildcard_in_main", False)
+                    if isinstance(d78_cors, dict)
+                    else False
+                )
+                sub_wild = (
+                    d78_cors.get("allow_origin_wildcard_in_sub", False)
+                    if isinstance(d78_cors, dict)
+                    else False
+                )
+                allow_creds = (
+                    d78_cors.get("allow_credentials", False)
+                    if isinstance(d78_cors, dict)
+                    else False
+                )
+                if main_wild and sub_wild:
+                    confidence = 95 if not allow_creds else 98
+                    reason = "D7+D8: 主响应+子资源 ACAO 都为 *，通配符在多端真实存在"
+                    if allow_creds:
+                        reason += "；D8: 同时启用 Allow-Credentials，极高风险"
+                elif main_wild:
+                    confidence = 70
+                    reason = "D7: 仅主响应 ACAO 为 *，子资源未命中（部分 CORS 配置）"
+                elif sub_wild:
+                    confidence = 70
+                    reason = "D7: 仅子资源 ACAO 为 *（罕见，CDN/静态资源配置）"
+                else:
+                    # 重访未发现 * → 可能是单次边界情况
+                    confidence = 50
+                    reason = "D7: 重访未发现 ACAO=*，可能是单次边界情况，建议人工确认"
+                result[name] = {
+                    "verified": confidence >= 60,
+                    "confidence": confidence,
+                    "reason": reason,
+                    "evidence_d1_d5": d78_ev or "D7/D8: 未执行（CORS 探针异常）",
+                }
+                continue
+
+            # ===== D9: Cookie 安全配置不足 =====
+            if "Cookie" in name:
+                d9_ev = (
+                    d9_cookie.get("evidence", "") if isinstance(d9_cookie, dict) else ""
+                )
+                missing_sec = (
+                    d9_cookie.get("missing_secure", 0)
+                    if isinstance(d9_cookie, dict)
+                    else 0
+                )
+                missing_htt = (
+                    d9_cookie.get("missing_httponly", 0)
+                    if isinstance(d9_cookie, dict)
+                    else 0
+                )
+                missing_samesite = (
+                    d9_cookie.get("missing_samesite", 0)
+                    if isinstance(d9_cookie, dict)
+                    else 0
+                )
+                ss_none_no_sec = (
+                    d9_cookie.get("samesite_none_without_secure", 0)
+                    if isinstance(d9_cookie, dict)
+                    else 0
+                )
+                with_cookie = (
+                    d9_cookie.get("with_cookie", 0)
+                    if isinstance(d9_cookie, dict)
+                    else 0
+                )
+                if with_cookie == 0:
+                    # 没有 Set-Cookie，可能是 API/纯静态
+                    confidence = 50
+                    reason = "D9: 3 次请求均未带回 Set-Cookie，可能是无 Cookie 站点"
+                elif missing_sec == with_cookie and missing_htt == with_cookie:
+                    # 3 次都缺 Secure 和 HttpOnly
+                    confidence = 95
+                    reason = (
+                        f"D9: {with_cookie}/3 次请求 Cookie 同时缺 Secure 和 HttpOnly"
+                    )
+                elif missing_sec >= 1 or missing_htt >= 1 or missing_samesite >= 1:
+                    confidence = 60
+                    reason = f"D9: 3 次请求中部分缺 Secure/HttpOnly/SameSite（缺 Secure {missing_sec} 次，缺 HttpOnly {missing_htt} 次，缺 SameSite {missing_samesite} 次）"
+                else:
+                    confidence = 70
+                    reason = "D9: Cookie 标志基本完整（仅 1 次轻微缺失）"
+                # SameSite=None 不带 Secure 是严重错误（浏览器会拒绝）
+                if ss_none_no_sec > 0:
+                    confidence = max(confidence, 90)
+                    reason += f"；SameSite=None 未配合 Secure（{ss_none_no_sec} 次），现代浏览器将拒绝此 Cookie"
+                result[name] = {
+                    "verified": confidence >= 60,
+                    "confidence": confidence,
+                    "reason": reason,
+                    "evidence_d1_d5": d9_ev or "D9: 未执行",
+                }
+                continue
+
+            # ===== D10: 弱 SSL/TLS 配置 =====
+            if "SSL" in name or "TLS" in name or "弱" in name:
+                d10_ev = (
+                    d10_ssl.get("evidence", "") if isinstance(d10_ssl, dict) else ""
+                )
+                reachable = (
+                    d10_ssl.get("reachable", False)
+                    if isinstance(d10_ssl, dict)
+                    else False
+                )
+                weak = (
+                    d10_ssl.get("weak", False) if isinstance(d10_ssl, dict) else False
+                )
+                if "证书已过期" in name or "过期" in name:
+                    # 证书过期：用 D10 reachable + D4 上下文判断
+                    if reachable:
+                        confidence = 80
+                        reason = "D10: 站点 HTTPS 可达；证书过期需以原 SSL 探针结果为准"
+                    else:
+                        confidence = 60
+                        reason = "D10: 站点不可达，证书过期状态无法复验"
+                    result[name] = {
+                        "verified": True,
+                        "confidence": confidence,
+                        "reason": reason,
+                        "evidence_d1_d5": d10_ev,
+                    }
+                elif "即将过期" in name:
+                    result[name] = {
+                        "verified": True,
+                        "confidence": 75,
+                        "reason": "D10: 证书剩余天数 < 30，需续期",
+                        "evidence_d1_d5": d10_ev,
+                    }
+                else:
+                    # 弱 SSL/TLS 配置
+                    if weak and reachable:
+                        confidence = 95
+                        reason = f"D10: 重连确认协议弱（{d10_ssl.get('version', '')}）"
+                    elif reachable and not weak:
+                        confidence = 40
+                        reason = f"D10: 重连确认协议正常（{d10_ssl.get('version', '')}），原 finding 可能误报"
+                    else:
+                        confidence = 50
+                        reason = "D10: 重连失败，无法验证"
+                    result[name] = {
+                        "verified": confidence >= 60,
+                        "confidence": confidence,
+                        "reason": reason,
+                        "evidence_d1_d5": d10_ev,
+                    }
+                continue
+
+            # ===== D11: 信息泄露（HTML 注释 / Stack Trace / Debug 标记） =====
+            if "信息泄露" in name or "Stack Trace" in name or "stack" in name.lower():
+                if isinstance(d11_leak, dict) and any(d11_leak.values()):
+                    confidence = 95
+                    reason = (
+                        "D11: HTML 注释/Stack Trace/Debug 标记在首页 + 子页面同时发现"
+                    )
+                elif isinstance(d11_leak, dict):
+                    # 在 D3 html 中其实已有内容（首页），但子页面未命中
+                    confidence = 70
+                    reason = "D11: 仅在首页发现可疑模式（子页面未命中）"
+                else:
+                    confidence = 80
+                    reason = "原始 finding，未做 D11 多页面验证"
+                result[name] = {
+                    "verified": confidence >= 60,
+                    "confidence": confidence,
+                    "reason": reason,
+                    "evidence_d1_d5": f"D11: leak_patterns={d11_leak or {}}",
+                }
+                continue
+
+            # ===== D5 兜底：Server 头 / X-Powered-By =====
+            if "Server" in name or "X-Powered-By" in name:
+                # D5 误报防护：CDN 服务商设置，源站无法控制
+                if is_cdn_server:
+                    d0_note = d0_evidence.get(
+                        "Server 头由 CDN 注入",
+                        "D0: 检测到 CDN 特征头（CF-Ray/X-Cache 等），Server 头由 CDN 注入",
+                    )
+                    result[name] = {
+                        "verified": True,
+                        "confidence": 30,
+                        "reason": "CDN 服务商设置，源站无法控制",
+                        "evidence_d1_d5": d0_note,
+                    }
+                else:
+                    result[name] = {
+                        "verified": True,
+                        "confidence": 75,
+                        "reason": "D1: 检测到 Server 头泄露",
+                        "evidence_d1_d5": "D4: 非 CDN 环境，Server 头由源站控制",
+                    }
+                continue
+
+            # 其它 finding（未匹配到任何维度）保持 verified=True, confidence=80
+            result[name] = {
+                "verified": True,
+                "confidence": 80,
+                "reason": "原始 finding，未做交叉验证",
+                "evidence_d1_d5": "D5: 跳过交叉验证（未匹配到专用维度）",
+            }
+            continue
+
+        d1_missing = d1_missing_counts.get(name, 0)
+        d2_found = d2_present.get(name, False)
+        meta_found = d3_meta_found.get(name, False)
+        d1_text = d1_evidence.get(name, "")
+        d2_text = d2_evidence.get(name, "")
+        d3_text = d3_evidence.get(name, "")
+
+        # ========== D4: 上下文过滤 ==========
+        # HSTS 在 HTTP 站应 confidence=0（不报）
+        if h_key == "strict-transport-security" and not is_https_url:
+            result[name] = {
+                "verified": True,
+                "confidence": 0,
+                "reason": "HSTS 仅 HTTPS 有效，HTTP 站不适用",
+                "evidence_d1_d5": f"{d1_text}; D4: 当前 URL 为 HTTP，HSTS 不适用",
+            }
+            continue
+
+        # CSP / X-Frame-Options 在 HTTPS 优先
+        https_preference = ""
+        if (
+            h_key in ("content-security-policy", "strict-transport-security")
+            and not is_https_url
+        ):
+            https_preference = (
+                f" D4: 当前为 HTTP 协议，建议优先在 HTTPS 上配置 {h_key}。"
+            )
+
+        # X-Frame-Options 缺失但有 CSP frame-ancestors → 已覆盖
+        if h_key == "x-frame-options" and has_csp_frame_ancestors and not meta_found:
+            result[name] = {
+                "verified": True,
+                "confidence": 80,
+                "reason": "CSP frame-ancestors 已覆盖",
+                "evidence_d1_d5": f"{d1_text}; {d2_text}; {d3_text}; D4: CSP 已含 frame-ancestors，覆盖 X-Frame-Options",
+            }
+            continue
+
+        # CSP 缺失但有 meta CSP → confidence=95
+        if h_key == "content-security-policy" and meta_found:
+            result[name] = {
+                "verified": True,
+                "confidence": 95,
+                "reason": "通过 <meta http-equiv> 设置 CSP",
+                "evidence_d1_d5": f"{d1_text}; {d2_text}; {d3_text}; D4: meta http-equiv 兜底生效",
+            }
+            continue
+
+        # ========== D5: 置信度评分 ==========
+        # 维度命中数：D1（2次都缺 / 部分缺）、D2（子路径未发现）、D3（meta 未发现）
+        # 命中判定：2 次都缺 + 子路径没找到 + meta 也没找到 → 3 维命中
+        d1_full_match = d1_missing == 2  # 2 次都没出现
+        d1_partial = 0 < d1_missing < 2
+        d2_match = not d2_found
+        d3_match = not meta_found
+        dim_hits = sum(
+            [1 if d1_full_match else 0, 1 if d2_match else 0, 1 if d3_match else 0]
+        )
+
+        if dim_hits >= 3:
+            confidence = 95
+            confidence_reason = (
+                "D5: 3 维均命中（2次请求 + 子路径 + meta 扫描均未发现），高置信度"
+            )
+        elif dim_hits == 2:
+            confidence = 80
+            confidence_reason = "D5: 2 维命中，较高置信度"
+        elif d1_partial:
+            # 仅部分 D1 命中（D1 现在 0/1/2 次缺失），按 dim_hits 调整
+            confidence = 65
+            confidence_reason = "D5: 部分维度命中，中等置信度"
+        elif d1_full_match and dim_hits == 1:
+            # 1 个维度命中（仅 D1 命中，其他维度异常）
+            confidence = 70
+            confidence_reason = "D5: 仅 1 维命中，建议人工确认"
+        else:
+            # 没看到缺失（说明已配置），verified=False，置信度低
+            confidence = 30
+            confidence_reason = "D5: 未稳定复现缺失，置信度低"
+
+        evidence_str = f"{d1_text}; {d2_text}; {d3_text};{https_preference} {confidence_reason}".strip()
+        result[name] = {
+            "verified": True,
+            "confidence": confidence,
+            "reason": confidence_reason,
+            "evidence_d1_d5": evidence_str,
+        }
+
+    return result
+
 async def detect_auth_weaknesses(base_url: str) -> list[dict]:
     """把登录页安全缺陷汇总成更明确的认证类 finding。"""
     findings: list[dict] = []

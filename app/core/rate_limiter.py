@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import os
 import threading
@@ -388,23 +389,45 @@ rate_limiter = create_rate_limiter()
 
 
 def get_client_ip(request: Request) -> str:
-    """Best-effort client IP extraction with reverse-proxy support."""
+    """提取客户端 IP，并在可信反向代理后解析转发头。
+
+    仅当直连来源是本机/私网代理、或显式配置了可信代理时才接受转发头，
+    避免公网客户端伪造限流标识。
+    """
+    peer = str(getattr(getattr(request, "client", None), "host", "") or "")
     trust_proxy_headers = os.environ.get("TRUST_PROXY_HEADERS", "0").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
+        "1", "true", "yes", "on"
     )
-    if trust_proxy_headers:
+    trusted_proxy_ips = {
+        item.strip()
+        for item in os.environ.get("TRUSTED_PROXY_IPS", "").split(",")
+        if item.strip()
+    }
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+        peer_is_private_proxy = peer_ip.is_loopback or peer_ip.is_private or peer_ip.is_link_local
+    except ValueError:
+        peer_is_private_proxy = False
+    trusted_peer = trust_proxy_headers or peer in trusted_proxy_ips or peer_is_private_proxy
+
+    if trusted_peer:
         forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
         if forwarded_for:
-            candidate = forwarded_for.split(",", 1)[0].strip()
-            if candidate:
+            for candidate in (part.strip() for part in forwarded_for.split(",")):
+                try:
+                    ipaddress.ip_address(candidate)
+                except ValueError:
+                    continue
                 return candidate
-        forwarded = request.headers.get("X-Real-IP", "").strip()
-        if forwarded:
-            return forwarded
-    return request.client.host if request.client else "unknown"
+        real_ip = request.headers.get("X-Real-IP", "").strip()
+        try:
+            ipaddress.ip_address(real_ip)
+        except ValueError:
+            real_ip = ""
+        if real_ip:
+            return real_ip
+    return peer or "unknown"
+
 
 def get_identifier(request: Request) -> str:
     """从请求中提取限流标识。
