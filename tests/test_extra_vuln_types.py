@@ -59,6 +59,44 @@ async def test_detect_open_redirect_with_location_header(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_detect_directory_traversal_with_passwd_signature(monkeypatch):
+    def handler(request):
+        decoded = urllib.parse.unquote(str(request.url))
+        if "passwd" in decoded or "hosts" in decoded:
+            return httpx.Response(200, text="root:x:0:0:root:/root:/bin/bash\nwww-data:x:33:33:www-data:/var/www:/usr/sbin/nologin")
+        return httpx.Response(200, text="ok")
+
+    client = install_mock_client(monkeypatch, handler)
+    try:
+        findings = await main.detect_directory_traversal("https://target.test/download?file=1", ["file"])
+    finally:
+        await client.aclose()
+
+    assert findings
+    assert any(item["type"] == "traversal" for item in findings)
+    assert any(item["name"] == "目录遍历漏洞" for item in findings)
+
+
+@pytest.mark.asyncio
+async def test_detect_ssrf_enhanced_with_metadata_signature(monkeypatch):
+    def handler(request):
+        decoded = urllib.parse.unquote(str(request.url))
+        if "169.254.169.254" in decoded or "127.0.0.1" in decoded:
+            return httpx.Response(200, text="instance-id\nami-id\nlocal-ipv4")
+        return httpx.Response(200, text="ok")
+
+    client = install_mock_client(monkeypatch, handler)
+    try:
+        findings = await main.detect_ssrf_enhanced("https://target.test/fetch?url=1", ["url"])
+    finally:
+        await client.aclose()
+
+    assert findings
+    assert any(item["type"] == "ssrf" for item in findings)
+    assert any(item["name"] == "SSRF 漏洞（云元数据访问）" for item in findings)
+
+
+@pytest.mark.asyncio
 async def test_detect_csrf_forms_missing_token(monkeypatch):
     def handler(request):
         return httpx.Response(
