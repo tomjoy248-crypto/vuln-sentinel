@@ -846,8 +846,9 @@ function renderDemoReport(d) {
       let priorityColors = { P0: '#c75450', P1: '#f0a732', P2: '#f0a732', P3: '#73c990' };
       html += '<span style="font-size:11px;padding:2px 6px;border-radius:2px;background:#2b2b2b;color:' + priorityColors[priority] + ';font-weight:600;margin-left:6px;border:1px solid ' + priorityColors[priority] + '">' + priority + '</span></div>';
       // Vuln Sentinel: 代码层漏洞分类标签
-      let codeVulnTypes = ['sqli', 'xss', 'ssti', 'open_redirect', 'cmdi', 'traversal', 'deserialization', 'ssrf'];
-      if (codeVulnTypes.indexOf(f.type || '') >= 0) {
+      let codeVulnTypes = ['sqli', 'xss', 'csrf', 'ssti', 'open_redirect', 'cmdi', 'traversal', 'deserialization', 'ssrf'];
+      let vulnType = String(f.type || '').toLowerCase();
+      if (codeVulnTypes.indexOf(vulnType) >= 0) {
         html += '<div style="margin-top:4px"><span style="font-size:11px;padding:2px 8px;border-radius:2px;background:#2b2b2b;color:#c75450;font-weight:600;border:1px solid #c75450">代码层漏洞</span></div>';
       }
       if (f.owasp) html += '<div style="font-size:11px;color:#a5b4fc;margin-top:2px">OWASP: ' + f.owasp + '</div>';
@@ -3560,6 +3561,7 @@ function generateFixFromFindings(findings, config) {
     findings.forEach(function(f) {
       let name = f.name || '';
       let type = f.type || 'config';
+      let typeLower = String(type || '').toLowerCase();
       let fix = f.fix || '';
       if (name.indexOf('缺少 ') === 0 && (name.indexOf('HSTS') >= 0 || name.indexOf('CSP') >= 0 ||
           name.indexOf('X-Frame') >= 0 || name.indexOf('X-Content') >= 0 ||
@@ -3573,13 +3575,19 @@ function generateFixFromFindings(findings, config) {
         headers.push('proxy_cookie_path / /; HttpOnly; Secure; SameSite=Strict;');
       } else if (name.indexOf('CORS') >= 0) {
         headers.push("add_header Access-Control-Allow-Origin 'https://your-domain.com' always;");
-      } else if (type === 'XSS' && fix) {
+      } else if ((typeLower === 'xss' || name.toLowerCase().indexOf('xss') >= 0) && fix) {
         headers.push("add_header Content-Security-Policy \"default-src 'self'; script-src 'self'\" always;");
-      } else if ((type === 'ssti' || name.indexOf('模板注入') >= 0) && fix) {
+      } else if ((typeLower === 'csrf' || name.toLowerCase().indexOf('csrf') >= 0 || name.toLowerCase().indexOf('xsrf') >= 0) && fix) {
+        rules.push('# CSRF: enforce token validation, SameSite cookies, and Origin/Referer checks.');
+      } else if ((typeLower === 'traversal' || name.toLowerCase().indexOf('path traversal') >= 0 || name.indexOf('目录穿越') >= 0) && fix) {
+        rules.push('# Traversal: normalize paths and restrict access to an allowed base directory.');
+      } else if ((typeLower === 'ssrf' || name.toLowerCase().indexOf('ssrf') >= 0) && fix) {
+        rules.push('# SSRF: validate targets, block private IP ranges, and resolve DNS before fetching.');
+      } else if ((typeLower === 'ssti' || name.indexOf('模板注入') >= 0) && fix) {
         rules.push('# Template engine: enable auto-escaping and never concatenate user input into expressions.');
-      } else if ((type === 'open_redirect' || name.indexOf('开放重定向') >= 0) && fix) {
+      } else if ((typeLower === 'open_redirect' || name.indexOf('开放重定向') >= 0) && fix) {
         rules.push('# Redirects: validate targets against a whitelist and allow only trusted relative paths.');
-      } else if (type === 'SQLi' && fix) {
+      } else if (typeLower === 'sqli' && fix) {
         rules.push('# ModSecurity: SecRule ARGS "(OR|UNION)" "deny,status:403"');
       }
     });

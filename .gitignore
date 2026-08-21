@@ -31,9 +31,7 @@ build/
 dist/
 *.spec
 
-# static/assets/ 是前端构建产物（Docker 构建时从 frontend/dist/ 复制）
-# 不提交 hashed 文件到版本库，避免陈旧产物堆积
-static/assets/
+# static/assets/ 由前端构建同步生成，需随版本提交，避免 GitHub 下载后空白
 
 # Local SSH material generated during setup
 work-ssh/

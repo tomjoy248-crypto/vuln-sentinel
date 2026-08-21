@@ -2573,9 +2573,26 @@ def _extract_passive_exposure_findings(base_url: str, pages: list[dict]) -> list
 
 async def run_payload_tests(base_url, pages):
     vulns, test_results = [], []
+    seen: set[tuple[str, str, str, str]] = set()
+
+    def add_finding(finding: dict | None) -> None:
+        if not finding:
+            return
+        evidence = finding.get("evidence") if isinstance(finding.get("evidence"), dict) else {}
+        key = (
+            str(finding.get("type") or "").lower(),
+            str(finding.get("name") or finding.get("summary") or "").lower(),
+            str(evidence.get("url") or finding.get("url") or "").split("?")[0],
+            str(evidence.get("param") or finding.get("param") or "").lower(),
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        vulns.append(finding)
+
     passive = _extract_passive_exposure_findings(base_url, pages)
     for finding in passive:
-        vulns.append(finding)
+        add_finding(finding)
         test_results.append({
             "url": finding.get("evidence", {}).get("url", base_url)[:100],
             "param": "",
@@ -2583,19 +2600,23 @@ async def run_payload_tests(base_url, pages):
             "payload": finding.get("name", "")[:40],
             "vulnerable": True,
         })
+
     client = get_httpx_client()
     test_urls = {page["url"] for page in pages[:4]}
     probe_params = ["id", "q", "search", "page", "next", "redirect", "url", "return"]
+
     for test_url in list(test_urls):
         params = [
             p.split("=")[0] for p in urlparse(test_url).query.split("&") if "=" in p
         ]
         candidate_params = params[:3] if params else probe_params[:4]
+        active_params = candidate_params or probe_params[:4]
+
         for param in candidate_params:
             for payload in XSS_PAYLOADS[:2]:
                 result = await test_xss_on_url(client, test_url, param, payload)
                 if result:
-                    vulns.append(result)
+                    add_finding(result)
                 test_results.append({
                     "url": test_url[:100],
                     "param": param,
@@ -2606,7 +2627,7 @@ async def run_payload_tests(base_url, pages):
             for payload in SQLI_PAYLOADS[:2]:
                 result = await test_sqli_on_url(client, test_url, param, payload)
                 if result:
-                    vulns.append(result)
+                    add_finding(result)
                 test_results.append({
                     "url": test_url[:100],
                     "param": param,
@@ -2615,8 +2636,8 @@ async def run_payload_tests(base_url, pages):
                     "vulnerable": result is not None,
                 })
             ssti_results = await detect_ssti(test_url, [param])
-            if ssti_results:
-                vulns.extend(ssti_results)
+            for item in ssti_results:
+                add_finding(item)
             test_results.append({
                 "url": test_url[:100],
                 "param": param,
@@ -2625,8 +2646,8 @@ async def run_payload_tests(base_url, pages):
                 "vulnerable": bool(ssti_results),
             })
             redirect_results = await detect_open_redirect(test_url, [param])
-            if redirect_results:
-                vulns.extend(redirect_results)
+            for item in redirect_results:
+                add_finding(item)
             test_results.append({
                 "url": test_url[:100],
                 "param": param,
@@ -2634,12 +2655,13 @@ async def run_payload_tests(base_url, pages):
                 "payload": OPEN_REDIRECT_TARGET,
                 "vulnerable": bool(redirect_results),
             })
+
         if not params:
             for param in probe_params[:4]:
                 for payload in XSS_PAYLOADS[:1]:
                     result = await test_xss_on_url(client, test_url, param, payload)
                     if result:
-                        vulns.append(result)
+                        add_finding(result)
                     test_results.append({
                         "url": test_url[:100],
                         "param": param,
@@ -2648,8 +2670,8 @@ async def run_payload_tests(base_url, pages):
                         "vulnerable": result is not None,
                     })
                 ssti_results = await detect_ssti(test_url, [param])
-                if ssti_results:
-                    vulns.extend(ssti_results)
+                for item in ssti_results:
+                    add_finding(item)
                 test_results.append({
                     "url": test_url[:100],
                     "param": param,
@@ -2658,8 +2680,8 @@ async def run_payload_tests(base_url, pages):
                     "vulnerable": bool(ssti_results),
                 })
                 redirect_results = await detect_open_redirect(test_url, [param])
-                if redirect_results:
-                    vulns.extend(redirect_results)
+                for item in redirect_results:
+                    add_finding(item)
                 test_results.append({
                     "url": test_url[:100],
                     "param": param,
@@ -2667,6 +2689,51 @@ async def run_payload_tests(base_url, pages):
                     "payload": OPEN_REDIRECT_TARGET,
                     "vulnerable": bool(redirect_results),
                 })
+
+        reflected_xss = await detect_reflected_xss(test_url, active_params)
+        for item in reflected_xss:
+            add_finding(item)
+        test_results.append({
+            "url": test_url[:100],
+            "param": ",".join(active_params[:3]),
+            "type": "xss",
+            "payload": "reflected-context probe",
+            "vulnerable": bool(reflected_xss),
+        })
+
+        traversal_results = await detect_directory_traversal(test_url, active_params)
+        for item in traversal_results:
+            add_finding(item)
+        test_results.append({
+            "url": test_url[:100],
+            "param": ",".join(active_params[:3]),
+            "type": "traversal",
+            "payload": "../.. traversal probe",
+            "vulnerable": bool(traversal_results),
+        })
+
+        ssrf_results = await detect_ssrf_enhanced(test_url, active_params)
+        for item in ssrf_results:
+            add_finding(item)
+        test_results.append({
+            "url": test_url[:100],
+            "param": ",".join(active_params[:3]),
+            "type": "ssrf",
+            "payload": "127.0.0.1 metadata probe",
+            "vulnerable": bool(ssrf_results),
+        })
+
+        csrf_results = await detect_csrf_forms(test_url)
+        for item in csrf_results:
+            add_finding(item)
+        test_results.append({
+            "url": test_url[:100],
+            "param": "",
+            "type": "csrf",
+            "payload": "post form token probe",
+            "vulnerable": bool(csrf_results),
+        })
+
     return vulns, test_results
 
 
@@ -2908,6 +2975,70 @@ async def detect_reflected_xss(url: str, params: list[str]) -> list[dict]:
                     )
             except Exception as e:
                 logger.warning("XSS detection error on %s: %s", test_url[:120], e)
+    return findings
+
+
+def _form_has_csrf_token(form_html: str) -> bool:
+    """检查表单里是否存在可识别的 CSRF/防重放 token。"""
+    for input_tag in re.findall(r"<input[^>]*>", form_html, re.IGNORECASE):
+        tag_lower = input_tag.lower()
+        if 'type="hidden"' not in tag_lower and "type='hidden'" not in tag_lower and "type=hidden" not in tag_lower:
+            continue
+        name_match = re.search(r"\bname\s*=\s*[\"']?([^\"'>\s]+)", input_tag, re.IGNORECASE)
+        value_match = re.search(r"\bvalue\s*=\s*[\"']([^\"]+)", input_tag, re.IGNORECASE)
+        if not name_match or not value_match:
+            continue
+        name = name_match.group(1).strip().lower()
+        value = value_match.group(1).strip()
+        if value and any(token in name for token in ("csrf", "xsrf", "token", "nonce")):
+            return True
+    return False
+
+
+async def detect_csrf_forms(url: str) -> list[dict]:
+    """CSRF 检测：检查页面中的 POST 表单是否缺少 token。"""
+    findings: list[dict] = []
+    client = get_httpx_client()
+    try:
+        resp = await client.get(url, timeout=10.0, follow_redirects=True)
+        body = _safe_read_body(resp)
+        form_matches = list(re.finditer(r"<form\b[^>]*>.*?</form>", body, re.IGNORECASE | re.DOTALL))
+        for idx, form_match in enumerate(form_matches[:5]):
+            form_html = form_match.group(0)
+            form_lower = form_html.lower()
+            is_post = bool(re.search(r"\bmethod\s*=\s*[\"']?post\b", form_html, re.IGNORECASE)) or "method=post" in form_lower
+            if not is_post:
+                continue
+            if _form_has_csrf_token(form_html):
+                continue
+            has_password = 'type="password"' in form_lower or "type='password'" in form_lower
+            severity = "high" if has_password else "medium"
+            findings.append(
+                {
+                    "name": "CSRF 风险",
+                    "severity": severity,
+                    "level": "高风险" if has_password else "中风险",
+                    "level_zh": "高风险" if has_password else "中风险",
+                    "owasp": "A01:2021 - Broken Access Control",
+                    "summary": "页面中的 POST 表单未发现明确的 CSRF 防护 token。",
+                    "fix": "为所有状态修改请求添加 CSRF Token，并配合 SameSite Cookie、Origin/Referer 校验。",
+                    "type": "csrf",
+                    "evidence": {
+                        "form_index": idx,
+                        "url": url[:200],
+                        "form": form_html[:500],
+                    },
+                    "confidence_level": "高" if has_password else "中",
+                    "location": {
+                        "type": "html_form",
+                        "target": "POST form",
+                        "detail": "表单缺少可识别的 CSRF token",
+                    },
+                    "ai_advice": "**漏洞**：CSRF 风险\n**优先级**：高\n**修复**：为敏感 POST 请求增加 CSRF token 校验，并启用 SameSite Cookie。",
+                }
+            )
+    except Exception as e:
+        logger.warning("CSRF detection error on %s: %s", url[:120], e)
     return findings
 
 
