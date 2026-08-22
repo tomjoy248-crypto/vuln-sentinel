@@ -117,12 +117,12 @@ fn escape_js_text(text: &str) -> String {
 
 fn show_loading(window: &tauri::WebviewWindow, message: &str) {
   let html = format!(
-    r#"<div style=\"width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#0f172a 0%,#111827 100%);color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;\">
-      <div style=\"max-width:560px;padding:28px 30px;border-radius:16px;background:rgba(15,23,42,.78);border:1px solid rgba(148,163,184,.18);box-shadow:0 20px 60px rgba(0,0,0,.38);\">
-        <div style=\"font-size:22px;font-weight:700;margin-bottom:10px;\">Vuln Sentinel 正在启动</div>
-        <div style=\"font-size:14px;line-height:1.8;color:#cbd5e1;\">{}</div>
-        <div style=\"margin-top:18px;height:10px;border-radius:999px;overflow:hidden;background:rgba(148,163,184,.14);\">
-          <div style=\"width:40%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#38bdf8,#22c55e);animation:slide 1.2s ease-in-out infinite;\"></div>
+    r#"<div style="width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#0f172a 0%,#111827 100%);color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;">
+      <div style="max-width:560px;padding:28px 30px;border-radius:16px;background:rgba(15,23,42,.78);border:1px solid rgba(148,163,184,.18);box-shadow:0 20px 60px rgba(0,0,0,.38);">
+        <div style="font-size:22px;font-weight:700;margin-bottom:10px;">Vuln Sentinel 正在启动</div>
+        <div style="font-size:14px;line-height:1.8;color:#cbd5e1;">{}</div>
+        <div style="margin-top:18px;height:10px;border-radius:999px;overflow:hidden;background:rgba(148,163,184,.14);">
+          <div style="width:40%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#38bdf8,#22c55e);animation:slide 1.2s ease-in-out infinite;"></div>
         </div>
       </div>
       <style>@keyframes slide {{ 0% {{ transform: translateX(-120%); }} 100% {{ transform: translateX(260%); }} }}</style>
