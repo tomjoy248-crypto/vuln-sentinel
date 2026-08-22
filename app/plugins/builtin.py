@@ -362,6 +362,10 @@ def register_builtin_detectors() -> None:
     from app.plugins import DetectorRegistry
     from app.plugins.detectors import (
         BrokenAccessControlDetector,
+        APIAuthMissingDetector,
+        AuthWeaknessDetector,
+        BruteforceProtectionDetector,
+        ClickjackingDetector,
         CommandInjectionDetector,
         CSRFDetector,
         DeserializationDetector,
@@ -373,6 +377,7 @@ def register_builtin_detectors() -> None:
         OutdatedComponentDetector,
         PathTraversalDetector,
         ReflectedXSSDetector,
+        SensitiveConfigExposureDetector,
         SensitivePathDetectorPlugin,
         SQLiDetector,
         SSTIDetector,
@@ -391,6 +396,11 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(InfoLeakDetector())
     DetectorRegistry.register(CSRFDetector())
     DetectorRegistry.register(SensitivePathDetectorPlugin())
+    DetectorRegistry.register(AuthWeaknessDetector())
+    DetectorRegistry.register(BruteforceProtectionDetector())
+    DetectorRegistry.register(APIAuthMissingDetector())
+    DetectorRegistry.register(SensitiveConfigExposureDetector())
+    DetectorRegistry.register(ClickjackingDetector())
     DetectorRegistry.register(OutdatedComponentDetector())
     DetectorRegistry.register(BrokenAccessControlDetector())
     DetectorRegistry.register(SSRFDetector())

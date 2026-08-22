@@ -633,6 +633,20 @@ def test_ensure_plugins_registered_includes_ssti_detector():
 
     assert "ssti" in {detector.name for detector in DetectorRegistry.list()}
 
+
+def test_ensure_plugins_registered_includes_business_detectors():
+    scan_service._ensure_plugins_registered()
+    from app.plugins import DetectorRegistry
+
+    names = {detector.name for detector in DetectorRegistry.list()}
+    for name in {
+        "auth_weakness",
+        "bruteforce_protection",
+        "api_auth_missing",
+        "sensitive_config_exposure",
+        "clickjacking",
+    }:
+        assert name in names
 def test_ensure_plugins_registered_is_idempotent():
     scan_service._ensure_plugins_registered()
     scan_service._ensure_plugins_registered()  # second call is a no-op

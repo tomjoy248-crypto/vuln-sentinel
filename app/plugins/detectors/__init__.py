@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from app.plugins.detectors.business import (
+    APIAuthMissingDetector,
+    AuthWeaknessDetector,
+    BruteforceProtectionDetector,
+    ClickjackingDetector,
+    SensitiveConfigExposureDetector,
+)
 from app.plugins.detectors.src_adapter import (
     BrokenAccessControlDetector,
     CommandInjectionDetector,
@@ -29,6 +36,11 @@ __all__ = [
     "InfoLeakDetector",
     "CSRFDetector",
     "SensitivePathDetectorPlugin",
+    "AuthWeaknessDetector",
+    "BruteforceProtectionDetector",
+    "APIAuthMissingDetector",
+    "SensitiveConfigExposureDetector",
+    "ClickjackingDetector",
     "OutdatedComponentDetector",
     "BrokenAccessControlDetector",
     "SSRFDetector",
