@@ -21,6 +21,10 @@ function buildApiBases() {
 
 export const API_BASE = buildApiBases()[0] || '';
 
+function delay(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
+
 export function getToken() {
   try { return localStorage.getItem('vs_token'); } catch (e) { return null; }
 }
@@ -65,21 +69,29 @@ export async function authFetch(url, options = {}) {
   let lastResponse = null;
   let lastError = null;
   for (const requestUrl of requestCandidates) {
-    try {
-      const resp = await fetch(requestUrl, options);
-      lastResponse = resp;
-      if (resp.status === 404 && requestCandidates.length > 1) {
-        continue;
+    let attempt = 0;
+    while (attempt < 2) {
+      try {
+        const resp = await fetch(requestUrl, options);
+        lastResponse = resp;
+        if (resp.status === 404 && requestCandidates.length > 1) {
+          break;
+        }
+        if (resp.status === 401 && !skipAuthExpiry) {
+          removeToken();
+          try { localStorage.removeItem('vs_username'); } catch (e) {}
+          throw new Error('登录状态已过期，请重新登录后再继续使用扫描功能');
+        }
+        return resp;
+      } catch (err) {
+        lastError = err;
+        attempt += 1;
+        if (attempt < 2) {
+          await delay(250);
+          continue;
+        }
+        break;
       }
-      if (resp.status === 401 && !skipAuthExpiry) {
-        removeToken();
-        try { localStorage.removeItem('vs_username'); } catch (e) {}
-        throw new Error('登录状态已过期，请重新登录后再继续使用扫描功能');
-      }
-      return resp;
-    } catch (err) {
-      lastError = err;
-      continue;
     }
   }
 
