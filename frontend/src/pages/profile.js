@@ -143,7 +143,7 @@ function doResetPassword() {
       errEl.textContent = extractError(data) || '修改失败';
     }
   }).catch(function(e) {
-    if (errEl) errEl.textContent = '修改失败: ' + e.message;
+    if (errEl) errEl.textContent = '修改失败: ' + friendlyError(e);
   });
 }
 
@@ -177,7 +177,7 @@ function doLogin() {
       if (errEl) errEl.textContent = extractError(data) || '登录失败';
     }
   }).catch(function(e) {
-    if (errEl) errEl.textContent = '登录失败: ' + e.message;
+    if (errEl) errEl.textContent = '登录失败: ' + friendlyError(e);
   });
 }
 
@@ -220,7 +220,7 @@ function doRegister() {
       if (errEl) errEl.textContent = extractError(data) || '注册失败';
     }
   }).catch(function(e) {
-    if (errEl) errEl.textContent = '注册失败: ' + e.message;
+    if (errEl) errEl.textContent = '注册失败: ' + friendlyError(e);
   });
 }
 

@@ -255,19 +255,25 @@ describe('friendlyError', () => {
   });
 
   it('detects network errors', () => {
-    expect(friendlyError({ message: 'network error' })).toBe('网络连接异常，请检查网络设置');
+    expect(friendlyError({ message: 'network error' })).toBe(
+      '网络连接异常，请确认本地后端已启动，或检查防火墙是否拦截了 127.0.0.1:8011'
+    );
   });
 
   it('detects 403 errors', () => {
-    expect(friendlyError({ message: '403 Forbidden' })).toBe('请求被拒绝，请检查权限或联系管理员');
+    expect(friendlyError({ message: '403 Forbidden' })).toBe('请求被拒绝，请检查权限或目标授权状态');
   });
 
   it('detects 404 errors', () => {
-    expect(friendlyError({ message: '404 not found' })).toBe('请求的资源不存在');
+    expect(friendlyError({ message: '404 not found' })).toBe(
+      '请求的资源不存在，请确认接口或页面地址是否正确'
+    );
   });
 
   it('detects server errors', () => {
-    expect(friendlyError({ message: '500 server error' })).toBe('服务器暂时不可用，请稍后重试');
+    expect(friendlyError({ message: '500 server error' })).toBe(
+      '服务器暂时不可用，请稍后重试，或重启本地后端后再试'
+    );
   });
 
   it('detects auth errors', () => {

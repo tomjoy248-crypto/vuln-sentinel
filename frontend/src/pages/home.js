@@ -2061,7 +2061,7 @@ function startRealScan(url, host, deepScan, authorized) {
     setTimeout(function() {
       if (_scanCancelled) return;
       // 保留真实错误信息，而非笼统的"连接失败"
-      let errMsg = (err && err.message) ? err.message : '扫描服务连接失败，请检查网络或稍后重试';
+      let errMsg = friendlyError(err) || '扫描服务连接失败，请检查网络或稍后重试';
       renderScanError(errMsg, url);
       _scanInProgress = false;
       setButtonLoading("scan-btn", false);

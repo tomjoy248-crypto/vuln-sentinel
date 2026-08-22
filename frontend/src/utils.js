@@ -147,20 +147,26 @@ export function friendlyError(err) {
   if (/timeout|timed out/i.test(msg)) {
     return '请求超时，请检查网络连接或稍后重试';
   }
-  if (/network|fetch|internet|offline/i.test(msg)) {
-    return '网络连接异常，请检查网络设置';
+  if (/network|fetch|internet|offline|failed to fetch|connect/i.test(msg)) {
+    return '网络连接异常，请确认本地后端已启动，或检查防火墙是否拦截了 127.0.0.1:8011';
   }
   if (/403|forbidden/i.test(msg)) {
-    return '请求被拒绝，请检查权限或联系管理员';
+    return '请求被拒绝，请检查权限或目标授权状态';
   }
   if (/404|not found/i.test(msg)) {
-    return '请求的资源不存在';
+    return '请求的资源不存在，请确认接口或页面地址是否正确';
   }
   if (/500|502|503|504|server error/i.test(msg)) {
-    return '服务器暂时不可用，请稍后重试';
+    return '服务器暂时不可用，请稍后重试，或重启本地后端后再试';
   }
   if (/unauthorized|401|未登录|登录|token|jwt/i.test(msg)) {
     return '登录状态已过期，请重新登录';
+  }
+  if (/dns|resolve|name or service not known/i.test(msg)) {
+    return '目标域名无法解析，请检查网址是否正确';
+  }
+  if (/connection refused|econnrefused/i.test(msg)) {
+    return '本地服务未启动或端口被占用，请重新打开安装包或检查 8011 端口';
   }
   return msg;
 }
