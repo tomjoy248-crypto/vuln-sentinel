@@ -31,7 +31,7 @@ class AppSettings(BaseSettings):
 
     # --- 基础信息 ---
     app_title: str = "Vuln Sentinel"
-    app_version: str = "1.0.0"
+    app_version: str = "1.0.9"
     build_time: str = "2026-06-25"
     port: int = 8000
     host: str = "0.0.0.0"  # nosec B104 - 默认监听所有接口，生产环境可通过环境变量覆盖

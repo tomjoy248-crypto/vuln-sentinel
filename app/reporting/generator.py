@@ -159,7 +159,7 @@ def _build_summary_from_scan_data(scan_data: dict[str, Any]) -> ScanExecutiveSum
         ),
         scanner_version=summary_data.get(
             "scanner_version",
-            scan_data.get("scanner_version", "v11-s-vuln-sentinel/1.0.0"),
+            scan_data.get("scanner_version", "v11-s-vuln-sentinel/1.0.9"),
         ),
     )
 

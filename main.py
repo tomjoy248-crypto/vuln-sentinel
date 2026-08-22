@@ -296,7 +296,7 @@ class Settings(BaseSettings):
     )
 
     app_title: str = "Vuln Sentinel - 安全扫描与修复平台"
-    app_version: str = "1.0.0"
+    app_version: str = "1.0.9"
     build_time: str = "2026-06-25"
     port: int = int(os.environ.get("PORT", "8000"))
     host: str = "0.0.0.0"  # nosec B104 - 默认监听所有接口，生产环境可通过环境变量覆盖
