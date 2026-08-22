@@ -9,6 +9,28 @@ const navigateTo = (...args) => typeof window.navigateTo === 'function' && windo
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 const SEVERITY_LABEL = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' };
 const SEVERITY_ZH_CLASS = { critical: 'high', high: 'high', medium: 'medium', low: 'low', info: 'info' };
+const VULN_TYPE_LABELS = {
+  sqli: 'SQL 注入',
+  xss: '跨站脚本',
+  csrf: '跨站请求伪造',
+  ssti: '模板注入',
+  open_redirect: '开放重定向',
+  cmdi: '命令注入',
+  traversal: '路径遍历',
+  deserialization: '不安全反序列化',
+  ssrf: '服务端请求伪造',
+  xxe: 'XML 外部实体注入',
+  idor: '不安全直接对象引用',
+  info_leak: '信息泄露',
+  auth_weakness: '认证薄弱',
+  bruteforce_protection: '防爆破不足',
+  unauthorized_access: '未授权访问',
+  api_auth_missing: 'API 鉴权缺失',
+  sensitive_config_exposure: '敏感配置泄露',
+  clickjacking: '点击劫持',
+  file_upload: '不安全文件上传',
+  logic_bypass: '业务逻辑绕过'
+};
 
 let _currentFindings = [];
 let _selectedIndex = 0;
@@ -320,7 +342,9 @@ function renderFindingList(findings, selectedIndex) {
       const cls = SEVERITY_ZH_CLASS[sev] || 'info';
       const active = i === selectedIndex ? 'active' : '';
       const param = f.parameter ? `<code class="src-list-param">${escapeHtml(f.parameter)}</code>` : '';
-      const typeLabel = f.type ? `<span class="src-list-type">${escapeHtml(f.type.toUpperCase())}</span>` : '';
+      const rawType = String(f.type || '').toLowerCase();
+      const typeText = VULN_TYPE_LABELS[rawType] || (f.type ? String(f.type).toUpperCase() : '');
+      const typeLabel = typeText ? `<span class="src-list-type">${escapeHtml(typeText)}</span>` : '';
       const host = f.url ? new URL(f.url, window.location.href).hostname : '';
       const path = f.url ? new URL(f.url, window.location.href).pathname : '';
       const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag src-list-fp-tag-alert" title="待复核">待人工复核</span>' : '';

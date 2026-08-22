@@ -64,7 +64,7 @@ def assess_scan_quality(
             fp_count += 1
 
     # 漏洞类型覆盖（期望至少覆盖 5 种基础类型）
-    expected_types = {"sqli", "xss", "header_missing", "info_leak", "csrf", "ssl", "cors_misconfig", "open_redirect", "cmdi", "ssrf", "traversal", "xxe", "idor", "file_upload", "logic_bypass"}
+    expected_types = {"sqli", "xss", "header_missing", "info_leak", "csrf", "ssl", "cors_misconfig", "open_redirect", "cmdi", "ssrf", "traversal", "xxe", "idor", "file_upload", "logic_bypass", "auth_weakness", "bruteforce_protection", "api_auth_missing", "sensitive_config_exposure", "clickjacking"}
     type_coverage = len(vuln_types & expected_types) / max(1, len(expected_types))
     type_bonus = min(30, len(vuln_types) * 3)
 

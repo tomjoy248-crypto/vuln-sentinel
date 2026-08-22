@@ -46,9 +46,15 @@ _VULN_TYPE_CN: dict[str, str] = {
     "ssl": "SSL/TLS 配置问题",
     "cookie": "Cookie 安全配置",
     "file_upload": "不安全文件上传",
+    "logic_bypass": "业务逻辑绕过",
     "idor": "不安全直接对象引用",
     "xxe": "XML 外部实体注入",
     "deserialization": "不安全反序列化",
+    "auth_weakness": "认证薄弱",
+    "bruteforce_protection": "防爆破不足",
+    "api_auth_missing": "API 鉴权缺失",
+    "sensitive_config_exposure": "敏感配置泄露",
+    "clickjacking": "点击劫持",
 }
 
 
