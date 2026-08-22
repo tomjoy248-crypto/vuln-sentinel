@@ -1,7 +1,25 @@
 /** 后端 API 封装 */
 
-const __DEFAULT_API_BASE__ = (typeof window !== 'undefined' && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) ? '' : 'http://127.0.0.1:8011';
-export const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : __DEFAULT_API_BASE__;
+function normalizeBase(base) {
+  if (!base) return '';
+  return String(base).replace(/\/+$/, '');
+}
+
+function buildApiBases() {
+  const bases = [];
+  const explicit = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : '';
+  if (explicit) bases.push(normalizeBase(explicit));
+  if (typeof window !== 'undefined' && window.__CONFIG__ && window.__CONFIG__.api_base_url) {
+    bases.push(normalizeBase(window.__CONFIG__.api_base_url));
+  }
+  if (typeof window !== 'undefined' && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
+    bases.push('');
+  }
+  bases.push('http://127.0.0.1:8011');
+  return [...new Set(bases)];
+}
+
+export const API_BASE = buildApiBases()[0] || '';
 
 export function getToken() {
   try { return localStorage.getItem('vs_token'); } catch (e) { return null; }
@@ -33,27 +51,43 @@ export function authHeaders() {
 export async function authFetch(url, options = {}) {
   options.headers = Object.assign({}, authHeaders(), options.headers || {});
   const skipAuthExpiry = !!options.skipAuthExpiry;
-  try {
-    const primaryUrl = API_BASE + url;
-    let resp = await fetch(primaryUrl, options);
-    if (resp.status === 404 && url.startsWith('/api/') && !url.startsWith('/api/v1/')) {
-      const fallbackUrl = API_BASE + '/api/v1' + url.slice('/api'.length);
-      resp = await fetch(fallbackUrl, options);
+  const baseCandidates = buildApiBases();
+  const requestCandidates = [];
+  for (const base of baseCandidates) {
+    const normalizedBase = normalizeBase(base);
+    const primaryUrl = normalizedBase ? normalizedBase + url : url;
+    requestCandidates.push(primaryUrl);
+    if (url.startsWith('/api/') && !url.startsWith('/api/v1/') && normalizedBase) {
+      requestCandidates.push(normalizedBase + '/api/v1' + url.slice('/api'.length));
     }
-    // 401 过期处理：清除过期 token，抛出友好错误让上层引导用户重新登录
-    if (resp.status === 401 && !skipAuthExpiry) {
-      removeToken();
-      try { localStorage.removeItem('vs_username'); } catch (e) {}
-      throw new Error('登录状态已过期，请重新登录后再继续使用扫描功能');
-    }
-    return resp;
-  } catch (err) {
-    // 网络层错误（服务器未启动 / DNS 失败 / CORS 等）
-    if (err && err.message && err.message.indexOf('请求失败') >= 0) {
-      throw new Error('无法连接扫描服务，请确认本地后端已启动');
-    }
-    throw err;
   }
+
+  let lastResponse = null;
+  let lastError = null;
+  for (const requestUrl of requestCandidates) {
+    try {
+      const resp = await fetch(requestUrl, options);
+      lastResponse = resp;
+      if (resp.status === 404 && requestCandidates.length > 1) {
+        continue;
+      }
+      if (resp.status === 401 && !skipAuthExpiry) {
+        removeToken();
+        try { localStorage.removeItem('vs_username'); } catch (e) {}
+        throw new Error('登录状态已过期，请重新登录后再继续使用扫描功能');
+      }
+      return resp;
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
+  }
+
+  if (lastResponse) return lastResponse;
+  if (lastError && lastError.message) {
+    throw new Error('无法连接扫描服务，请确认本地后端已启动');
+  }
+  throw new Error('无法连接扫描服务，请确认本地后端已启动');
 }
 
 export async function apiPost(url, body) {

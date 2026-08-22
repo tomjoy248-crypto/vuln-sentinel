@@ -296,7 +296,7 @@ class Settings(BaseSettings):
     )
 
     app_title: str = "Vuln Sentinel - 安全扫描与修复平台"
-    app_version: str = "1.0.9"
+    app_version: str = "1.0.10"
     build_time: str = "2026-06-25"
     port: int = int(os.environ.get("PORT", "8000"))
     host: str = "0.0.0.0"  # nosec B104 - 默认监听所有接口，生产环境可通过环境变量覆盖
@@ -18046,6 +18046,7 @@ def _build_frontend_config_script() -> str:
         "free_trial_enabled": os.environ.get("FREE_TRIAL_ENABLED", "1") == "1",
         "alipay_enabled": bool(os.environ.get("ALIPAY_APP_ID", "")),
         "wechat_enabled": bool(os.environ.get("WECHAT_MCH_ID", "")),
+        "api_base_url": os.environ.get("API_BASE_URL", ""),
         "api_version": "1",
     }
     return f"<script>window.__CONFIG__={json.dumps(config)};</script>"

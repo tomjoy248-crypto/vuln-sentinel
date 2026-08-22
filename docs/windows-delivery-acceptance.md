@@ -1,7 +1,7 @@
 # Vuln Sentinel Windows 一页验收清单
 
 ## 基本信息
-- 版本：11.0.0
+- 版本：1.0.10
 - 安装包：`Vuln Sentinel Setup.exe`
 - 验收目标：确认 Windows 桌面版安装后能正常打开托管页面，并完成登录、体检、导出和卸载
 

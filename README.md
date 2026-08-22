@@ -12,7 +12,7 @@ Vuln Sentinel 是一款面向中小团队的安全体检与交付工具，强调
 
 ## 下载
 - GitHub Release: <https://github.com/tomjoy248-crypto/vuln-sentinel/releases/latest>
-- Windows 安装包：见 `artifacts/windows/Vuln Sentinel Setup.exe`（当前版本 1.0.9）
+- Windows 安装包：见 `artifacts/windows/Vuln Sentinel Setup.exe`（当前版本 1.0.10）
 
 ## 产品定位
 - 输入授权目标后执行安全体检

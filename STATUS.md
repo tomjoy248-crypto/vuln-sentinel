@@ -41,8 +41,8 @@ Vuln Sentinel 已经不是纯原型，当前更接近“可演示、可内测、
 
 ## 最新发布
 
-- GitHub Release：`v1.0.9`
-- Windows 安装包：`Vuln Sentinel_1.0.9_x64-setup.exe`
+- GitHub Release：`v1.0.10`
+- Windows 安装包：`Vuln Sentinel_1.0.10_x64-setup.exe`
 
 ## 相关文件
 
