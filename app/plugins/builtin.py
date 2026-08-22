@@ -375,6 +375,7 @@ def register_builtin_detectors() -> None:
         ReflectedXSSDetector,
         SensitivePathDetectorPlugin,
         SQLiDetector,
+        SSTIDetector,
         SSRFDetector,
         XXEDetector,
     )
@@ -385,6 +386,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(CookieSecurityDetector())
     DetectorRegistry.register(CORSSecurityDetector())
     DetectorRegistry.register(SQLiDetector())
+    DetectorRegistry.register(SSTIDetector())
     DetectorRegistry.register(ReflectedXSSDetector())
     DetectorRegistry.register(InfoLeakDetector())
     DetectorRegistry.register(CSRFDetector())

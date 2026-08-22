@@ -17,12 +17,14 @@ from app.plugins.detectors.src_adapter import (
     ReflectedXSSDetector,
     SensitivePathDetectorPlugin,
     SQLiDetector,
+    SSTIDetector,
     SSRFDetector,
     XXEDetector,
 )
 
 __all__ = [
     "SQLiDetector",
+    "SSTIDetector",
     "ReflectedXSSDetector",
     "InfoLeakDetector",
     "CSRFDetector",

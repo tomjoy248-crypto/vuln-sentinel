@@ -258,6 +258,7 @@ async def run_plugin_scan(
                 techniques=[
                     "sqli",
                     "xss",
+                    "ssti",
                     "cmdi",
                     "traversal",
                     "ssrf",

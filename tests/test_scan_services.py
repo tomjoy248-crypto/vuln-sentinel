@@ -625,6 +625,14 @@ def test_calculate_score_risk_level_boundaries():
     assert scan_service._calculate_score([{"severity": "critical"}] * 3)["risk_level"] == "critical"
 
 
+
+
+def test_ensure_plugins_registered_includes_ssti_detector():
+    scan_service._ensure_plugins_registered()
+    from app.plugins import DetectorRegistry
+
+    assert "ssti" in {detector.name for detector in DetectorRegistry.list()}
+
 def test_ensure_plugins_registered_is_idempotent():
     scan_service._ensure_plugins_registered()
     scan_service._ensure_plugins_registered()  # second call is a no-op
@@ -1662,7 +1670,7 @@ def test_extract_params_ignores_body_without_form_content_type():
 
 def test_fuzz_engine_defaults():
     engine = FuzzEngine()
-    assert engine.techniques == ["sqli", "xss", "cmdi", "traversal", "ssrf", "open_redirect", "xxe", "crlf"]
+    assert engine.techniques == ["sqli", "xss", "ssti", "cmdi", "traversal", "ssrf", "open_redirect", "xxe", "crlf"]
     assert engine.max_params == 15
 
 
@@ -1717,7 +1725,7 @@ def test_detect_evidence_no_match_returns_empty():
 
 
 def test_fuzz_payloads_contain_all_techniques():
-    for tech in ["sqli", "xss", "cmdi", "traversal", "ssrf", "open_redirect", "xxe", "crlf"]:
+    for tech in ["sqli", "xss", "ssti", "cmdi", "traversal", "ssrf", "open_redirect", "xxe", "crlf"]:
         assert tech in FUZZ_PAYLOADS
         assert len(FUZZ_PAYLOADS[tech]) > 0
 
@@ -1741,6 +1749,26 @@ async def test_fuzz_url_detects_sqli_evidence():
     assert all(r.technique == "sqli" for r in results)
     assert any(r.evidence_type == "sql_error" for r in results)
     assert all(r.confidence == "high" for r in results if r.evidence_type == "sql_error")
+
+
+async def test_fuzz_url_detects_ssti_evidence():
+    engine = FuzzEngine(techniques=["ssti"], max_params=5)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        decoded = urllib.parse.unquote(str(request.url))
+        if "{{" in decoded or "<%=" in decoded or "${7*7}" in decoded:
+            return httpx.Response(200, text="rendered vuln-sentinel-probe", request=request)
+        return httpx.Response(200, text="ok", request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        results = await engine.fuzz_url(client, "https://example.com/p?name=abc")
+    finally:
+        await client.aclose()
+
+    assert results
+    assert all(r.technique == "ssti" for r in results)
+    assert any(r.evidence_type == "template_rendered" for r in results)
 
 
 async def test_fuzz_url_no_evidence_returns_empty():
@@ -1847,6 +1875,7 @@ def test_fuzz_results_to_findings_severity_map():
     for tech, sev in [
         ("sqli", "high"),
         ("xss", "medium"),
+        ("ssti", "high"),
         ("cmdi", "high"),
         ("traversal", "high"),
         ("ssrf", "high"),

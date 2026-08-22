@@ -51,6 +51,12 @@ FUZZ_PAYLOADS: dict[str, list[str]] = {
         "javascript:alert(1)",
         "<svg onload=alert(1)>",
     ],
+    "ssti": [
+        "{{'vuln' ~ '-' ~ 'sentinel' ~ '-' ~ 'probe'}}",
+        "{{'vuln' + '-' + 'sentinel' + '-' + 'probe'}}",
+        "<%= 'vuln' + '-' + 'sentinel' + '-' + 'probe' %>",
+        "${7*7}",
+    ],
     "cmdi": [
         ";id",
         "|id",
@@ -101,6 +107,10 @@ EVIDENCE_PATTERNS: dict[str, list[tuple[str, str]]] = {
     "xss": [
         ("xss_reflected", r"<script>\s*alert\(1\)</script>"),
         ("xss_event", r"(onerror\s*=\s*alert|onload\s*=\s*alert|<svg\s+onload)"),
+    ],
+    "ssti": [
+        ("template_rendered", r"(vuln[-_ ]?sentinel[-_ ]?probe|49)"),
+        ("template_error", r"(jinja2|twig|freemarker|velocity|erb|template syntax|render error)"),
     ],
     "cmdi": [
         ("cmd_output", r"(uid=\d+|gid=\d+|groups=\d+|root:.*:0:0)"),
@@ -153,6 +163,7 @@ class FuzzEngine:
         self.techniques = techniques or [
             "sqli",
             "xss",
+            "ssti",
             "cmdi",
             "traversal",
             "ssrf",
@@ -232,7 +243,7 @@ class FuzzEngine:
                                     evidence_type=evidence,
                                     confidence="high"
                                     if evidence
-                                    in ("sql_error", "cmd_output", "passwd_content", "doctype", "header_injection", "redirect_location")
+                                    in ("sql_error", "cmd_output", "passwd_content", "doctype", "header_injection", "redirect_location", "template_rendered")
                                     else "medium",
                                 )
                             )
