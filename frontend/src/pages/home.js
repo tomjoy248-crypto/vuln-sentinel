@@ -18,6 +18,7 @@ import {
 
 import { isSRCFormat, renderSRCResult, init as initResultPage } from './result.js';
 import { updateUserCredits } from './profile.js';
+import { buildAuditCoverage, countAuditConfidence, isAuditRelevantFinding, selectAuditFindings } from '../audit-workbench.js';
 
 // ===== Proxy functions for main.js globals =====
 function navigateTo(...args) { return window.navigateTo(...args); }
@@ -64,6 +65,11 @@ let _scanTexts = [
   '验证证书链完整性...',
   '检查证书有效期...',
   '扫描敏感路径...',
+  '识别登录态与重定向风险...',
+  '检查 XSS 反射与存储特征...',
+  '检查 SQL 注入错误回显...',
+  '检查 SSRF / 路径穿越线索...',
+  '检查弱口令与限流策略...',
   '检测 /.env 文件...',
   '检测 /.git 目录...',
   '检测 /admin 后台...',
@@ -524,6 +530,213 @@ function loadDashboard() {
   loadTrend();
   // 加载顶部风险趋势图（7天/30天切换）
   loadTrendChart(30);
+}
+
+let _auditWorkbenchInProgress = false;
+let lastAuditWorkbenchResult = null;
+
+function getAuditTargetUrl() {
+  let input = document.getElementById('audit-url');
+  if (input && input.value) return input.value.trim();
+  if (lastScanResult && lastScanResult.url) return String(lastScanResult.url).trim();
+  let scanUrl = document.getElementById('scan-url');
+  if (scanUrl && scanUrl.value) return scanUrl.value.trim();
+  return '';
+}
+
+function fillAuditTargetFromScan() {
+  let input = document.getElementById('audit-url');
+  if (!input) return;
+  let candidate = getAuditTargetUrl();
+  if (!candidate) {
+    showToast('当前没有可用的网址，请先在扫描页输入网址', 'warn');
+    return;
+  }
+  input.value = candidate;
+  showToast('已填入当前网址', 'success');
+}
+
+function renderAuditFindingCard(finding, index) {
+  let name = escapeHtml(finding.name || finding.title || ('审计项 ' + (index + 1)));
+  let severity = String(finding.severity || 'info').toLowerCase();
+  let summary = escapeHtml(finding.summary || finding.description || '');
+  let badgeColor = severity === 'critical' || severity === 'high' ? '#c75450' : severity === 'medium' ? '#f0a732' : '#73c990';
+  let badgeText = severity === 'critical' ? '严重' : severity === 'high' ? '高危' : severity === 'medium' ? '中危' : severity === 'low' ? '低危' : '信息';
+  let confidence = finding.confidence || 'low';
+  let evidence = '';
+  if (finding.evidence && typeof finding.evidence === 'object') {
+    evidence = renderEvidence(finding.evidence);
+  } else if (finding.evidence_text) {
+    evidence = '<div style="margin-top:10px;font-size:12px;color:var(--text-secondary)">' + escapeHtml(finding.evidence_text) + '</div>';
+  } else if (finding.evidence_html) {
+    evidence = '<div style="margin-top:10px">' + finding.evidence_html + '</div>';
+  }
+  return '<div style="padding:14px 16px;border:1px solid var(--border);border-radius:2px;background:var(--bg);margin-bottom:10px">' +
+    '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:8px">' +
+    '<div style="font-weight:700;color:var(--text)">' + name + '</div>' +
+    '<span style="flex:0 0 auto;padding:2px 8px;border-radius:2px;background:' + badgeColor + '20;color:' + badgeColor + ';font-size:12px;font-weight:700">' + badgeText + '</span>' +
+    '<span style="flex:0 0 auto;padding:2px 8px;border-radius:2px;background:rgba(75,110,175,0.12);color:#4b6eaf;font-size:12px;font-weight:700">置信度 ' + confidence + '</span>' +
+    '</div>' +
+    (summary ? '<div style="font-size:13px;line-height:1.7;color:var(--text-secondary)">' + summary + '</div>' : '') +
+    evidence +
+    '</div>';
+}
+
+async function runAuditWorkbench() {
+  if (_auditWorkbenchInProgress) return;
+  let input = document.getElementById('audit-url');
+  let statusEl = document.getElementById('audit-status');
+  let resultEl = document.getElementById('audit-result');
+  let runBtn = document.getElementById('audit-run-btn');
+  let authorized = document.getElementById('audit-auth-check');
+  let url = getAuditTargetUrl();
+  if (!url) {
+    showToast('请输入要审计的网址', 'warn');
+    if (input) input.focus();
+    return;
+  }
+  if (authorized && !authorized.checked) {
+    showToast('请先确认已获得授权', 'warn');
+    return;
+  }
+  _auditWorkbenchInProgress = true;
+  if (runBtn) {
+    runBtn.disabled = true;
+    runBtn.textContent = '审计中...';
+  }
+  if (statusEl) statusEl.textContent = '正在审计 ' + url + '，请稍候...';
+  if (resultEl) {
+    resultEl.innerHTML = '<div style="text-align:center;padding:24px 16px;color:var(--text-secondary)">正在分析源码泄露、敏感文件与上线前基础风险...</div>';
+  }
+  try {
+    let data = await scan({ url: url, depth: 'standard', authorized: true });
+    let findings = Array.isArray(data.findings) ? data.findings : [];
+    let auditFindings = selectAuditFindings(findings);
+    let confidenceCounts = countAuditConfidence(auditFindings);
+    let trustedFindings = auditFindings.filter(function(f) { return f.confidence !== 'low'; });
+    let reviewFindings = auditFindings.filter(function(f) { return f.confidence === 'low'; });
+    let total = findings.length;
+    let score = typeof data.score === 'number' ? data.score : (data.score || '-');
+    let risk = data.risk_level || data.risk || '未知';
+    let headline = trustedFindings.length > 0 ? ('发现 ' + trustedFindings.length + ' 个较可信源码/上线相关问题') : (auditFindings.length > 0 ? '发现少量可疑项，建议复核' : '未发现明显源码泄露迹象');
+    let topItems = trustedFindings.slice(0, 5).map(renderAuditFindingCard).join('');
+    let coverage = buildAuditCoverage().map(function(item) {
+      return '<span style="display:inline-block;margin:0 8px 8px 0;padding:3px 10px;border-radius:2px;background:rgba(75,110,175,0.12);color:#4b6eaf;font-size:12px">' + escapeHtml(item) + '</span>';
+    }).join('');
+    let emptyBlock = auditFindings.length === 0 ? '<div style="padding:14px 16px;border:1px solid rgba(115,201,144,0.25);border-radius:2px;background:rgba(115,201,144,0.08);color:var(--text-secondary);line-height:1.7">' +
+      '当前扫描没有发现明显的源码泄露或上线前暴露项。建议在修复后再复测一次，并继续关注强登录态、重定向和 WAF 干扰场景。' +
+      '</div>' : '';
+    lastAuditWorkbenchResult = {
+      url: url,
+      time: new Date().toISOString(),
+      risk: risk,
+      score: score,
+      total: total,
+      headline: headline,
+      findings: auditFindings,
+      trustedFindings: trustedFindings,
+      reviewFindings: reviewFindings,
+      rawFindings: findings,
+      coverage: [
+        ...buildAuditCoverage()
+      ]
+    };
+    if (resultEl) {
+      resultEl.innerHTML =
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">' +
+          '<div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><div style="font-size:12px;color:var(--text-secondary)">审计目标</div><div style="margin-top:6px;font-weight:700;word-break:break-all">' + escapeHtml(url) + '</div></div>' +
+          '<div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><div style="font-size:12px;color:var(--text-secondary)">风险等级</div><div style="margin-top:6px;font-weight:700">' + escapeHtml(risk) + '</div></div>' +
+          '<div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><div style="font-size:12px;color:var(--text-secondary)">安全评分</div><div style="margin-top:6px;font-weight:700">' + escapeHtml(String(score)) + '</div></div>' +
+          '<div style="padding:12px 14px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><div style="font-size:12px;color:var(--text-secondary)">问题总数</div><div style="margin-top:6px;font-weight:700">' + total + '</div></div>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">' +
+          '<div style="padding:10px 12px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><div style="font-size:12px;color:var(--text-secondary)">高置信度</div><div style="margin-top:4px;font-weight:700">' + confidenceCounts.high + '</div></div>' +
+          '<div style="padding:10px 12px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><div style="font-size:12px;color:var(--text-secondary)">中置信度</div><div style="margin-top:4px;font-weight:700">' + confidenceCounts.medium + '</div></div>' +
+          '<div style="padding:10px 12px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"><div style="font-size:12px;color:var(--text-secondary)">低置信度</div><div style="margin-top:4px;font-weight:700">' + confidenceCounts.low + '</div></div>' +
+        '</div>' +
+        '<div style="margin-bottom:14px"><div style="font-size:15px;font-weight:700;margin-bottom:8px">审计结论</div><div style="line-height:1.8;color:var(--text-secondary)">' + headline + '</div></div>' +
+        '<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text)">覆盖范围</div>' + coverage + '</div>' +
+        emptyBlock +
+        (topItems ? '<div style="margin-top:14px"><div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text)">可信命中项</div>' + topItems + '</div>' : '') +
+        (reviewFindings.length ? '<div style="margin-top:14px"><div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text)">需复核项</div>' + reviewFindings.slice(0, 3).map(renderAuditFindingCard).join('') + '</div>' : '');
+    }
+    if (statusEl) statusEl.textContent = trustedFindings.length > 0 ? '审计完成，已发现可信项。' : (auditFindings.length > 0 ? '审计完成，发现少量可疑项，建议复核。' : '审计完成，未发现明显源码泄露迹象。');
+    showToast('审计完成', 'success');
+  } catch (error) {
+    let message = friendlyError(error);
+    lastAuditWorkbenchResult = null;
+    if (statusEl) statusEl.textContent = '审计失败：' + message;
+    if (resultEl) {
+      resultEl.innerHTML = '<div style="padding:14px 16px;border:1px solid rgba(199,84,80,0.25);border-radius:2px;background:rgba(199,84,80,0.08);color:var(--text-secondary)">' + escapeHtml(message) + '</div>';
+    }
+    showToast('审计失败：' + message, 'error');
+  } finally {
+    _auditWorkbenchInProgress = false;
+    if (runBtn) {
+      runBtn.disabled = !(authorized && authorized.checked);
+      runBtn.textContent = '开始审计';
+    }
+  }
+}
+
+function downloadAuditReport() {
+  if (!lastAuditWorkbenchResult) {
+    showToast('请先完成一次审计', 'warn');
+    return;
+  }
+  let r = lastAuditWorkbenchResult;
+  let btn = document.querySelector('#page-audit .card button[onclick="downloadAuditReport()"]');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '导出中...';
+  }
+  authFetch('/api/report/audit', {
+    method: 'POST',
+    body: JSON.stringify({
+      url: r.url,
+      time: r.time,
+      risk: r.risk,
+      risk_level: r.risk,
+      score: r.score,
+      total: r.total,
+      headline: r.headline,
+      findings: r.findings || [],
+      summary: {
+        critical: (r.findings || []).filter(function(f) { return String(f.severity || '').toLowerCase() === 'critical'; }).length,
+        high: (r.findings || []).filter(function(f) { return String(f.severity || '').toLowerCase() === 'high'; }).length,
+        medium: (r.findings || []).filter(function(f) { return String(f.severity || '').toLowerCase() === 'medium'; }).length,
+        low: (r.findings || []).filter(function(f) { return String(f.severity || '').toLowerCase() === 'low'; }).length,
+        info: (r.findings || []).filter(function(f) { return !String(f.severity || '').toLowerCase() || String(f.severity || '').toLowerCase() === 'info'; }).length,
+        total: r.total || (r.findings || []).length,
+      },
+      coverage: r.coverage || [],
+      confidence_counts: r.confidenceCounts || { high: 0, medium: 0, low: 0 },
+    })
+  }).then(function(resp) {
+    if (!resp.ok) {
+      return resp.text().then(function(t) {
+        throw new Error(t || ('HTTP ' + resp.status));
+      });
+    }
+    return resp.blob().then(function(blob) {
+      let url = URL.createObjectURL(blob);
+      let a = document.createElement('a');
+      a.href = url;
+      a.download = 'vuln-sentinel-audit-report.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('审计 PDF 已下载');
+    });
+  }).catch(function(error) {
+    showToast('导出失败：' + friendlyError(error), 'error');
+  }).finally(function() {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '导出审计报告';
+    }
+  });
 }
 
 // ----- loadTrend -----
@@ -1321,11 +1534,11 @@ async function doBatchScan() {
       html += '</div>';
     });
     res.innerHTML = html;
-    showToast('批量扫描完成');
+    showToast('批量体检完成');
   } catch (e) {
     res.innerHTML = '<div style="color:#c75450;padding:10px">网络错误：' + (e.message || e) + '</div>';
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '开始批量扫描'; }
+    if (btn) { btn.disabled = false; btn.textContent = '开始批量体检'; }
   }
 }
 
@@ -2474,9 +2687,9 @@ function renderResult(data) {
   html += '<div id="radar-chart-container" style="display:flex;justify-content:center"></div>';
   html += '</div>';
 
-  // 演示按钮
+  // 公开测试按钮
   html += '<div class="card fade-in-up" style="animation-delay:0.2s">';
-  html += '<div class="card-title">演示</div>';
+  html += '<div class="card-title">公开测试</div>';
   html += '<p style="margin:0 0 14px 0;font-size:12px;color:var(--text-secondary)">展示常见风险场景，用于说明问题影响</p>';
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
   html += '<button onclick="simulateCSRF(\'' + escapeAttr(data.url) + '\')" style="padding:10px 8px;border:1px solid rgba(199,84,80,0.3);background:rgba(199,84,80,0.08);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;color:#dc2626;transition:background 0.15s" onmouseover="this.style.background=\'rgba(199,84,80,0.15)\'" onmouseout="this.style.background=\'rgba(199,84,80,0.08)\'">';
@@ -3409,17 +3622,17 @@ function renderResult(data) {
   // 扫描范围说明和免责声明
   html += '<div style="margin-top:20px;padding:16px;background:var(--bg-secondary);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
   html += '<div style="font-weight:600;margin-bottom:8px">检测范围说明</div>';
-  html += '<div>本次扫描检测了：HTTPS/TLS 配置、安全响应头（HSTS/CSP/X-Frame-Options 等 15+ 项）、Cookie 安全属性、CORS 策略、敏感路径暴露、WAF 识别。</div>';
-  html += '<div style="margin-top:4px">不进行：破坏性攻击、密码爆破、权限绕过、主动利用和深度渗透测试。</div>';
+  html += '<div>本次体检覆盖：HTTPS/TLS 配置、安全响应头（HSTS/CSP/X-Frame-Options 等 15+ 项）、Cookie 安全属性、CORS 策略、敏感路径暴露、登录态与重定向风险、弱口令与限流策略、XSS / SQL 注入 / SSRF 线索识别、WAF 识别。</div>';
+  html += '<div style="margin-top:4px">不进行：破坏性攻击、主动利用、授权外目标测试和深度渗透动作。</div>';
   html += '<div style="margin-top:4px;color:var(--text-light)">如需全面安全评估，建议配合专业安全服务。</div>';
   html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
   html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据，再结合二次扫描结果和原始响应确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
   html += '<div style="margin-top:8px;font-weight:600">证据分层</div>';
-  html += '<div>“已确认”表示已验证；“可疑”表示建议复核；“待复核”表示证据较弱。</div>';
+  html += '<div>“已确认”表示证据充分；“可疑”表示建议复核；“待复核”表示命中线索较弱，需人工再看一眼。</div>';
   html += '<div style="margin-top:8px;font-weight:600">审计范围</div>';
-  html += '<div>本报告覆盖 HTTP/TLS 配置、安全响应头、Cookie 标记、CORS、敏感路径和 WAF 识别，不包含破坏性利用或深度渗透动作。</div>';
+  html += '<div>本报告覆盖 HTTP/TLS 配置、安全响应头、Cookie 标记、CORS、敏感路径、登录态/重定向线索、基础注入线索和 WAF 识别，不包含破坏性利用或深度渗透动作。</div>';
   html += '<div style="margin-top:8px;font-weight:600">免责声明</div>';
-  html += '<div>本报告由漏洞哨兵自动生成，仅反映扫描时刻的目标配置状况，可用于演示、内测和修复跟踪，不构成完整安全审计结论。</div>';
+  html += '<div>本报告由 Vuln Sentinel 自动生成，仅反映扫描时刻的目标配置状况，可用于客户交付、内测和修复跟踪，不构成完整安全审计结论。</div>';
   html += '</div>';
 
   let resultContent = document.getElementById('result-content');
@@ -3478,12 +3691,12 @@ function shareResult() {
 function showPdfDownloadTip() {
   let html = '<div class="card fade-in-up" style="background:#3c3f41,rgba(168,85,247,0.04));border:1px solid rgba(75,110,175,0.2);text-align:center">';
   html += '<div style="font-size:18px;margin-bottom:8px"></div>';
-  html += '<div style="font-size:15px;font-weight:700;margin-bottom:6px">PDF 报告已生成</div>';
+  html += '<div style="font-size:15px;font-weight:700;margin-bottom:6px">客户交付报告已生成</div>';
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.7;margin-bottom:12px">';
   html += '报告包含以下内容：<br>';
-  html += ' 风险摘要（确认漏洞、疑似风险、配置缺失）<br>';
-  html += ' 证据详情（响应头值、敏感路径片段、WAF 检测依据）<br>';
-  html += ' 建议（按服务器类型分类，含优先级排序）<br>';
+  html += ' 风险摘要（已确认、可疑、待复核）<br>';
+  html += ' 证据详情（响应头值、敏感路径片段、置信度、WAF 检测依据）<br>';
+  html += ' 建议（按业务优先级分类，含修复顺序）<br>';
   html += ' 复测结果（上次与本次分数对比、新增与已修复问题）<br>';
   html += ' 评分变化趋势（如有历史记录）';
   html += '</div>';
@@ -4116,7 +4329,7 @@ function renderScanHistory(page) {
   authFetch('/api/history?limit=50').then(function(resp) { return resp.json(); }).then(function(data) {
     let history = data.history || [];
     if (history.length === 0) {
-      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:13px">暂无扫描记录</div><div style="font-size:12px;margin-top:6px">点首页「开始扫描」试试</div><div style="margin-top:12px"><button class="fixer-btn primary" onclick="navigateTo(\'scan\')">开始扫描</button></div></div>';
+      list.innerHTML = '<div style="text-align:center;color:var(--text-lighter);padding:30px 0"><div style="font-size:13px">暂无扫描记录</div><div style="font-size:12px;margin-top:6px">点首页「开始体检」试试</div><div style="margin-top:12px"><button class="fixer-btn primary" onclick="navigateTo(\'scan\')">开始体检</button></div></div>';
       safeSetDisplay('history-pagination', 'none');
       let tw = document.getElementById('history-trend-wrap');
       if (tw) tw.style.display = 'none';
@@ -4218,6 +4431,9 @@ window.startScanDirect = startScanDirect;
 window.startScan = startScan;
 window.updateScanStartState = updateScanStartState;
 window.dismissHomeOnboarding = dismissHomeOnboarding;
+window.downloadAuditReport = downloadAuditReport;
+window.runAuditWorkbench = runAuditWorkbench;
+window.fillAuditTargetFromScan = fillAuditTargetFromScan;
 window.goVerifyStep2 = goVerifyStep2;
 window.cancelScan = cancelScan;
 window.quickDemo = quickDemo;
@@ -4472,11 +4688,14 @@ export {
   renderScanHistory,
   restoreScanFromHistory,
   updateProfileStats,
+  downloadAuditReport,
   simulateCSRF,
   simulateXSS,
   simulateClickjacking,
   dismissHomeOnboarding,
   showHomeOnboarding,
+  runAuditWorkbench,
+  fillAuditTargetFromScan,
 };
 
 

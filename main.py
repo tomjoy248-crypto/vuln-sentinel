@@ -8654,12 +8654,21 @@ def generate_pdf_report(scan_data: dict) -> bytes:
                 logger.warning("PDF style %s font set failed: %s", _h, e)
 
     elements = []
+    report_kind = str(scan_data.get("report_kind", "scan")).lower()
+    is_audit_report = report_kind == "audit"
+    cover_title = "Vuln Sentinel" if not is_audit_report else "Vuln Sentinel"
+    cover_subtitle = "安全体检报告（客户交付版）" if not is_audit_report else "源码与上线审计报告（客户交付版）"
+    cover_note = "本报告由 Vuln Sentinel 自动生成，仅供授权范围内的体检、复测和交付留档。" if not is_audit_report else "本报告由 Vuln Sentinel 自动生成，仅用于授权范围内的审计与交付。"
+    summary_title = "客户摘要" if not is_audit_report else "审计摘要"
+    scope_title = "覆盖范围" if not is_audit_report else "审计范围"
+    risk_title = "交付结论与风险摘要" if not is_audit_report else "审计结论与风险摘要"
+    evidence_title = "问题明细（按置信度排序）" if not is_audit_report else "证据详情（可信项优先）"
 
     # ===== 封面页 =====
     elements.append(Spacer(1, 60 * mm))
     elements.append(
         Paragraph(
-            "Vuln Sentinel",
+            cover_title,
             ParagraphStyle(
                 name="CoverTitle",
                 fontName=_cn_font,
@@ -8672,7 +8681,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     elements.append(Spacer(1, 10 * mm))
     elements.append(
         Paragraph(
-            "Web 安全扫描报告",
+            cover_subtitle,
             ParagraphStyle(
                 name="CoverSub", fontName=_cn_font, fontSize=16, leading=22, alignment=1
             ),
@@ -8718,7 +8727,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     elements.append(Spacer(1, 30 * mm))
     elements.append(
         Paragraph(
-            "本报告由Vuln Sentinel自动生成，仅供参考。",
+            cover_note,
             ParagraphStyle(
                 name="CoverNote",
                 fontName=_cn_font,
@@ -8732,7 +8741,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     elements.append(PageBreak())
 
     # ===== 摘要页 =====
-    elements.append(Paragraph("摘要", styles["Heading2"]))
+    elements.append(Paragraph(summary_title, styles["Heading2"]))
     elements.append(
         Paragraph(
             f"安全评分: {scan_data.get('score', 0)} / 100（{scan_data.get('risk_level', '')}）",
@@ -8748,10 +8757,10 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     )
     elements.append(Spacer(1, 5 * mm))
 
-    elements.append(Paragraph("检测范围", styles["Heading2"]))
+    elements.append(Paragraph(scope_title, styles["Heading2"]))
     elements.append(
         Paragraph(
-            "本次扫描检测了以下安全项目：HTTPS/TLS 配置、安全响应头（HSTS/CSP/X-Frame-Options 等）、信息泄露、Cookie 安全、CORS 配置、敏感路径暴露、WAF 检测。",
+            "本次" + ("审计" if is_audit_report else "体检") + "覆盖以下安全项目：HTTPS/TLS 配置、安全响应头（HSTS/CSP/X-Frame-Options 等）、信息泄露、Cookie 安全、CORS 配置、敏感路径暴露、登录态与重定向风险、基础注入线索、WAF 检测。",
             styles["CN"],
         )
     )
@@ -8762,7 +8771,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     elements.append(PageBreak())
 
     # ===== 风险摘要页 =====
-    elements.append(Paragraph("风险摘要", styles["Heading2"]))
+    elements.append(Paragraph(risk_title, styles["Heading2"]))
     findings = scan_data.get("findings", [])
     exposed_count = len(
         [p for p in scan_data.get("sensitive_paths", []) if p.get("exposed")]
@@ -8825,16 +8834,32 @@ def generate_pdf_report(scan_data: dict) -> bytes:
         priority_steps.append("当前配置良好，继续保持并定期复测")
     for step in priority_steps:
         elements.append(Paragraph(f"• {step}", styles["CN"]))
-    elements.append(Spacer(1, 5 * mm))
+    if is_audit_report:
+        confidence_counts = scan_data.get("confidence_counts", {}) or {}
+        elements.append(Paragraph("客户交付摘要", styles["Heading2"]))
+        elements.append(Paragraph(f"高置信度: {confidence_counts.get("high", 0)} 个", styles["CNBold"]))
+        elements.append(Paragraph(f"中置信度: {confidence_counts.get("medium", 0)} 个", styles["CNOrange"]))
+        elements.append(Paragraph(f"低置信度: {confidence_counts.get("low", 0)} 个", styles["CN"]))
+        trusted_count = len([f for f in findings if str(f.get("confidence", "")).lower() != "low"])
+        review_count = len([f for f in findings if str(f.get("confidence", "")).lower() == "low"])
+        elements.append(Paragraph(f"可信命中项: {trusted_count} 个", styles["CNBold"]))
+        elements.append(Paragraph(f"建议复核项: {review_count} 个", styles["CNOrange"]))
+        elements.append(Paragraph("结论: 本次审计重点检查源码泄露、源码映射、敏感文件、登录态、重定向与上线前暴露项；未纳入破坏性测试。", styles["CN"]))
+        elements.append(Spacer(1, 5 * mm))
     elements.append(PageBreak())
 
     # ===== 证据页 =====
-    elements.append(Paragraph("证据详情", styles["Heading2"]))
+    elements.append(Paragraph(evidence_title, styles["Heading2"]))
     if findings:
         for i, f in enumerate(findings):
+            confidence = f.get('confidence', '')
+            level_text = f.get('level', f.get('severity', ''))
+            title_text = f"{i + 1}. {f.get('name', '')} [{level_text}]"
+            if confidence:
+                title_text += f"  置信度: {confidence}"
             elements.append(
                 Paragraph(
-                    f"{i + 1}. {f.get('name', '')} [{f.get('level', f.get('severity', ''))}]",
+                    title_text,
                     styles["CNBold"],
                 )
             )
@@ -8953,7 +8978,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     elements.append(PageBreak())
 
     # ===== Findings 表格（含证据列） =====
-    elements.append(Paragraph("问题详情", styles["Heading2"]))
+    elements.append(Paragraph(evidence_title, styles["Heading2"]))
     if findings:
         table_data = [["#", "问题", "严重度", "OWASP", "证据/原因", "修复建议"]]
         for i, f in enumerate(findings):
@@ -9027,7 +9052,7 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     elements.append(Paragraph("免责声明", styles["Heading2"]))
     elements.append(
         Paragraph(
-            "本报告由Vuln Sentinel智能规则引擎自动生成，仅反映扫描时刻的目标网站安全配置状况。扫描结果可能存在误报或漏报，不构成完整的安全审计。建议结合专业安全评估和渗透测试综合判断。本工具不进行任何破坏性操作。",
+            "本报告由 Vuln Sentinel 智能规则引擎自动生成，仅反映扫描时刻的目标网站安全配置状况。扫描结果可能存在误报或漏报，不构成完整的安全审计。建议结合专业安全评估和人工复核综合判断。本工具不进行任何破坏性操作。",
             styles["CN"],
         )
     )
@@ -14294,6 +14319,49 @@ async def api_report(
             io.BytesIO(pdf_bytes), media_type="application/pdf", headers=headers
         )
 
+
+@app.post("/api/report/audit")
+async def api_audit_report(req: dict, user: dict = Depends(require_login)):
+    """导出源码与上线审计 PDF 报告。"""
+    url = str(req.get("url", "")).strip()
+    if not url:
+        raise HTTPException(400, "缺少审计目标网址")
+    findings = req.get("findings", [])
+    if not isinstance(findings, list):
+        findings = []
+    summary = req.get("summary", {})
+    if not isinstance(summary, dict):
+        summary = {}
+    summary = {
+        "critical": int(summary.get("critical", 0) or 0),
+        "high": int(summary.get("high", 0) or 0),
+        "medium": int(summary.get("medium", 0) or 0),
+        "low": int(summary.get("low", 0) or 0),
+        "info": int(summary.get("info", 0) or 0),
+        "total": int(summary.get("total", len(findings)) or len(findings)),
+    }
+    report_data = {
+        "report_kind": "audit",
+        "url": url,
+        "time": req.get("time") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "score": req.get("score", 0),
+        "risk_level": req.get("risk", req.get("risk_level", "未知")),
+        "findings": findings,
+        "summary": summary,
+        "history": [],
+        "confidence_counts": req.get("confidence_counts", {}),
+        "sensitive_paths": req.get("sensitive_paths", []),
+        "header_details": req.get("header_details", []),
+        "info_leaks": req.get("info_leaks", []),
+        "cors": req.get("cors"),
+        "cookie_issues": req.get("cookie_issues", []),
+        "ssl_info": req.get("ssl_info", {}),
+        "waf": req.get("waf", []),
+        "owasp_coverage": req.get("coverage", []),
+    }
+    pdf_bytes = generate_pdf_report(report_data)
+    headers = {"Content-Disposition": 'attachment; filename="vuln-sentinel-audit-report.pdf"'}
+    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)
 
 @app.post("/api/report/src-export")
 async def api_src_report_export(

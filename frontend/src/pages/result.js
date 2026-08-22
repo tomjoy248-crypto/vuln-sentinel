@@ -244,14 +244,14 @@ function renderHeader(score, riskLevel, summary, url, data) {
   const lowCount = summary.low || 0;
   const infoCount = summary.info || 0;
   const nextStep = criticalCount + highCount > 0
-    ? '优先处理严重与高危项，先关闭外部暴露面。'
+    ? '优先关闭高危暴露面，再安排复测确认修复是否生效。'
     : mediumCount > 0
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
   const reportSummary = '共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
-  const reportIntro = '本报告用于复测、留档和交付。';
+  const reportIntro = '本报告用于客户沟通、复测留档和交付。';
   const actionHint = data.scan_id
-    ? '<div class="src-report-action-hint src-report-action-hint-alert">优先处理已确认和待复核项。</div>'
+    ? '<div class="src-report-action-hint src-report-action-hint-alert">优先处理已确认项，再复核可疑项。</div>'
     : '';
 
   return `

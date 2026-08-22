@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import time
+import urllib.parse
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1661,7 +1662,7 @@ def test_extract_params_ignores_body_without_form_content_type():
 
 def test_fuzz_engine_defaults():
     engine = FuzzEngine()
-    assert engine.techniques == ["sqli", "xss", "cmdi", "traversal", "ssrf", "open_redirect"]
+    assert engine.techniques == ["sqli", "xss", "cmdi", "traversal", "ssrf", "open_redirect", "xxe", "crlf"]
     assert engine.max_params == 15
 
 
@@ -1716,7 +1717,7 @@ def test_detect_evidence_no_match_returns_empty():
 
 
 def test_fuzz_payloads_contain_all_techniques():
-    for tech in ["sqli", "xss", "cmdi", "traversal", "ssrf", "open_redirect"]:
+    for tech in ["sqli", "xss", "cmdi", "traversal", "ssrf", "open_redirect", "xxe", "crlf"]:
         assert tech in FUZZ_PAYLOADS
         assert len(FUZZ_PAYLOADS[tech]) > 0
 
@@ -1748,6 +1749,35 @@ async def test_fuzz_url_no_evidence_returns_empty():
     client.get.return_value = httpx.Response(200, text="ok", request=httpx.Request("GET", "https://x"))
     results = await engine.fuzz_url(client, "https://example.com/p?id=1")
     assert results == []
+
+
+async def test_fuzz_url_can_probe_form_posts_and_detect_xxe():
+    engine = FuzzEngine(techniques=["xxe"], max_params=5)
+
+    async def handler(request):
+        assert request.method == "POST"
+        body = request.content.decode(errors="ignore")
+        form = urllib.parse.parse_qs(body, keep_blank_values=True)
+        decoded_values = " ".join(urllib.parse.unquote(v) for values in form.values() for v in values)
+        if "DOCTYPE" in decoded_values or "entity" in decoded_values:
+            return httpx.Response(200, text="xml parsing error: DOCTYPE not allowed", request=request)
+        return httpx.Response(200, text="ok", request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        results = await engine.fuzz_url(
+            client,
+            "https://example.com/upload",
+            body="xml=1",
+            content_type="application/x-www-form-urlencoded",
+            method="POST",
+        )
+    finally:
+        await client.aclose()
+
+    assert results
+    assert all(r.technique == "xxe" for r in results)
+    assert any(r.evidence_type == "doctype" for r in results)
 
 
 async def test_fuzz_url_swallows_request_exceptions():
@@ -1821,6 +1851,8 @@ def test_fuzz_results_to_findings_severity_map():
         ("traversal", "high"),
         ("ssrf", "high"),
         ("open_redirect", "medium"),
+        ("xxe", "high"),
+        ("crlf", "medium"),
     ]:
         findings = fuzz_results_to_findings(
             [FuzzResult(parameter="p", payload="x", technique=tech)], "https://x"

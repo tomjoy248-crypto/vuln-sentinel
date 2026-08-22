@@ -262,6 +262,8 @@ async def run_plugin_scan(
                     "traversal",
                     "ssrf",
                     "open_redirect",
+                    "xxe",
+                    "crlf",
                 ],
                 request_timeout=6.0,
                 max_params=12,

@@ -1,4 +1,4 @@
-/** 计费套餐 / 充值页面 (page-billing) */
+/** 服务套餐 / 充值页面 (page-billing) */
 
 import {
   billingPlans,
@@ -95,7 +95,7 @@ function getStatusLabel(status) {
 
 export function loadBillingPage() {
   if (!isLoggedIn()) {
-    showToast('请先登录后再查看计费套餐', 'warn');
+    showToast('请先登录后再查看服务套餐', 'warn');
     navigateTo('profile');
     return;
   }
@@ -107,19 +107,19 @@ export function loadBillingPage() {
 function loadPlans() {
   let container = document.getElementById('billing-plans-list');
   if (!container) return;
-  container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">正在加载套餐...</div>';
+  container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">正在加载服务套餐...</div>';
 
   billingPlans().then(function(data) {
     let plans = (data && data.data && data.data.plans) || (data && data.plans) || [];
     if (!plans.length) {
-      container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">暂无可用套餐</div>';
+      container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">暂无可用服务套餐</div>';
       return;
     }
     let recommendedPlanId = getRecommendedPlanId(plans);
     let html = '<div style="display:flex;flex-direction:column;gap:12px">';
     html += '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
-    html += '<div>• 所有订单都会进入充值记录，便于财务对账与追踪</div>';
-    html += '<div>• 充值后可立即用于扫描、复测、修复验证、报告导出和审计留痕</div>';
+    html += '<div>• 所有订单都会进入服务记录，便于财务对账与追踪</div>';
+    html += '<div>• 额度可立即用于体检、复测、修复验证、报告导出和审计留痕</div>';
     html += '<div>• 生产环境默认仅开放真实支付；开发环境可用通道</div>';
     html += '</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">';
@@ -226,7 +226,7 @@ function renderRecords(records) {
   let listEl = document.getElementById('billing-records-list');
   if (!listEl) return;
   if (!records || !records.length) {
-    listEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary)">暂无充值记录</div>';
+    listEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary)">暂无服务记录</div>';
     return;
   }
   let html = '<div style="display:flex;flex-direction:column;gap:8px">';

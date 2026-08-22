@@ -623,6 +623,7 @@ function navigateTo(page) {
   if (page === 'assets') loadAssets();
   if (page === 'evolution') loadEvolution();
   if (page === 'billing') loadBillingPage();
+  if (page === 'audit' && typeof window.fillAuditTargetFromScan === 'function') window.fillAuditTargetFromScan();
   } catch (e) {
     console.error('navigateTo error:', e);
   }

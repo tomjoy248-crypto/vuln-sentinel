@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/tomjoy248-crypto/vuln-sentinel/actions/workflows/ci.yml/badge.svg)
 
-Vuln Sentinel 是一款面向中小团队的安全扫描与修复工具，强调真实证据、可复测结果和可交付报告。
+Vuln Sentinel 是一款面向中小团队的安全体检与交付工具，强调真实证据、可复测结果和可直接交付的报告。
 
 ## 当前状态
 
@@ -15,10 +15,10 @@ Vuln Sentinel 是一款面向中小团队的安全扫描与修复工具，强调
 - Windows 安装包：见 `artifacts/windows/Vuln Sentinel Setup.exe`（当前版本 1.0.9）
 
 ## 产品定位
-- 输入目标网址后执行授权扫描
+- 输入授权目标后执行安全体检
 - 结果按 `已确认 / 可疑 / 待复核` 分层展示
 - 输出修复建议、复测验证和交付摘要
-- 适合内测、演示、交付前复测与持续巡检
+- 适合客户沟通、交付前复测与持续巡检
 
 ## 能力边界
 - 更适合基础安全体检、证据展示、修复建议和复测验证

