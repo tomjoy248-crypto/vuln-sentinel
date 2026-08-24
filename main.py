@@ -1719,8 +1719,12 @@ scheduler.add_job(
     next_run_time=datetime.now() + timedelta(minutes=2),  # 启动 2 分钟后跑一次
 )
 # NVD 增量同步：每 6 小时同步最近 7 天更新的 CVE
+async def _sync_recent_nvd_cves_job() -> None:
+    await vuln_intel_service.sync_recent_nvd_cves(days=7)
+
+
 scheduler.add_job(
-    lambda: asyncio.create_task(vuln_intel_service.sync_recent_nvd_cves(days=7)),
+    _sync_recent_nvd_cves_job,
     "interval",
     hours=6,
     id="nvd_cve_sync",
