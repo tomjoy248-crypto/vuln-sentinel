@@ -45,6 +45,14 @@ function safeSetHtml(id, html) { let el = safeGetElement(id); if (el) el.innerHT
 function safeSetValue(id, value) { let el = safeGetElement(id); if (el) el.value = value; }
 function safeSetDisplay(id, display) { let el = safeGetElement(id); if (el) el.style.display = display; }
 
+function runWhenDomReady(fn) {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', fn, { once: true });
+  } else {
+    setTimeout(fn, 0);
+  }
+}
+
 // ===== 授权复选框联动按钮状态 =====
 // 11-S fix: 原来在 DOMContentLoaded 时绑定，但此时 APP_TEMPLATE 尚未渲染到 DOM，
 // 导致 getElementById 返回 null，绑定静默失败，按钮永远 disabled。
@@ -1593,7 +1601,7 @@ window.friendlyError = friendlyError;
 
 
 // 页面加载时刷新告警红点
-document.addEventListener('DOMContentLoaded', function() {
+runWhenDomReady(function() {
   updateAlertBadge();
   // 页面首次打开先加载登录/注册验证码，避免表单为空
   try { loadAuthChallenge(); } catch (e) { console.warn('loadAuthChallenge error:', e); }
@@ -2341,7 +2349,7 @@ window.addEventListener('appinstalled', function() {
 });
 
 // Initialize
-document.addEventListener('DOMContentLoaded', function() {
+runWhenDomReady(function() {
   // Mount full application template into the root container
   let app = safeGetElement('app');
   if (app && APP_TEMPLATE) {

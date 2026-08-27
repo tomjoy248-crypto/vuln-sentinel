@@ -231,6 +231,24 @@ function verificationRank(status) {
   return 3;
 }
 
+function buildFpTags(reasons) {
+  const normalized = (reasons || []).join(' ').toLowerCase();
+  const tags = [];
+  if (/cloudflare|akamai|incapsula|sucuri|cdn|waf|challenge|verify you are human|security check|bot detection/.test(normalized)) {
+    tags.push('CDN / WAF / 挑战页');
+  }
+  if (/login|log in|sign in|authentication|认证墙|password|csrf token/.test(normalized)) {
+    tags.push('登录墙 / 认证页');
+  }
+  if (/soft 404|page not found|not found|does not exist|模板错误页|通用错误页|404/.test(normalized)) {
+    tags.push('软 404 / 模板错误页');
+  }
+  if (tags.length === 0 && reasons && reasons.length > 0) {
+    tags.push('建议复核');
+  }
+  return tags;
+}
+
 function renderHeader(score, riskLevel, summary, url, data) {
   const gradient = getScoreGradient(score);
   const scoreColor = getScoreColor(score);
@@ -266,12 +284,12 @@ function renderHeader(score, riskLevel, summary, url, data) {
   const lowCount = summary.low || 0;
   const infoCount = summary.info || 0;
   const nextStep = criticalCount + highCount > 0
-    ? '优先关闭高危暴露面，再安排复测确认修复是否生效。'
+    ? '优先关闭已确认高危暴露面，再安排复测确认修复是否生效。'
     : mediumCount > 0
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
-  const reportSummary = '共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理，' + fpCount + ' 项建议复核。';
-  const reportIntro = '本报告用于授权范围内的客户沟通、复测留档和交付。';
+  const reportSummary = '本次共发现 ' + severityTotal + ' 项结果，其中 ' + actionableCount + ' 项建议优先处理，' + fpCount + ' 项建议复核。';
+  const reportIntro = '本报告面向授权范围内的客户交付、复测留档和修复跟踪，优先突出已确认项与建议复核项，便于直接分配处置。';
   const actionHint = data.scan_id
     ? '<div class="src-report-action-hint src-report-action-hint-alert">优先处理已确认项，再复核可疑项。</div>'
     : '';
@@ -310,11 +328,20 @@ function renderHeader(score, riskLevel, summary, url, data) {
         <div class="src-report-intro">${escapeHtml(reportIntro)}</div>
         <div class="src-report-exec-summary">
           <div class="src-report-exec-title">概览</div>
-          <div class="src-report-exec-text">结果已按风险、验证状态、证据完整度和可信度整理，可直接用于确认修复优先级、复测范围和交付附件。</div>
+          <div class="src-report-exec-text">结果已按风险、验证状态、证据完整度和可信度分层整理，已把建议复核项单独标出，便于直接分配修复、复测与验收。</div>
+        </div>
+        <div class="src-report-capability">
+          <div class="src-report-capability-title">能力摘要</div>
+          <div class="src-report-capability-grid">
+            <div class="src-report-capability-item"><span>已验证</span><strong>${vStats.confirmed || 0}</strong></div>
+            <div class="src-report-capability-item"><span>建议复核</span><strong>${fpCount}</strong></div>
+            <div class="src-report-capability-item"><span>当前重点</span><strong>压误报 / 保证可用</strong></div>
+          </div>
+          <div class="src-report-capability-text">当前更适合做基础安全体检、证据展示、复测验证和修复跟踪；遇到登录墙、WAF/CDN、软 404 等场景会自动降权提示，优先保证结果可信。</div>
         </div>
         <div class="src-report-next-step">
           <div class="src-report-next-step-title">建议</div>
-          <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已识别 ' + fpCount + ' 项可疑结果，默认优先显示可信项。' : ''}</div>
+          <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已识别 ' + fpCount + ' 项建议复核结果，默认优先显示可信项。' : ''}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <button class="src-filter-btn" onclick="navigateTo('tickets')">工单</button>
             <button class="src-filter-btn" onclick="navigateTo('fixer')">修复</button>
@@ -347,7 +374,9 @@ function renderFindingList(findings, selectedIndex) {
       const typeLabel = typeText ? `<span class="src-list-type">${escapeHtml(typeText)}</span>` : '';
       const host = f.url ? new URL(f.url, window.location.href).hostname : '';
       const path = f.url ? new URL(f.url, window.location.href).pathname : '';
-      const isFp = f.is_likely_fp ? '<span class="src-list-fp-tag src-list-fp-tag-alert" title="待复核">待人工复核</span>' : '';
+      const fpTags = buildFpTags(Array.isArray(f.fp_reasons) ? f.fp_reasons : []);
+      const fpTagText = fpTags.length > 0 ? fpTags[0] : '待人工复核';
+      const isFp = f.is_likely_fp ? `<span class="src-list-fp-tag src-list-fp-tag-alert" title="待复核">${escapeHtml(fpTagText)}</span>` : '';
       const corrGroup = f.correlation_group ? `<span class="src-list-corr" title="关联组 ${escapeAttr(f.correlation_group)}（${f.correlation_size || 0} 个相关）">${escapeHtml(f.correlation_group)}</span>` : '';
       const mergedCount = f.merged_count > 1 ? `<span class="src-list-merged" title="合并了 ${f.merged_count} 个重复项">×${f.merged_count}</span>` : '';
       const vStatus = f.verification_status;
@@ -390,6 +419,15 @@ function renderFindingDetail(finding, index) {
   const locDetail = finding.location_detail || {};
   const statusMap = { open: '待处理', confirmed: '已确认', false_positive: '误报', fixed: '已修复' };
   const status = finding.status || 'open';
+  const fpReasons = Array.isArray(finding.fp_reasons) ? finding.fp_reasons : [];
+  const fpTags = buildFpTags(fpReasons);
+  const fpBanner = finding.is_likely_fp
+    ? `<div class="src-fp-banner">
+        <div class="src-fp-banner-title">疑似防护页 / 误报，建议优先复核</div>
+        <div class="src-fp-banner-desc">${escapeHtml(fpTags.length > 0 ? fpTags.join(' · ') : '页面更像 CDN/WAF 拦截、登录墙、软 404 或挑战页，而不是可直接利用的漏洞。')}</div>
+      </div>`
+    : '';
+
 
   let html = '<div class="src-detail-card fade-in-up">';
 
@@ -409,10 +447,13 @@ function renderFindingDetail(finding, index) {
       ${finding.severity_score ? `<span class="src-detail-score">评分 ${finding.severity_score}/10</span>` : ''}
       <span class="src-detail-confidence">置信度 ${escapeHtml((finding.adjusted_confidence || finding.confidence || 'medium').toString())}</span>
       ${finding.verification_status ? `<span class="src-detail-verify-badge ${finding.verification_status}">${finding.verification_status === 'confirmed' ? '已验证' : finding.verification_status === 'probable' ? '可复现' : '待人工复核'}</span>` : ''}
-      ${finding.is_likely_fp ? '<span class="src-detail-fp-badge src-detail-fp-badge-alert">建议复核</span>' : ''}
+      ${finding.is_likely_fp ? '<span class="src-detail-fp-badge src-detail-fp-badge-alert">疑似防护页</span>' : ''}
       ${finding.user_feedback ? (finding.user_feedback.is_false_positive ? '<span class="src-detail-fp-badge" title="您误报">已标记误报</span>' : '<span class="src-detail-verify-badge verified" title="您已确认">客户确认</span>') : ''}
     </div>
+    ${fpBanner}
   </div>`;
+
+
 
   // Tab 导航
   html += `<div class="src-detail-tabs">
@@ -932,6 +973,14 @@ export function injectSRCStyles() {
     .src-report-actions { margin-top:12px; }
     .src-export-btn { background:var(--primary); color:#fff; border:none; padding:6px 14px; border-radius:var(--radius-xs); font-size:12px; cursor:pointer; }
     .src-export-btn:hover { background:var(--primary-light); }
+    .src-report-capability { margin-top:12px; padding:12px 14px; border-radius:var(--radius-sm); background:rgba(115,201,144,0.08); border:1px solid rgba(115,201,144,0.18); }
+    .src-report-capability-title { font-size:12px; font-weight:700; margin-bottom:8px; color:#73c990; }
+    .src-report-capability-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
+    .src-report-capability-item { background:rgba(255,255,255,0.03); border:1px solid var(--border-light); border-radius:var(--radius-xs); padding:8px 10px; display:flex; flex-direction:column; gap:4px; }
+    .src-report-capability-item span { font-size:11px; color:var(--text-secondary); }
+    .src-report-capability-item strong { font-size:13px; color:var(--text-primary); }
+    .src-report-capability-text { margin-top:8px; font-size:12px; color:var(--text-secondary); line-height:1.7; }
+    @media (max-width: 900px) { .src-report-capability-grid { grid-template-columns:1fr; } }
 
     .src-quality-panel { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:16px; overflow:hidden; }
     .src-quality-header { display:flex; align-items:center; gap:20px; padding:14px 18px; cursor:pointer; }
@@ -995,6 +1044,9 @@ export function injectSRCStyles() {
     .src-list-host { color:var(--text-secondary); font-family:var(--font); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; }
     .src-list-confidence { font-size:11px; color:var(--text-secondary); margin-left:auto; text-transform:uppercase; }
     .src-list-fp-tag { background:#c7545022; color:#c75450; font-size:10px; padding:1px 5px; border-radius:3px; font-weight:700; }
+    .src-list-fp-tag-alert { background:rgba(240,167,50,0.18); color:#f0a732; }
+    .src-list-fp-tag-alert.fp { background:rgba(199,84,80,0.18); color:#c75450; }
+    .src-list-fp-tag-alert.info { background:rgba(128,128,128,0.18); color:#808080; }
     .src-list-merged { background:var(--primary); color:#fff; font-size:10px; padding:1px 5px; border-radius:3px; font-weight:600; }
     .src-list-corr { background:var(--token-bg); color:var(--text-secondary); font-size:10px; padding:1px 5px; border-radius:3px; font-family:var(--font); }
     .src-list-v { font-size:10px; padding:1px 5px; border-radius:3px; font-weight:700; margin-left:4px; }
@@ -1044,6 +1096,10 @@ export function injectSRCStyles() {
     .src-detail-verify-badge.confirmed { background:rgba(115,201,144,0.15); color:#73c990; }
     .src-detail-verify-badge.probable { background:rgba(240,167,50,0.15); color:#f0a732; }
     .src-detail-verify-badge.suspected { background:rgba(199,84,80,0.15); color:#c75450; }
+    .src-fp-banner { margin:12px 0 4px; padding:12px 14px; border:1px solid rgba(240,167,50,0.35); border-radius:var(--radius-sm); background:linear-gradient(135deg, rgba(240,167,50,0.12), rgba(199,84,80,0.08)); }
+    .src-fp-banner-title { font-size:13px; font-weight:700; color:#f0a732; margin-bottom:4px; }
+    .src-fp-banner-desc { font-size:12px; color:var(--text-secondary); line-height:1.6; }
+
     .src-fp-reasons { margin-top:8px; }
     .src-fp-reasons ul { margin:0; padding-left:18px; }
     .src-fp-reasons li { font-size:12px; color:var(--text-secondary); margin-bottom:3px; }

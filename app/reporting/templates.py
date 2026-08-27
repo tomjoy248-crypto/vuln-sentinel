@@ -27,7 +27,7 @@ DISCLAIMER_TEMPLATE = """> **免责声明**
 # 执行摘要
 EXECUTIVE_SUMMARY_TEMPLATE = """## 一、执行摘要
 
-本次针对 `{target_url}` 的安全测试共发现 **{total_findings}** 个安全问题。经人工复核，其中已验证问题 **{verified_count}** 个、待人工复核问题 **{unverified_count}** 个、已排除误报 **{false_positive_count}** 个。
+本次针对 `{target_url}` 的安全测试共发现 **{total_findings}** 个结果。经人工复核，其中已验证问题 **{verified_count}** 个、建议复核问题 **{unverified_count}** 个、已排除误报 **{false_positive_count}** 个。
 
 ### 1.1 风险仪表盘
 
@@ -72,7 +72,7 @@ FINDINGS_SUMMARY_TEMPLATE = """## 二、漏洞汇总
 | 验证状态 | 数量 |
 | --- | --- |
 | Verified (已验证) | {verified_count} |
-| Unverified (待人工复核) | {unverified_count} |
+| Review Needed (建议复核) | {unverified_count} |
 | False Positive (误报) | {false_positive_count} |
 
 ### 2.3 漏洞清单
@@ -210,7 +210,8 @@ LIMITATIONS_TEMPLATE = """## 六、限制与范围说明
 
 - 部分漏洞的验证结果依赖于测试时的网络环境、账号权限及业务状态。
 - 动态应用环境下，漏洞表现可能随版本迭代、配置变更而变化，建议修复后再次进行验证。
-- 自动化扫描结果可能存在误报；高风险结论会优先标记为“已验证/待人工复核”并建议复核确认。
+- 自动化扫描结果可能存在误报；高风险结论会优先标记为“已验证/建议复核/待人工复核”并提示复核确认。
+- 当前版本更适合做基础安全体检、证据展示、复测验证和修复跟踪。
 
 """
 

@@ -53,6 +53,45 @@ class FalsePositiveControl:
         re.compile(r"\b404\b.*not found", re.I),
         re.compile(r"\b500\b.*internal server error", re.I),
         re.compile(r"\b503\b.*service unavailable", re.I),
+        re.compile(r"page not found", re.I),
+        re.compile(r"sorry(,)? the page you are looking for does not exist", re.I),
+        re.compile(r"this page (?:does not|can't) exist", re.I),
+    ]
+
+    SOFT_404_MARKERS: list[str] = [
+        "page not found",
+        "sorry, the page you are looking for does not exist",
+        "the page you requested could not be found",
+        "this page does not exist",
+        "not found",
+        "404",
+    ]
+
+    LOGIN_PAGE_MARKERS: list[str] = [
+        "log in",
+        "login",
+        "sign in",
+        "password",
+        "remember me",
+        "forgot password",
+        "csrf token",
+        "account login",
+        "authentication required",
+    ]
+
+    CDN_WAF_MARKERS: list[str] = [
+        "cloudflare",
+        "akamai",
+        "incapsula",
+        "sucuri",
+        "cf-ray",
+        "cf-cache-status",
+        "x-sucuri",
+        "x-akamai",
+        "x-edge",
+        "bot detection",
+        "security check",
+        "verify you are human",
     ]
 
     def __init__(self, threshold: float = 0.38) -> None:
@@ -80,8 +119,11 @@ class FalsePositiveControl:
         request_text = self._get_request_text(finding)
         response_headers = self._get_response_headers(finding)
 
-        # 规则 1：WAF/防火墙拦截响应
-        if self._contains_fp_keywords(response) and not self._has_strong_evidence(finding, vuln_type):
+        # 规则 1：WAF/防火墙/CDN 拦截响应
+        if self._looks_like_cdn_or_waf(response_headers, response) and not self._has_strong_evidence(finding, vuln_type):
+            fp_score += 0.24
+            reasons.append("响应更像 CDN/WAF/挑战页，可能是防护层拦截而非真实漏洞")
+        elif self._contains_fp_keywords(response) and not self._has_strong_evidence(finding, vuln_type):
             fp_score += 0.28
             reasons.append("响应包含 WAF/拦截关键词，可能是防护设备触发的误报")
 
@@ -93,26 +135,35 @@ class FalsePositiveControl:
             fp_score += 0.18
             reasons.append(f"HTTP {status_code} 响应且无明确利用证据")
             if self._looks_like_challenge_response(response, response_headers):
-                fp_score += 0.12
+                fp_score += 0.14
                 reasons.append("响应更像登录/挑战/限流页面，降低直接判为漏洞的概率")
 
-        # 规则 3：响应长度异常短（可能为通用错误页）
+        # 规则 3：软 404 / 登录页 / 挑战页误判控制
+        if not self._has_strong_evidence(finding, vuln_type):
+            if self._looks_like_soft_404(response, response_headers):
+                fp_score += 0.36
+                reasons.append("响应特征更像软 404 或模板错误页")
+            if self._looks_like_login_page(response, response_headers):
+                fp_score += 0.36
+                reasons.append("响应特征更像登录页或认证墙")
+
+        # 规则 4：响应长度异常短（可能为通用错误页）
         resp_len = len(response)
         if resp_len < 100 and status_code != 200:
             fp_score += 0.15
             reasons.append("响应长度过短，可能是通用错误页面")
 
-        # 规则 4：高置信度验证（如果存在强利用证据，降低误报分）
+        # 规则 5：高置信度验证（如果存在强利用证据，降低误报分）
         if self._has_strong_evidence(finding, vuln_type):
             fp_score -= 0.3
             reasons.append("存在强利用证据，降低误报概率")
 
-        # 规则 5：请求参数为常见静态资源后缀
+        # 规则 6：请求参数为常见静态资源后缀
         if request_text and self._is_static_resource(request_text) and not self._has_strong_evidence(finding, vuln_type):
             fp_score += 0.2
             reasons.append("请求目标为静态资源，动态漏洞利用概率低")
 
-        # 规则 6：响应中包含页面框架/模板代码（可能为反射而非注入）
+        # 规则 7：响应中包含页面框架/模板代码（可能为反射而非注入）
         if vuln_type in ("xss", "sqli") and self._contains_framework_markup(response) and not self._has_strong_evidence(finding, vuln_type):
             fp_score += 0.15
             reasons.append("响应包含框架/模板代码，可能是正常页面反射")
@@ -159,6 +210,42 @@ class FalsePositiveControl:
     def _contains_fp_keywords(self, text: str) -> bool:
         text_lower = text.lower()
         return any(kw in text_lower for kw in self.FP_RESPONSE_KEYWORDS)
+
+    def _looks_like_soft_404(self, response: str, headers: str) -> bool:
+        text = f"{response}\n{headers}".lower()
+        if any(marker in text for marker in self.SOFT_404_MARKERS):
+            return True
+        if any(pattern.search(text) for pattern in self.LOW_CONFIDENCE_PATTERNS):
+            return True
+        if "404" in text and any(
+            hint in text
+            for hint in (
+                "not found",
+                "page not found",
+                "does not exist",
+                "could not be found",
+                "unable to find",
+            )
+        ):
+            return True
+        return False
+
+    def _looks_like_login_page(self, response: str, headers: str) -> bool:
+        text = f"{response}\n{headers}".lower()
+        if not any(marker in text for marker in self.LOGIN_PAGE_MARKERS):
+            return False
+        form_hints = ["<form", "type=\"password\"", "type=\'password\'", "name=\"password\"", "name=\'password\'"]
+        return any(hint in text for hint in form_hints)
+
+    def _looks_like_cdn_or_waf(self, headers: str, response: str) -> bool:
+        text = f"{response}\n{headers}".lower()
+        return any(marker in text for marker in self.CDN_WAF_MARKERS)
+
+    def _extract_status_code(self, response_text: str) -> int | None:
+        m = re.search(r"http/\d\.\d\s+(\d{3})", response_text, re.I)
+        if m:
+            return int(m.group(1))
+        return None
 
     def _extract_status_code(self, response_text: str) -> int | None:
         m = re.search(r"http/\d\.\d\s+(\d{3})", response_text, re.I)

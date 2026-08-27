@@ -126,6 +126,30 @@ class CrossValidator:
         except Exception:
             return ""
 
+    @staticmethod
+    def _response_looks_like_auth_or_challenge(resp: httpx.Response | None, body: str = "") -> bool:
+        if resp is None:
+            return False
+        header_text = "\n".join(f"{k}: {v}" for k, v in resp.headers.items()).lower()
+        text = f"{header_text}\n{body}".lower()
+        markers = [
+            "cloudflare",
+            "akamai",
+            "incapsula",
+            "sucuri",
+            "captcha",
+            "challenge",
+            "access denied",
+            "verify you are human",
+            "verify your browser",
+            "security check",
+            "sign in",
+            "log in",
+            "login",
+            "authentication required",
+            "csrf token",
+        ]
+        return any(marker in text for marker in markers)
     async def verify_finding(self, finding: dict[str, Any]) -> VerificationResult:
         """对单条 finding 执行交叉验证。"""
         vuln_type = (finding.get("type") or "").lower()
@@ -786,15 +810,25 @@ async def _verify_open_redirect(
                 location = resp.headers.get("location", "")
                 parsed_loc = urlparse(location)
                 loc_host = parsed_loc.netloc.lower()
+                body = await validator._safe_read_body(resp)
                 if loc_host and loc_host != target_host:
-                    score += 50
-                    techniques.append(
-                        {
-                            "name": "redirect_to_external",
-                            "passed": True,
-                            "note": f"触发 {resp.status_code} 重定向到外部域 {loc_host}",
-                        }
-                    )
+                    if validator._response_looks_like_auth_or_challenge(resp, body):
+                        techniques.append(
+                            {
+                                "name": "redirect_to_external",
+                                "passed": False,
+                                "note": f"重定向目标虽为外部域 {loc_host}，但响应更像登录/挑战/防护页",
+                            }
+                        )
+                    else:
+                        score += 50
+                        techniques.append(
+                            {
+                                "name": "redirect_to_external",
+                                "passed": True,
+                                "note": f"触发 {resp.status_code} 重定向到外部域 {loc_host}",
+                            }
+                        )
                 else:
                     techniques.append(
                         {
@@ -838,15 +872,25 @@ async def _verify_open_redirect(
             )
             if resp and resp.status_code in (301, 302, 303, 307, 308):
                 location = resp.headers.get("location", "")
+                body = await validator._safe_read_body(resp)
                 if location.startswith("//") or "attacker.example" in location.lower():
-                    score += 30
-                    techniques.append(
-                        {
-                            "name": "protocol_relative_bypass",
-                            "passed": True,
-                            "note": "协议相对 URL 被接受并重定向",
-                        }
-                    )
+                    if validator._response_looks_like_auth_or_challenge(resp, body):
+                        techniques.append(
+                            {
+                                "name": "protocol_relative_bypass",
+                                "passed": False,
+                                "note": "协议相对形式出现，但响应更像登录/挑战/防护页",
+                            }
+                        )
+                    else:
+                        score += 30
+                        techniques.append(
+                            {
+                                "name": "protocol_relative_bypass",
+                                "passed": True,
+                                "note": "协议相对 URL 被接受并重定向",
+                            }
+                        )
                 else:
                     techniques.append(
                         {
@@ -881,18 +925,29 @@ async def _verify_open_redirect(
         )
 
     # 技术 3：原有证据复验
+    # 技术 3：原有证据复验
     original_headers = evidence.get("headers") or {}
     if isinstance(original_headers, dict):
         loc = original_headers.get("location") or original_headers.get("Location", "")
+        header_blob = "\n".join(f"{k}: {v}" for k, v in original_headers.items())
         if loc and urlparse(loc).netloc.lower() not in ("", target_host):
-            score += 25
-            techniques.append(
-                {
-                    "name": "original_evidence",
-                    "passed": True,
-                    "note": "原始证据已包含外部重定向 Location",
-                }
-            )
+            if any(marker in header_blob.lower() for marker in ["cloudflare", "akamai", "incapsula", "sucuri", "login", "sign in", "challenge", "captcha"]):
+                techniques.append(
+                    {
+                        "name": "original_evidence",
+                        "passed": False,
+                        "note": "原始证据虽为外部重定向，但更像登录/挑战/防护页",
+                    }
+                )
+            else:
+                score += 25
+                techniques.append(
+                    {
+                        "name": "original_evidence",
+                        "passed": True,
+                        "note": "原始证据已包含外部重定向 Location",
+                    }
+                )
         else:
             techniques.append(
                 {

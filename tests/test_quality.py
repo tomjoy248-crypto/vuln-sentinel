@@ -21,6 +21,63 @@ def test_fp_control_marks_challenge_like_responses_as_likely_fp():
     assert result["adjusted_confidence"] in {"medium", "low", "info"}
 
 
+
+def test_fp_control_marks_soft_404_pages_as_likely_fp():
+    controller = FalsePositiveControl(threshold=0.35)
+    finding = {
+        "type": "xss",
+        "confidence": "high",
+        "evidence": {
+            "request": "GET /missing?page=1 HTTP/1.1\nHost: example.com",
+            "response": "HTTP/1.1 200 OK\n<title>Page Not Found</title>\nSorry, the page you are looking for does not exist.",
+            "response_headers": "Server: nginx\n",
+        },
+    }
+
+    result = controller.analyze(finding)
+
+    assert result["fp_score"] >= 0.35
+    assert result["is_likely_fp"] is True
+    assert any("软 404" in reason or "模板错误页" in reason for reason in result["fp_reasons"])
+
+
+def test_fp_control_marks_login_wall_pages_as_likely_fp():
+    controller = FalsePositiveControl(threshold=0.35)
+    finding = {
+        "type": "open_redirect",
+        "confidence": "high",
+        "evidence": {
+            "request": "GET /admin HTTP/1.1\nHost: example.com",
+            "response": "HTTP/1.1 200 OK\n<form action=\"/login\"><input type=\"password\" name=\"password\"></form>\nPlease sign in",
+            "response_headers": "Server: nginx\n",
+        },
+    }
+
+    result = controller.analyze(finding)
+
+    assert result["fp_score"] >= 0.35
+    assert result["is_likely_fp"] is True
+    assert any("登录页" in reason or "认证墙" in reason for reason in result["fp_reasons"])
+
+
+def test_fp_control_marks_200_challenge_pages_as_likely_fp():
+    controller = FalsePositiveControl(threshold=0.35)
+    finding = {
+        "type": "xss",
+        "confidence": "high",
+        "evidence": {
+            "request": "GET /search?q=test HTTP/1.1\nHost: example.com",
+            "response": "HTTP/1.1 200 OK\n<title>Security Check</title>\nPlease verify you are human to continue\n<script src=\"https://challenges.cloudflare.com/turnstile/v0/api.js\"></script>",
+            "response_headers": "Server: cloudflare\nCF-Ray: 1234567890\n",
+        },
+    }
+
+    result = controller.analyze(finding)
+
+    assert result["fp_score"] >= 0.35
+    assert result["is_likely_fp"] is True
+    assert any("挑战页" in reason or "CDN/WAF" in reason for reason in result["fp_reasons"])
+
 def test_filter_findings_can_keep_low_confidence_items():
     findings = [
         {

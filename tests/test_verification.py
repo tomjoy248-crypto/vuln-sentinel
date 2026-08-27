@@ -28,7 +28,6 @@ except Exception:  # pragma: no cover - best effort init
 
 import pytest  # noqa: E402
 
-pytestmark = pytest.mark.asyncio
 
 import app.verification.cross_validator as cv  # noqa: E402
 from app.verification.cross_validator import (  # noqa: E402
@@ -908,6 +907,29 @@ async def test_open_redirect_no_redirect_response():
     assert techniques["redirect_to_external"]["passed"] is False
     assert techniques["protocol_relative_bypass"]["passed"] is False
     assert result.verification_score == 0
+
+
+async def test_open_redirect_challenge_like_redirect_not_scored():
+    def handler(url, kwargs):
+        return FakeResponse(
+            302,
+            "Access denied - please sign in",
+            headers={"location": "https://evil.com", "server": "cloudflare"},
+        )
+
+    validator = CrossValidator(client=FakeAsyncClient(handler=handler))
+    result = await validator.verify_finding(
+        {
+            "id": "or2b",
+            "type": "open_redirect",
+            "url": "http://t.local/?next=1",
+            "parameter": "next",
+            "evidence": {},
+        }
+    )
+    techniques = {t["name"]: t for t in result.techniques}
+    assert techniques["redirect_to_external"]["passed"] is False
+    assert result.verification_score < 50
 
 
 async def test_open_redirect_same_domain_not_scored():

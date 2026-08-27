@@ -117,20 +117,18 @@ fn escape_js_text(text: &str) -> String {
 
 fn show_loading(window: &tauri::WebviewWindow, message: &str) {
   let html = format!(
-    r#"<div style="width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#0f172a 0%,#111827 100%);color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;">
-      <div style="max-width:560px;padding:28px 30px;border-radius:16px;background:rgba(15,23,42,.78);border:1px solid rgba(148,163,184,.18);box-shadow:0 20px 60px rgba(0,0,0,.38);">
-        <div style="font-size:22px;font-weight:700;margin-bottom:10px;">Vuln Sentinel 正在启动</div>
-        <div style="font-size:14px;line-height:1.8;color:#cbd5e1;">{}</div>
-        <div style="margin-top:18px;height:10px;border-radius:999px;overflow:hidden;background:rgba(148,163,184,.14);">
-          <div style="width:40%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#38bdf8,#22c55e);animation:slide 1.2s ease-in-out infinite;"></div>
-        </div>
-      </div>
-      <style>@keyframes slide {{ 0% {{ transform: translateX(-120%); }} 100% {{ transform: translateX(260%); }} }}</style>
-    </div>"#,
+    r#"(function() {{
+      var existing = document.getElementById('vs-boot-screen');
+      if (existing) existing.remove();
+      var boot = document.createElement('div');
+      boot.id = 'vs-boot-screen';
+      boot.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#0f172a 0%,#111827 100%);color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;';
+      boot.innerHTML = '<div style="max-width:560px;padding:28px 30px;border-radius:16px;background:rgba(15,23,42,.78);border:1px solid rgba(148,163,184,.18);box-shadow:0 20px 60px rgba(0,0,0,.38);"><div style="font-size:22px;font-weight:700;margin-bottom:10px;">Vuln Sentinel 正在启动</div><div style="font-size:14px;line-height:1.8;color:#cbd5e1;">{}<\/div><div style="margin-top:18px;height:10px;border-radius:999px;overflow:hidden;background:rgba(148,163,184,.14);"><div style="width:40%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#38bdf8,#22c55e);animation:slide 1.2s ease-in-out infinite;"></div></div></div><style>@keyframes slide {{ 0% {{ transform: translateX(-120%); }} 100% {{ transform: translateX(260%); }} }}</style>';
+      (document.body || document.documentElement).appendChild(boot);
+    }})();"#,
     escape_js_text(message)
   );
-  let script = format!("document.body.innerHTML = `{}`; document.body.style.margin='0';", html);
-  let _ = window.eval(&script);
+  let _ = window.eval(&html);
 }
 
 fn show_backend_fallback(window: &tauri::WebviewWindow, backend_hint: &str) {
@@ -141,7 +139,7 @@ fn show_backend_fallback(window: &tauri::WebviewWindow, backend_hint: &str) {
   let escaped = escape_js_text(&banner_text);
   let script = format!(
     r#"(function() {{
-      var boot = document.getElementById('boot-screen');
+      var boot = document.getElementById('vs-boot-screen');
       if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
       var banner = document.createElement('div');
       banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#7c2d12;color:#fff;padding:10px 16px;font-size:13px;line-height:1.5;font-family:system-ui,-apple-system,Segoe UI,Microsoft YaHei,sans-serif';
@@ -168,9 +166,9 @@ fn main() {
         show_loading(&window, "正在启动本地安全体检服务，请稍候。");
         thread::spawn(move || {
           if wait_for_backend_ready(&address, 30) {
-            if let Ok(url) = url::Url::parse(&format!("http://127.0.0.1:{}/", port)) {
-              let _ = window.navigate(url);
-            }
+            let _ = window.eval(
+              "(function(){var boot=document.getElementById('vs-boot-screen'); if (boot) boot.remove();})();",
+            );
           } else {
             let hint = backend_path
               .as_ref()

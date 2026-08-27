@@ -1329,14 +1329,6 @@ export const APP_TEMPLATE = `</head>
 
     </div>
 
-    <div class="settings-row" onclick="showProfileTab('about')">
-
-      <span>关于</span>
-
-      <span class="settings-arrow">&#x203A;</span>
-
-    </div>
-
   </div>
 
 
@@ -1716,40 +1708,6 @@ export const APP_TEMPLATE = `</head>
   </div>
 
 
-
-  <!-- 关于面板 -->
-
-  <div id="profile-tab-about" class="profile-tab" style="display:none">
-
-    <div class="card">
-
-      <div class="card-title">关于</div>
-
-      <div style="text-align:left;font-size:13px;color:var(--text-secondary);line-height:2">
-
-        <p>基于 OWASP Top 10 安全标准</p>
-
-        <p>域名归属验证，确保授权扫描与敏感目标拦截</p>
-
-        <p>智能检查，生成多平台修复配置</p>
-
-        <p>账号级数据隔离</p>
-
-        <p>支持 Nginx、Apache、Node.js</p>
-
-      </div>
-
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border-light)">
-
-        <p style="font-size:12px;color:var(--text-lighter)">开源项目 | MIT License</p>
-
-        <p style="font-size:12px;color:var(--text-lighter);margin-top:4px">反馈：vuln-sentinel@example.com</p>
-
-      </div>
-
-    </div>
-
-  </div>
 
 </div>
 
