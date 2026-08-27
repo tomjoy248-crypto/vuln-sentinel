@@ -463,7 +463,7 @@ export const APP_TEMPLATE = `</head>
 
         <input id="auth-check-step1" type="checkbox" onchange="updateScanStartState()" />
 
-        <span>我已确认拥有该域名或已获得授权扫描，且不属于政府等受限目标</span>
+        <span>我已确认目标属于授权范围，不涉及受限目标</span>
 
       </label>
 
@@ -571,7 +571,7 @@ export const APP_TEMPLATE = `</head>
 
           <input id="auth-check" type="checkbox" onchange="updateScanStartState()" />
 
-          <span>我已确认拥有该域名或已获得授权扫描，且不属于政府等受限目标</span>
+          <span>我已确认目标属于授权范围，不涉及受限目标</span>
 
         </label>
 
@@ -1819,7 +1819,7 @@ export const APP_TEMPLATE = `</head>
 
         <input id="audit-auth-check" type="checkbox" onchange="document.getElementById('audit-run-btn').disabled=!this.checked" />
 
-        <span>我已确认拥有上述网址或已获得授权扫描，且不属于政府等受限目标</span>
+        <span>我已确认目标属于授权范围，不涉及受限目标</span>
 
       </label>
 
@@ -1887,7 +1887,7 @@ export const APP_TEMPLATE = `</head>
 
       <input id="batch-auth-check" type="checkbox" onchange="document.getElementById('batch-go-btn').disabled=!this.checked" />
 
-      <span>我已确认拥有上述域名或已获得授权扫描，且不属于政府等受限目标</span>
+      <span>我已确认目标属于授权范围，不涉及受限目标</span>
 
     </label>
 
