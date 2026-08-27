@@ -88,14 +88,14 @@ def _normalize_verification_status(status: str) -> str:
     mapping = {
         "verified": "已验证",
         "confirmed": "已验证",
-        "unverified": "待复核",
+        "unverified": "建议复核",
         "probable": "可能存在",
         "suspected": "待人工复核",
         "false positive": "误报",
         "false_positive": "误报",
     }
     key = (status or "").strip().lower().replace("_", " ")
-    return mapping.get(key, status or "待复核")
+    return mapping.get(key, status or "建议复核")
 
 
 def _build_summary_from_scan_data(scan_data: dict[str, Any]) -> ScanExecutiveSummary:
@@ -234,7 +234,7 @@ def generate_executive_summary(scan_data: dict[str, Any]) -> str:
     intro = (
         f"本报告面向客户交付、上线前验收与复扫留档。"
         f"本次扫描共发现 {summary.total_findings} 项安全问题，"
-        f"建议优先处理已验证与高危项，并将待人工复核项作为后续验证清单。"
+        f"建议优先处理已验证与高危项，并将建议复核项作为后续验证清单。"
     )
     summary_block = (
         f"### 0.1 客户摘要\n\n"
@@ -242,7 +242,7 @@ def generate_executive_summary(scan_data: dict[str, Any]) -> str:
         f"- 安全评分：{summary.overall_score} / 100\n"
         f"- 风险等级：{summary.risk_level}\n"
         f"- 发现问题：{summary.total_findings} 项\n"
-        f"- 已验证：{summary.verified_count} 项，待人工复核：{summary.unverified_count} 项，误报：{summary.false_positive_count} 项\n"
+        f"- 已验证：{summary.verified_count} 项，建议复核：{summary.unverified_count} 项，误报：{summary.false_positive_count} 项\n"
         f"- 扫描时长：{_format_duration(summary.scan_duration_ms)}\n"
     )
     return intro + "\n\n" + summary_block + "\n" + EXECUTIVE_SUMMARY_TEMPLATE.format(

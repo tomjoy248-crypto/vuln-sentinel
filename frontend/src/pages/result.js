@@ -270,7 +270,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
   const vBadge = vStats.enabled
     ? `<span class="meta-item verification-badge">
         <span class="v-confirmed" title="已验证">${vStats.confirmed || 0}</span>
-        <span class="v-probable" title="可疑">${vStats.probable || 0}</span>
+        <span class="v-probable" title="已验证/可信">${vStats.probable || 0}</span>
         <span class="v-suspected" title="待人工复核">${vStats.suspected || 0}</span>
        </span>`
     : '';
