@@ -270,7 +270,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
     : mediumCount > 0
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
-  const reportSummary = '共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
+  const reportSummary = '共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理，' + fpCount + ' 项建议复核。';
   const reportIntro = '本报告用于授权范围内的客户沟通、复测留档和交付。';
   const actionHint = data.scan_id
     ? '<div class="src-report-action-hint src-report-action-hint-alert">优先处理已确认项，再复核可疑项。</div>'
@@ -351,9 +351,9 @@ function renderFindingList(findings, selectedIndex) {
       const corrGroup = f.correlation_group ? `<span class="src-list-corr" title="关联组 ${escapeAttr(f.correlation_group)}（${f.correlation_size || 0} 个相关）">${escapeHtml(f.correlation_group)}</span>` : '';
       const mergedCount = f.merged_count > 1 ? `<span class="src-list-merged" title="合并了 ${f.merged_count} 个重复项">×${f.merged_count}</span>` : '';
       const vStatus = f.verification_status;
-      const vIcon = vStatus === 'confirmed' ? '<span class="src-list-v confirmed" title="已验证">✓</span>' :
-                    vStatus === 'probable' ? '<span class="src-list-v probable" title="可能存在">?</span>' :
-                    vStatus === 'suspected' ? '<span class="src-list-v suspected" title="待人工复核">!</span>' : '';
+      const vIcon = vStatus === 'confirmed' ? '<span class="src-list-v confirmed" title="已验证">✓ 已验证</span>' :
+                    vStatus === 'probable' ? '<span class="src-list-v probable" title="可复现">? 可复现</span>' :
+                    vStatus === 'suspected' ? '<span class="src-list-v suspected" title="待人工复核">! 待复核</span>' : '';
       const fbIcon = f.user_feedback ? (f.user_feedback.is_false_positive ? '<span class="src-list-fb fp" title="已标记误报">误报</span>' : '<span class="src-list-fb confirmed" title="已确认">确认</span>') : '';
       const rawConfidence = String(f.adjusted_confidence || f.confidence || 'medium');
       const confidenceLabel = rawConfidence === 'high' ? '高可信' : rawConfidence === 'medium' ? '中可信' : rawConfidence === 'low' ? '低可信' : rawConfidence;

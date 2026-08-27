@@ -135,7 +135,7 @@ fn show_loading(window: &tauri::WebviewWindow, message: &str) {
 
 fn show_backend_fallback(window: &tauri::WebviewWindow, backend_hint: &str) {
   let banner_text = format!(
-    "本地服务暂未启动，界面已打开。请检查防火墙或重新启动安装包。后端路径：{}",
+    "本地服务暂未启动，界面已打开。请检查防火墙、安装包完整性或重新启动安装包。后端路径：{}",
     backend_hint
   );
   let escaped = escape_js_text(&banner_text);
@@ -165,7 +165,7 @@ fn main() {
       };
 
       if let Some(window) = app.get_webview_window("main") {
-        show_loading(&window, "正在启动本地安全扫描服务，请稍候。");
+        show_loading(&window, "正在启动本地安全体检服务，请稍候。");
         thread::spawn(move || {
           if wait_for_backend_ready(&address, 30) {
             if let Ok(url) = url::Url::parse(&format!("http://127.0.0.1:{}/", port)) {

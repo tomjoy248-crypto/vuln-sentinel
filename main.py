@@ -2194,7 +2194,7 @@ def _create_client() -> None:
             verify=_verify,
             timeout=settings.scan_timeout,
             follow_redirects=True,
-            headers={"User-Agent": "VulnSentinel/12"},
+            headers={"User-Agent": "Vuln Sentinel/12"},
             http2=True,
             event_hooks={"response": [_response_body_limit]},
             limits=httpx.Limits(
@@ -2212,7 +2212,7 @@ def _create_client() -> None:
             verify=_verify,
             timeout=settings.scan_timeout,
             follow_redirects=True,
-            headers={"User-Agent": "VulnSentinel/12"},
+            headers={"User-Agent": "Vuln Sentinel/12"},
             http2=False,
             event_hooks={"response": [_response_body_limit]},
             limits=httpx.Limits(
@@ -18186,12 +18186,12 @@ def _demo_nginx_apply_security_headers() -> tuple[bool, str]:
                 content = f.read()
 
             # 如果已经有安全头了，直接返回
-            if "X-Frame-Options" in content and "VulnSentinel" in content:
+            if "X-Frame-Options" in content and "Vuln Sentinel" in content:
                 return True, "安全头已经应用过了"
 
             # 安全头修复块（使用正确的缩进）
             security_headers_block = """
-            # ===== VulnSentinel Vuln Sentinel 应用修复配置：安全响应头 =====
+            # ===== Vuln Sentinel Vuln Sentinel 应用修复配置：安全响应头 =====
             add_header X-Frame-Options "SAMEORIGIN" always;
             add_header X-Content-Type-Options "nosniff" always;
             add_header Content-Security-Policy "default-src 'self'" always;
