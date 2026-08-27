@@ -618,7 +618,7 @@ async function runAuditWorkbench() {
     let total = findings.length;
     let score = typeof data.score === 'number' ? data.score : (data.score || '-');
     let risk = data.risk_level || data.risk || '未知';
-    let headline = trustedFindings.length > 0 ? ('发现 ' + trustedFindings.length + ' 个较可信源码/上线相关问题') : (auditFindings.length > 0 ? '发现少量可疑项，建议复核' : '未发现明显源码泄露迹象');
+    let headline = trustedFindings.length > 0 ? ('发现 ' + trustedFindings.length + ' 个较可信源码/上线相关问题') : (auditFindings.length > 0 ? '发现少量建议复核项，优先人工确认' : '未发现明显源码泄露迹象');
     let topItems = trustedFindings.slice(0, 5).map(renderAuditFindingCard).join('');
     let coverage = buildAuditCoverage().map(function(item) {
       return '<span style="display:inline-block;margin:0 8px 8px 0;padding:3px 10px;border-radius:2px;background:rgba(75,110,175,0.12);color:#4b6eaf;font-size:12px">' + escapeHtml(item) + '</span>';
@@ -660,7 +660,7 @@ async function runAuditWorkbench() {
         (topItems ? '<div style="margin-top:14px"><div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text)">可信命中项</div>' + topItems + '</div>' : '') +
         (reviewFindings.length ? '<div style="margin-top:14px"><div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text)">需复核项</div>' + reviewFindings.slice(0, 3).map(renderAuditFindingCard).join('') + '</div>' : '');
     }
-    if (statusEl) statusEl.textContent = trustedFindings.length > 0 ? '审计完成，已发现可信项。' : (auditFindings.length > 0 ? '审计完成，发现少量可疑项，建议复核。' : '审计完成，未发现明显源码泄露迹象。');
+    if (statusEl) statusEl.textContent = trustedFindings.length > 0 ? '审计完成，已发现可信项。' : (auditFindings.length > 0 ? '审计完成，发现少量建议复核项，优先人工确认。' : '审计完成，未发现明显源码泄露迹象。');
     showToast('审计完成', 'success');
   } catch (error) {
     let message = friendlyError(error);
@@ -3194,9 +3194,9 @@ function renderResult(data) {
     if (cvReason) {
       detailHtml += '<span style="font-size:12px;color:var(--text-lighter)">· ' + escapeHtml(cvReason) + '</span>';
     }
-    // 待复核标签（suspect 项）
+    // 建议复核标签（suspect 项）
     if (f.review_required || confLevel === '中') {
-      detailHtml += '<span style="font-size:11px;background:var(--warning);color:#000;padding:1px 6px;border-radius:2px;margin-left:6px">待复核</span>';
+      detailHtml += '<span style="font-size:11px;background:var(--warning);color:#000;padding:1px 6px;border-radius:2px;margin-left:6px">建议复核</span>';
     }
     // 反馈按钮
     let btnDisabled = (fbInitial && (fbInitial.is_false_positive || fbInitial.is_confirmed)) ? ' disabled' : '';
@@ -3505,7 +3505,7 @@ function renderResult(data) {
     html += '<div style="color:var(--danger)"> 确认漏洞：' + exposedCount + ' 个敏感文件可直接访问，需立即修复</div>';
   }
   if (suspectCount > 0) {
-    html += '<div style="color:var(--warning)">疑似风险：' + suspectCount + ' 个路径返回 200，但内容命中 WAF/登录页/反爬特征，因此不判定为真实泄露，待复核</div>';
+    html += '<div style="color:var(--warning)">疑似风险：' + suspectCount + ' 个路径返回 200，但内容命中 WAF/登录页/反爬特征，因此不判定为真实泄露，建议复核</div>';
   }
   if (infoCount > 0) {
     html += '<div style="color:var(--primary)">信息： 公开信息：' + infoCount + ' 个路径为公开协议文件（如 robots.txt），仅作为信息项展示</div>';
@@ -3628,7 +3628,7 @@ function renderResult(data) {
   html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
   html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据，再结合二次扫描结果和原始响应确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
   html += '<div style="margin-top:8px;font-weight:600">证据分层</div>';
-  html += '<div>“已确认”表示证据充分；“可疑”表示建议复核；“待复核”表示命中线索较弱，需人工再看一眼。</div>';
+  html += '<div>“已确认”表示证据充分；“建议复核”表示线索较强但仍需人工确认；“待人工复核”表示命中线索较弱，需人工再看一眼。</div>';
   html += '<div style="margin-top:8px;font-weight:600">审计范围</div>';
   html += '<div>本报告覆盖 HTTP/TLS 配置、安全响应头、Cookie 标记、CORS、敏感路径、登录态/重定向线索、基础注入线索和 WAF 识别，不包含破坏性利用或深度渗透动作。</div>';
   html += '<div style="margin-top:8px;font-weight:600">免责声明</div>';
@@ -3694,7 +3694,7 @@ function showPdfDownloadTip() {
   html += '<div style="font-size:15px;font-weight:700;margin-bottom:6px">客户交付报告已生成</div>';
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.7;margin-bottom:12px">';
   html += '报告包含以下内容：<br>';
-  html += ' 风险摘要（已确认、可疑、待复核）<br>';
+  html += ' 风险摘要（已确认、建议复核、待人工复核）<br>';
   html += ' 证据详情（响应头值、敏感路径片段、置信度、WAF 检测依据）<br>';
   html += ' 建议（按业务优先级分类，含修复顺序）<br>';
   html += ' 复测结果（上次与本次分数对比、新增与已修复问题）<br>';
