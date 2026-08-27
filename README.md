@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/tomjoy248-crypto/vuln-sentinel/actions/workflows/ci.yml/badge.svg)
 
-Vuln Sentinel 是一款面向中小团队的安全体检与交付工具，强调真实证据、可复测结果和可直接交付的报告。
+Vuln Sentinel 是一款面向中小团队的安全体检与修复交付工具，强调真实证据、可复测结果和可直接交付的报告。
 
 ## 当前状态
 

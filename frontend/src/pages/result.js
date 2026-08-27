@@ -271,7 +271,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
   const reportSummary = '共发现 ' + severityTotal + ' 项问题，其中 ' + actionableCount + ' 项建议优先处理。';
-  const reportIntro = '本报告用于客户沟通、复测留档和交付。';
+  const reportIntro = '本报告用于授权范围内的客户沟通、复测留档和交付。';
   const actionHint = data.scan_id
     ? '<div class="src-report-action-hint src-report-action-hint-alert">优先处理已确认项，再复核可疑项。</div>'
     : '';
@@ -310,7 +310,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
         <div class="src-report-intro">${escapeHtml(reportIntro)}</div>
         <div class="src-report-exec-summary">
           <div class="src-report-exec-title">概览</div>
-          <div class="src-report-exec-text">结果已按风险、验证状态和可信度整理，可直接用于确认修复优先级、复测范围和交付附件。</div>
+          <div class="src-report-exec-text">结果已按风险、验证状态、证据完整度和可信度整理，可直接用于确认修复优先级、复测范围和交付附件。</div>
         </div>
         <div class="src-report-next-step">
           <div class="src-report-next-step-title">建议</div>
@@ -402,15 +402,15 @@ function renderFindingDetail(finding, index) {
     </div>
     <div class="src-detail-subtitle">
       <code class="src-detail-id">${escapeHtml(finding.id || '')}</code>
-      <span class="src-detail-type">${escapeHtml(finding.type || '').toUpperCase()}</span>
+      <span class="src-detail-type">${escapeHtml(VULN_TYPE_LABELS[String(finding.type || '').toLowerCase()] || String(finding.type || '').toUpperCase())}</span>
       ${finding.cwe_id ? `<span class="src-detail-cwe" title="Common Weakness Enumeration">${escapeHtml(finding.cwe_id)}</span>` : ''}
       ${finding.owasp_category ? `<span class="src-detail-owasp">${escapeHtml(finding.owasp_category)}</span>` : ''}
       ${finding.cvss_score ? `<span class="src-detail-cvss" title="${escapeHtml(finding.cvss_vector || '')}">CVSS ${finding.cvss_score}</span>` : ''}
       ${finding.severity_score ? `<span class="src-detail-score">评分 ${finding.severity_score}/10</span>` : ''}
-      <span class="src-detail-confidence">置信度 ${escapeHtml(finding.adjusted_confidence || finding.confidence || 'medium')}</span>
-      ${finding.verification_status ? `<span class="src-detail-verify-badge ${finding.verification_status}">${finding.verification_status === 'confirmed' ? '已验证' : finding.verification_status === 'probable' ? '可能存在' : '待人工复核'}</span>` : ''}
-      ${finding.is_likely_fp ? '<span class="src-detail-fp-badge src-detail-fp-badge-alert">待人工复核</span>' : ''}
-      ${finding.user_feedback ? (finding.user_feedback.is_false_positive ? '<span class="src-detail-fp-badge" title="您误报">已标记误报</span>' : '<span class="src-detail-verify-badge verified" title="您已确认">您已确认</span>') : ''}
+      <span class="src-detail-confidence">置信度 ${escapeHtml((finding.adjusted_confidence || finding.confidence || 'medium').toString())}</span>
+      ${finding.verification_status ? `<span class="src-detail-verify-badge ${finding.verification_status}">${finding.verification_status === 'confirmed' ? '已验证' : finding.verification_status === 'probable' ? '可复现' : '待人工复核'}</span>` : ''}
+      ${finding.is_likely_fp ? '<span class="src-detail-fp-badge src-detail-fp-badge-alert">建议复核</span>' : ''}
+      ${finding.user_feedback ? (finding.user_feedback.is_false_positive ? '<span class="src-detail-fp-badge" title="您误报">已标记误报</span>' : '<span class="src-detail-verify-badge verified" title="您已确认">客户确认</span>') : ''}
     </div>
   </div>`;
 
@@ -427,7 +427,7 @@ function renderFindingDetail(finding, index) {
   // 误报判断与验证信息
   if (finding.fp_score !== undefined || finding.verification_score !== undefined || (finding.fp_reasons && finding.fp_reasons.length > 0)) {
     html += `<div class="src-detail-section">
-      <div class="src-section-title">可信度判断</div>
+      <div class="src-section-title">可信度与证据等级</div>
       <div class="src-section-body">`;
     if (finding.fp_score !== undefined) {
       const fpPct = (finding.fp_score * 100).toFixed(0);
@@ -476,7 +476,7 @@ function renderFindingDetail(finding, index) {
   // 复现步骤
   if (Array.isArray(finding.reproduce_steps) && finding.reproduce_steps.length > 0) {
     html += `<div class="src-detail-section">
-      <div class="src-section-title">复现步骤</div>
+      <div class="src-section-title">复测步骤</div>
       <ol class="src-repro-steps">`;
     finding.reproduce_steps.forEach((step) => {
       html += `<li>${escapeHtml(step)}</li>`;
@@ -506,7 +506,7 @@ function renderFindingDetail(finding, index) {
   </div>`;
   if (fixSteps.length > 0) {
     html += `<div class="src-detail-section">
-      <div class="src-section-title">执行步骤</div>
+      <div class="src-section-title">实施步骤</div>
       <div class="src-section-body"><ol style="margin:0;padding-left:18px;line-height:1.8;color:var(--text-secondary)">`;
     fixSteps.forEach((step) => {
       html += `<li>${escapeHtml(step)}</li>`;
@@ -539,10 +539,10 @@ function renderFindingDetail(finding, index) {
   // 操作按钮
   if (_currentScanId && isLoggedIn()) {
     html += `<div class="src-detail-actions">
-      <button class="src-action-btn verify" data-action="verify" data-finding-id="${escapeAttr(finding.id || '')}" title="重新请求目标并尝试验证是否仍可复现">验证复现</button>
-      <button class="src-action-btn false-positive" data-action="fp" data-finding-id="${escapeAttr(finding.id || '')}" title="如果你判断该项不是实际漏洞，可标记为误报或观察项">标记误报</button>
+      <button class="src-action-btn verify" data-action="verify" data-finding-id="${escapeAttr(finding.id || '')}" title="重新请求目标并尝试验证是否仍可复现">复测验证</button>
+      <button class="src-action-btn false-positive" data-action="fp" data-finding-id="${escapeAttr(finding.id || '')}" title="如果你判断该项不是实际漏洞，可标记为误报或观察项">标记复核</button>
       <button class="src-action-btn confirm" data-action="confirm" data-finding-id="${escapeAttr(finding.id || '')}" title="如果你确认该项真实存在，可标记为有效漏洞并进入修复流程">确认有效</button>
-      <button class="src-action-btn ticket" data-action="ticket" data-finding-id="${escapeAttr(finding.id || '')}" title="将该漏洞转为修复工单并跟踪处理">工单</button>
+      <button class="src-action-btn ticket" data-action="ticket" data-finding-id="${escapeAttr(finding.id || '')}" title="将该漏洞转为修复工单并跟踪处理">转工单</button>
     </div>`;
   }
 
@@ -596,8 +596,10 @@ function renderEvidenceSection(evidence, finding) {
     <div class="src-section-body src-evidence-meta">`;
   const confidenceState = finding.verification_status || (finding.is_likely_fp ? 'suspected' : 'probable');
   const confidenceText = confidenceState === 'confirmed' ? '已验证' : confidenceState === 'probable' ? '可能存在' : '待人工复核';
+  const evidenceGrade = confidenceState === 'confirmed' ? 'A级（已验证）' : confidenceState === 'probable' ? 'B级（可复现）' : 'C级（待复核）';
   const locationText = evidence.location || evidence.position || evidence.selector || evidence.header || evidence.parameter || evidence.path || evidence.url || "";
   html += `<div class="src-evidence-row"><span class="src-evidence-label">可信度</span><span>${escapeHtml(confidenceText)}</span></div>`;
+  html += `<div class="src-evidence-row"><span class="src-evidence-label">证据等级</span><span>${escapeHtml(evidenceGrade)}</span></div>`;
   if (locationText) {
     html += `<div class="src-evidence-row"><span class="src-evidence-label">命中位置</span><span>${escapeHtml(locationText)}</span></div>`;
   }
