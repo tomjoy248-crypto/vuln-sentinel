@@ -3621,18 +3621,18 @@ function renderResult(data) {
 
   // 扫描范围说明和免责声明
   html += '<div style="margin-top:20px;padding:16px;background:var(--bg-secondary);border-radius:2px;font-size:12px;color:var(--text-secondary)">';
-  html += '<div style="font-weight:600;margin-bottom:8px">检测范围说明</div>';
-  html += '<div>本次体检覆盖：HTTPS/TLS 配置、安全响应头（HSTS/CSP/X-Frame-Options 等 15+ 项）、Cookie 安全属性、CORS 策略、敏感路径暴露、登录态与重定向风险、弱口令与限流策略、XSS / SQL 注入 / SSRF 线索识别、WAF 识别。</div>';
+  html += '<div style="font-weight:600;margin-bottom:8px">交付说明</div>';
+  html += '<div>本次交付覆盖：HTTPS/TLS 配置、安全响应头（HSTS/CSP/X-Frame-Options 等 15+ 项）、Cookie 安全属性、CORS 策略、敏感路径暴露、登录态与重定向风险、弱口令与限流策略、XSS / SQL 注入 / SSRF 线索识别、WAF 识别。</div>';
   html += '<div style="margin-top:4px">不进行：破坏性攻击、主动利用、授权外目标测试和深度渗透动作。</div>';
-  html += '<div style="margin-top:4px;color:var(--text-light)">如需全面安全评估，建议配合专业安全服务。</div>';
-  html += '<div style="margin-top:8px;font-weight:600">如何验证结果</div>';
-  html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。你可以先看证据，再结合二次扫描结果和原始响应确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
+  html += '<div style="margin-top:4px;color:var(--text-light)">如需更全面的安全评估，可在当前报告基础上追加专项复测或人工审计。</div>';
+  html += '<div style="margin-top:8px;font-weight:600">如何验收</div>';
+  html += '<div>每个发现项都附有请求、响应、命中签名和摘要信息。建议先看证据，再结合二次扫描结果和原始响应确认；复测后重新扫描，对比评分和证据变化即可验证效果。</div>';
   html += '<div style="margin-top:8px;font-weight:600">证据分层</div>';
-  html += '<div>“已确认”表示证据充分；“建议复核”表示线索较强但仍需人工确认；“待人工复核”表示命中线索较弱，需人工再看一眼。</div>';
-  html += '<div style="margin-top:8px;font-weight:600">审计范围</div>';
+  html += '<div>“已验证”表示证据充分；“建议复核”表示线索较强但仍建议人工确认；“待人工复核”表示命中线索较弱，需人工再看一眼。</div>';
+  html += '<div style="margin-top:8px;font-weight:600">适用范围</div>';
   html += '<div>本报告覆盖 HTTP/TLS 配置、安全响应头、Cookie 标记、CORS、敏感路径、登录态/重定向线索、基础注入线索和 WAF 识别，不包含破坏性利用或深度渗透动作。</div>';
-  html += '<div style="margin-top:8px;font-weight:600">免责声明</div>';
-  html += '<div>本报告由 Vuln Sentinel 自动生成，仅反映扫描时刻的目标配置状况，可用于客户交付、内测和修复跟踪，不构成完整安全审计结论。</div>';
+  html += '<div style="margin-top:8px;font-weight:600">交付声明</div>';
+  html += '<div>本报告由 Vuln Sentinel 自动生成，仅反映扫描时刻的目标配置状况，可用于客户交付、项目验收和修复跟踪，不构成完整安全审计结论。</div>';
   html += '</div>';
 
   let resultContent = document.getElementById('result-content');
@@ -3694,9 +3694,9 @@ function showPdfDownloadTip() {
   html += '<div style="font-size:15px;font-weight:700;margin-bottom:6px">客户交付报告已生成</div>';
   html += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.7;margin-bottom:12px">';
   html += '报告包含以下内容：<br>';
-  html += ' 风险摘要（已确认、建议复核、待人工复核）<br>';
-  html += ' 证据详情（响应头值、敏感路径片段、置信度、WAF 检测依据）<br>';
-  html += ' 建议（按业务优先级分类，含修复顺序）<br>';
+  html += ' 风险摘要（已验证、建议复核、待人工复核）<br>';
+  html += ' 证据清单（响应头值、敏感路径片段、置信度、WAF 检测依据）<br>';
+  html += ' 修复建议（按业务优先级分类，含处置顺序）<br>';
   html += ' 复测结果（上次与本次分数对比、新增与已修复问题）<br>';
   html += ' 评分变化趋势（如有历史记录）';
   html += '</div>';

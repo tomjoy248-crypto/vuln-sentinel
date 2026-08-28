@@ -288,10 +288,10 @@ function renderHeader(score, riskLevel, summary, url, data) {
     : mediumCount > 0
       ? '先处理中危项，再复扫验证修复是否生效。'
       : '当前结果偏健康，可作为客户基线留存并持续监控。';
-  const reportSummary = '本次共发现 ' + severityTotal + ' 项结果，其中 ' + actionableCount + ' 项建议优先处理，' + fpCount + ' 项建议复核。';
-  const reportIntro = '本报告面向授权范围内的客户交付、复测留档和修复跟踪，优先突出已确认项与建议复核项，便于直接分配处置。';
+  const reportSummary = '本次扫描共输出 ' + severityTotal + ' 项结果，其中 ' + actionableCount + ' 项建议优先处理，' + fpCount + ' 项建议复核。';
+  const reportIntro = '本报告适用于授权范围内的客户交付、复测留档和修复跟踪，已优先突出已验证项与建议复核项，便于直接分配处置。';
   const actionHint = data.scan_id
-    ? '<div class="src-report-action-hint src-report-action-hint-alert">优先处理已确认项，再复核建议复核项。</div>'
+    ? '<div class="src-report-action-hint src-report-action-hint-alert">优先处理已验证项，再复核建议复核项。</div>'
     : '';
 
   return `
@@ -328,7 +328,7 @@ function renderHeader(score, riskLevel, summary, url, data) {
         <div class="src-report-intro">${escapeHtml(reportIntro)}</div>
         <div class="src-report-exec-summary">
           <div class="src-report-exec-title">概览</div>
-          <div class="src-report-exec-text">结果已按风险、验证状态、证据完整度和可信度分层整理，已把建议复核项单独标出，便于直接分配修复、复测与验收。</div>
+          <div class="src-report-exec-text">结果已按风险、验证状态、证据完整度和可信度分层整理，建议复核项已单独标出，适合直接用于客户沟通、修复排期与验收留档。</div>
         </div>
         <div class="src-report-capability">
           <div class="src-report-capability-title">能力摘要</div>
@@ -337,11 +337,11 @@ function renderHeader(score, riskLevel, summary, url, data) {
             <div class="src-report-capability-item"><span>建议复核</span><strong>${fpCount}</strong></div>
             <div class="src-report-capability-item"><span>当前重点</span><strong>压误报 / 保证可用</strong></div>
           </div>
-          <div class="src-report-capability-text">当前更适合做基础安全体检、证据展示、复测验证和修复跟踪；遇到登录墙、WAF/CDN、软 404 等场景会自动降权提示，优先保证结果可信。</div>
+          <div class="src-report-capability-text">当前更适合做基础安全体检、证据展示、复测验证和修复跟踪；遇到登录墙、WAF/CDN、软 404 等场景会自动降权提示，优先保证结果可信与可交付。</div>
         </div>
         <div class="src-report-next-step">
           <div class="src-report-next-step-title">建议</div>
-          <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已识别 ' + fpCount + ' 项建议复核结果，默认优先显示可信项。' : ''}</div>
+          <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 已识别 ' + fpCount + ' 项建议复核结果，默认优先显示可信项，便于快速进入交付动作。' : ''}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <button class="src-filter-btn" onclick="navigateTo('tickets')">工单</button>
             <button class="src-filter-btn" onclick="navigateTo('fixer')">修复</button>
