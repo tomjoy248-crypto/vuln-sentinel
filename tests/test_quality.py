@@ -78,6 +78,43 @@ def test_fp_control_marks_200_challenge_pages_as_likely_fp():
     assert result["is_likely_fp"] is True
     assert any("挑战页" in reason or "CDN/WAF" in reason for reason in result["fp_reasons"])
 
+
+def test_fp_control_marks_login_redirects_for_open_redirect_as_likely_fp():
+    controller = FalsePositiveControl(threshold=0.35)
+    finding = {
+        "type": "open_redirect",
+        "confidence": "high",
+        "evidence": {
+            "request": "GET /redirect?next=/login HTTP/1.1\nHost: example.com",
+            "response": "HTTP/1.1 302 Found\nLocation: /login\nServer: nginx",
+            "response_headers": "Location: /login\nServer: nginx\n",
+        },
+    }
+
+    result = controller.analyze(finding)
+
+    assert result["fp_score"] >= 0.35
+    assert result["is_likely_fp"] is True
+    assert any("登录页" in reason or "重定向" in reason for reason in result["fp_reasons"])
+
+
+def test_fp_control_keeps_external_redirect_evidence_for_open_redirect():
+    controller = FalsePositiveControl(threshold=0.35)
+    finding = {
+        "type": "open_redirect",
+        "confidence": "high",
+        "evidence": {
+            "request": "GET /redirect?next=https://evil.example HTTP/1.1\nHost: example.com",
+            "response": "HTTP/1.1 302 Found\nLocation: https://evil.example\nServer: nginx",
+            "response_headers": "Location: https://evil.example\nServer: nginx\n",
+        },
+    }
+
+    result = controller.analyze(finding)
+
+    assert result["is_likely_fp"] is False
+    assert result["fp_score"] < 0.35
+
 def test_filter_findings_can_keep_low_confidence_items():
     findings = [
         {

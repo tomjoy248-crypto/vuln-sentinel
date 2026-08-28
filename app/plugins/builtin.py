@@ -357,6 +357,91 @@ class EnhancedHeaderSecurityDetector(BaseVulnDetector):
         return findings
 
 
+class DirectoryListingDetector(BaseVulnDetector):
+    """目录浏览检测插件。"""
+
+    name = "directory_listing"
+    version = "1.0"
+    supported_depths = ["quick", "standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        body = (context.body or "").lower()
+        headers = context.headers
+        content_type = " ".join(f"{k}: {v}" for k, v in headers.items()).lower()
+        if not body:
+            return []
+        indicators = (
+            "index of /",
+            "directory listing for",
+            "parent directory",
+            "last modified",
+        )
+        if not any(indicator in body for indicator in indicators):
+            return []
+        if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
+            return []
+
+        return [
+            Finding(
+                title="目录浏览开启",
+                type="directory_listing",
+                severity="medium",
+                description="目标页面呈现目录列表，攻击者可能枚举敏感文件、备份或隐藏资源。",
+                url=context.url,
+                location=VulnLocation(
+                    url=context.url,
+                    parameter="",
+                    parameter_type="path",
+                    snippet="Directory listing",
+                ),
+                evidence=Evidence(extra={"content_type": headers.get("content-type", "")}),
+                fix_suggestion="关闭目录浏览，确保站点目录返回索引页或 403/404。",
+                confidence="high",
+                owasp_category="A05 安全配置错误",
+                cwe_id="CWE-548",
+            )
+        ]
+
+
+class TraceMethodDetector(BaseVulnDetector):
+    """危险 HTTP 方法检测插件。"""
+
+    name = "trace_method"
+    version = "1.0"
+    supported_depths = ["quick", "standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        allow_header = " ".join(
+            f"{k}: {v}" for k, v in context.headers.items()
+        ).lower()
+        if "trace" not in allow_header and "options" not in allow_header:
+            return []
+
+        findings: list[Finding] = []
+        if "trace" in allow_header:
+            findings.append(
+                Finding(
+                    title="HTTP TRACE 方法可用",
+                    type="trace_method",
+                    severity="low",
+                    description="服务器暴露了 TRACE 方法，可能放大 XST 或调试类风险。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="Allow",
+                        parameter_type="header",
+                        snippet="Allow: TRACE",
+                    ),
+                    evidence=Evidence(extra={"allow": allow_header}),
+                    fix_suggestion="关闭 TRACE 方法，仅保留业务必需的 HTTP 方法。",
+                    confidence="medium",
+                    owasp_category="A05 安全配置错误",
+                    cwe_id="CWE-749",
+                )
+            )
+        return findings
+
+
 def register_builtin_detectors() -> None:
     """注册所有内置检测器。"""
     from app.plugins import DetectorRegistry
@@ -387,6 +472,8 @@ def register_builtin_detectors() -> None:
 
     DetectorRegistry.register(HeaderSecurityDetector())
     DetectorRegistry.register(EnhancedHeaderSecurityDetector())
+    DetectorRegistry.register(DirectoryListingDetector())
+    DetectorRegistry.register(TraceMethodDetector())
     DetectorRegistry.register(SSLInfoDetector())
     DetectorRegistry.register(CookieSecurityDetector())
     DetectorRegistry.register(CORSSecurityDetector())

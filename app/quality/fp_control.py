@@ -94,6 +94,17 @@ class FalsePositiveControl:
         "verify you are human",
     ]
 
+    REDIRECT_AUTH_MARKERS: list[str] = [
+        "location: /login",
+        "location: /signin",
+        "location: /sign-in",
+        "location: /auth",
+        "location: /account/login",
+        "location: /user/login",
+        "location: /challenge",
+        "location: /verify",
+    ]
+
     def __init__(self, threshold: float = 0.38) -> None:
         """
         Args:
@@ -126,6 +137,18 @@ class FalsePositiveControl:
         elif self._contains_fp_keywords(response) and not self._has_strong_evidence(finding, vuln_type):
             fp_score += 0.28
             reasons.append("响应包含 WAF/拦截关键词，可能是防护设备触发的误报")
+
+        # 规则 1.5：开放重定向常见假阳性（跳转到登录页/挑战页/站内路径）
+        if vuln_type == "open_redirect" and not self._has_strong_evidence(finding, vuln_type):
+            location = self._get_location_header(finding)
+            if location:
+                location_lower = location.lower()
+                if self._looks_like_auth_redirect(location_lower):
+                    fp_score += 0.3
+                    reasons.append("Location 更像登录页或挑战页跳转，不应直接视为开放重定向")
+                elif self._is_relative_redirect(location_lower):
+                    fp_score += 0.18
+                    reasons.append("Location 仅指向站内相对路径，开放重定向证据不足")
 
         # 规则 2：HTTP 错误状态码且无利用证据
         status_code = self._extract_status_code(response)
@@ -206,6 +229,16 @@ class FalsePositiveControl:
             headers = evidence.get("response_headers") or evidence.get("headers") or ""
             return str(headers).lower()
         return ""
+
+    def _get_location_header(self, finding: dict[str, Any]) -> str:
+        """提取 Location 响应头。"""
+        evidence = finding.get("evidence") or {}
+        if not isinstance(evidence, dict):
+            return ""
+        headers = evidence.get("response_headers") or evidence.get("headers") or ""
+        text = str(headers)
+        match = re.search(r"^\s*location\s*:\s*(.+)$", text, re.I | re.M)
+        return match.group(1).strip() if match else ""
 
     def _contains_fp_keywords(self, text: str) -> bool:
         text_lower = text.lower()
@@ -341,6 +374,20 @@ class FalsePositiveControl:
             "verify your browser",
         ]
         return any(marker in text for marker in challenge_markers)
+
+    def _looks_like_auth_redirect(self, location: str) -> bool:
+        text = location.lower().strip()
+        if not text:
+            return False
+        if any(marker in text for marker in self.REDIRECT_AUTH_MARKERS):
+            return True
+        if any(marker in text for marker in ("login", "signin", "sign-in", "auth", "verify", "challenge")):
+            return True
+        return False
+
+    def _is_relative_redirect(self, location: str) -> bool:
+        text = location.strip()
+        return text.startswith("/") or text.startswith("./") or text.startswith("../")
 
     def _adjust_confidence(self, original: str, fp_score: float) -> str:
         confidence_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
