@@ -19,6 +19,7 @@ from app.plugins.builtin import (
     ServerExposureDetector,
     TraceMethodDetector,
 )
+from app.plugins.detectors.business import SensitiveConfigExposureDetector
 
 
 def test_directory_listing_detector_finds_index_pages():
@@ -681,11 +682,15 @@ def test_oidc_discovery_detector_flags_risky_metadata(monkeypatch):
         "issuer": "http://idp.local",
         "authorization_endpoint": "http://idp.local/oauth2/authorize",
         "token_endpoint": "http://idp.local/oauth2/token",
+        "end_session_endpoint": "http://idp.local/logout",
         "jwks_uri": "https://idp.local/.well-known/jwks.json",
         "response_types_supported": ["code", "token", "id_token"],
         "response_modes_supported": ["fragment", "query"],
         "grant_types_supported": ["authorization_code", "implicit"],
         "token_endpoint_auth_methods_supported": ["client_secret_basic", "none"],
+        "frontchannel_logout_supported": False,
+        "backchannel_logout_supported": False,
+        "frontchannel_logout_session_supported": False,
         "id_token_signing_alg_values_supported": ["RS256", "none"],
         "userinfo_signing_alg_values_supported": ["RS256"],
         "request_object_signing_alg_values_supported": ["PS256"],
@@ -724,6 +729,8 @@ def test_oidc_discovery_detector_flags_risky_metadata(monkeypatch):
     assert "insecure_issuer" in finding.evidence.extra["issues"]
     assert "unsigned_id_token" in finding.evidence.extra["issues"]
     assert "risky_response_mode" in finding.evidence.extra["issues"]
+    assert "insecure_logout_endpoint" in finding.evidence.extra["issues"]
+    assert "logout_channel_weak" in finding.evidence.extra["issues"]
     assert finding.evidence.extra["evidence_score"] >= 70
 
 
@@ -732,12 +739,16 @@ def test_oidc_discovery_detector_ignores_hardened_metadata(monkeypatch):
     metadata = {
         "issuer": "https://auth.example.com",
         "authorization_endpoint": "https://auth.example.com/oauth2/authorize",
+        "end_session_endpoint": "https://auth.example.com/logout",
         "token_endpoint": "https://auth.example.com/oauth2/token",
         "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
         "response_types_supported": ["code"],
         "response_modes_supported": ["form_post"],
         "grant_types_supported": ["authorization_code"],
         "token_endpoint_auth_methods_supported": ["client_secret_basic"],
+        "frontchannel_logout_supported": True,
+        "backchannel_logout_supported": True,
+        "frontchannel_logout_session_supported": True,
         "scopes_supported": ["openid", "profile", "email"],
         "subject_types_supported": ["pairwise"],
     }
@@ -1104,6 +1115,75 @@ def test_backup_exposure_detector_ignores_forbidden_files(monkeypatch):
         transport=__import__("httpx").MockTransport(handler)
     )
     monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert findings == []
+
+
+def test_sensitive_config_exposure_detector_flags_config_and_log_files(monkeypatch):
+    detector = SensitiveConfigExposureDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/.env":
+            return __import__("httpx").Response(
+                200,
+                text="DATABASE_URL=postgres://user:pass@db.local/app\nJWT_SECRET=supersecret\nPRIVATE_KEY=-----BEGIN PRIVATE KEY-----",
+            )
+        if path == "/debug.log":
+            return __import__("httpx").Response(
+                200,
+                text="2026-09-01T10:00:00Z ERROR Traceback (most recent call last)\nAuthorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\n",
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.detectors.business.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "环境变量文件暴露",
+        "调试日志暴露",
+    }
+    assert all(finding.type == "sensitive_config_exposure" for finding in findings)
+
+
+def test_sensitive_config_exposure_detector_ignores_forbidden_files(monkeypatch):
+    detector = SensitiveConfigExposureDetector()
+
+    def handler(_request):
+        return __import__("httpx").Response(403, text="forbidden")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.detectors.business.httpx.AsyncClient", lambda *args, **kwargs: client)
 
     try:
         findings = __import__("asyncio").run(

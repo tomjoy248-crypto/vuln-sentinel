@@ -1920,12 +1920,16 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                     grant_types = {str(item).lower() for item in config.get("grant_types_supported", [])}
                     token_methods = {str(item).lower() for item in config.get("token_endpoint_auth_methods_supported", [])}
                     subject_types = {str(item).lower() for item in config.get("subject_types_supported", [])}
+                    frontchannel_logout_supported = bool(config.get("frontchannel_logout_supported"))
+                    backchannel_logout_supported = bool(config.get("backchannel_logout_supported"))
+                    frontchannel_logout_session_supported = bool(config.get("frontchannel_logout_session_supported"))
                     scopes = {str(item).lower() for item in config.get("scopes_supported", [])}
                     id_token_algs = {str(item).lower() for item in config.get("id_token_signing_alg_values_supported", [])}
                     userinfo_algs = {str(item).lower() for item in config.get("userinfo_signing_alg_values_supported", [])}
                     request_object_algs = {
                         str(item).lower() for item in config.get("request_object_signing_alg_values_supported", [])
                     }
+                    end_session_endpoint = str(config.get("end_session_endpoint") or "")
                     jwks_uri = str(config.get("jwks_uri") or "")
                     issuer = str(config.get("issuer") or "")
                     auth_endpoint = str(config.get("authorization_endpoint") or "")
@@ -1953,6 +1957,12 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                         issues.append("unsigned_userinfo")
                     if "none" in request_object_algs:
                         issues.append("unsigned_request_object")
+                    if end_session_endpoint.startswith("http://") or "localhost" in end_session_endpoint or "127.0.0.1" in end_session_endpoint:
+                        issues.append("insecure_logout_endpoint")
+                    if end_session_endpoint and not (frontchannel_logout_supported or backchannel_logout_supported):
+                        issues.append("logout_channel_weak")
+                    if end_session_endpoint and not frontchannel_logout_session_supported and not backchannel_logout_supported:
+                        issues.append("logout_session_weak")
                     if {"fragment", "query"} & response_modes:
                         issues.append("risky_response_mode")
                     if response_modes and "form_post" not in response_modes and {"fragment", "query"} & response_modes:
@@ -1978,6 +1988,9 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             ("insecure_jwks_uri" in issues, 20),
                             ("insecure_issuer" in issues, 15),
                             ("insecure_auth_endpoint" in issues, 15),
+                            ("insecure_logout_endpoint" in issues, 15),
+                            ("logout_channel_weak" in issues, 10),
+                            ("logout_session_weak" in issues, 10),
                             ("openid_scope_missing" in issues, 10),
                             ("public_subject" in issues, 10),
                             ("risky_response_mode" in issues, 10),
@@ -2001,13 +2014,17 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             evidence=Evidence(
                                 extra={
                                     "issues": issues,
-                                    "issuer": issuer,
-                                    "jwks_uri": jwks_uri,
+                            "issuer": issuer,
+                            "jwks_uri": jwks_uri,
                             "authorization_endpoint": auth_endpoint,
                             "response_types_supported": sorted(response_types),
                             "response_modes_supported": sorted(response_modes),
                             "grant_types_supported": sorted(grant_types),
                             "token_endpoint_auth_methods_supported": sorted(token_methods),
+                            "frontchannel_logout_supported": frontchannel_logout_supported,
+                            "backchannel_logout_supported": backchannel_logout_supported,
+                            "frontchannel_logout_session_supported": frontchannel_logout_session_supported,
+                            "end_session_endpoint": end_session_endpoint,
                             "id_token_signing_alg_values_supported": sorted(id_token_algs),
                             "userinfo_signing_alg_values_supported": sorted(userinfo_algs),
                             "request_object_signing_alg_values_supported": sorted(request_object_algs),

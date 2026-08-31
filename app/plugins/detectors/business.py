@@ -117,23 +117,40 @@ class SensitiveConfigExposureDetector(BaseVulnDetector):
 
     async def detect(self, context: ScanContext) -> list[Finding]:
         origin = _origin(context.url)
-        probes = [
-            '/.env',
-            '/.env.local',
-            '/.git/config',
-            '/config.php',
-            '/wp-config.php',
-            '/application.yml',
-            '/application.yaml',
-            '/docker-compose.yml',
-            '/web.config',
-            '/settings.py',
+        probes: list[tuple[str, str, str, re.Pattern[str]]] = [
+            ("/.env", "环境变量文件暴露", "high", re.compile(r"(secret|password|passwd|jwt|api[_-]?key|token|credentials|database_url|private[_-]?key|begin private key)", re.I)),
+            ("/.env.local", "本地环境变量文件暴露", "high", re.compile(r"(secret|password|passwd|jwt|api[_-]?key|token|credentials|database_url|private[_-]?key|begin private key)", re.I)),
+            ("/.env.production", "生产环境变量文件暴露", "high", re.compile(r"(secret|password|passwd|jwt|api[_-]?key|token|credentials|database_url|private[_-]?key|begin private key)", re.I)),
+            ("/.git/config", "Git 仓库配置暴露", "high", re.compile(r"(url\s*=|remote\s+\"origin\"|fetch\s*=)", re.I)),
+            ("/config.php", "PHP 配置文件暴露", "high", re.compile(r"(secret|password|passwd|api[_-]?key|token|database|mysqli|pdo|ldap)", re.I)),
+            ("/wp-config.php", "WordPress 配置文件暴露", "high", re.compile(r"(DB_NAME|DB_USER|DB_PASSWORD|AUTH_KEY|SECURE_AUTH_KEY|LOGGED_IN_KEY|NONCE_KEY)", re.I)),
+            ("/application.yml", "Spring 配置文件暴露", "high", re.compile(r"(spring:|datasource:|password:|secret:|jwt|oauth|redis|mongodb)", re.I)),
+            ("/application.yaml", "Spring 配置文件暴露", "high", re.compile(r"(spring:|datasource:|password:|secret:|jwt|oauth|redis|mongodb)", re.I)),
+            ("/application.properties", "Spring 配置文件暴露", "high", re.compile(r"(spring\.|datasource\.|password=|secret=|jwt|oauth|redis|mongodb)", re.I)),
+            ("/application-prod.yml", "生产 Spring 配置文件暴露", "high", re.compile(r"(spring:|datasource:|password:|secret:|jwt|oauth|redis|mongodb)", re.I)),
+            ("/docker-compose.yml", "Docker Compose 配置暴露", "high", re.compile(r"(services:|environment:|password|secret|token|db_|redis|postgres|mysql)", re.I)),
+            ("/docker-compose.override.yml", "Docker Compose 覆盖配置暴露", "high", re.compile(r"(services:|environment:|password|secret|token|db_|redis|postgres|mysql)", re.I)),
+            ("/web.config", "Web 配置文件暴露", "high", re.compile(r"(connectionstrings|appsettings|password|secret|token)", re.I)),
+            ("/settings.py", "应用配置文件暴露", "high", re.compile(r"(secret|password|jwt|api[_-]?key|token|database|redis|celery)", re.I)),
+            ("/settings.json", "应用 JSON 配置暴露", "medium", re.compile(r"(secret|password|jwt|api[_-]?key|token|database|redis|client_id|client_secret)", re.I)),
+            ("/config.json", "应用 JSON 配置暴露", "medium", re.compile(r"(secret|password|jwt|api[_-]?key|token|database|redis|client_id|client_secret)", re.I)),
+            ("/secrets.json", "密钥 JSON 文件暴露", "high", re.compile(r"(secret|private_key|client_secret|refresh_token|api_key|access_token)", re.I)),
+            ("/kubeconfig", "Kubernetes 配置文件暴露", "high", re.compile(r"(clusters:|users:|contexts:|client-certificate|client-key|token:)", re.I)),
+            ("/terraform.tfvars", "Terraform 变量文件暴露", "high", re.compile(r"(password|secret|token|access_key|secret_key|client_secret)", re.I)),
+            ("/values.yaml", "Helm Values 配置暴露", "medium", re.compile(r"(password:|secret:|token:|apiKey:|clientSecret:|database)", re.I)),
+            ("/.npmrc", "包管理配置暴露", "medium", re.compile(r"(//.*:_authToken=|registry=|always-auth=)", re.I)),
+            ("/.pypirc", "PyPI 配置暴露", "medium", re.compile(r"(username=|password=|token=|index-servers)", re.I)),
+            ("/access.log", "访问日志暴露", "medium", re.compile(r"(authorization:|cookie:|set-cookie:|bearer\s+[a-z0-9\.\-_]+|sessionid=|token=)", re.I)),
+            ("/app.log", "应用日志暴露", "medium", re.compile(r"(traceback|exception|stack trace|password=|secret=|token=|authorization:)", re.I)),
+            ("/debug.log", "调试日志暴露", "high", re.compile(r"(traceback|exception|stack trace|password=|secret=|token=|authorization:|debug)", re.I)),
+            ("/error.log", "错误日志暴露", "medium", re.compile(r"(traceback|exception|stack trace|password=|secret=|token=)", re.I)),
+            ("/server.log", "服务器日志暴露", "medium", re.compile(r"(traceback|exception|stack trace|password=|secret=|token=)", re.I)),
+            ("/audit.log", "审计日志暴露", "medium", re.compile(r"(user\s+login|role=|permission=|authorization:|token=|secret=)", re.I)),
         ]
-        markers = re.compile(r"(secret|password|passwd|jwt|api[_-]?key|token|credentials|database|db_|mysql|postgres|redis)", re.I)
         findings: list[Finding] = []
         try:
             async with httpx.AsyncClient(follow_redirects=True, headers=context.headers or None) as client:
-                for rel_path in probes:
+                for rel_path, title, severity, markers in probes:
                     try:
                         status, body, headers = await _get_text(client, urljoin(origin, rel_path))
                     except Exception:
@@ -146,10 +163,10 @@ class SensitiveConfigExposureDetector(BaseVulnDetector):
                         continue
                     findings.append(
                         Finding(
-                            title="敏感配置暴露",
+                            title=title,
                             type="sensitive_config_exposure",
-                            severity="high",
-                            description=f"可直接访问敏感配置文件 {rel_path}，可能泄露密钥、数据库或部署信息。",
+                            severity=severity,
+                            description=f"可直接访问敏感文件 {rel_path}，可能泄露密钥、数据库、日志或部署信息。",
                             url=urljoin(origin, rel_path),
                             location=VulnLocation(
                                 url=urljoin(origin, rel_path),
@@ -161,12 +178,13 @@ class SensitiveConfigExposureDetector(BaseVulnDetector):
                                 "path": rel_path,
                                 "status_code": status,
                                 "present_headers": headers,
+                                "matched_category": "log" if rel_path.endswith(".log") else "config",
                             }, response_raw=body[:4000]),
-                            fix_suggestion="限制这些配置文件的访问权限，移出 Web 根目录，并确保仓库中不包含明文密钥。",
+                            fix_suggestion="限制这些敏感文件的访问权限，移出 Web 根目录，并确保仓库中不包含明文密钥、日志和部署配置。",
                             confidence="high",
                             owasp_category="A01 访问控制失效",
                             cwe_id="CWE-200",
-                            fix=FixSuggestion(generic="禁止 Web 直接暴露配置文件和密钥文件。"),
+                            fix=FixSuggestion(generic="禁止 Web 直接暴露配置文件、日志文件和密钥文件。"),
                         )
                     )
         except Exception:
