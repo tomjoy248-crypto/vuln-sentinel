@@ -1221,6 +1221,16 @@ class OAuthSurfaceDetector(BaseVulnDetector):
                 )
             }
         )
+        logout_urls = sorted(
+            {
+                match.group(1)
+                for match in re.finditer(
+                    r"""['"](https?://[^'"<>]+/(?:oauth|oidc|openid-connect|sso|logout|end[_-]?session|endsession)[^'"<>]*)['"]""",
+                    body,
+                    re.I,
+                )
+            }
+        )
         callback_paths = sorted(
             {
                 match.group(1)
@@ -1245,16 +1255,20 @@ class OAuthSurfaceDetector(BaseVulnDetector):
         wildcard_redirects: list[str] = []
         state_missing_urls: list[str] = []
         nonce_missing_entries: list[tuple[str, str, str]] = []
+        response_mode_risk_urls: list[tuple[str, str, str]] = []
         for auth_url in auth_urls:
             query = _decoded_query_values(auth_url)
             scope_values = " ".join(query.get("scope", [])).lower()
             response_type_values = " ".join(query.get("response_type", [])).lower()
+            response_mode_values = " ".join(query.get("response_mode", [])).lower()
             scope_tokens = {token for token in re.split(r"\s+", scope_values) if token}
             response_type_tokens = {token for token in re.split(r"[\s+]+", response_type_values) if token}
+            response_mode_tokens = {token for token in re.split(r"[\s+]+", response_mode_values) if token}
             has_oidc_scope = "openid" in scope_tokens
             has_oidc_implicit = bool(response_type_tokens & {"token", "id_token"})
             has_oidc_code = "code" in response_type_tokens
             has_nonce = bool(query.get("nonce"))
+            has_risky_response_mode = bool(response_mode_tokens & {"fragment", "query"})
             redirect_values = (
                 query.get("redirect_uri", [])
                 + query.get("post_logout_redirect_uri", [])
@@ -1282,6 +1296,18 @@ class OAuthSurfaceDetector(BaseVulnDetector):
                 entry = (auth_url, severity_label, flow_label)
                 if entry not in nonce_missing_entries:
                     nonce_missing_entries.append(entry)
+            if has_oidc_scope and has_risky_response_mode:
+                severity_label = "high" if has_oidc_implicit or "fragment" in response_mode_tokens else "medium"
+                entry = (auth_url, severity_label, ",".join(sorted(response_mode_tokens)) or response_mode_values or "unknown")
+                if entry not in response_mode_risk_urls:
+                    response_mode_risk_urls.append(entry)
+
+        logout_missing_id_token_urls: list[str] = []
+        for logout_url in logout_urls:
+            query = _decoded_query_values(logout_url)
+            if "post_logout_redirect_uri" in query and "id_token_hint" not in query:
+                if logout_url not in logout_missing_id_token_urls:
+                    logout_missing_id_token_urls.append(logout_url)
 
         findings: list[Finding] = []
         if implicit_flow and auth_urls:
@@ -1453,6 +1479,88 @@ class OAuthSurfaceDetector(BaseVulnDetector):
                 )
             )
 
+        if response_mode_risk_urls:
+            response_mode_urls = [item[0] for item in response_mode_risk_urls]
+            response_mode_severities = {item[1] for item in response_mode_risk_urls}
+            evidence_score = _score_signal_pairs(
+                [
+                    (True, 30),
+                    (len(response_mode_urls) >= 1, 20),
+                    (len(auth_urls) >= 1, 15),
+                    (has_client_id, 10),
+                    (len(callback_paths) >= 1, 10),
+                    (implicit_flow or auth_code_flow, 10),
+                ]
+            )
+            findings.append(
+                Finding(
+                    title="OIDC 授权请求使用不安全的 response_mode",
+                    type="oauth_config_risk",
+                    severity="high" if "high" in response_mode_severities else "medium",
+                    description="页面中暴露的 OIDC 授权请求使用了 fragment 或 query 形式的 response_mode，可能将敏感授权结果暴露到浏览器地址栏、历史记录或日志中。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="response_mode",
+                        parameter_type="html",
+                        snippet="OIDC authorize URL",
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "auth_urls": response_mode_urls[:6],
+                            "callback_paths": callback_paths[:6],
+                            "has_client_id": has_client_id,
+                            "response_modes": sorted({mode for _, _, mode in response_mode_risk_urls}),
+                            "evidence_score": evidence_score,
+                        },
+                        response_raw=body[:4000],
+                    ),
+                    fix_suggestion="对 OIDC 登录优先使用 response_mode=form_post，并避免让授权结果以 query 或 fragment 形式落到浏览器地址栏。",
+                    confidence="high" if "high" in response_mode_severities else "medium",
+                    owasp_category="A07 身份识别与认证失败",
+                    cwe_id="CWE-287",
+                )
+            )
+
+        if logout_missing_id_token_urls:
+            evidence_score = _score_signal_pairs(
+                [
+                    (True, 30),
+                    (len(logout_missing_id_token_urls) >= 1, 20),
+                    (len(logout_urls) >= 1, 15),
+                    (has_client_id, 10),
+                    (len(callback_paths) >= 1, 10),
+                ]
+            )
+            findings.append(
+                Finding(
+                    title="OIDC 登出请求未发现 id_token_hint",
+                    type="oauth_config_risk",
+                    severity="medium",
+                    description="页面中暴露的 OIDC 登出请求包含 post_logout_redirect_uri，但未发现 id_token_hint，可能降低会话绑定与登出完整性。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="id_token_hint",
+                        parameter_type="html",
+                        snippet="OIDC logout URL",
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "logout_urls": logout_missing_id_token_urls[:6],
+                            "callback_paths": callback_paths[:6],
+                            "has_client_id": has_client_id,
+                            "evidence_score": evidence_score,
+                        },
+                        response_raw=body[:4000],
+                    ),
+                    fix_suggestion="对 OIDC 登出请求携带 id_token_hint，并在回调端校验会话上下文与 post_logout_redirect_uri 白名单。",
+                    confidence="medium",
+                    owasp_category="A07 身份识别与认证失败",
+                    cwe_id="CWE-287",
+                )
+            )
+
         if insecure_redirects or wildcard_redirects:
             evidence_score = _score_signal_pairs(
                 [
@@ -1529,6 +1637,43 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                 f"https://{account}.blob.core.windows.net/{container}?restype=container&comp=list",
                 label,
             )
+        for match in re.finditer(r"https://([a-z0-9.\-_]+)\.([a-z0-9-]+)\.digitaloceanspaces\.com(?:/[^'\"<>\s]*)?", body, re.I):
+            bucket = match.group(1)
+            region = match.group(2)
+            label = f"{bucket}/{region}"
+            targets[("spaces", label)] = (
+                "spaces",
+                f"https://{bucket}.{region}.digitaloceanspaces.com/?list-type=2",
+                label,
+            )
+        for match in re.finditer(r"https://([a-z0-9.\-_]+)\.oss-([a-z0-9-]+)\.aliyuncs\.com(?:/[^'\"<>\s]*)?", body, re.I):
+            bucket = match.group(1)
+            region = match.group(2)
+            label = f"{bucket}/{region}"
+            targets[("oss", label)] = (
+                "oss",
+                f"https://{bucket}.oss-{region}.aliyuncs.com/?list-type=2",
+                label,
+            )
+        for match in re.finditer(r"https://([a-z0-9.\-_]+)-(\d+)\.cos\.([a-z0-9-]+)\.myqcloud\.com(?:/[^'\"<>\s]*)?", body, re.I):
+            bucket = match.group(1)
+            appid = match.group(2)
+            region = match.group(3)
+            label = f"{bucket}/{appid}/{region}"
+            targets[("cos", label)] = (
+                "cos",
+                f"https://{bucket}-{appid}.cos.{region}.myqcloud.com/?list-type=2",
+                label,
+            )
+        for match in re.finditer(r"https://([a-z0-9\-]+)\.r2\.cloudflarestorage\.com/([a-z0-9.\-_]+)(?:/[^'\"<>\s]*)?", body, re.I):
+            account = match.group(1)
+            bucket = match.group(2)
+            label = f"{account}/{bucket}"
+            targets[("r2", label)] = (
+                "r2",
+                f"https://{account}.r2.cloudflarestorage.com/{bucket}?list-type=2",
+                label,
+            )
 
         return list(targets.values())
 
@@ -1556,10 +1701,15 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                         continue
                     content = (resp.text or "")[:4000]
                     lowered = content.lower()
+                    s3_like_markers = ["listbucketresult", "<key>", "<name>", "<contents>"]
                     listing_markers = {
-                        "s3": ["listbucketresult", "<key>", "<name>"],
-                        "gcs": ["<listbucketresult", "<contents>", "<key>"],
+                        "s3": s3_like_markers,
+                        "gcs": ["<listbucketresult", "<contents>", "<key>", "<name>"],
                         "azure": ["enumerationresults", "<blobs>", "<blob>"],
+                        "spaces": s3_like_markers,
+                        "oss": s3_like_markers,
+                        "cos": s3_like_markers,
+                        "r2": s3_like_markers,
                     }.get(provider, [])
                     matched = [marker for marker in listing_markers if marker in lowered]
                     if len(matched) < 2:
@@ -1569,7 +1719,7 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                             (resp.status_code == 200, 30),
                             (len(matched) >= 2, 35),
                             (provider == "azure", 10),
-                            (provider in {"s3", "gcs"}, 15),
+                            (provider in {"s3", "gcs", "spaces", "oss", "cos", "r2"}, 15),
                         ]
                     )
                     findings.append(
@@ -1634,6 +1784,26 @@ class CloudStorageSecretExposureDetector(BaseVulnDetector):
                 r"(https://[a-z0-9\-]+\.blob\.core\.windows\.net/[^'\"<>\s]+\?[^'\"<>\s]*sig=[^'\"<>\s]+)",
                 ["sig=", "se=", "sp="],
             ),
+            (
+                "digitalocean_spaces",
+                r"(https://[a-z0-9.\-_]+\.[a-z0-9-]+\.digitaloceanspaces\.com/[^'\"<>\s]+\?[^'\"<>\s]*X-Amz-Signature=[^'\"<>\s]+)",
+                ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
+            ),
+            (
+                "cloudflare_r2",
+                r"(https://[a-z0-9\-]+\.r2\.cloudflarestorage\.com/[^'\"<>\s]+\?[^'\"<>\s]*X-Amz-Signature=[^'\"<>\s]+)",
+                ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
+            ),
+            (
+                "tencent_cos",
+                r"(https://[a-z0-9.\-_]+-\d+\.cos\.[a-z0-9-]+\.myqcloud\.com/[^'\"<>\s]+\?[^'\"<>\s]*X-Amz-Signature=[^'\"<>\s]+)",
+                ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
+            ),
+            (
+                "alibaba_oss",
+                r"(https://[a-z0-9.\-_]+\.oss-[a-z0-9-]+\.aliyuncs\.com/[^'\"<>\s]+\?[^'\"<>\s]*(?:Signature|X-Oss-Signature)=[^'\"<>\s]+)",
+                ["signature=", "x-oss-signature", "ossaccesskeyid"],
+            ),
         ]
 
         findings: list[Finding] = []
@@ -1649,7 +1819,7 @@ class CloudStorageSecretExposureDetector(BaseVulnDetector):
                     (len(matched_markers) >= 2, 25),
                     (len(urls) >= 2, 10),
                     (provider == "azure_blob", 10),
-                    (provider in {"aws_s3", "gcs"}, 15),
+                    (provider in {"aws_s3", "gcs", "digitalocean_spaces", "cloudflare_r2", "tencent_cos", "alibaba_oss"}, 15),
                 ]
             )
             findings.append(
@@ -1746,6 +1916,7 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                         continue
 
                     response_types = {str(item).lower() for item in config.get("response_types_supported", [])}
+                    response_modes = {str(item).lower() for item in config.get("response_modes_supported", [])}
                     grant_types = {str(item).lower() for item in config.get("grant_types_supported", [])}
                     token_methods = {str(item).lower() for item in config.get("token_endpoint_auth_methods_supported", [])}
                     subject_types = {str(item).lower() for item in config.get("subject_types_supported", [])}
@@ -1782,6 +1953,10 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                         issues.append("unsigned_userinfo")
                     if "none" in request_object_algs:
                         issues.append("unsigned_request_object")
+                    if {"fragment", "query"} & response_modes:
+                        issues.append("risky_response_mode")
+                    if response_modes and "form_post" not in response_modes and {"fragment", "query"} & response_modes:
+                        issues.append("form_post_missing")
 
                     if not issues:
                         continue
@@ -1805,6 +1980,8 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             ("insecure_auth_endpoint" in issues, 15),
                             ("openid_scope_missing" in issues, 10),
                             ("public_subject" in issues, 10),
+                            ("risky_response_mode" in issues, 10),
+                            ("form_post_missing" in issues, 10),
                         ]
                     )
                     severity = "high" if any(item in issues for item in ("implicit_response", "implicit_grant", "none_client_auth", "insecure_jwks_uri", "insecure_issuer")) else "medium"
@@ -1826,8 +2003,9 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                                     "issues": issues,
                                     "issuer": issuer,
                                     "jwks_uri": jwks_uri,
-                                    "authorization_endpoint": auth_endpoint,
-                                    "response_types_supported": sorted(response_types),
+                            "authorization_endpoint": auth_endpoint,
+                            "response_types_supported": sorted(response_types),
+                            "response_modes_supported": sorted(response_modes),
                             "grant_types_supported": sorted(grant_types),
                             "token_endpoint_auth_methods_supported": sorted(token_methods),
                             "id_token_signing_alg_values_supported": sorted(id_token_algs),

@@ -636,6 +636,45 @@ def test_oauth_surface_detector_ignores_strong_auth_code_flow():
     assert findings == []
 
 
+def test_oauth_surface_detector_flags_oidc_response_mode_fragment():
+    detector = OAuthSurfaceDetector()
+    context = ScanContext(
+        url="https://example.com/login",
+        headers={},
+        body=(
+            "<script>"
+            "const auth='https://login.example.com/oauth2/authorize?client_id=web123&redirect_uri=https://app.example.com/oidc/callback&response_type=code&response_mode=fragment&scope=openid%20profile&state=abc&nonce=nonce-123&code_challenge=xyz&code_challenge_method=S256';"
+            "</script>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].title == "OIDC 授权请求使用不安全的 response_mode"
+    assert findings[0].severity == "high"
+    assert findings[0].evidence.extra["response_modes"] == ["fragment"]
+
+
+def test_oauth_surface_detector_flags_oidc_logout_without_id_token_hint():
+    detector = OAuthSurfaceDetector()
+    context = ScanContext(
+        url="https://example.com/login",
+        headers={},
+        body=(
+            "<script>"
+            "const logout='https://login.example.com/logout?post_logout_redirect_uri=https://app.example.com/logged-out';"
+            "</script>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].title == "OIDC 登出请求未发现 id_token_hint"
+    assert findings[0].severity == "medium"
+
+
 def test_oidc_discovery_detector_flags_risky_metadata(monkeypatch):
     detector = OIDCDiscoveryConfigDetector()
     metadata = {
@@ -644,6 +683,7 @@ def test_oidc_discovery_detector_flags_risky_metadata(monkeypatch):
         "token_endpoint": "http://idp.local/oauth2/token",
         "jwks_uri": "https://idp.local/.well-known/jwks.json",
         "response_types_supported": ["code", "token", "id_token"],
+        "response_modes_supported": ["fragment", "query"],
         "grant_types_supported": ["authorization_code", "implicit"],
         "token_endpoint_auth_methods_supported": ["client_secret_basic", "none"],
         "id_token_signing_alg_values_supported": ["RS256", "none"],
@@ -683,6 +723,7 @@ def test_oidc_discovery_detector_flags_risky_metadata(monkeypatch):
     assert "implicit_grant" in finding.evidence.extra["issues"]
     assert "insecure_issuer" in finding.evidence.extra["issues"]
     assert "unsigned_id_token" in finding.evidence.extra["issues"]
+    assert "risky_response_mode" in finding.evidence.extra["issues"]
     assert finding.evidence.extra["evidence_score"] >= 70
 
 
@@ -694,6 +735,7 @@ def test_oidc_discovery_detector_ignores_hardened_metadata(monkeypatch):
         "token_endpoint": "https://auth.example.com/oauth2/token",
         "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
         "response_types_supported": ["code"],
+        "response_modes_supported": ["form_post"],
         "grant_types_supported": ["authorization_code"],
         "token_endpoint_auth_methods_supported": ["client_secret_basic"],
         "scopes_supported": ["openid", "profile", "email"],
@@ -796,6 +838,40 @@ def test_cloud_storage_exposure_detector_flags_azure_listing(monkeypatch):
     assert findings[0].evidence.extra["provider"] == "azure"
 
 
+def test_cloud_storage_exposure_detector_flags_spaces_listing(monkeypatch):
+    detector = CloudStorageExposureDetector()
+
+    def handler(request):
+        if "list-type=2" in str(request.url):
+            return __import__("httpx").Response(
+                200,
+                text="<?xml version='1.0'?><ListBucketResult><Name>public-assets</Name><Contents><Key>backup.zip</Key></Contents></ListBucketResult>",
+                headers={"Content-Type": "application/xml"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body='<img src="https://public-assets.nyc3.digitaloceanspaces.com/logo.png">',
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert len(findings) == 1
+    assert findings[0].evidence.extra["provider"] == "spaces"
+
+
 def test_cloud_storage_secret_exposure_detector_flags_signed_urls():
     detector = CloudStorageSecretExposureDetector()
     context = ScanContext(
@@ -817,6 +893,24 @@ def test_cloud_storage_secret_exposure_detector_flags_signed_urls():
         "azure_blob",
     }
     assert all(finding.type == "cloud_storage_secret_exposure" for finding in findings)
+
+
+def test_cloud_storage_secret_exposure_detector_flags_spaces_signed_urls():
+    detector = CloudStorageSecretExposureDetector()
+    context = ScanContext(
+        url="https://example.com/assets",
+        headers={},
+        body=(
+            '<script>'
+            'const a="https://public-assets.nyc3.digitaloceanspaces.com/private/report.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=abc&X-Amz-Expires=3600&X-Amz-Signature=deadbeef";'
+            '</script>'
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].evidence.extra["provider"] == "digitalocean_spaces"
 
 
 def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):
