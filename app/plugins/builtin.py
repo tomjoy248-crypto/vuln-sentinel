@@ -1244,8 +1244,16 @@ class OAuthSurfaceDetector(BaseVulnDetector):
         insecure_redirects: list[str] = []
         wildcard_redirects: list[str] = []
         state_missing_urls: list[str] = []
+        nonce_missing_urls: list[str] = []
         for auth_url in auth_urls:
             query = _decoded_query_values(auth_url)
+            scope_values = " ".join(query.get("scope", [])).lower()
+            response_type_values = " ".join(query.get("response_type", [])).lower()
+            scope_tokens = {token for token in re.split(r"\s+", scope_values) if token}
+            response_type_tokens = {token for token in re.split(r"[\s+]+", response_type_values) if token}
+            has_oidc_scope = "openid" in scope_tokens
+            has_oidc_implicit = bool(response_type_tokens & {"token", "id_token"})
+            has_nonce = bool(query.get("nonce"))
             redirect_values = (
                 query.get("redirect_uri", [])
                 + query.get("post_logout_redirect_uri", [])
@@ -1265,8 +1273,10 @@ class OAuthSurfaceDetector(BaseVulnDetector):
                     insecure_redirects.append(target)
                 if "*" in normalized and target not in wildcard_redirects:
                     wildcard_redirects.append(target)
-            if "state" not in query and auth_url not in state_missing_urls:
-                state_missing_urls.append(auth_url)
+                if "state" not in query and auth_url not in state_missing_urls:
+                    state_missing_urls.append(auth_url)
+            if has_oidc_scope and has_oidc_implicit and not has_nonce and auth_url not in nonce_missing_urls:
+                nonce_missing_urls.append(auth_url)
 
         findings: list[Finding] = []
         if implicit_flow and auth_urls:
@@ -1391,6 +1401,47 @@ class OAuthSurfaceDetector(BaseVulnDetector):
                     confidence="medium",
                     owasp_category="A07 身份识别与认证失败",
                     cwe_id="CWE-352",
+                )
+            )
+
+        if nonce_missing_urls:
+            evidence_score = _score_signal_pairs(
+                [
+                    (True, 35),
+                    (len(nonce_missing_urls) >= 1, 20),
+                    (len(auth_urls) >= 1, 15),
+                    (has_client_id, 10),
+                    (len(callback_paths) >= 1, 10),
+                    (implicit_flow or auth_code_flow, 10),
+                ]
+            )
+            findings.append(
+                Finding(
+                    title="OIDC 授权请求未发现 nonce 参数",
+                    type="oauth_config_risk",
+                    severity="high",
+                    description="页面中暴露的 OIDC 授权请求包含 openid scope 且采用隐式或混合响应类型，但未发现 nonce 参数，可能放大重放和令牌注入风险。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="nonce",
+                        parameter_type="html",
+                        snippet="OIDC authorize URL",
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "auth_urls": nonce_missing_urls[:6],
+                            "callback_paths": callback_paths[:6],
+                            "has_client_id": has_client_id,
+                            "flow": "implicit" if implicit_flow else "authorization_code",
+                            "evidence_score": evidence_score,
+                        },
+                        response_raw=body[:4000],
+                    ),
+                    fix_suggestion="为所有 OIDC 授权请求加入强随机 nonce，并在 ID Token 校验阶段严格验证 nonce 与会话绑定关系。",
+                    confidence="high",
+                    owasp_category="A07 身份识别与认证失败",
+                    cwe_id="CWE-287",
                 )
             )
 

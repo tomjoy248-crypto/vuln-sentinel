@@ -499,6 +499,45 @@ def test_oauth_surface_detector_flags_implicit_flow():
     assert any(finding.title == "OAuth 授权请求未发现 state 参数" for finding in findings)
 
 
+def test_oauth_surface_detector_flags_oidc_nonce_missing():
+    detector = OAuthSurfaceDetector()
+    context = ScanContext(
+        url="https://example.com/login",
+        headers={},
+        body=(
+            "<script>"
+            "const auth='https://login.example.com/oauth2/authorize?client_id=web123&redirect_uri=https://app.example.com/oidc/callback&response_type=id_token&scope=openid%20profile&state=abc';"
+            "</script>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 2
+    assert any(finding.title == "OIDC 授权请求未发现 nonce 参数" for finding in findings)
+    nonce_finding = next(finding for finding in findings if finding.title == "OIDC 授权请求未发现 nonce 参数")
+    assert nonce_finding.severity == "high"
+    assert nonce_finding.evidence.extra["flow"] == "implicit"
+
+
+def test_oauth_surface_detector_ignores_oidc_nonce_when_present():
+    detector = OAuthSurfaceDetector()
+    context = ScanContext(
+        url="https://example.com/login",
+        headers={},
+        body=(
+            "<script>"
+            "const auth='https://login.example.com/oauth2/authorize?client_id=web123&redirect_uri=https://app.example.com/oidc/callback&response_type=id_token&scope=openid%20profile&state=abc&nonce=nonce-123';"
+            "</script>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].title == "前端暴露 OAuth 隐式流入口"
+
+
 def test_oauth_surface_detector_flags_auth_code_without_pkce():
     detector = OAuthSurfaceDetector()
     context = ScanContext(
