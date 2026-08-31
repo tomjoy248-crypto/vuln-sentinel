@@ -5,7 +5,235 @@
 
 from __future__ import annotations
 
+import re
+
 from app.plugins import BaseVulnDetector, Evidence, Finding, ScanContext, VulnLocation
+
+
+def _lower_header_map(headers: dict[str, str]) -> dict[str, str]:
+    """构建大小写无关的头部映射。"""
+    return {key.lower(): value for key, value in headers.items()}
+
+
+def _get_header_value(headers: dict[str, str], name: str) -> str:
+    """按名称获取响应头值，忽略大小写。"""
+    return _lower_header_map(headers).get(name.lower(), "")
+
+
+def _parse_csp(policy: str) -> dict[str, list[str]]:
+    """解析 CSP 字符串为 directive -> sources 映射。"""
+    directives: dict[str, list[str]] = {}
+    for raw_part in policy.split(";"):
+        part = raw_part.strip()
+        if not part:
+            continue
+        tokens = part.split()
+        if not tokens:
+            continue
+        directives[tokens[0].lower()] = tokens[1:]
+    return directives
+
+
+def _is_version_like(value: str) -> bool:
+    """判断头部值是否带有明显版本/构建信息。"""
+    if not value:
+        return False
+    normalized = value.lower()
+    return bool(
+        re.search(r"/\d", normalized)
+        or re.search(r"\b\d+\.\d+(?:\.\d+)?\b", normalized)
+        or "(" in normalized
+        or "build" in normalized
+        or "version" in normalized
+    )
+
+
+def _is_generic_edge_server(value: str) -> bool:
+    """判断是否只是常见边缘/CDN 标识，而不是可利用的技术细节。"""
+    normalized = value.lower().strip()
+    if not normalized:
+        return True
+    generic_tokens = {
+        "cloudflare",
+        "cloudfront",
+        "akamai",
+        "fastly",
+        "squid",
+        "envoy",
+        "varnish",
+        "edge",
+        "cdn",
+        "nginx",
+        "apache",
+        "iis",
+    }
+    return normalized in generic_tokens
+
+
+class ServerExposureDetector(BaseVulnDetector):
+    """服务器与框架技术栈泄露检测插件。"""
+
+    name = "server_exposure"
+    version = "1.0"
+    supported_depths = ["quick", "standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测 Server / X-Powered-By 等头部中的技术栈泄露。"""
+        findings: list[Finding] = []
+        headers = context.headers
+        normalized = _lower_header_map(headers)
+
+        exposure_rules = {
+            "server": {
+                "title": "Server 头泄露",
+                "parameter": "Server",
+                "severity": "low",
+                "cwe": "CWE-200",
+                "owasp": "A05 安全配置错误",
+                "fix": "关闭或最小化 Server 头输出；在 Nginx / Apache / 反向代理中禁用版本透出。",
+            },
+            "x-powered-by": {
+                "title": "X-Powered-By 信息泄露",
+                "parameter": "X-Powered-By",
+                "severity": "low",
+                "cwe": "CWE-200",
+                "owasp": "A05 安全配置错误",
+                "fix": "移除 X-Powered-By 头，避免暴露后端语言或框架信息。",
+            },
+            "x-aspnet-version": {
+                "title": "ASP.NET 版本泄露",
+                "parameter": "X-AspNet-Version",
+                "severity": "medium",
+                "cwe": "CWE-200",
+                "owasp": "A05 安全配置错误",
+                "fix": "关闭 ASP.NET 版本响应头输出。",
+            },
+            "x-generator": {
+                "title": "X-Generator 信息泄露",
+                "parameter": "X-Generator",
+                "severity": "low",
+                "cwe": "CWE-200",
+                "owasp": "A05 安全配置错误",
+                "fix": "移除 X-Generator 头，避免暴露构建工具或 CMS 版本。",
+            },
+        }
+
+        for header_name, rule in exposure_rules.items():
+            value = normalized.get(header_name, "").strip()
+            if not value:
+                continue
+            if header_name == "server" and _is_generic_edge_server(value) and not _is_version_like(value):
+                continue
+
+            severity = rule["severity"]
+            confidence = "medium"
+            if _is_version_like(value):
+                severity = "medium" if header_name == "server" else "high"
+                confidence = "high"
+
+            findings.append(
+                Finding(
+                    title=rule["title"],
+                    type="server_exposure",
+                    severity=severity,
+                    description=f"响应头 {rule['parameter']} 暴露了技术栈信息：{value}。攻击者可能据此缩小攻击面。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter=rule["parameter"],
+                        parameter_type="header",
+                        snippet=f"{rule['parameter']}: {value}",
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "header": rule["parameter"],
+                            "value": value,
+                        }
+                    ),
+                    fix_suggestion=rule["fix"],
+                    confidence=confidence,
+                    owasp_category=rule["owasp"],
+                    cwe_id=rule["cwe"],
+                )
+            )
+
+        return findings
+
+
+class CSPPolicyWeaknessDetector(BaseVulnDetector):
+    """CSP 策略过宽检测插件。"""
+
+    name = "csp_policy_weakness"
+    version = "1.0"
+    supported_depths = ["quick", "standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测可被滥用的 CSP 配置。"""
+        csp = _get_header_value(context.headers, "Content-Security-Policy").strip()
+        if not csp:
+            return []
+
+        directives = _parse_csp(csp)
+        issues: list[str] = []
+        issue_codes: list[str] = []
+
+        def _sources(name: str) -> list[str]:
+            return directives.get(name, [])
+
+        script_sources = _sources("script-src") or _sources("default-src")
+        frame_sources = _sources("frame-ancestors")
+        object_sources = _sources("object-src")
+        connect_sources = _sources("connect-src")
+
+        if any(token == "*" for token in script_sources):
+            issues.append("script 相关来源过宽，允许 *")
+            issue_codes.append("script_wildcard")
+        if any(token in {"'unsafe-inline'", "'unsafe-eval'", "'unsafe-hashes'"} for token in script_sources):
+            issues.append("script 相关策略包含 unsafe-inline / unsafe-eval")
+            if any(token == "'unsafe-eval'" for token in script_sources):
+                issue_codes.append("unsafe_eval")
+            if any(token == "'unsafe-inline'" for token in script_sources):
+                issue_codes.append("unsafe_inline")
+        if any(token.startswith("http:") for token in script_sources):
+            issues.append("script 相关策略允许明文 HTTP 来源")
+            issue_codes.append("http_source")
+        if any(token == "*" for token in frame_sources):
+            issues.append("frame-ancestors 允许任意站点嵌入")
+            issue_codes.append("frame_ancestors_wildcard")
+        if object_sources and not any(token == "'none'" for token in object_sources):
+            issues.append("object-src 未收紧为 'none'")
+            issue_codes.append("object_src_open")
+        if any(token == "*" for token in connect_sources):
+            issues.append("connect-src 允许任意出站连接")
+            issue_codes.append("connect_src_wildcard")
+
+        if not issues:
+            return []
+
+        severity = "medium"
+        if any(code in {"unsafe_eval", "http_source"} for code in issue_codes):
+            severity = "high"
+
+        return [
+            Finding(
+                title="CSP 策略过宽",
+                type="csp_weakness",
+                severity=severity,
+                description="Content-Security-Policy 存在可被滥用的放宽项，可能削弱对 XSS 和点击劫持的防护。",
+                url=context.url,
+                location=VulnLocation(
+                    url=context.url,
+                    parameter="Content-Security-Policy",
+                    parameter_type="header",
+                    snippet=csp,
+                ),
+                evidence=Evidence(extra={"policy": csp, "issues": issues}),
+                fix_suggestion="收紧 CSP：避免使用 unsafe-inline / unsafe-eval，减少通配符和明文来源，按业务最小权限配置各 directive。",
+                confidence="high",
+                owasp_category="A05 安全配置错误",
+                cwe_id="CWE-693",
+            )
+        ]
 
 
 class HeaderSecurityDetector(BaseVulnDetector):
@@ -472,6 +700,8 @@ def register_builtin_detectors() -> None:
 
     DetectorRegistry.register(HeaderSecurityDetector())
     DetectorRegistry.register(EnhancedHeaderSecurityDetector())
+    DetectorRegistry.register(CSPPolicyWeaknessDetector())
+    DetectorRegistry.register(ServerExposureDetector())
     DetectorRegistry.register(DirectoryListingDetector())
     DetectorRegistry.register(TraceMethodDetector())
     DetectorRegistry.register(SSLInfoDetector())
