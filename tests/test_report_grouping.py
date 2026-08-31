@@ -27,6 +27,13 @@ def _sample_findings():
             "severity": "medium",
             "verification_status": "unverified",
         },
+        {
+            "id": "VULN-003",
+            "title": "API 入口面暴露",
+            "type": "api_surface_exposure",
+            "severity": "medium",
+            "verification_status": "verified",
+        },
     ]
 
 
@@ -44,6 +51,7 @@ def test_markdown_report_includes_grouped_section_once():
     )
 
     assert report.count("## 风险面分组") == 1
+    assert "风险面总览" in report
     assert "公开暴露面" in report
     assert "配置与响应头" in report
 
@@ -60,6 +68,7 @@ def test_html_report_includes_grouped_section_once():
     )
 
     assert html.count("按风险面分组") == 1
+    assert "风险面总览" in html
     assert "公开暴露面" in html
     assert "配置与响应头" in html
 
@@ -68,5 +77,6 @@ def test_src_report_includes_grouped_section():
     report = generate_src_report({"findings": _sample_findings()}, format="markdown")
 
     assert "## 二.4 按风险面分组" in report
+    assert "风险面总览" in report
     assert "公开暴露面" in report
     assert "配置与响应头" in report

@@ -176,18 +176,70 @@ def _grouped_finding_summaries(findings: list[dict[str, Any]]) -> list[dict[str,
     """按风险面聚合 finding，供报告展示使用。"""
     grouped = group_findings(findings)
     summaries: list[dict[str, Any]] = []
+    severity_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
     for group in grouped:
         items = group.get("items", [])
         counts = group.get("counts", {})
+        worst = "info"
+        for level in ("critical", "high", "medium", "low", "info"):
+            if counts.get(level, 0) > 0:
+                worst = level
+                break
         summaries.append(
             {
                 "label": group.get("label", "其他风险"),
                 "items": items,
                 "counts": counts,
                 "total": len(items),
+                "worst": worst,
+                "worst_rank": severity_rank.get(worst, 0),
             }
         )
     return summaries
+
+
+def _render_risk_surface_overview_html(findings: list[dict[str, Any]]) -> str:
+    """渲染风险面总览卡片。"""
+    grouped = _grouped_finding_summaries(findings)
+    if not grouped:
+        return ""
+
+    palette = {
+        "critical": ("#7f1d1d", "#fef2f2"),
+        "high": ("#c2410c", "#fff7ed"),
+        "medium": ("#a16207", "#fefce8"),
+        "low": ("#15803d", "#f0fdf4"),
+        "info": ("#0f766e", "#ecfeff"),
+    }
+
+    cards = []
+    for group in grouped[:4]:
+        counts = group["counts"]
+        worst = group["worst"]
+        text_color, bg_color = palette.get(worst, ("#334155", "#f8fafc"))
+        cards.append(
+            f"""
+            <div style="flex:1;min-width:180px;padding:16px;border:1px solid #e2e8f0;border-radius:14px;background:{bg_color}">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px">
+                    <div style="font-size:15px;font-weight:700;color:#1e293b">{_html_escape(group['label'])}</div>
+                    <span style="font-size:11px;font-weight:700;color:{text_color};background:#fff;padding:3px 8px;border-radius:999px;border:1px solid currentColor">{_html_escape(worst)}</span>
+                </div>
+                <div style="font-size:28px;font-weight:800;color:#0f172a;line-height:1">{group['total']}</div>
+                <div style="font-size:12px;color:#64748b;margin-top:6px">
+                    严重 {counts.get('critical', 0)} / 高危 {counts.get('high', 0)} / 中危 {counts.get('medium', 0)} / 低危 {counts.get('low', 0)} / 信息 {counts.get('info', 0)}
+                </div>
+            </div>
+            """
+        )
+
+    return f"""
+    <div class="section" style="margin-top:30px">
+        <h2 style="font-size:18px;font-weight:700;color:#1e293b;margin:0 0 16px 0;padding-bottom:8px;border-bottom:2px solid #e2e8f0">📍 风险面总览</h2>
+        <div style="display:flex;flex-wrap:wrap;gap:14px">
+            {''.join(cards)}
+        </div>
+    </div>
+    """
 
 
 def _render_grouped_findings_html(findings: list[dict[str, Any]]) -> str:
@@ -232,6 +284,56 @@ def _render_grouped_findings_html(findings: list[dict[str, Any]]) -> str:
         )
     blocks.append("</div>")
     return "\n".join(blocks)
+
+
+def _render_risk_surface_overview_pdf(
+    elements: list[Any], findings: list[dict[str, Any]], styles: Any
+) -> None:
+    """将风险面总览写入 PDF 元素列表。"""
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Table, TableStyle
+
+    grouped = _grouped_finding_summaries(findings)
+    if not grouped:
+        elements.append(Paragraph("暂无需要展示的风险面总览。", styles["CN"]))
+        return
+
+    elements.append(Paragraph("风险面总览", styles["Heading2"]))
+    rows = [["风险面", "数量", "最高严重度", "构成"]]
+    for group in grouped[:6]:
+        counts = group["counts"]
+        rows.append(
+            [
+                group["label"],
+                str(group["total"]),
+                group["worst"],
+                f"严重 {counts.get('critical', 0)} / 高危 {counts.get('high', 0)} / 中危 {counts.get('medium', 0)} / 低危 {counts.get('low', 0)} / 信息 {counts.get('info', 0)}",
+            ]
+        )
+
+    table = Table(rows, colWidths=[42 * mm, 18 * mm, 24 * mm, 86 * mm], repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), styles["CNBold"].fontName),
+                ("FONTNAME", (0, 1), (-1, -1), styles["CN"].fontName),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("LEADING", (0, 0), (-1, -1), 11),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
+                ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f8fafc")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    elements.append(table)
+    elements.append(Spacer(1, 6))
 
 
 def _render_grouped_findings_pdf(
@@ -8943,6 +9045,10 @@ def generate_pdf_report(scan_data: dict) -> bytes:
         elements.append(Spacer(1, 5 * mm))
     elements.append(PageBreak())
 
+    # ===== 风险面总览 =====
+    _render_risk_surface_overview_pdf(elements, findings, styles)
+    elements.append(PageBreak())
+
     # ===== 风险面分组 =====
     _render_grouped_findings_pdf(elements, findings, styles)
     elements.append(PageBreak())
@@ -9211,6 +9317,18 @@ def generate_src_markdown_report(
     lines.append("")
 
     grouped = _grouped_finding_summaries(findings)
+    lines.extend(["## 风险面总览", ""])
+    if grouped:
+        for group in grouped[:6]:
+            counts = group["counts"]
+            lines.append(
+                f"- **{group['label']}**：{group['total']} 项，最高 `{group['worst']}`，构成为 严重 {counts.get('critical', 0)} / 高危 {counts.get('high', 0)} / 中危 {counts.get('medium', 0)} / 低危 {counts.get('low', 0)} / 信息 {counts.get('info', 0)}"
+            )
+        lines.append("")
+    else:
+        lines.append("暂无需要展示的风险面总览。")
+        lines.append("")
+
     lines.extend(["## 风险面分组", ""])
     if grouped:
         for group in grouped:
@@ -9407,6 +9525,7 @@ def generate_html_report(scan_data: dict) -> str:
 
         findings_html += "</div>"
 
+    overview_html = _render_risk_surface_overview_html(findings)
     grouped_html = _render_grouped_findings_html(findings)
 
     # 评分解读 HTML
@@ -9645,6 +9764,9 @@ def generate_html_report(scan_data: dict) -> str:
 
     <!-- 评分解读 -->
     {breakdown_html}
+
+    <!-- 风险面总览 -->
+    {overview_html}
 
     <!-- 风险面分组 -->
     {grouped_html}

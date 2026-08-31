@@ -366,6 +366,29 @@ def _generate_grouped_findings_section(
     return "\n".join(lines)
 
 
+def _generate_risk_surface_overview_section(
+    findings: list[VulnerabilityReportItem],
+) -> str:
+    """生成风险面总览章节。"""
+    grouped = group_findings(findings)
+    if not grouped:
+        return "## 二.3 风险面总览\n\n暂无需要展示的风险面总览。\n"
+
+    lines = ["## 二.3 风险面总览\n"]
+    for group in grouped[:6]:
+        counts = group["counts"]
+        worst = "info"
+        for level in ("critical", "high", "medium", "low", "info"):
+            if counts.get(level, 0) > 0:
+                worst = level
+                break
+        lines.append(
+            f"- **{group['label']}**：{len(group['items'])} 项，最高 `{worst}`，构成为 严重 {counts['critical']} / 高危 {counts['high']} / 中危 {counts['medium']} / 低危 {counts['low']} / 信息 {counts['info']}"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _generate_detailed_findings(findings: list[VulnerabilityReportItem]) -> str:
     """生成详细漏洞章节。"""
     if not findings:
@@ -536,6 +559,7 @@ def generate_src_report(scan_data: dict[str, Any], format: str = "markdown") -> 
         client_summary,
         generate_executive_summary(scan_data),
         _generate_findings_summary(findings, summary),
+        _generate_risk_surface_overview_section(findings),
         _generate_grouped_findings_section(findings),
         _generate_detailed_findings(findings),
         generate_technical_appendix(scan_data),

@@ -1,6 +1,7 @@
 from app.plugins import ScanContext
 from app.plugins.builtin import (
     BackupExposureDetector,
+    ApiSurfaceExposureDetector,
     CSPPolicyWeaknessDetector,
     DirectoryListingDetector,
     DiscoverySurfaceDetector,
@@ -140,6 +141,29 @@ def test_passive_exposure_detector_flags_source_map_and_debug_markers():
     }
     assert all(finding.type == "info_leak" for finding in findings)
     assert any(finding.severity == "high" for finding in findings)
+
+
+def test_api_surface_exposure_detector_flags_route_references():
+    detector = ApiSurfaceExposureDetector()
+    context = ScanContext(
+        url="https://example.com/",
+        headers={},
+        body=(
+            "<html><script>"
+            "fetch('/api/v1/users');"
+            "axios.get('/api/admin/audit');"
+            "const schema='/graphql';"
+            "</script></html>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].type == "api_surface_exposure"
+    assert findings[0].severity == "medium"
+    assert "/api/v1/users" in findings[0].evidence.extra["matched_routes"]
+    assert "/api/admin/audit" in findings[0].evidence.extra["matched_routes"]
 
 
 def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):

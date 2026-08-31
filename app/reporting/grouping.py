@@ -28,6 +28,7 @@ _GROUP_RULES: list[tuple[str, set[str], tuple[str, ...]]] = [
             "server_exposure",
             "info_leak",
             "passive_exposure",
+            "api_surface_exposure",
         },
         (
             "敏感路径",
@@ -154,4 +155,3 @@ def group_findings(findings: Iterable[Any]) -> list[dict[str, Any]]:
         return (-worst, -total, item["label"])
 
     return sorted(grouped.values(), key=_group_sort_key)
-

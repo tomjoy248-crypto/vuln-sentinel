@@ -397,6 +397,77 @@ class PassiveExposureDetector(BaseVulnDetector):
         return findings
 
 
+class ApiSurfaceExposureDetector(BaseVulnDetector):
+    """API 入口面暴露检测插件。"""
+
+    name = "api_surface_exposure"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测页面源码是否显式暴露 API 路径。"""
+        body = context.body or ""
+        if not body:
+            return []
+
+        lowered = body.lower()
+        route_pattern = re.compile(
+            r"""(?:
+                ['"`]
+                (?P<path>/(?:api|v\d+)(?:/[^\s"'`<>()]+)+)
+                ['"`]
+            )""",
+            re.IGNORECASE | re.VERBOSE,
+        )
+        routes = sorted({match.group("path") for match in route_pattern.finditer(body)})
+
+        graphql_refs = []
+        if "/graphql" in lowered:
+            graphql_refs.append("/graphql")
+        if "graphql" in lowered and ("fetch(" in lowered or "axios" in lowered or "query" in lowered):
+            graphql_refs.append("graphql")
+
+        if not routes and not graphql_refs:
+            return []
+
+        route_hints = [
+            route
+            for route in routes
+            if any(token in route.lower() for token in ("/admin", "/internal", "/debug", "/private"))
+        ]
+        severity = "low"
+        if route_hints or len(routes) >= 5:
+            severity = "medium"
+
+        excerpt = body[:400]
+        return [
+            Finding(
+                title="API 入口面暴露",
+                type="api_surface_exposure",
+                severity=severity,
+                description="页面源码或前端脚本中直接暴露了 API 路径与入口线索，攻击者可据此缩小枚举范围并定位业务接口。",
+                url=context.url,
+                location=VulnLocation(
+                    url=context.url,
+                    parameter="",
+                    parameter_type="path",
+                    snippet="API 路径引用",
+                ),
+                evidence=Evidence(
+                    extra={
+                        "matched_routes": routes,
+                        "graphql_refs": graphql_refs,
+                        "excerpt": excerpt,
+                    }
+                ),
+                fix_suggestion="尽量避免在公开页面中直接暴露完整 API 路径、内部命名空间和调试入口；对管理类接口使用鉴权与最小权限控制。",
+                confidence="high",
+                owasp_category="A05 安全配置错误",
+                cwe_id="CWE-200",
+            )
+        ]
+
+
 class SensitiveEndpointDetector(BaseVulnDetector):
     """敏感管理/调试端点暴露检测插件。"""
 
@@ -1180,6 +1251,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(CSPPolicyWeaknessDetector())
     DetectorRegistry.register(ServerExposureDetector())
     DetectorRegistry.register(PassiveExposureDetector())
+    DetectorRegistry.register(ApiSurfaceExposureDetector())
     DetectorRegistry.register(SensitiveEndpointDetector())
     DetectorRegistry.register(BackupExposureDetector())
     DetectorRegistry.register(DiscoverySurfaceDetector())
