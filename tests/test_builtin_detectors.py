@@ -2,6 +2,7 @@ from app.plugins import ScanContext
 from app.plugins.builtin import (
     CSPPolicyWeaknessDetector,
     DirectoryListingDetector,
+    PassiveExposureDetector,
     ServerExposureDetector,
     TraceMethodDetector,
 )
@@ -113,3 +114,25 @@ def test_csp_policy_weakness_detector_ignores_strict_policy():
     findings = __import__("asyncio").run(detector.detect(context))
 
     assert findings == []
+
+
+def test_passive_exposure_detector_flags_source_map_and_debug_markers():
+    detector = PassiveExposureDetector()
+    context = ScanContext(
+        url="https://example.com/app.js",
+        headers={},
+        body=(
+            "/*# sourceMappingURL=app.js.map */\n"
+            "console.log('debug');\n"
+            "Traceback (most recent call last): ValueError"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert {finding.title for finding in findings} == {
+        "暴露源码映射文件",
+        "调试信息泄露",
+    }
+    assert all(finding.type == "info_leak" for finding in findings)
+    assert any(finding.severity == "high" for finding in findings)

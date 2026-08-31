@@ -236,6 +236,96 @@ class CSPPolicyWeaknessDetector(BaseVulnDetector):
         ]
 
 
+class PassiveExposureDetector(BaseVulnDetector):
+    """被动泄露检测插件。"""
+
+    name = "passive_exposure"
+    version = "1.0"
+    supported_depths = ["quick", "standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测 source map、调试标记和堆栈信息。"""
+        body = context.body or ""
+        if not body:
+            return []
+
+        findings: list[Finding] = []
+        lowered = body.lower()
+
+        source_map_hits = []
+        if re.search(r"sourceMappingURL\s*=", body, re.I):
+            source_map_hits.append("sourceMappingURL")
+        if re.search(r"\.map(?:[\s'\"?#]|$)", body, re.I):
+            source_map_hits.append(".map")
+
+        if source_map_hits:
+            findings.append(
+                Finding(
+                    title="暴露源码映射文件",
+                    type="info_leak",
+                    severity="medium",
+                    description="页面包含 source map 或 .map 引用，可能帮助攻击者还原前端源码结构和接口逻辑。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="",
+                        parameter_type="path",
+                        snippet="sourceMappingURL / .map",
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "signals": source_map_hits,
+                            "excerpt": body[:300],
+                        }
+                    ),
+                    fix_suggestion="生产环境移除 source map，或限制其访问权限并避免在公开页面引用。",
+                    confidence="high",
+                    owasp_category="A05 安全配置错误",
+                    cwe_id="CWE-200",
+                )
+            )
+
+        debug_patterns = [
+            "console.log",
+            "var_dump",
+            "print_r",
+            "debug=true",
+            "stack trace",
+            "traceback (most recent call last)",
+            "exception in thread",
+            "fatal error",
+        ]
+        matched_debug = [pattern for pattern in debug_patterns if pattern in lowered]
+        if matched_debug:
+            findings.append(
+                Finding(
+                    title="调试信息泄露",
+                    type="info_leak",
+                    severity="high" if any(item in {"stack trace", "traceback (most recent call last)", "fatal error"} for item in matched_debug) else "medium",
+                    description="页面暴露了调试输出或堆栈痕迹，可能泄露框架、内部路径和异常细节。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="",
+                        parameter_type="path",
+                        snippet="debug marker / stack trace",
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "signals": matched_debug,
+                            "excerpt": body[:300],
+                        }
+                    ),
+                    fix_suggestion="关闭调试模式，隐藏异常堆栈，并确保生产环境不输出调试日志。",
+                    confidence="high",
+                    owasp_category="A05 安全配置错误",
+                    cwe_id="CWE-200",
+                )
+            )
+
+        return findings
+
+
 class HeaderSecurityDetector(BaseVulnDetector):
     """安全响应头检测插件。"""
 
@@ -702,6 +792,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(EnhancedHeaderSecurityDetector())
     DetectorRegistry.register(CSPPolicyWeaknessDetector())
     DetectorRegistry.register(ServerExposureDetector())
+    DetectorRegistry.register(PassiveExposureDetector())
     DetectorRegistry.register(DirectoryListingDetector())
     DetectorRegistry.register(TraceMethodDetector())
     DetectorRegistry.register(SSLInfoDetector())
