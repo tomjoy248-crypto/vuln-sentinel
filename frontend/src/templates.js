@@ -155,7 +155,7 @@ export const APP_TEMPLATE = `</head>
       <div class="home-brand-title">Vuln Sentinel</div>
     </div>
 
-    <h1 class="home-hero-title">Vuln Sentinel 安全体检平台</h1>
+    <h1 class="home-hero-title">Vuln Sentinel Web 安全检测平台</h1>
     <div class="home-hero-version">Version 1.0.10</div>
 
     <div class="home-hero-actions">
@@ -164,7 +164,7 @@ export const APP_TEMPLATE = `</head>
       <button onclick="navigateTo('profile')" class="home-hero-icon" aria-label="账号">◉</button>
     </div>
 
-    <div class="home-hero-footer">仅用于授权范围内的安全体检、交付复测与持续巡检。</div>
+    <div class="home-hero-footer">仅用于授权范围内的安全检测、交付复测、整改跟踪与持续巡检。</div>
   </div>
 
 
@@ -175,9 +175,9 @@ export const APP_TEMPLATE = `</head>
 
       <div style="min-width:240px;flex:1">
 
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:6px">3 步开始你的第一次扫描</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:6px">3 步开始一次正式检测</div>
 
-        <div style="font-size:12px;color:var(--text-secondary);line-height:1.7">① 输入授权目标并确认范围 → ② 查看风险、证据、影响与修复建议 → ③ 复测、留档并导出客户可读报告。
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.7">① 输入授权目标并确认范围 → ② 查看风险、证据、影响与整改建议 → ③ 复测、留档并导出正式报告。
 
         适合客户沟通、交付前验收、持续巡检与复修闭环。</div>
 
@@ -211,7 +211,7 @@ export const APP_TEMPLATE = `</head>
 
         <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">产出什么</div>
 
-        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">可直接给客户、管理层和研发看的交付型结果报告</div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">可直接用于客户、管理层与研发协同的正式结果报告</div>
 
       </div>
 
@@ -615,7 +615,7 @@ export const APP_TEMPLATE = `</head>
 
 
 
-  <!-- 公开演示扫描 -->
+  <!-- 公开样例报告 -->
 
   <div class="card public-report-card" id="public-report-card" style="margin-top:18px">
 
@@ -623,9 +623,9 @@ export const APP_TEMPLATE = `</head>
 
       <div>
 
-        <span style="font-size:13px">公开演示扫描</span>
+        <span style="font-size:13px">公开样例报告</span>
 
-        <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">无需登录，即时检测公开站点</span>
+        <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">无需登录，查看公开站点的样例检测结果</span>
 
       </div>
 
@@ -639,7 +639,7 @@ export const APP_TEMPLATE = `</head>
 
           <option value="https://httpbin.org">httpbin.org</option>
 
-          <option value="https://testphp.vulnweb.com">testphp.vulnweb.com（公开演示）</option>
+          <option value="https://testphp.vulnweb.com">testphp.vulnweb.com（样例站点）</option>
 
         </select>
 
@@ -653,9 +653,9 @@ export const APP_TEMPLATE = `</head>
 
       <div style="padding:16px;text-align:center;color:var(--text-secondary);background:var(--bg);border-radius:2px;margin-top:12px;border:1px dashed var(--border)">
 
-        <div style="font-size:12px;margin-bottom:8px;color:var(--text)">选择公开演示站点，立即查看扫描结果</div>
+        <div style="font-size:12px;margin-bottom:8px;color:var(--text)">选择公开样例站点，立即查看检测结果</div>
 
-        <div style="margin-top:10px"><button onclick="loadPublicDemo()" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">查看公开测试结果</button></div>
+        <div style="margin-top:10px"><button onclick="loadPublicDemo()" style="background:var(--primary);color:#fff;border:1px solid var(--primary-dark);padding:6px 14px;border-radius:2px;cursor:pointer;font-size:12px;font-weight:500">查看样例报告</button></div>
 
       </div>
 
@@ -673,7 +673,7 @@ export const APP_TEMPLATE = `</head>
 
     <h1 class="workbench-title">扫描结果</h1>
 
-    <span class="workbench-subtitle">查看漏洞发现、响应头与修复建议</span>
+    <span class="workbench-subtitle">查看风险发现、证据详情与整改建议</span>
 
   </div>
 

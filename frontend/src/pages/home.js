@@ -177,7 +177,7 @@ function simulateCSRF(target) {
   if (!out) return;
   out.innerHTML = '<div style="background:#3c3f41;border:1px solid rgba(199,84,80,0.3);border-radius:2px;padding:14px;animation:fadeInUp 0.4s">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
-    '<span style="background:#dc2626;color:#fff;padding:3px 8px;border-radius:2px;font-size:11px;font-weight:700">攻击中</span>' +
+    '<span style="background:#dc2626;color:#fff;padding:3px 8px;border-radius:2px;font-size:11px;font-weight:700">风险示例</span>' +
     '<span style="font-weight:600;font-size:13px">CSRF 跨站请求伪造</span></div>' +
     '<div style="background:#1f2937;color:#73c990;padding:10px;border-radius:2px;font-family:monospace;font-size:12px;line-height:1.6;margin-bottom:10px">' +
     '<div>// 攻击者构造的恶意页面</div>' +
@@ -200,7 +200,7 @@ function simulateXSS(target) {
   if (!out) return;
   out.innerHTML = '<div style="background:#3c3f41;border:1px solid rgba(240,167,50,0.3);border-radius:2px;padding:14px;animation:fadeInUp 0.4s">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
-    '<span style="background:#ea580c;color:#fff;padding:3px 8px;border-radius:2px;font-size:11px;font-weight:700">攻击中</span>' +
+    '<span style="background:#ea580c;color:#fff;padding:3px 8px;border-radius:2px;font-size:11px;font-weight:700">风险示例</span>' +
     '<span style="font-weight:600;font-size:13px">XSS 反射型注入</span></div>' +
     '<div style="background:#1f2937;color:#73c990;padding:10px;border-radius:2px;font-family:monospace;font-size:12px;line-height:1.6;margin-bottom:10px">' +
     '<div>// 攻击 URL</div>' +
@@ -222,7 +222,7 @@ function simulateClickjacking(target) {
   if (!out) return;
   out.innerHTML = '<div style="background:#3c3f41;border:1px solid rgba(168,85,247,0.3);border-radius:2px;padding:14px;animation:fadeInUp 0.4s">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
-    '<span style="background:#9333ea;color:#fff;padding:3px 8px;border-radius:2px;font-size:11px;font-weight:700">攻击中</span>' +
+    '<span style="background:#9333ea;color:#fff;padding:3px 8px;border-radius:2px;font-size:11px;font-weight:700">风险示例</span>' +
     '<span style="font-weight:600;font-size:13px">点击劫持</span></div>' +
     '<div style="background:#1f2937;color:#73c990;padding:10px;border-radius:2px;font-family:monospace;font-size:12px;line-height:1.6;margin-bottom:10px">' +
     '<div>// 攻击者页面</div>' +
@@ -2687,10 +2687,10 @@ function renderResult(data) {
   html += '<div id="radar-chart-container" style="display:flex;justify-content:center"></div>';
   html += '</div>';
 
-  // 公开测试按钮
+  // 风险说明按钮
   html += '<div class="card fade-in-up" style="animation-delay:0.2s">';
-  html += '<div class="card-title">公开测试</div>';
-  html += '<p style="margin:0 0 14px 0;font-size:12px;color:var(--text-secondary)">展示常见风险场景，用于说明问题影响</p>';
+  html += '<div class="card-title">风险说明</div>';
+  html += '<p style="margin:0 0 14px 0;font-size:12px;color:var(--text-secondary)">以下示例用于辅助说明常见风险的业务影响与整改必要性。</p>';
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
   html += '<button onclick="simulateCSRF(\'' + escapeAttr(data.url) + '\')" style="padding:10px 8px;border:1px solid rgba(199,84,80,0.3);background:rgba(199,84,80,0.08);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;color:#dc2626;transition:background 0.15s" onmouseover="this.style.background=\'rgba(199,84,80,0.15)\'" onmouseout="this.style.background=\'rgba(199,84,80,0.08)\'">';
   html += '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">CSRF</div>';

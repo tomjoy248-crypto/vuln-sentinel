@@ -13,4 +13,10 @@ describe('APP_TEMPLATE', () => {
   it('keeps the scan entry before the result page in the template', () => {
     expect(APP_TEMPLATE.indexOf('id="scan-section"')).toBeLessThan(APP_TEMPLATE.indexOf('id="page-result"'));
   });
+
+  it('uses formal product copy on the home and result pages', () => {
+    expect(APP_TEMPLATE).toContain('Vuln Sentinel Web 安全检测平台');
+    expect(APP_TEMPLATE).toContain('公开样例报告');
+    expect(APP_TEMPLATE).toContain('查看风险发现、证据详情与整改建议');
+  });
 });

@@ -54,4 +54,20 @@ describe('result page risk-surface views', () => {
     expect(overview.textContent).toContain('公开暴露面');
     expect(document.querySelectorAll('.src-list-surface')).toHaveLength(3);
   });
+
+  it('keeps formal report language in the header', () => {
+    renderSRCResult({
+      url: 'https://example.com',
+      score: 88,
+      risk_level: 'High',
+      scan_id: 12,
+      findings: sampleFindings,
+      summary: { critical: 0, high: 1, medium: 2, low: 0, info: 0, total: 3, fp_count: 1 },
+    });
+
+    const content = document.getElementById('result-content').textContent;
+    expect(content).toContain('执行摘要');
+    expect(content).toContain('检测摘要');
+    expect(content).toContain('处置建议');
+  });
 });
