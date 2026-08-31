@@ -2,11 +2,13 @@ from app.plugins import ScanContext
 from app.plugins.builtin import (
     BackupExposureDetector,
     ApiSurfaceExposureDetector,
+    CloudStorageExposureDetector,
     CSPPolicyWeaknessDetector,
     DirectoryListingDetector,
     DiscoverySurfaceDetector,
     FrontendSupplyChainDetector,
     LoginSurfaceDetector,
+    OAuthSurfaceDetector,
     PassiveExposureDetector,
     ProtectedRouteExposureDetector,
     SRIIntegrityDetector,
@@ -349,6 +351,7 @@ def test_protected_route_exposure_detector_flags_admin_page_and_api(monkeypatch)
     assert any(finding.type == "admin_api_exposure" for finding in findings)
     assert any(finding.severity == "critical" for finding in findings)
     assert any(finding.evidence.extra.get("exposure_kind") == "admin_api_data" for finding in findings)
+    assert all(finding.evidence.extra.get("evidence_score", 0) >= 55 for finding in findings)
 
 
 def test_protected_route_exposure_detector_flags_profile_page(monkeypatch):
@@ -385,6 +388,7 @@ def test_protected_route_exposure_detector_flags_profile_page(monkeypatch):
     assert findings[0].title == "用户账户页面匿名可访问"
     assert findings[0].type == "user_profile_exposure"
     assert findings[0].severity == "medium"
+    assert findings[0].evidence.extra["evidence_score"] >= 50
 
 
 def test_protected_route_exposure_detector_ignores_login_redirect_and_challenge(monkeypatch):
@@ -469,6 +473,83 @@ def test_api_surface_exposure_detector_flags_route_references():
     assert findings[0].severity == "medium"
     assert "/api/v1/users" in findings[0].evidence.extra["matched_routes"]
     assert "/api/admin/audit" in findings[0].evidence.extra["matched_routes"]
+
+
+def test_oauth_surface_detector_flags_implicit_flow():
+    detector = OAuthSurfaceDetector()
+    context = ScanContext(
+        url="https://example.com/login",
+        headers={},
+        body=(
+            "<script>"
+            "const auth='https://login.example.com/oauth2/authorize?client_id=web123&redirect_uri=https://app.example.com/oauth/callback&response_type=token';"
+            "</script>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].type == "oauth_surface_exposure"
+    assert findings[0].severity == "high"
+    assert findings[0].evidence.extra["flow"] == "implicit"
+    assert findings[0].evidence.extra["evidence_score"] >= 70
+
+
+def test_oauth_surface_detector_flags_auth_code_without_pkce():
+    detector = OAuthSurfaceDetector()
+    context = ScanContext(
+        url="https://example.com/login",
+        headers={},
+        body=(
+            "<script>"
+            "const auth='https://sso.example.com/oauth2/authorize?client_id=spa123&redirect_uri=https://app.example.com/auth/callback&response_type=code&state=abc';"
+            "</script>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].type == "oauth_surface_exposure"
+    assert findings[0].severity == "medium"
+    assert findings[0].evidence.extra["pkce_detected"] is False
+
+
+def test_cloud_storage_exposure_detector_flags_public_bucket_listing(monkeypatch):
+    detector = CloudStorageExposureDetector()
+
+    def handler(request):
+        if "list-type=2" in str(request.url):
+            return __import__("httpx").Response(
+                200,
+                text="<?xml version='1.0'?><ListBucketResult><Name>public-assets</Name><Contents><Key>backup.zip</Key></Contents></ListBucketResult>",
+                headers={"Content-Type": "application/xml"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body='<img src="https://public-assets.s3.amazonaws.com/logo.png">',
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert len(findings) == 1
+    assert findings[0].type == "cloud_storage_exposure"
+    assert findings[0].evidence.extra["provider"] == "s3"
+    assert findings[0].evidence.extra["evidence_score"] >= 75
 
 
 def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):

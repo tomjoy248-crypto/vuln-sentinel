@@ -108,6 +108,11 @@ def _flatten_strings(value: object) -> list[str]:
     return strings
 
 
+def _score_signal_pairs(pairs: list[tuple[bool, int]]) -> int:
+    """按命中信号对证据强度打分。"""
+    return min(100, sum(weight for matched, weight in pairs if matched))
+
+
 def _extract_well_known_hits(text: str) -> list[str]:
     """从 well-known 文本或 JSON 中提取敏感暴露信号。"""
     lowered = text.lower()
@@ -936,7 +941,12 @@ class ProtectedRouteExposureDetector(BaseVulnDetector):
                     matched_keywords = [
                         term for term in self._protected_keywords if term in body_lower
                     ]
-                    has_sensitive_text = len(matched_keywords) >= 1
+                    page_exposure_candidate = self._classify_page_exposure(
+                        rel_path, body_lower
+                    )[4]
+                    has_sensitive_text = len(matched_keywords) >= (
+                        1 if page_exposure_candidate == "management_page" else 2
+                    )
                     if not has_sensitive_json and not has_sensitive_text:
                         continue
 
@@ -956,6 +966,20 @@ class ProtectedRouteExposureDetector(BaseVulnDetector):
                             else "未登录请求即可访问账户或个人资料页面，访问控制边界可能不足。"
                         )
                         fix = "对后台页面统一挂载认证中间件和角色校验，未登录访问应跳转登录页或返回 401/403。"
+
+                    evidence_score = _score_signal_pairs(
+                        [
+                            (resp.status_code == 200, 30),
+                            (is_api, 15),
+                            ("/admin" in rel_path or "/management" in rel_path, 20),
+                            ("/profile" in rel_path or "/account" in rel_path or "/user" in rel_path, 15),
+                            (len(matched_keys) >= 1, 20),
+                            (len(matched_keys) >= 2, 10),
+                            (len(matched_keywords) >= 2, 10),
+                        ]
+                    )
+                    if evidence_score < (55 if is_api else 40):
+                        continue
 
                     findings.append(
                         Finding(
@@ -978,6 +1002,7 @@ class ProtectedRouteExposureDetector(BaseVulnDetector):
                                     "matched_keys": matched_keys[:8],
                                     "matched_keywords": matched_keywords[:8],
                                     "exposure_kind": exposure_kind,
+                                    "evidence_score": evidence_score,
                                     "data_classification": (
                                         "admin"
                                         if exposure_kind in {"admin_api_data", "management_page"}
@@ -1158,6 +1183,247 @@ class ApiSurfaceExposureDetector(BaseVulnDetector):
                 cwe_id="CWE-200",
             )
         ]
+
+
+class OAuthSurfaceDetector(BaseVulnDetector):
+    """前端 OAuth / SSO 授权面暴露检测插件。"""
+
+    name = "oauth_surface"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        body = context.body or ""
+        if not body:
+            return []
+
+        lowered = body.lower()
+        auth_urls = sorted(
+            {
+                match.group(1)
+                for match in re.finditer(
+                    r"""['"](https?://[^'"<>]+/(?:oauth|oidc|openid-connect|sso)[^'"<>]*)['"]""",
+                    body,
+                    re.I,
+                )
+            }
+        )
+        callback_paths = sorted(
+            {
+                match.group(1)
+                for match in re.finditer(
+                    r"""['"]((?:/|https?://[^'"<>]+/)(?:oauth|auth|sso)[^'"<>]*(?:callback|redirect)[^'"<>]*)['"]""",
+                    body,
+                    re.I,
+                )
+            }
+        )
+        has_client_id = bool(
+            re.search(r"(client[_-]?id\s*[:=]\s*['\"][^'\"]+['\"]|client_id=)", body, re.I)
+        )
+        implicit_flow = bool(
+            re.search(r"response_type=(?:token|id_token|token%20id_token|id_token%20token)", lowered)
+        )
+        auth_code_flow = "response_type=code" in lowered or "authorization_code" in lowered
+        has_pkce = "code_challenge" in lowered or "pkce" in lowered
+        has_state = "state=" in lowered or re.search(r"state\s*[:=]\s*['\"]", body, re.I)
+
+        findings: list[Finding] = []
+        if implicit_flow and auth_urls:
+            evidence_score = _score_signal_pairs(
+                [
+                    (True, 40),
+                    (len(auth_urls) >= 1, 20),
+                    (has_client_id, 15),
+                    (len(callback_paths) >= 1, 15),
+                    (not has_state, 10),
+                ]
+            )
+            findings.append(
+                Finding(
+                    title="前端暴露 OAuth 隐式流入口",
+                    type="oauth_surface_exposure",
+                    severity="high",
+                    description="页面脚本中直接暴露了 OAuth 隐式流授权入口，令牌可能经前端跳转或片段回传，泄露面相对更大。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="oauth authorize url",
+                        parameter_type="html",
+                        snippet="response_type=token / id_token",
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "auth_urls": auth_urls[:6],
+                            "callback_paths": callback_paths[:6],
+                            "has_client_id": has_client_id,
+                            "has_state": bool(has_state),
+                            "flow": "implicit",
+                            "evidence_score": evidence_score,
+                        },
+                        response_raw=body[:4000],
+                    ),
+                    fix_suggestion="优先改用授权码 + PKCE，避免在前端使用隐式流；同时确保 state 校验、最小化回调暴露并限制 redirect URI。",
+                    confidence="high",
+                    owasp_category="A07 身份识别与认证失败",
+                    cwe_id="CWE-287",
+                )
+            )
+
+        if auth_urls and callback_paths and has_client_id and auth_code_flow and not has_pkce:
+            evidence_score = _score_signal_pairs(
+                [
+                    (True, 30),
+                    (len(auth_urls) >= 1, 20),
+                    (len(callback_paths) >= 1, 20),
+                    (has_client_id, 15),
+                    (auth_code_flow, 10),
+                    (not has_pkce, 15),
+                ]
+            )
+            findings.append(
+                Finding(
+                    title="前端 OAuth 授权码流程未发现 PKCE 线索",
+                    type="oauth_surface_exposure",
+                    severity="medium",
+                    description="页面中可见 OAuth 授权码流程入口、回调地址与 client_id，但未发现 PKCE 线索，移动端或 SPA 场景下抗拦截能力偏弱。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="oauth config",
+                        parameter_type="html",
+                        snippet="response_type=code",
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "auth_urls": auth_urls[:6],
+                            "callback_paths": callback_paths[:6],
+                            "has_client_id": has_client_id,
+                            "has_state": bool(has_state),
+                            "flow": "authorization_code",
+                            "pkce_detected": False,
+                            "evidence_score": evidence_score,
+                        },
+                        response_raw=body[:4000],
+                    ),
+                    fix_suggestion="对前端或移动端 OAuth 授权码流程启用 PKCE，并校验 state、限制 redirect URI 与登出回跳地址。",
+                    confidence="medium",
+                    owasp_category="A07 身份识别与认证失败",
+                    cwe_id="CWE-287",
+                )
+            )
+
+        return findings
+
+
+class CloudStorageExposureDetector(BaseVulnDetector):
+    """对象存储公开列目录检测插件。"""
+
+    name = "cloud_storage_exposure"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    def _extract_targets(self, body: str) -> list[tuple[str, str, str]]:
+        targets: dict[tuple[str, str], tuple[str, str, str]] = {}
+
+        for match in re.finditer(r"https://([a-z0-9.\-_]+)\.s3\.amazonaws\.com(?:/[^'\"<>\s]*)?", body, re.I):
+            bucket = match.group(1)
+            targets[("s3", bucket)] = (
+                "s3",
+                f"https://{bucket}.s3.amazonaws.com/?list-type=2",
+                bucket,
+            )
+        for match in re.finditer(r"https://storage\.googleapis\.com/([a-z0-9.\-_]+)(?:/[^'\"<>\s]*)?", body, re.I):
+            bucket = match.group(1)
+            targets[("gcs", bucket)] = (
+                "gcs",
+                f"https://storage.googleapis.com/{bucket}/",
+                bucket,
+            )
+        for match in re.finditer(r"https://([a-z0-9\-]+)\.blob\.core\.windows\.net/([a-z0-9.\-_]+)(?:/[^'\"<>\s]*)?", body, re.I):
+            account = match.group(1)
+            container = match.group(2)
+            label = f"{account}/{container}"
+            targets[("azure", label)] = (
+                "azure",
+                f"https://{account}.blob.core.windows.net/{container}?restype=container&comp=list",
+                label,
+            )
+
+        return list(targets.values())
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        body = context.body or ""
+        if not body:
+            return []
+
+        targets = self._extract_targets(body)
+        if not targets:
+            return []
+
+        findings: list[Finding] = []
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                headers=context.headers or None,
+            ) as client:
+                for provider, probe_url, label in targets:
+                    try:
+                        resp = await client.get(probe_url, timeout=8.0)
+                    except Exception:
+                        continue
+                    if resp.status_code != 200:
+                        continue
+                    content = (resp.text or "")[:4000]
+                    lowered = content.lower()
+                    listing_markers = {
+                        "s3": ["listbucketresult", "<key>", "<name>"],
+                        "gcs": ["<listbucketresult", "<contents>", "<key>"],
+                        "azure": ["enumerationresults", "<blobs>", "<blob>"],
+                    }.get(provider, [])
+                    matched = [marker for marker in listing_markers if marker in lowered]
+                    if len(matched) < 2:
+                        continue
+                    evidence_score = _score_signal_pairs(
+                        [
+                            (resp.status_code == 200, 30),
+                            (len(matched) >= 2, 35),
+                            (provider == "azure", 10),
+                            (provider in {"s3", "gcs"}, 15),
+                        ]
+                    )
+                    findings.append(
+                        Finding(
+                            title="对象存储公开列目录",
+                            type="cloud_storage_exposure",
+                            severity="high",
+                            description="前端引用的对象存储桶/容器可被匿名列目录，攻击者可能枚举文件、备份、日志或内部资源路径。",
+                            url=probe_url,
+                            location=VulnLocation(
+                                url=probe_url,
+                                parameter="bucket/container listing",
+                                parameter_type="path",
+                                snippet=label,
+                            ),
+                            evidence=Evidence(
+                                extra={
+                                    "provider": provider,
+                                    "bucket_or_container": label,
+                                    "matched_markers": matched,
+                                    "evidence_score": evidence_score,
+                                },
+                                response_raw=content,
+                            ),
+                            fix_suggestion="关闭对象存储公开列目录，仅开放最小读权限；对公开资源使用专用静态分发策略，并将敏感对象迁移到私有桶或签名访问。",
+                            confidence="high",
+                            owasp_category="A05 安全配置错误",
+                            cwe_id="CWE-200",
+                        )
+                    )
+        except Exception:
+            return findings
+
+        return findings
 
 
 class SensitiveEndpointDetector(BaseVulnDetector):
@@ -1956,6 +2222,8 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(ServerExposureDetector())
     DetectorRegistry.register(PassiveExposureDetector())
     DetectorRegistry.register(ApiSurfaceExposureDetector())
+    DetectorRegistry.register(OAuthSurfaceDetector())
+    DetectorRegistry.register(CloudStorageExposureDetector())
     DetectorRegistry.register(SensitiveEndpointDetector())
     DetectorRegistry.register(BackupExposureDetector())
     DetectorRegistry.register(DiscoverySurfaceDetector())

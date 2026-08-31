@@ -29,6 +29,7 @@ _GROUP_RULES: list[tuple[str, set[str], tuple[str, ...]]] = [
             "info_leak",
             "passive_exposure",
             "api_surface_exposure",
+            "cloud_storage_exposure",
         },
         (
             "敏感路径",
@@ -47,6 +48,9 @@ _GROUP_RULES: list[tuple[str, set[str], tuple[str, ...]]] = [
             "actuator",
             "console",
             "phpinfo",
+            "对象存储",
+            "bucket",
+            "blob",
         ),
     ),
     (
@@ -74,8 +78,13 @@ _GROUP_RULES: list[tuple[str, set[str], tuple[str, ...]]] = [
             "unauthorized_access",
             "logic_bypass",
             "clickjacking",
+            "oauth_surface_exposure",
+            "admin_api_exposure",
+            "admin_page_exposure",
+            "user_profile_exposure",
+            "user_data_api_exposure",
         },
-        ("认证", "授权", "登录", "越权", "权限", "爆破", "CSRF", "IDOR", "劫持"),
+        ("认证", "授权", "登录", "越权", "权限", "爆破", "CSRF", "IDOR", "劫持", "oauth", "sso"),
     ),
     (
         "注入与输入验证",
