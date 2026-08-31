@@ -14,7 +14,7 @@ import os
 import time
 from typing import Any
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from app.core.logging import get_request_id
@@ -54,14 +54,13 @@ async def health_live() -> dict[str, Any]:
 
 
 @router.get("/ready")
-async def health_ready(response: Response) -> JSONResponse:
-    """??????????????200??????????????????????????????????????????"""
+async def health_ready() -> JSONResponse:
+    """就绪探针：依赖健康时返回 200，退化时返回 503。"""
     db_ok = check_db_health()
     redis_ok = _check_redis_health()
     all_ok = db_ok and redis_ok
-    response.status_code = 200
     return JSONResponse(
-        status_code=200,
+        status_code=200 if all_ok else 503,
         content={
             "status": "ready" if all_ok else "degraded",
             "checks": {

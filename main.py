@@ -410,13 +410,9 @@ if _IS_PRODUCTION:
 # Vuln Sentinel: ?? _IS_PRODUCTION ??????? PRODUCTION=1 ????
 if _IS_PRODUCTION:
     if not settings.jwt_secret or len(settings.jwt_secret) < 32:
-        generated_secret = base64.urlsafe_b64encode(os.urandom(48)).decode().rstrip("=")
-        os.environ["JWT_SECRET"] = generated_secret
-        try:
-            settings.jwt_secret = generated_secret
-        except Exception:
-            pass
-        logger.warning("JWT_SECRET missing in production; generated a temporary runtime secret.")
+        raise RuntimeError(
+            "生产环境必须设置 JWT_SECRET 环境变量，且长度不少于 32 字符。"
+        )
 
 
 db_base = settings.db_dir.strip() if settings.db_dir else ""
@@ -670,6 +666,8 @@ def validate_production_config() -> list[str]:
         issues.append("生产环境不应启用 WECHAT_MOCK")
     if os.environ.get("MOCK_WEBHOOK_SECRET", "").strip():
         issues.append("生产环境不应保留 MOCK_WEBHOOK_SECRET")
+    if issues:
+        raise RuntimeError("生产环境配置校验失败: " + "; ".join(issues))
     return issues
 
 
@@ -1846,10 +1844,7 @@ async def lifespan(app: FastAPI):
         prod_issues = validate_production_config()
         if prod_issues:
             message = "; ".join(prod_issues)
-            if _IS_PRODUCTION:
-                logger.warning("Production config warnings: %s", message)
-            else:
-                logger.warning("Production config warnings: %s", message)
+            logger.warning("Production config warnings: %s", message)
     except Exception as e:
         logger.error("Production config validation failed: %s", e, exc_info=True)
         if _IS_PRODUCTION:

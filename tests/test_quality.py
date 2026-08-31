@@ -1,5 +1,8 @@
+import pytest
+
 from app.quality.fp_control import FalsePositiveControl, filter_findings
 from app.quality.quality_assessment import assess_scan_quality
+import main
 
 
 def test_fp_control_marks_challenge_like_responses_as_likely_fp():
@@ -176,9 +179,14 @@ def test_production_config_flags_mock_payment(monkeypatch):
     monkeypatch.setenv("ALIPAY_MOCK", "1")
     monkeypatch.setenv("WECHAT_MOCK", "1")
     monkeypatch.setenv("MOCK_WEBHOOK_SECRET", "secret")
+    monkeypatch.setattr(main.settings, "jwt_secret", "x" * 32, raising=False)
+    monkeypatch.setattr(main.settings, "cors_origins", "http://localhost:8000", raising=False)
+    monkeypatch.setattr(main.settings, "public_demo_enabled", False, raising=False)
     monkeypatch.setattr(main, "_IS_PRODUCTION", True)
 
-    issues = main.validate_production_config()
-    assert any("ALIPAY_MOCK" in item for item in issues)
-    assert any("WECHAT_MOCK" in item for item in issues)
-    assert any("MOCK_WEBHOOK_SECRET" in item for item in issues)
+    with pytest.raises(RuntimeError) as excinfo:
+        main.validate_production_config()
+    message = str(excinfo.value)
+    assert "ALIPAY_MOCK" in message
+    assert "WECHAT_MOCK" in message
+    assert "MOCK_WEBHOOK_SECRET" in message

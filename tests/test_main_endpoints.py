@@ -123,6 +123,18 @@ def test_health_ready_returns_ready():
     assert "database" in body["checks"]
 
 
+def test_health_ready_returns_degraded_when_dependency_fails(monkeypatch):
+    monkeypatch.setattr("app.health.check_db_health", lambda: False)
+    monkeypatch.setattr("app.health._check_redis_health", lambda: False)
+
+    resp = client.get("/health/ready")
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["status"] == "degraded"
+    assert body["checks"]["database"] == "error"
+    assert body["checks"]["redis"] == "skip" or body["checks"]["redis"] == "error"
+
+
 def test_health_version_returns_version_info():
     resp = client.get("/health/version")
     assert resp.status_code == 200
