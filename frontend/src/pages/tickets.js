@@ -32,6 +32,47 @@ const TicketHelpers = {
 
 let ticketsPageInited = false;
 
+export function buildTicketClosureSummary(ticket, timeline) {
+  const status = String(ticket?.status || '').toLowerCase();
+  const severity = String(ticket?.severity || '').toLowerCase();
+  const timelineItems = Array.isArray(timeline) ? timeline : [];
+  const doneCount = timelineItems.filter((item) => item.status === 'done').length;
+  const failedStep = timelineItems.find((item) => item.status === 'failed');
+  const latestDone = [...timelineItems].reverse().find((item) => item.status === 'done' && item.time);
+
+  let headline = '工单已进入整改流程，建议继续推进修复与复测。';
+  let nextStep = '先确认修复方案，再安排应用和复测。';
+
+  if (status === 'fixed') {
+    headline = '工单已完成修复闭环，建议保留复测记录与变更证据。';
+    nextStep = '归档本次修复结果，并将同类问题纳入后续版本基线。';
+  } else if (status === 'failed') {
+    headline = '本次修复未通过验证，需要回看失败原因后重新推进。';
+    nextStep = '优先检查变更是否完整生效，再安排二次修复和复测。';
+  } else if (status === 'rolled_back') {
+    headline = '当前工单已回滚，建议先恢复稳定状态再评估新的修复方案。';
+    nextStep = '确认回滚影响范围，补齐更稳的修复计划后再重新应用。';
+  } else if (status === 'applying' || status === 'in_progress') {
+    headline = '修复正在推进中，当前重点是确认变更落地并尽快复测。';
+    nextStep = '等待配置或代码变更生效后，立即发起复测验证。';
+  } else if (status === 'confirmed') {
+    headline = '问题已确认，建议尽快进入实施阶段，避免风险长期暴露。';
+    nextStep = '将修复动作落到配置、代码或访问控制上，并保留变更记录。';
+  }
+
+  if ((severity === 'critical' || severity === 'high') && status !== 'fixed') {
+    nextStep = '该项等级较高，建议优先安排处理窗口并同步复测计划。';
+  }
+
+  return {
+    headline: headline,
+    nextStep: nextStep,
+    progressText: '已完成 ' + doneCount + '/' + timelineItems.length + ' 个闭环阶段',
+    latestTime: latestDone ? latestDone.time : '',
+    failedLabel: failedStep ? failedStep.label : ''
+  };
+}
+
 export function initTicketsPage(containerSelector) {
   if (ticketsPageInited) return;
   ticketsPageInited = true;
@@ -196,6 +237,14 @@ export function showTicketDetail(id) {
   html += '<div style="background:rgba(75,110,175,0.12);color:var(--primary-light);border:1px solid rgba(75,110,175,0.28);padding:4px 10px;border-radius:999px;font-size:12px">建议：' + (ticket.status === 'fixed' ? '尽快复测确认' : ticket.status === 'failed' ? '回看失败原因并回滚' : ticket.status === 'applying' ? '等待变更生效后复测' : '推进修复并保留变更记录') + '</div>';
   html += '<div style="background:rgba(75,110,175,0.12);color:var(--primary-light);border:1px solid rgba(75,110,175,0.28);padding:4px 10px;border-radius:999px;font-size:12px">优先级：' + severityLabel + '</div>';
   if (ticket.finding_type) html += '<div style="background:rgba(75,110,175,0.12);color:var(--primary-light);border:1px solid rgba(75,110,175,0.28);padding:4px 10px;border-radius:999px;font-size:12px">类型：' + escapeHtml(ticket.finding_type) + '</div>';
+  html += '</div>';
+
+  let summary = buildTicketClosureSummary(ticket, []);
+  html += '<div class="ticket-closure-card">';
+  html += '<div class="ticket-closure-title">闭环摘要</div>';
+  html += '<div class="ticket-closure-headline">' + escapeHtml(summary.headline) + '</div>';
+  html += '<div class="ticket-closure-progress">' + escapeHtml(summary.progressText) + '</div>';
+  html += '<div class="ticket-closure-next">下一步：' + escapeHtml(summary.nextStep) + '</div>';
   html += '</div>';
 
   // 闭环时间线
@@ -363,11 +412,7 @@ export function openTicketReport(id) {
 export function copyTicketSummary(id) {
   let ticket = ticketService.getTicketById(id);
   if (!ticket) return;
-  let actionHints = [];
-  if ((ticket.status || '').toLowerCase() !== 'done') actionHints.push('优先复测并确认修复效果');
-  if ((ticket.severity || '').toLowerCase() === 'critical' || (ticket.severity || '').toLowerCase() === 'high') {
-    actionHints.push('先处理暴露面和高危配置');
-  }
+  let closure = buildTicketClosureSummary(ticket, []);
   let summary = [
     '工单 #' + ticket.id,
     '名称: ' + (ticket.finding_name || ''),
@@ -375,7 +420,8 @@ export function copyTicketSummary(id) {
     '状态: ' + (TicketHelpers.statusLabel(ticket.status) || ticket.status || ''),
     '来源 URL: ' + (ticket.url || ''),
     '备注: ' + (ticket.notes || ''),
-    '下一步: ' + (actionHints.length ? actionHints.join('；') : '当前工单可直接进入复测')
+    '闭环摘要: ' + closure.headline,
+    '下一步: ' + closure.nextStep
   ].join('\n');
   copyToClipboard(summary).then(function () {
     showToast('工单摘要已复制');
@@ -408,6 +454,18 @@ export function loadTicketTimeline(id) {
     });
     html += '</div>';
     container.innerHTML = html;
+
+    let summaryBox = container.parentElement ? container.parentElement.parentElement.querySelector('.ticket-closure-card') : null;
+    if (summaryBox && data.ticket) {
+      let closure = buildTicketClosureSummary(data.ticket, data.timeline);
+      summaryBox.innerHTML =
+        '<div class="ticket-closure-title">闭环摘要</div>' +
+        '<div class="ticket-closure-headline">' + escapeHtml(closure.headline) + '</div>' +
+        '<div class="ticket-closure-progress">' + escapeHtml(closure.progressText) + '</div>' +
+        (closure.latestTime ? '<div class="ticket-closure-progress">最近进展：' + escapeHtml(closure.latestTime) + '</div>' : '') +
+        (closure.failedLabel ? '<div class="ticket-closure-progress">当前阻塞：' + escapeHtml(closure.failedLabel) + '</div>' : '') +
+        '<div class="ticket-closure-next">下一步：' + escapeHtml(closure.nextStep) + '</div>';
+    }
   }).catch(function () {
     container.innerHTML = '<div class="ticket-timeline-empty">加载失败</div>';
   });

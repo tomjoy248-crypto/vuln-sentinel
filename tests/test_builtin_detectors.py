@@ -6,6 +6,7 @@ from app.plugins.builtin import (
     DirectoryListingDetector,
     DiscoverySurfaceDetector,
     FrontendSupplyChainDetector,
+    LoginSurfaceDetector,
     PassiveExposureDetector,
     SRIIntegrityDetector,
     WellKnownExposureDetector,
@@ -211,6 +212,93 @@ def test_frontend_supply_chain_detector_ignores_pinned_and_same_origin_resources
     )
 
     findings = __import__("asyncio").run(detector.detect(context))
+
+    assert findings == []
+
+
+def test_login_surface_detector_flags_auth_protection_and_bruteforce_gaps(monkeypatch):
+    detector = LoginSurfaceDetector()
+
+    def handler(request):
+        if request.url.path == "/login":
+            return __import__("httpx").Response(
+                200,
+                text=(
+                    '<html><form method="post">'
+                    '<input type="text" name="username">'
+                    '<input type="password" name="password">'
+                    '<button type="submit">Login</button>'
+                    "</form></html>"
+                ),
+                headers={"Content-Type": "text/html"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "认证保护不足",
+        "登录防爆破不足",
+    }
+    auth_finding = next(f for f in findings if f.title == "认证保护不足")
+    assert "csrf_token_missing" in auth_finding.evidence.extra["issues"]
+
+
+def test_login_surface_detector_ignores_protected_login_page(monkeypatch):
+    detector = LoginSurfaceDetector()
+
+    def handler(request):
+        if request.url.path == "/login":
+            return __import__("httpx").Response(
+                200,
+                text=(
+                    '<html><form method="post" autocomplete="off">'
+                    '<input type="hidden" name="csrf_token" value="abc123">'
+                    '<input type="text" name="username">'
+                    '<input type="password" name="password">'
+                    '<div>captcha enabled</div>'
+                    "</form></html>"
+                ),
+                headers={
+                    "Content-Type": "text/html",
+                    "X-Frame-Options": "DENY",
+                },
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
 
     assert findings == []
 

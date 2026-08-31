@@ -245,6 +245,12 @@ def _match_unpinned_package_cdn(resource_url: str) -> str | None:
     return None
 
 
+def _extract_first_form(body: str) -> str:
+    """提取页面中的第一个 form 块。"""
+    match = re.search(r"<form[^>]*>.*?</form>", body or "", re.IGNORECASE | re.DOTALL)
+    return match.group(0) if match else ""
+
+
 class ServerExposureDetector(BaseVulnDetector):
     """服务器与框架技术栈泄露检测插件。"""
 
@@ -571,6 +577,193 @@ class FrontendSupplyChainDetector(BaseVulnDetector):
                     cwe_id="CWE-494",
                 )
             )
+
+        return findings
+
+
+class LoginSurfaceDetector(BaseVulnDetector):
+    """登录面安全配置检测插件。"""
+
+    name = "login_surface"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    _login_path_hints = [
+        "/login",
+        "/signin",
+        "/sign-in",
+        "/user/login",
+        "/admin/login",
+        "/auth/login",
+        "/account/login",
+        "/member/login",
+        "/wp-login.php",
+    ]
+    _anti_bot_hints = (
+        "captcha",
+        "验证码",
+        "二次验证",
+        "双重验证",
+        "mfa",
+        "2fa",
+        "otp",
+        "短信验证码",
+        "邮箱验证码",
+        "security code",
+        "authenticator",
+        "turnstile",
+        "recaptcha",
+    )
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测登录表单防护和基础防爆破信号。"""
+        origin = f"{urlparse(context.url).scheme}://{urlparse(context.url).netloc}"
+        findings: list[Finding] = []
+
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                headers=context.headers or None,
+            ) as client:
+                for rel_path in self._login_path_hints:
+                    login_url = urljoin(origin, rel_path)
+                    try:
+                        resp = await client.get(login_url, timeout=8.0)
+                    except Exception:
+                        continue
+                    if resp.status_code != 200:
+                        continue
+
+                    body = resp.text or ""
+                    if not re.search(
+                        r'<input[^>]*type=["\']password["\']',
+                        body,
+                        re.IGNORECASE,
+                    ):
+                        continue
+
+                    form_html = _extract_first_form(body)
+                    form_lower = form_html.lower()
+                    body_lower = body.lower()
+                    issues: list[str] = []
+
+                    if form_html:
+                        if (
+                            'autocomplete="off"' not in form_lower
+                            and "autocomplete='off'" not in form_lower
+                        ):
+                            issues.append("login_page_no_autocomplete_off")
+
+                        csrf_found = False
+                        for input_tag in re.findall(r"<input[^>]*>", form_html, re.IGNORECASE):
+                            tag_lower = input_tag.lower()
+                            if (
+                                'type="hidden"' not in tag_lower
+                                and "type='hidden'" not in tag_lower
+                            ):
+                                continue
+                            name_match = re.search(
+                                r'\bname=["\']([^"\']*)["\']',
+                                input_tag,
+                                re.IGNORECASE,
+                            )
+                            if not name_match:
+                                continue
+                            name = name_match.group(1).lower()
+                            if not any(token in name for token in ("csrf", "token", "nonce")):
+                                continue
+                            value_match = re.search(
+                                r'\bvalue=["\']([^"\']*)["\']',
+                                input_tag,
+                                re.IGNORECASE,
+                            )
+                            if value_match and value_match.group(1).strip():
+                                csrf_found = True
+                                break
+                        if not csrf_found:
+                            issues.append("csrf_token_missing")
+
+                    response_headers = _lower_header_map(dict(resp.headers))
+                    if not (
+                        response_headers.get("x-frame-options")
+                        or "frame-ancestors" in response_headers.get("content-security-policy", "").lower()
+                    ):
+                        issues.append("login_page_no_xfo")
+
+                    if not any(hint in body_lower for hint in self._anti_bot_hints):
+                        issues.append("bruteforce_protection_missing")
+
+                    evidence = {
+                        "login_path": rel_path,
+                        "issues": issues,
+                        "status_code": resp.status_code,
+                    }
+
+                    auth_issues: list[str] = []
+                    if "csrf_token_missing" in issues:
+                        auth_issues.append("登录表单缺少 CSRF token")
+                    if "login_page_no_xfo" in issues:
+                        auth_issues.append("登录页缺少 X-Frame-Options 或 frame-ancestors")
+                    if "login_page_no_autocomplete_off" in issues:
+                        auth_issues.append("登录表单未关闭自动补全")
+
+                    if auth_issues:
+                        severity = "high" if "csrf_token_missing" in issues else "medium"
+                        findings.append(
+                            Finding(
+                                title="认证保护不足",
+                                type="auth_weakness",
+                                severity=severity,
+                                description="登录页面存在基础认证防护缺口，攻击者可能借此增加点击劫持、跨站请求或凭据暴露风险。",
+                                url=login_url,
+                                location=VulnLocation(
+                                    url=login_url,
+                                    parameter="login form",
+                                    parameter_type="html",
+                                    snippet=rel_path,
+                                ),
+                                evidence=Evidence(
+                                    extra={
+                                        **evidence,
+                                        "auth_issues": auth_issues,
+                                    },
+                                    response_raw=body[:4000],
+                                ),
+                                fix_suggestion="为登录表单补充 CSRF token、autocomplete=\"off\"、X-Frame-Options 或 CSP frame-ancestors，并统一加固会话 Cookie 与 Origin/Referer 校验。",
+                                confidence="high" if severity == "high" else "medium",
+                                owasp_category="A07 身份识别与认证失败",
+                                cwe_id="CWE-306",
+                            )
+                        )
+
+                    if "bruteforce_protection_missing" in issues:
+                        findings.append(
+                            Finding(
+                                title="登录防爆破不足",
+                                type="bruteforce_protection",
+                                severity="medium",
+                                description="登录页面未发现明显的验证码、二次验证或其他防爆破提示，自动化撞库与口令尝试成本较低。",
+                                url=login_url,
+                                location=VulnLocation(
+                                    url=login_url,
+                                    parameter="login form",
+                                    parameter_type="html",
+                                    snippet=rel_path,
+                                ),
+                                evidence=Evidence(
+                                    extra=evidence,
+                                    response_raw=body[:4000],
+                                ),
+                                fix_suggestion="为登录与找回密码流程增加验证码、二次验证、失败锁定、账号/IP 维度限流和审计日志。",
+                                confidence="medium",
+                                owasp_category="A07 身份识别与认证失败",
+                                cwe_id="CWE-307",
+                            )
+                        )
+
+                    break
+        except Exception:
+            return findings
 
         return findings
 
@@ -1527,6 +1720,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(CSPPolicyWeaknessDetector())
     DetectorRegistry.register(SRIIntegrityDetector())
     DetectorRegistry.register(FrontendSupplyChainDetector())
+    DetectorRegistry.register(LoginSurfaceDetector())
     DetectorRegistry.register(ServerExposureDetector())
     DetectorRegistry.register(PassiveExposureDetector())
     DetectorRegistry.register(ApiSurfaceExposureDetector())
