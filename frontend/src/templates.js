@@ -911,6 +911,8 @@ export const APP_TEMPLATE = `</head>
 
       <button class="ticket-batch-btn" data-action="batch-update" data-status="fixed">标记已修复</button>
 
+      <button class="ticket-batch-btn secondary" data-action="batch-export">导出摘要</button>
+
       <button class="ticket-batch-btn secondary" data-action="batch-update" data-status="ignored">标记已忽略</button>
 
       <button class="ticket-batch-btn danger" data-action="batch-delete">删除</button>

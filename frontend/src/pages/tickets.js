@@ -73,6 +73,23 @@ export function buildTicketClosureSummary(ticket, timeline) {
   };
 }
 
+
+export function buildBatchTicketSummary(tickets) {
+  const items = Array.isArray(tickets) ? tickets : [];
+  return items.map(function (ticket) {
+    const closure = buildTicketClosureSummary(ticket, []);
+    return [
+      '工单 #' + ticket.id,
+      '名称: ' + (ticket.finding_name || ''),
+      '等级: ' + (TicketHelpers.severityLabel(ticket.severity) || ticket.severity || ''),
+      '状态: ' + (TicketHelpers.statusLabel(ticket.status) || ticket.status || ''),
+      '来源 URL: ' + (ticket.url || ''),
+      '闭环摘要: ' + closure.headline,
+      '下一步: ' + closure.nextStep
+    ].join('\n');
+  }).join('\n\n--------------------\n\n');
+}
+
 export function initTicketsPage(containerSelector) {
   if (ticketsPageInited) return;
   ticketsPageInited = true;
@@ -125,6 +142,9 @@ function handleTicketClick(e) {
       break;
     case 'batch-delete':
       batchDeleteTickets();
+      break;
+    case 'batch-export':
+      exportSelectedTicketSummaries();
       break;
     case 'toggle-select-all':
       toggleSelectAllTickets(actionEl);
@@ -344,6 +364,24 @@ export function batchDeleteTickets() {
   });
 }
 
+export function exportSelectedTicketSummaries() {
+  let ids = getSelectedTicketIds();
+  if (ids.length === 0) { showToast('请先选择工单', 'error'); return; }
+  let state = appStore.getState();
+  let selectedTickets = state.tickets.filter(function (t) { return ids.indexOf(t.id) !== -1; });
+  let content = buildBatchTicketSummary(selectedTickets);
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'ticket-summary-' + new Date().toISOString().slice(0, 10) + '.txt';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  showToast('已导出 ' + ids.length + ' 个工单摘要', 'success');
+}
+
 export function updateTicketStatus(id, status) {
   ticketService.updateTicketStatus(id, status).then(function () {
     showToast('状态已更新', 'success');
@@ -412,17 +450,7 @@ export function openTicketReport(id) {
 export function copyTicketSummary(id) {
   let ticket = ticketService.getTicketById(id);
   if (!ticket) return;
-  let closure = buildTicketClosureSummary(ticket, []);
-  let summary = [
-    '工单 #' + ticket.id,
-    '名称: ' + (ticket.finding_name || ''),
-    '等级: ' + (TicketHelpers.severityLabel(ticket.severity) || ticket.severity || ''),
-    '状态: ' + (TicketHelpers.statusLabel(ticket.status) || ticket.status || ''),
-    '来源 URL: ' + (ticket.url || ''),
-    '备注: ' + (ticket.notes || ''),
-    '闭环摘要: ' + closure.headline,
-    '下一步: ' + closure.nextStep
-  ].join('\n');
+  let summary = buildBatchTicketSummary([ticket]) + '\n备注: ' + (ticket.notes || '');
   copyToClipboard(summary).then(function () {
     showToast('工单摘要已复制');
   });

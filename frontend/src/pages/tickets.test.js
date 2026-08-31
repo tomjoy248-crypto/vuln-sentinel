@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTicketClosureSummary } from './tickets.js';
+import { buildBatchTicketSummary, buildTicketClosureSummary } from './tickets.js';
 
 describe('ticket closure summary', () => {
   it('builds a fixed-state closure summary', () => {
@@ -32,5 +32,17 @@ describe('ticket closure summary', () => {
     expect(summary.headline).toContain('未通过验证');
     expect(summary.failedLabel).toBe('修复失败');
     expect(summary.nextStep).toContain('二次修复');
+  });
+
+  it('builds exportable summaries for multiple tickets', () => {
+    const text = buildBatchTicketSummary([
+      { id: 1, finding_name: '缺少 HSTS', severity: 'high', status: 'confirmed', url: 'https://example.com' },
+      { id: 2, finding_name: '后台页面匿名可访问', severity: 'critical', status: 'fixed', url: 'https://example.com/admin' }
+    ]);
+
+    expect(text).toContain('工单 #1');
+    expect(text).toContain('工单 #2');
+    expect(text).toContain('闭环摘要');
+    expect(text).toContain('下一步');
   });
 });

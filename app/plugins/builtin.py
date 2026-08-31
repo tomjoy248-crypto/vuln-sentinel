@@ -251,6 +251,28 @@ def _extract_first_form(body: str) -> str:
     return match.group(0) if match else ""
 
 
+def _looks_like_login_or_challenge(body: str, headers: dict[str, str]) -> bool:
+    """判断响应是否更像登录页、认证页或挑战页。"""
+    text = f"{body}\n" + "\n".join(f"{k}: {v}" for k, v in headers.items())
+    lowered = text.lower()
+    markers = (
+        "login",
+        "sign in",
+        "signin",
+        "authentication required",
+        "please sign in",
+        "please log in",
+        "请登录",
+        "请先登录",
+        "验证码",
+        "challenge",
+        "verify you are human",
+        "turnstile",
+        "captcha",
+    )
+    return any(marker in lowered for marker in markers)
+
+
 class ServerExposureDetector(BaseVulnDetector):
     """服务器与框架技术栈泄露检测插件。"""
 
@@ -762,6 +784,163 @@ class LoginSurfaceDetector(BaseVulnDetector):
                         )
 
                     break
+        except Exception:
+            return findings
+
+        return findings
+
+
+class ProtectedRouteExposureDetector(BaseVulnDetector):
+    """后台/敏感路由匿名访问检测插件。"""
+
+    name = "protected_route_exposure"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    _protected_path_hints = [
+        "/admin",
+        "/admin/dashboard",
+        "/dashboard",
+        "/account",
+        "/profile",
+        "/settings",
+        "/user",
+        "/user/profile",
+        "/api/me",
+        "/api/user",
+        "/api/account",
+        "/api/profile",
+        "/api/admin",
+        "/api/users",
+        "/api/settings",
+    ]
+    _protected_keywords = (
+        "dashboard",
+        "admin",
+        "account",
+        "profile",
+        "settings",
+        "logout",
+        "user center",
+        "管理",
+        "权限",
+        "role",
+        "permission",
+        "email",
+        "username",
+    )
+    _sensitive_json_keys = (
+        "email",
+        "username",
+        "user_id",
+        "userid",
+        "role",
+        "permission",
+        "token",
+        "secret",
+        "admin",
+        "settings",
+    )
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测匿名请求是否能直接访问后台页面或敏感接口。"""
+        origin = f"{urlparse(context.url).scheme}://{urlparse(context.url).netloc}"
+        findings: list[Finding] = []
+
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=False,
+                headers=context.headers or None,
+            ) as client:
+                for rel_path in self._protected_path_hints:
+                    target_url = urljoin(origin, rel_path)
+                    try:
+                        resp = await client.get(
+                            target_url,
+                            timeout=8.0,
+                            headers={
+                                "User-Agent": "Mozilla/5.0",
+                                "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
+                            },
+                        )
+                    except Exception:
+                        continue
+
+                    if resp.status_code in {401, 403}:
+                        continue
+                    if resp.status_code in {301, 302, 303, 307, 308}:
+                        location = resp.headers.get("location", "")
+                        if _looks_like_login_or_challenge(location, {}):
+                            continue
+                    if resp.status_code != 200:
+                        continue
+
+                    body = resp.text or ""
+                    header_map = dict(resp.headers)
+                    if _looks_like_login_or_challenge(body, header_map):
+                        continue
+
+                    body_lower = body.lower()
+                    content_type = (resp.headers.get("content-type") or "").lower()
+                    is_api = rel_path.startswith("/api/")
+                    has_sensitive_json = False
+                    matched_keys: list[str] = []
+                    if is_api and ("json" in content_type or body.lstrip().startswith(("{", "["))):
+                        matched_keys = [
+                            key for key in self._sensitive_json_keys if f'"{key.lower()}"' in body_lower
+                        ]
+                        has_sensitive_json = len(matched_keys) >= 1
+
+                    has_sensitive_text = any(
+                        term in body_lower for term in self._protected_keywords
+                    )
+                    if not has_sensitive_json and not has_sensitive_text:
+                        continue
+
+                    severity = "high" if is_api or "/admin" in rel_path else "medium"
+                    confidence = "high" if has_sensitive_json or "/admin" in rel_path else "medium"
+                    finding_type = "api_auth_missing" if is_api else "unauthorized_access"
+                    title = "匿名可访问敏感接口" if is_api else "后台页面匿名可访问"
+                    description = (
+                        "未登录请求即可访问敏感接口并返回疑似用户或管理数据。"
+                        if is_api
+                        else "未登录请求即可访问后台或用户中心类页面，访问控制边界可能不足。"
+                    )
+                    fix = (
+                        "为相关 API 统一增加会话或 Bearer 鉴权，并补充对象级授权，匿名请求应返回 401/403。"
+                        if is_api
+                        else "对后台页面统一挂载认证中间件和角色校验，未登录访问应跳转登录页或返回 401/403。"
+                    )
+
+                    findings.append(
+                        Finding(
+                            title=title,
+                            type=finding_type,
+                            severity=severity,
+                            description=description,
+                            url=target_url,
+                            location=VulnLocation(
+                                url=target_url,
+                                parameter="",
+                                parameter_type="path",
+                                snippet=rel_path,
+                            ),
+                            evidence=Evidence(
+                                extra={
+                                    "path": rel_path,
+                                    "status_code": resp.status_code,
+                                    "content_type": content_type,
+                                    "matched_keys": matched_keys[:8],
+                                    "is_api": is_api,
+                                },
+                                response_raw=body[:4000],
+                            ),
+                            fix_suggestion=fix,
+                            confidence=confidence,
+                            owasp_category="A01 访问控制失效",
+                            cwe_id="CWE-284",
+                        )
+                    )
         except Exception:
             return findings
 
@@ -1721,6 +1900,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(SRIIntegrityDetector())
     DetectorRegistry.register(FrontendSupplyChainDetector())
     DetectorRegistry.register(LoginSurfaceDetector())
+    DetectorRegistry.register(ProtectedRouteExposureDetector())
     DetectorRegistry.register(ServerExposureDetector())
     DetectorRegistry.register(PassiveExposureDetector())
     DetectorRegistry.register(ApiSurfaceExposureDetector())

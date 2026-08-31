@@ -8,6 +8,7 @@ from app.plugins.builtin import (
     FrontendSupplyChainDetector,
     LoginSurfaceDetector,
     PassiveExposureDetector,
+    ProtectedRouteExposureDetector,
     SRIIntegrityDetector,
     WellKnownExposureDetector,
     SensitiveEndpointDetector,
@@ -279,6 +280,90 @@ def test_login_surface_detector_ignores_protected_login_page(monkeypatch):
                     "Content-Type": "text/html",
                     "X-Frame-Options": "DENY",
                 },
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert findings == []
+
+
+def test_protected_route_exposure_detector_flags_admin_page_and_api(monkeypatch):
+    detector = ProtectedRouteExposureDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/admin":
+            return __import__("httpx").Response(
+                200,
+                text="<html><title>Admin Dashboard</title><body>dashboard admin logout users</body></html>",
+                headers={"Content-Type": "text/html"},
+            )
+        if path == "/api/me":
+            return __import__("httpx").Response(
+                200,
+                text='{"username":"alice","email":"alice@example.com","role":"admin"}',
+                headers={"Content-Type": "application/json"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "后台页面匿名可访问",
+        "匿名可访问敏感接口",
+    }
+    assert any(finding.type == "unauthorized_access" for finding in findings)
+    assert any(finding.type == "api_auth_missing" for finding in findings)
+
+
+def test_protected_route_exposure_detector_ignores_login_redirect_and_challenge(monkeypatch):
+    detector = ProtectedRouteExposureDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/admin":
+            return __import__("httpx").Response(
+                302,
+                headers={"Location": "/login"},
+            )
+        if path == "/dashboard":
+            return __import__("httpx").Response(
+                200,
+                text="<html><body>Please verify you are human challenge</body></html>",
+                headers={"Content-Type": "text/html"},
             )
         return __import__("httpx").Response(404, text="not found")
 
