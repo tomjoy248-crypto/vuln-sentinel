@@ -31,6 +31,7 @@ _GROUP_RULES: list[tuple[str, set[str], tuple[str, ...]]] = [
             "api_surface_exposure",
             "cloud_storage_exposure",
             "cloud_storage_secret_exposure",
+            "oidc_discovery_risk",
         },
         (
             "敏感路径",

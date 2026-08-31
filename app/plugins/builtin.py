@@ -1625,6 +1625,171 @@ class CloudStorageSecretExposureDetector(BaseVulnDetector):
         return findings
 
 
+class OIDCDiscoveryConfigDetector(BaseVulnDetector):
+    """OIDC discovery 配置审计插件。"""
+
+    name = "oidc_discovery_config"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    _discovery_patterns = (
+        r"https?://[^'\"<>\s]+/\.well-known/openid-configuration",
+        r"['\"]/(?:\.well-known/)?openid-configuration['\"]",
+        r"['\"]/(?:oauth2|oauth|oidc)/\.well-known/openid-configuration['\"]",
+    )
+
+    def _candidate_urls(self, context: ScanContext) -> list[str]:
+        origin = f"{urlparse(context.url).scheme}://{urlparse(context.url).netloc}"
+        body = context.body or ""
+        urls: list[str] = []
+        for pattern in self._discovery_patterns:
+            for match in re.finditer(pattern, body, re.I):
+                value = match.group(0).strip("'\"")
+                if value.startswith("http"):
+                    candidate = value
+                else:
+                    candidate = urljoin(origin, value)
+                if candidate not in urls:
+                    urls.append(candidate)
+        for fallback in (
+            f"{origin}/.well-known/openid-configuration",
+            f"{origin}/oauth2/.well-known/openid-configuration",
+        ):
+            if fallback not in urls:
+                urls.append(fallback)
+        return urls
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        body = context.body or ""
+        urls = self._candidate_urls(context)
+        if not urls:
+            return []
+
+        findings: list[Finding] = []
+        seen_fingerprints: set[tuple[str, str, str]] = set()
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                headers=context.headers or None,
+            ) as client:
+                for discovery_url in urls:
+                    try:
+                        resp = await client.get(discovery_url, timeout=8.0)
+                    except Exception:
+                        continue
+                    if resp.status_code != 200:
+                        continue
+                    try:
+                        config = resp.json()
+                    except Exception:
+                        continue
+                    if not isinstance(config, dict):
+                        continue
+
+                    response_types = {str(item).lower() for item in config.get("response_types_supported", [])}
+                    grant_types = {str(item).lower() for item in config.get("grant_types_supported", [])}
+                    token_methods = {str(item).lower() for item in config.get("token_endpoint_auth_methods_supported", [])}
+                    subject_types = {str(item).lower() for item in config.get("subject_types_supported", [])}
+                    scopes = {str(item).lower() for item in config.get("scopes_supported", [])}
+                    id_token_algs = {str(item).lower() for item in config.get("id_token_signing_alg_values_supported", [])}
+                    userinfo_algs = {str(item).lower() for item in config.get("userinfo_signing_alg_values_supported", [])}
+                    request_object_algs = {
+                        str(item).lower() for item in config.get("request_object_signing_alg_values_supported", [])
+                    }
+                    jwks_uri = str(config.get("jwks_uri") or "")
+                    issuer = str(config.get("issuer") or "")
+                    auth_endpoint = str(config.get("authorization_endpoint") or "")
+
+                    issues: list[str] = []
+                    if "token" in response_types or "id_token" in response_types:
+                        issues.append("implicit_response")
+                    if "implicit" in grant_types:
+                        issues.append("implicit_grant")
+                    if "none" in token_methods:
+                        issues.append("none_client_auth")
+                    if jwks_uri.startswith("http://") or "localhost" in jwks_uri or "127.0.0.1" in jwks_uri:
+                        issues.append("insecure_jwks_uri")
+                    if issuer.startswith("http://") or "localhost" in issuer or "127.0.0.1" in issuer:
+                        issues.append("insecure_issuer")
+                    if "public" in subject_types:
+                        issues.append("public_subject")
+                    if "openid" not in scopes and scopes:
+                        issues.append("openid_scope_missing")
+                    if auth_endpoint.startswith("http://") or "localhost" in auth_endpoint:
+                        issues.append("insecure_auth_endpoint")
+                    if "none" in id_token_algs:
+                        issues.append("unsigned_id_token")
+                    if "none" in userinfo_algs:
+                        issues.append("unsigned_userinfo")
+                    if "none" in request_object_algs:
+                        issues.append("unsigned_request_object")
+
+                    if not issues:
+                        continue
+
+                    fingerprint = (
+                        issuer,
+                        jwks_uri,
+                        ",".join(sorted(issues)),
+                    )
+                    if fingerprint in seen_fingerprints:
+                        continue
+                    seen_fingerprints.add(fingerprint)
+
+                    evidence_score = _score_signal_pairs(
+                        [
+                            ("implicit_response" in issues, 25),
+                            ("implicit_grant" in issues, 25),
+                            ("none_client_auth" in issues, 20),
+                            ("insecure_jwks_uri" in issues, 20),
+                            ("insecure_issuer" in issues, 15),
+                            ("insecure_auth_endpoint" in issues, 15),
+                            ("openid_scope_missing" in issues, 10),
+                            ("public_subject" in issues, 10),
+                        ]
+                    )
+                    severity = "high" if any(item in issues for item in ("implicit_response", "implicit_grant", "none_client_auth", "insecure_jwks_uri", "insecure_issuer")) else "medium"
+                    findings.append(
+                        Finding(
+                            title="OIDC Discovery 配置存在高风险线索",
+                            type="oidc_discovery_risk",
+                            severity=severity,
+                            description="OIDC discovery 文档中暴露了可能影响登录安全的配置线索，例如隐式流、none 客户端认证、非 HTTPS issuer 或 jwks_uri。",
+                            url=discovery_url,
+                            location=VulnLocation(
+                                url=discovery_url,
+                                parameter="openid-configuration",
+                                parameter_type="path",
+                                snippet="OIDC discovery",
+                            ),
+                            evidence=Evidence(
+                                extra={
+                                    "issues": issues,
+                                    "issuer": issuer,
+                                    "jwks_uri": jwks_uri,
+                                    "authorization_endpoint": auth_endpoint,
+                                    "response_types_supported": sorted(response_types),
+                            "grant_types_supported": sorted(grant_types),
+                            "token_endpoint_auth_methods_supported": sorted(token_methods),
+                            "id_token_signing_alg_values_supported": sorted(id_token_algs),
+                            "userinfo_signing_alg_values_supported": sorted(userinfo_algs),
+                            "request_object_signing_alg_values_supported": sorted(request_object_algs),
+                            "evidence_score": evidence_score,
+                        },
+                                response_raw=resp.text[:4000],
+                            ),
+                            fix_suggestion="在 IdP discovery 配置中关闭隐式流与 none 客户端认证，确保 issuer、jwks_uri 与授权端点均为 HTTPS，并限制到正式环境域名。",
+                            confidence="high" if severity == "high" else "medium",
+                            owasp_category="A07 身份识别与认证失败",
+                            cwe_id="CWE-20",
+                        )
+                    )
+        except Exception:
+            return findings
+
+        return findings
+
+
 class SensitiveEndpointDetector(BaseVulnDetector):
     """敏感管理/调试端点暴露检测插件。"""
 
@@ -2422,6 +2587,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(PassiveExposureDetector())
     DetectorRegistry.register(ApiSurfaceExposureDetector())
     DetectorRegistry.register(OAuthSurfaceDetector())
+    DetectorRegistry.register(OIDCDiscoveryConfigDetector())
     DetectorRegistry.register(CloudStorageExposureDetector())
     DetectorRegistry.register(CloudStorageSecretExposureDetector())
     DetectorRegistry.register(SensitiveEndpointDetector())

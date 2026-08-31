@@ -10,6 +10,7 @@ from app.plugins.builtin import (
     FrontendSupplyChainDetector,
     LoginSurfaceDetector,
     OAuthSurfaceDetector,
+    OIDCDiscoveryConfigDetector,
     PassiveExposureDetector,
     ProtectedRouteExposureDetector,
     SRIIntegrityDetector,
@@ -554,6 +555,96 @@ def test_oauth_surface_detector_ignores_strong_auth_code_flow():
     )
 
     findings = __import__("asyncio").run(detector.detect(context))
+
+    assert findings == []
+
+
+def test_oidc_discovery_detector_flags_risky_metadata(monkeypatch):
+    detector = OIDCDiscoveryConfigDetector()
+    metadata = {
+        "issuer": "http://idp.local",
+        "authorization_endpoint": "http://idp.local/oauth2/authorize",
+        "token_endpoint": "http://idp.local/oauth2/token",
+        "jwks_uri": "https://idp.local/.well-known/jwks.json",
+        "response_types_supported": ["code", "token", "id_token"],
+        "grant_types_supported": ["authorization_code", "implicit"],
+        "token_endpoint_auth_methods_supported": ["client_secret_basic", "none"],
+        "id_token_signing_alg_values_supported": ["RS256", "none"],
+        "userinfo_signing_alg_values_supported": ["RS256"],
+        "request_object_signing_alg_values_supported": ["PS256"],
+        "scopes_supported": ["profile", "email"],
+        "subject_types_supported": ["public"],
+    }
+
+    def handler(request):
+        if request.url.path.endswith("openid-configuration"):
+            return __import__("httpx").Response(200, json=metadata)
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://app.example.com/login",
+                    headers={},
+                    body='<script>const oidc="/.well-known/openid-configuration";</script>',
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.type == "oidc_discovery_risk"
+    assert finding.severity == "high"
+    assert "implicit_grant" in finding.evidence.extra["issues"]
+    assert "insecure_issuer" in finding.evidence.extra["issues"]
+    assert "unsigned_id_token" in finding.evidence.extra["issues"]
+    assert finding.evidence.extra["evidence_score"] >= 70
+
+
+def test_oidc_discovery_detector_ignores_hardened_metadata(monkeypatch):
+    detector = OIDCDiscoveryConfigDetector()
+    metadata = {
+        "issuer": "https://auth.example.com",
+        "authorization_endpoint": "https://auth.example.com/oauth2/authorize",
+        "token_endpoint": "https://auth.example.com/oauth2/token",
+        "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code"],
+        "token_endpoint_auth_methods_supported": ["client_secret_basic"],
+        "scopes_supported": ["openid", "profile", "email"],
+        "subject_types_supported": ["pairwise"],
+    }
+
+    def handler(request):
+        if request.url.path.endswith("openid-configuration"):
+            return __import__("httpx").Response(200, json=metadata)
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://app.example.com/login",
+                    headers={},
+                    body='<script>const oidc="/.well-known/openid-configuration";</script>',
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
 
     assert findings == []
 
