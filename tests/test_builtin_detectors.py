@@ -5,6 +5,7 @@ from app.plugins.builtin import (
     DirectoryListingDetector,
     DiscoverySurfaceDetector,
     PassiveExposureDetector,
+    WellKnownExposureDetector,
     SensitiveEndpointDetector,
     ServerExposureDetector,
     TraceMethodDetector,
@@ -327,6 +328,74 @@ def test_discovery_surface_detector_flags_robots_and_sitemap_leaks(monkeypatch):
 
 def test_discovery_surface_detector_ignores_empty_or_blocked_files(monkeypatch):
     detector = DiscoverySurfaceDetector()
+
+    def handler(_request):
+        return __import__("httpx").Response(403, text="forbidden")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert findings == []
+
+
+def test_well_known_detector_flags_internal_openid_metadata(monkeypatch):
+    detector = WellKnownExposureDetector()
+
+    openid = {
+        "issuer": "https://auth.example.com",
+        "authorization_endpoint": "https://auth.example.com/admin/login",
+        "token_endpoint": "https://10.0.0.8/token",
+        "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
+    }
+
+    def handler(request):
+        if request.url.path == "/.well-known/openid-configuration":
+            return __import__("httpx").Response(200, json=openid)
+        if request.url.path == "/.well-known/security.txt":
+            return __import__("httpx").Response(404, text="not found")
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert len(findings) == 1
+    assert findings[0].type == "well_known_exposure"
+    assert findings[0].severity == "high"
+    assert "internal_host" in findings[0].evidence.extra["matched_signals"]
+
+
+def test_well_known_detector_ignores_blocked_endpoints(monkeypatch):
+    detector = WellKnownExposureDetector()
 
     def handler(_request):
         return __import__("httpx").Response(403, text="forbidden")

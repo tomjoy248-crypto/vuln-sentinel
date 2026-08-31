@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from urllib.parse import urljoin, urlparse
 
@@ -91,6 +92,53 @@ def _extract_sensitive_discovery_hits(text: str) -> list[str]:
         if re.search(pattern, lowered, re.I):
             hits.append(label)
     return hits
+
+
+def _flatten_strings(value: object) -> list[str]:
+    """递归提取结构化数据中的字符串值。"""
+    strings: list[str] = []
+    if isinstance(value, str):
+        strings.append(value)
+    elif isinstance(value, dict):
+        for item in value.values():
+            strings.extend(_flatten_strings(item))
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            strings.extend(_flatten_strings(item))
+    return strings
+
+
+def _extract_well_known_hits(text: str) -> list[str]:
+    """从 well-known 文本或 JSON 中提取敏感暴露信号。"""
+    lowered = text.lower()
+    hits: list[str] = []
+
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        parsed = None
+
+    strings = _flatten_strings(parsed) if parsed is not None else []
+    strings.append(text)
+
+    patterns = {
+        "internal_host": r"(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|\.internal\b|\.local\b|\.lan\b)",
+        "admin_path": r"(?:/admin\b|/administrator\b|/manage\b|/console\b|/debug\b|/trace\b)",
+        "backup_path": r"(?:/backup\b|/dump\b|/export\b|/download\b|\.bak\b|\.old\b|\.sql\b)",
+        "config_path": r"(?:/config\b|/settings\b|\.env\b|\.git\b|\.svn\b|\.ini\b|\.yml\b|\.yaml\b)",
+        "auth_endpoint": r"(?:authorization_endpoint|token_endpoint|jwks_uri|userinfo_endpoint|registration_endpoint|introspection_endpoint|revocation_endpoint|device_authorization_endpoint)",
+        "internal_api": r"(?:/api/(?:internal|private|admin|debug)\b)",
+        "openid": r"openid-configuration",
+        "app_link": r"(?:assetlinks\.json|apple-app-site-association|mta-sts\.txt|security\.txt)",
+    }
+
+    for label, pattern in patterns.items():
+        for item in strings:
+            if re.search(pattern, item, re.I):
+                hits.append(label)
+                break
+
+    return list(dict.fromkeys(hits))
 
 
 class ServerExposureDetector(BaseVulnDetector):
@@ -582,6 +630,89 @@ class DiscoverySurfaceDetector(BaseVulnDetector):
         return findings
 
 
+class WellKnownExposureDetector(BaseVulnDetector):
+    """well-known 公开元数据泄露检测插件。"""
+
+    name = "well_known_exposure"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测 well-known 文件是否泄露内部地址、管理入口或调试元数据。"""
+        origin = f"{urlparse(context.url).scheme}://{urlparse(context.url).netloc}"
+        targets = [
+            "/.well-known/openid-configuration",
+            "/.well-known/security.txt",
+            "/.well-known/assetlinks.json",
+            "/.well-known/apple-app-site-association",
+            "/.well-known/mta-sts.txt",
+        ]
+
+        findings: list[Finding] = []
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                headers=context.headers or None,
+            ) as client:
+                for rel_path in targets:
+                    target_url = urljoin(origin, rel_path)
+                    try:
+                        resp = await client.get(target_url, timeout=8.0)
+                    except Exception:
+                        continue
+
+                    if resp.status_code != 200:
+                        continue
+
+                    text = resp.text or ""
+                    if not text.strip():
+                        continue
+
+                    hits = _extract_well_known_hits(text)
+                    if not hits:
+                        continue
+
+                    severity = "low"
+                    if "internal_host" in hits or "admin_path" in hits or "backup_path" in hits:
+                        severity = "high"
+                    elif "auth_endpoint" in hits or "internal_api" in hits:
+                        severity = "medium"
+                    elif "config_path" in hits:
+                        severity = "medium"
+
+                    findings.append(
+                        Finding(
+                            title="well-known 公开元数据泄露",
+                            type="well_known_exposure",
+                            severity=severity,
+                            description=f"{rel_path} 公开暴露了服务发现或站点关联元数据，且其中包含敏感入口或内部地址线索。",
+                            url=target_url,
+                            location=VulnLocation(
+                                url=target_url,
+                                parameter="",
+                                parameter_type="path",
+                                snippet=rel_path,
+                            ),
+                            evidence=Evidence(
+                                extra={
+                                    "path": rel_path,
+                                    "matched_signals": hits,
+                                    "status_code": resp.status_code,
+                                },
+                                response_raw=text[:4000],
+                            ),
+                            fix_suggestion="检查 well-known 配置内容，移除内部地址、管理入口和调试接口，仅保留业务必须公开的元数据。",
+                            confidence="high",
+                            owasp_category="A05 安全配置错误",
+                            cwe_id="CWE-200",
+                        )
+                    )
+        except Exception:
+            return findings
+
+        return findings
+
+
 class HeaderSecurityDetector(BaseVulnDetector):
     """安全响应头检测插件。"""
 
@@ -1052,6 +1183,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(SensitiveEndpointDetector())
     DetectorRegistry.register(BackupExposureDetector())
     DetectorRegistry.register(DiscoverySurfaceDetector())
+    DetectorRegistry.register(WellKnownExposureDetector())
     DetectorRegistry.register(DirectoryListingDetector())
     DetectorRegistry.register(TraceMethodDetector())
     DetectorRegistry.register(SSLInfoDetector())
