@@ -3,6 +3,7 @@ from app.plugins.builtin import (
     BackupExposureDetector,
     CSPPolicyWeaknessDetector,
     DirectoryListingDetector,
+    DiscoverySurfaceDetector,
     PassiveExposureDetector,
     SensitiveEndpointDetector,
     ServerExposureDetector,
@@ -247,6 +248,85 @@ def test_backup_exposure_detector_flags_dump_and_backup_files(monkeypatch):
 
 def test_backup_exposure_detector_ignores_forbidden_files(monkeypatch):
     detector = BackupExposureDetector()
+
+    def handler(_request):
+        return __import__("httpx").Response(403, text="forbidden")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert findings == []
+
+
+def test_discovery_surface_detector_flags_robots_and_sitemap_leaks(monkeypatch):
+    detector = DiscoverySurfaceDetector()
+
+    robots = (
+        "User-agent: *\n"
+        "Disallow: /admin\n"
+        "Disallow: /backup.sql\n"
+        "Disallow: /internal/console\n"
+        "Sitemap: https://example.com/sitemap.xml\n"
+    )
+    sitemap = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<urlset>"
+        "<url><loc>https://example.com/admin</loc></url>"
+        "<url><loc>https://example.com/debug</loc></url>"
+        "<url><loc>https://example.com/internal/report</loc></url>"
+        "</urlset>"
+    )
+
+    def handler(request):
+        path = request.url.path
+        if path == "/robots.txt":
+            return __import__("httpx").Response(200, text=robots)
+        if path == "/sitemap.xml":
+            return __import__("httpx").Response(200, text=sitemap)
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "robots.txt 暴露敏感路径",
+        "sitemap.xml 暴露敏感页面",
+    }
+    assert all(finding.type == "discovery_exposure" for finding in findings)
+
+
+def test_discovery_surface_detector_ignores_empty_or_blocked_files(monkeypatch):
+    detector = DiscoverySurfaceDetector()
 
     def handler(_request):
         return __import__("httpx").Response(403, text="forbidden")

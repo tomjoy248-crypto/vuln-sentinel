@@ -73,6 +73,26 @@ def _is_generic_edge_server(value: str) -> bool:
     return normalized in generic_tokens
 
 
+def _extract_sensitive_discovery_hits(text: str) -> list[str]:
+    """从 robots / sitemap 文本中提取敏感暴露信号。"""
+    lowered = text.lower()
+    patterns = {
+        "admin": r"(?:(?:disallow|allow|loc)\s*[:=]\s*.*(?:/admin\b|/administrator\b|/manage\b|/console\b))|(?:https?://[^ \n]+/(?:admin|administrator|manage|console)(?:[/?#\s]|$))",
+        "api_admin": r"(?:/api/(?:admin|internal|private|debug)\b)",
+        "login": r"(?:/login\b|/signin\b|/auth\b)",
+        "debug": r"(?:/debug\b|/trace\b|/console\b)",
+        "backup": r"(?:/backup\b|/dump\b|/export\b|/download\b|\.bak\b|\.old\b|\.sql\b)",
+        "config": r"(?:/config\b|/settings\b|\.env\b|\.git\b|\.svn\b|\.ini\b|\.yml\b|\.yaml\b)",
+        "swagger": r"(?:/swagger\b|/redoc\b|/openapi\b|/api-docs\b)",
+        "internal": r"(?:/internal\b|/private\b|/staging\b|/dev\b|/test\b)",
+    }
+    hits: list[str] = []
+    for label, pattern in patterns.items():
+        if re.search(pattern, lowered, re.I):
+            hits.append(label)
+    return hits
+
+
 class ServerExposureDetector(BaseVulnDetector):
     """服务器与框架技术栈泄露检测插件。"""
 
@@ -477,6 +497,83 @@ class BackupExposureDetector(BaseVulnDetector):
                             confidence="high",
                             owasp_category="A05 安全配置错误",
                             cwe_id=cwe,
+                        )
+                    )
+        except Exception:
+            return findings
+
+        return findings
+
+
+class DiscoverySurfaceDetector(BaseVulnDetector):
+    """公开发现面泄露检测插件。"""
+
+    name = "discovery_surface"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测 robots.txt / sitemap.xml 是否暴露敏感入口。"""
+        origin = f"{urlparse(context.url).scheme}://{urlparse(context.url).netloc}"
+        targets = [
+            ("/robots.txt", "robots.txt 暴露敏感路径", "medium", "robots"),
+            ("/sitemap.xml", "sitemap.xml 暴露敏感页面", "medium", "sitemap"),
+            ("/sitemap_index.xml", "sitemap.xml 暴露敏感页面", "low", "sitemap"),
+        ]
+
+        findings: list[Finding] = []
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                headers=context.headers or None,
+            ) as client:
+                for rel_path, title, base_severity, source_name in targets:
+                    target_url = urljoin(origin, rel_path)
+                    try:
+                        resp = await client.get(target_url, timeout=8.0)
+                    except Exception:
+                        continue
+
+                    if resp.status_code != 200:
+                        continue
+
+                    text = resp.text or ""
+                    if not text.strip():
+                        continue
+
+                    hits = _extract_sensitive_discovery_hits(text)
+                    if not hits:
+                        continue
+
+                    severity = base_severity
+                    if len(hits) >= 3 or "backup" in hits or "config" in hits:
+                        severity = "high"
+
+                    findings.append(
+                        Finding(
+                            title=title,
+                            type="discovery_exposure",
+                            severity=severity,
+                            description=f"公开的 {rel_path} 暴露了敏感发现信息，攻击者可从中直接枚举管理入口、调试面或备份路径。",
+                            url=target_url,
+                            location=VulnLocation(
+                                url=target_url,
+                                parameter="",
+                                parameter_type="path",
+                                snippet=rel_path,
+                            ),
+                            evidence=Evidence(
+                                extra={
+                                    "source": source_name,
+                                    "matched_signals": hits,
+                                    "status_code": resp.status_code,
+                                },
+                                response_raw=text[:4000],
+                            ),
+                            fix_suggestion="将 robots.txt / sitemap.xml 中的敏感路径移除，避免在公开发现文件里列出管理、备份、调试与内部入口。",
+                            confidence="high",
+                            owasp_category="A05 安全配置错误",
+                            cwe_id="CWE-200",
                         )
                     )
         except Exception:
@@ -954,6 +1051,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(PassiveExposureDetector())
     DetectorRegistry.register(SensitiveEndpointDetector())
     DetectorRegistry.register(BackupExposureDetector())
+    DetectorRegistry.register(DiscoverySurfaceDetector())
     DetectorRegistry.register(DirectoryListingDetector())
     DetectorRegistry.register(TraceMethodDetector())
     DetectorRegistry.register(SSLInfoDetector())
