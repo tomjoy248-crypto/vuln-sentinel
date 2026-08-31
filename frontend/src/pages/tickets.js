@@ -83,7 +83,9 @@ export function buildBatchTicketSummary(tickets) {
       '名称: ' + (ticket.finding_name || ''),
       '等级: ' + (TicketHelpers.severityLabel(ticket.severity) || ticket.severity || ''),
       '状态: ' + (TicketHelpers.statusLabel(ticket.status) || ticket.status || ''),
+      '负责人: ' + (ticket.owner || '未指定'),
       '来源 URL: ' + (ticket.url || ''),
+      '备注: ' + (ticket.notes || '无'),
       '闭环摘要: ' + closure.headline,
       '下一步: ' + closure.nextStep
     ].join('\n');
@@ -133,6 +135,12 @@ function handleTicketClick(e) {
       break;
     case 'copy-summary':
       if (id) copyTicketSummary(id);
+      break;
+    case 'edit-owner':
+      if (id) editTicketOwner(id);
+      break;
+    case 'export-ticket':
+      if (id) exportTicketDetail(id);
       break;
     case 'delete':
       if (id) deleteTicket(id);
@@ -253,6 +261,8 @@ export function showTicketDetail(id) {
   html += '<div class="ticket-detail-badges"><span class="ticket-severity ' + severityClass + '">' + severityLabel + '</span><span class="ticket-status-badge">' + statusLabel + '</span></div>';
   html += '</div>';
   html += '<div class="ticket-detail-meta">工单 #' + ticket.id + (ticket.scan_id ? ' · 扫描 #' + ticket.scan_id : '') + ' · ' + (ticket.created_at || '') + '</div>';
+  html += '<div class="ticket-owner-bar"><div class="ticket-owner-chip">负责人：' + escapeHtml(ticket.owner || '未指定') + '</div>';
+  html += '<div class="ticket-owner-chip subtle">目标：' + escapeHtml(ticket.target_host || ticket.url || '未记录') + '</div></div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
   html += '<div style="background:rgba(75,110,175,0.12);color:var(--primary-light);border:1px solid rgba(75,110,175,0.28);padding:4px 10px;border-radius:999px;font-size:12px">建议：' + (ticket.status === 'fixed' ? '尽快复测确认' : ticket.status === 'failed' ? '回看失败原因并回滚' : ticket.status === 'applying' ? '等待变更生效后复测' : '推进修复并保留变更记录') + '</div>';
   html += '<div style="background:rgba(75,110,175,0.12);color:var(--primary-light);border:1px solid rgba(75,110,175,0.28);padding:4px 10px;border-radius:999px;font-size:12px">优先级：' + severityLabel + '</div>';
@@ -270,6 +280,7 @@ export function showTicketDetail(id) {
   // 闭环时间线
   html += '<div class="ticket-detail-section"><div class="ticket-detail-label">修复闭环</div>';
   html += '<div class="ticket-timeline" id="ticket-timeline-' + ticket.id + '"><div class="ticket-timeline-loading">正在读取时间线...</div></div></div>';
+  html += '<div class="ticket-detail-section"><div class="ticket-detail-label">操作历史</div><div class="ticket-activity-list" id="ticket-activity-' + ticket.id + '"><div class="ticket-timeline-loading">正在读取操作历史...</div></div></div>';
 
   if (ticket.fix_code) {
     html += '<div class="ticket-detail-section"><div class="ticket-detail-label">修复代码</div><pre class="ticket-detail-code">' + escapeHtml(ticket.fix_code) + '</pre></div>';
@@ -311,7 +322,9 @@ export function showTicketDetail(id) {
   html += '<button class="ticket-btn secondary" data-action="open-fixer" data-id="' + ticket.id + '">去修复器</button>';
   html += '<button class="ticket-btn secondary" data-action="open-report" data-id="' + ticket.id + '">回到报告</button>';
   html += '<button class="ticket-btn secondary" data-action="copy-summary" data-id="' + ticket.id + '">复制摘要</button>';
+  html += '<button class="ticket-btn secondary" data-action="edit-owner" data-id="' + ticket.id + '">负责人</button>';
   html += '<button class="ticket-btn secondary" data-action="edit-notes" data-id="' + ticket.id + '">备注</button>';
+  html += '<button class="ticket-btn secondary" data-action="export-ticket" data-id="' + ticket.id + '">导出工单</button>';
   html += '<button class="ticket-btn danger" data-action="delete" data-id="' + ticket.id + '">删除</button>';
   html += '</div>';
   panel.innerHTML = html;
@@ -415,6 +428,18 @@ export function editTicketNotes(id) {
   });
 }
 
+export function editTicketOwner(id) {
+  let ticket = ticketService.getTicketById(id);
+  let owner = prompt('设置负责人:', ticket && ticket.owner ? ticket.owner : '');
+  if (owner === null) return;
+  ticketService.updateTicketOwner(id, owner).then(function () {
+    showToast('负责人已更新', 'success');
+    return loadTickets().then(function () { showTicketDetail(id); });
+  }).catch(function (e) {
+    showToast('更新失败: ' + e.message, 'error');
+  });
+}
+
 export function openTicketFixer(id) {
   let ticket = ticketService.getTicketById(id);
   if (!ticket) return;
@@ -456,12 +481,32 @@ export function copyTicketSummary(id) {
   });
 }
 
+export function exportTicketDetail(id) {
+  ticketService.exportTicket(id, 'markdown').then(function (resp) {
+    return resp.blob().then(function (blob) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'fix-ticket-' + id + '.md';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      showToast('工单导出已开始', 'success');
+    });
+  }).catch(function () {
+    showToast('导出失败', 'error');
+  });
+}
+
 export function loadTicketTimeline(id) {
   let container = document.getElementById('ticket-timeline-' + id);
+  let activityContainer = document.getElementById('ticket-activity-' + id);
   if (!container) return;
   apiGet('/api/fix-tickets/' + id + '/timeline').then(function (data) {
     if (!data || !data.timeline) {
       container.innerHTML = '<div class="ticket-timeline-empty">暂无时间线数据</div>';
+      if (activityContainer) activityContainer.innerHTML = '<div class="ticket-timeline-empty">暂无操作记录</div>';
       return;
     }
     let html = '<div class="ticket-timeline-steps">';
@@ -494,8 +539,25 @@ export function loadTicketTimeline(id) {
         (closure.failedLabel ? '<div class="ticket-closure-progress">当前阻塞：' + escapeHtml(closure.failedLabel) + '</div>' : '') +
         '<div class="ticket-closure-next">下一步：' + escapeHtml(closure.nextStep) + '</div>';
     }
+    if (activityContainer) {
+      let activities = Array.isArray(data.activities) ? data.activities : [];
+      if (activities.length === 0) {
+        activityContainer.innerHTML = '<div class="ticket-timeline-empty">暂无操作记录</div>';
+      } else {
+        activityContainer.innerHTML = activities.map(function (item) {
+          let label = item.event_type === 'note'
+            ? '备注更新'
+            : item.event_type === 'owner'
+              ? '负责人调整'
+              : '状态流转';
+          let note = item.note ? '<div class="ticket-activity-note">' + escapeHtml(item.note) + '</div>' : '';
+          return '<div class="ticket-activity-item"><div class="ticket-activity-head"><span class="ticket-activity-type">' + label + '</span><span class="ticket-activity-time">' + escapeHtml(item.created_at || '') + '</span></div>' + note + '</div>';
+        }).join('');
+      }
+    }
   }).catch(function () {
     container.innerHTML = '<div class="ticket-timeline-empty">加载失败</div>';
+    if (activityContainer) activityContainer.innerHTML = '<div class="ticket-timeline-empty">加载失败</div>';
   });
 }
 

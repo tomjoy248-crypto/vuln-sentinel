@@ -187,6 +187,11 @@ export function listTickets(status) {
 export function getTicket(id) { return apiGet('/api/fix-tickets/' + id); }
 export function updateTicket(id, body) { return apiPatch('/api/fix-tickets/' + id, body); }
 export function deleteTicket(id) { return apiDelete('/api/fix-tickets/' + id); }
+export function exportTicket(id, format = 'markdown') {
+  return authFetch('/api/fix-tickets/' + id + '/export?format=' + encodeURIComponent(format), {
+    method: 'GET'
+  });
+}
 
 // Assets
 export function listAssets() { return apiGet('/api/assets'); }

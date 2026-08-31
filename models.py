@@ -195,6 +195,7 @@ class FixTicketCreate(BaseModel):
     severity: str = "low"
     fix_code: str | None = None
     notes: str | None = None
+    owner: str | None = None
 
 
 class FixTicketUpdate(BaseModel):
@@ -202,6 +203,7 @@ class FixTicketUpdate(BaseModel):
     fix_code: str | None = None
     notes: str | None = None
     rollback_code: str | None = None
+    owner: str | None = None
 
     @field_validator("status")
     @classmethod

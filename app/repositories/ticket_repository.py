@@ -1,6 +1,7 @@
 """修复工单仓库：状态机 + 事件时间线"""
 
 from datetime import datetime
+import json
 from typing import Any
 
 from app.core.exceptions import BusinessException
@@ -68,9 +69,11 @@ def _ensure_ticket_events_table(conn) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ticket_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
+            event_type TEXT DEFAULT 'status',
             from_status TEXT,
             to_status TEXT,
             note TEXT,
+            details_json TEXT DEFAULT '{}',
             created_at TEXT
         )"""
     )
@@ -85,20 +88,31 @@ def _record_ticket_event(
     user_id: int,
     from_status: str | None,
     to_status: str | None,
+    event_type: str = "status",
     note: str | None = None,
+    details: dict[str, Any] | None = None,
 ) -> None:
     """记录一次状态转移事件。"""
     _ensure_ticket_events_table(conn)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         """INSERT INTO ticket_events
-           (ticket_id, user_id, from_status, to_status, note, created_at)
-           VALUES (?,?,?,?,?,?)""",
-        (ticket_id, user_id, from_status or "", to_status or "", note or "", now),
+           (ticket_id, user_id, event_type, from_status, to_status, note, details_json, created_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (
+            ticket_id,
+            user_id,
+            event_type,
+            from_status or "",
+            to_status or "",
+            note or "",
+            json.dumps(details or {}, ensure_ascii=False),
+            now,
+        ),
     )
 
 
-def _ticket_events(ticket_id: int) -> list[dict[str, Any]]:
+def get_ticket_events(ticket_id: int) -> list[dict[str, Any]]:
     """获取指定工单的所有事件，按时间升序排列。"""
     conn = get_db()
     try:
@@ -106,7 +120,16 @@ def _ticket_events(ticket_id: int) -> list[dict[str, Any]]:
             "SELECT * FROM ticket_events WHERE ticket_id=? ORDER BY id ASC",
             (ticket_id,),
         ).fetchall()
-        return [dict(r) for r in rows]
+        events = []
+        for row in rows:
+            item = dict(row)
+            details_raw = item.get("details_json") or "{}"
+            try:
+                item["details"] = json.loads(details_raw)
+            except Exception:
+                item["details"] = {}
+            events.append(item)
+        return events
     finally:
         conn.close()
 
@@ -118,6 +141,7 @@ def create_fix_ticket(
     severity: str,
     fix_code: str | None = None,
     notes: str | None = None,
+    owner: str | None = None,
     finding_id: str | None = None,
     finding_type: str | None = None,
     url: str | None = None,
@@ -129,9 +153,9 @@ def create_fix_ticket(
         cur = conn.execute(
             """INSERT INTO fix_tickets (
                 user_id, scan_id, finding_name, severity, status,
-                fix_code, notes, finding_id, finding_type, url, target_host,
+                fix_code, notes, owner, finding_id, finding_type, url, target_host,
                 created_at, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 user_id,
                 scan_id,
@@ -140,6 +164,7 @@ def create_fix_ticket(
                 TicketStatus.PENDING,
                 fix_code,
                 notes,
+                owner or "",
                 finding_id or "",
                 finding_type or "",
                 url or "",
@@ -150,7 +175,13 @@ def create_fix_ticket(
         )
         ticket_id = cur.lastrowid
         _record_ticket_event(
-            conn, ticket_id, user_id, "", TicketStatus.PENDING, "创建工单"
+            conn,
+            ticket_id,
+            user_id,
+            "",
+            TicketStatus.PENDING,
+            note="创建工单",
+            details={"owner": owner or "", "severity": severity},
         )
         conn.commit()
         return ticket_id
@@ -194,6 +225,7 @@ def update_fix_ticket(
     status: str | None = None,
     fix_code: str | None = None,
     notes: str | None = None,
+    owner: str | None = None,
     applied_at: str | None = None,
     rolled_back_at: str | None = None,
     rollback_code: str | None = None,
@@ -203,13 +235,15 @@ def update_fix_ticket(
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT status FROM fix_tickets WHERE id=? AND user_id=?",
+            "SELECT status, notes, owner FROM fix_tickets WHERE id=? AND user_id=?",
             (ticket_id, user_id),
         ).fetchone()
         if not row:
             return False
 
         current_status = row["status"]
+        current_notes = row["notes"] or ""
+        current_owner = row["owner"] or ""
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         fields: list[str] = []
         params: list[Any] = []
@@ -223,7 +257,14 @@ def update_fix_ticket(
                 )
             fields.append("status=?")
             params.append(status)
-            _record_ticket_event(conn, ticket_id, user_id, current_status, status)
+            _record_ticket_event(
+                conn,
+                ticket_id,
+                user_id,
+                current_status,
+                status,
+                note=f"状态更新为 {status}",
+            )
             if status == TicketStatus.FIXED:
                 fields.append("fixed_at=?")
                 params.append(now)
@@ -240,6 +281,33 @@ def update_fix_ticket(
         if notes is not None:
             fields.append("notes=?")
             params.append(notes)
+            if (notes or "") != current_notes:
+                _record_ticket_event(
+                    conn,
+                    ticket_id,
+                    user_id,
+                    current_status,
+                    current_status,
+                    event_type="note",
+                    note=notes or "",
+                )
+        if owner is not None:
+            fields.append("owner=?")
+            params.append(owner)
+            if (owner or "") != current_owner:
+                _record_ticket_event(
+                    conn,
+                    ticket_id,
+                    user_id,
+                    current_status,
+                    current_status,
+                    event_type="owner",
+                    note=f"负责人更新为 {owner or '未指定'}",
+                    details={
+                        "previous_owner": current_owner,
+                        "owner": owner or "",
+                    },
+                )
         if applied_at is not None:
             fields.append("applied_at=?")
             params.append(applied_at)
@@ -351,9 +419,12 @@ def build_ticket_timeline(ticket: dict[str, Any]) -> list[dict[str, Any]]:
 
     返回与旧版 api_fix_ticket_timeline 相同 shape 的列表。
     """
-    events = _ticket_events(ticket["id"])
+    events = get_ticket_events(ticket["id"])
     status_events: dict[str, dict[str, Any]] = {}
     for e in events:
+        event_type = e.get("event_type") or "status"
+        if event_type != "status":
+            continue
         to_status = e.get("to_status")
         if not to_status:
             continue

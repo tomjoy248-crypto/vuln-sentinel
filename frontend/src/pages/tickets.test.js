@@ -36,12 +36,14 @@ describe('ticket closure summary', () => {
 
   it('builds exportable summaries for multiple tickets', () => {
     const text = buildBatchTicketSummary([
-      { id: 1, finding_name: '缺少 HSTS', severity: 'high', status: 'confirmed', url: 'https://example.com' },
-      { id: 2, finding_name: '后台页面匿名可访问', severity: 'critical', status: 'fixed', url: 'https://example.com/admin' }
+      { id: 1, finding_name: '缺少 HSTS', severity: 'high', status: 'confirmed', url: 'https://example.com', owner: 'Alice', notes: '等待网关变更' },
+      { id: 2, finding_name: '后台页面匿名可访问', severity: 'critical', status: 'fixed', url: 'https://example.com/admin', owner: '', notes: '' }
     ]);
 
     expect(text).toContain('工单 #1');
     expect(text).toContain('工单 #2');
+    expect(text).toContain('负责人: Alice');
+    expect(text).toContain('备注: 等待网关变更');
     expect(text).toContain('闭环摘要');
     expect(text).toContain('下一步');
   });

@@ -149,6 +149,89 @@ def _build_evidence_screenshot_uri(finding: dict[str, Any], page_url: str) -> st
     return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
 
 
+def _format_ticket_event_label(event: dict[str, Any]) -> str:
+    event_type = str(event.get("event_type") or "status")
+    if event_type == "note":
+        return "备注更新"
+    if event_type == "owner":
+        details = event.get("details") or {}
+        owner = details.get("owner") or "未指定"
+        return f"负责人变更为 {owner}"
+    to_status = str(event.get("to_status") or "").strip()
+    if to_status:
+        return f"状态更新为 {to_status}"
+    return "工单事件"
+
+
+def _build_ticket_markdown_export(
+    ticket: dict[str, Any],
+    timeline: list[dict[str, Any]],
+    activities: list[dict[str, Any]],
+) -> str:
+    lines = [
+        f"# 修复工单 #{ticket.get('id', '')}",
+        "",
+        "## 基本信息",
+        f"- 发现项：{ticket.get('finding_name') or ''}",
+        f"- 风险等级：{ticket.get('severity') or ''}",
+        f"- 当前状态：{ticket.get('status') or ''}",
+        f"- 负责人：{ticket.get('owner') or '未指定'}",
+        f"- 来源扫描：{ticket.get('scan_id') or '未关联'}",
+        f"- 目标地址：{ticket.get('url') or ticket.get('target_host') or '未记录'}",
+        f"- 创建时间：{ticket.get('created_at') or ''}",
+        f"- 最近更新时间：{ticket.get('updated_at') or ''}",
+        "",
+    ]
+    if ticket.get("notes"):
+        lines.extend(["## 当前备注", str(ticket["notes"]), ""])
+    if ticket.get("fix_code"):
+        lines.extend(
+            ["## 修复建议 / 修复代码", "```", str(ticket["fix_code"]), "```", ""]
+        )
+    if ticket.get("rollback_code"):
+        lines.extend(["## 回滚代码", "```", str(ticket["rollback_code"]), "```", ""])
+    lines.extend(["## 修复闭环时间线"])
+    if timeline:
+        for step in timeline:
+            label = step.get("label") or step.get("stage") or "阶段"
+            lines.append(
+                f"- {label} [{step.get('status') or 'pending'}] {step.get('time') or '待处理'}"
+            )
+    else:
+        lines.append("- 暂无时间线数据")
+    lines.append("")
+    lines.extend(["## 操作历史"])
+    if activities:
+        for event in activities:
+            label = _format_ticket_event_label(event)
+            note = str(event.get("note") or "").strip()
+            if note and event.get("event_type") == "note":
+                lines.append(f"- {event.get('created_at') or ''} {label}：{note}")
+            else:
+                lines.append(f"- {event.get('created_at') or ''} {label}")
+    else:
+        lines.append("- 暂无操作记录")
+    lines.append("")
+    if ticket.get("diff_summary") and ticket.get("diff_summary") != "{}":
+        try:
+            diff = json.loads(ticket["diff_summary"])
+            summary = diff.get("summary") or {}
+            lines.extend(
+                [
+                    "## 复测结果",
+                    f"- 已验证修复：{'是' if diff.get('verified_fixed') else '否'}",
+                    f"- 消除问题数：{summary.get('eliminated_count', 0)}",
+                    f"- 新增问题数：{summary.get('new_count', 0)}",
+                    f"- 保留问题数：{summary.get('retained_count', 0)}",
+                    f"- 评分变化：{diff.get('before_score', 0)} -> {diff.get('after_score', 0)}",
+                    "",
+                ]
+            )
+        except Exception:
+            pass
+    return "\n".join(lines).strip() + "\n"
+
+
 def _attach_evidence_snapshots(findings: list[dict[str, Any]], page_url: str) -> list[dict[str, Any]]:
     updated = []
     for finding in findings or []:
@@ -408,6 +491,7 @@ from app.repositories.ticket_repository import (
     create_fix_ticket,
     delete_fix_ticket,
     get_fix_ticket,
+    get_ticket_events,
     get_fix_tickets,
     update_fix_ticket,
 )
@@ -1025,6 +1109,7 @@ def init_db() -> None:
             status TEXT DEFAULT 'pending',
             fix_code TEXT,
             notes TEXT,
+            owner TEXT DEFAULT '',
             created_at TEXT,
             updated_at TEXT,
             fixed_at TEXT
@@ -1044,9 +1129,11 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ticket_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
+            event_type TEXT DEFAULT 'status',
             from_status TEXT,
             to_status TEXT,
             note TEXT,
+            details_json TEXT DEFAULT '{}',
             created_at TEXT
         )"""
     )
@@ -1111,6 +1198,7 @@ def init_db() -> None:
     # 迁移：为 fix_tickets 表扩展闭环修复字段
     _fix_tickets_columns = [
         ("finding_id", "ALTER TABLE fix_tickets ADD COLUMN finding_id TEXT DEFAULT ''"),
+        ("owner", "ALTER TABLE fix_tickets ADD COLUMN owner TEXT DEFAULT ''"),
         (
             "finding_type",
             "ALTER TABLE fix_tickets ADD COLUMN finding_type TEXT DEFAULT ''",
@@ -1142,15 +1230,30 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ticket_id INTEGER NOT NULL,
                 user_id INTEGER NOT NULL,
+                event_type TEXT DEFAULT 'status',
                 from_status TEXT,
                 to_status TEXT,
                 note TEXT,
+                details_json TEXT DEFAULT '{}',
                 created_at TEXT
             )"""
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_ticket_events_ticket_id ON ticket_events(ticket_id)"
         )
+        _ticket_event_columns = [
+            (
+                "event_type",
+                "ALTER TABLE ticket_events ADD COLUMN event_type TEXT DEFAULT 'status'",
+            ),
+            (
+                "details_json",
+                "ALTER TABLE ticket_events ADD COLUMN details_json TEXT DEFAULT '{}'",
+            ),
+        ]
+        for col_name, col_def in _ticket_event_columns:
+            if not _column_exists(conn, "ticket_events", col_name):
+                conn.execute(col_def)
     except Exception as e:
         logger.warning("DB migration create ticket_events table skipped: %s", e)
     # 积分使用日志表
@@ -11686,6 +11789,7 @@ async def api_create_fix_ticket(
         req.severity,
         req.fix_code,
         req.notes,
+        req.owner,
     )
     return success_response(data={"ticket_id": ticket_id}, message="工单创建成功")
 
@@ -11719,6 +11823,8 @@ async def api_update_fix_ticket(
         status=req.status,
         fix_code=req.fix_code,
         notes=req.notes,
+        owner=req.owner,
+        rollback_code=req.rollback_code,
     )
     if not ok:
         raise NotFoundException("工单不存在或无权限")
@@ -11736,6 +11842,8 @@ async def api_put_fix_ticket(
         status=req.status,
         fix_code=req.fix_code,
         notes=req.notes,
+        owner=req.owner,
+        rollback_code=req.rollback_code,
     )
     if not ok:
         raise NotFoundException("工单不存在或无权限")
@@ -11889,7 +11997,37 @@ async def api_fix_ticket_timeline(
         raise NotFoundException("工单不存在或无权限")
 
     timeline = build_ticket_timeline(ticket)
-    return success_response(data={"ticket": ticket, "timeline": timeline})
+    activities = get_ticket_events(ticket_id)
+    return success_response(
+        data={"ticket": ticket, "timeline": timeline, "activities": activities}
+    )
+
+
+@app.get("/api/fix-tickets/{ticket_id}/export")
+async def api_export_fix_ticket(
+    ticket_id: int,
+    format: str = Query(default="markdown"),
+    user: dict = Depends(require_login),
+):
+    """导出单个修复工单的正式摘要。"""
+    ticket = get_fix_ticket(ticket_id, user["user_id"])
+    if not ticket:
+        raise NotFoundException("工单不存在或无权限")
+
+    timeline = build_ticket_timeline(ticket)
+    activities = get_ticket_events(ticket_id)
+    content = _build_ticket_markdown_export(ticket, timeline, activities)
+    fmt = (format or "markdown").lower()
+    extension = "md" if fmt in ("markdown", "md") else "txt"
+    media_type = (
+        "text/markdown; charset=utf-8"
+        if extension == "md"
+        else "text/plain; charset=utf-8"
+    )
+    headers = {
+        "Content-Disposition": f'attachment; filename="fix-ticket-{ticket_id}.{extension}"'
+    }
+    return Response(content=content, media_type=media_type, headers=headers)
 
 
 @app.post("/api/finding/feedback")

@@ -4,6 +4,7 @@ import {
   getTicket,
   updateTicket,
   deleteTicket as apiDeleteTicket,
+  exportTicket as apiExportTicket,
   apiPost,
   apiGet
 } from '../api.js';
@@ -49,6 +50,16 @@ export async function updateTicketNotes(id, notes) {
   return result;
 }
 
+export async function updateTicketOwner(id, owner) {
+  const result = await updateTicket(id, { owner: owner });
+  const state = appStore.getState();
+  const tickets = state.tickets.map(function (t) {
+    return t.id === id ? Object.assign({}, t, { owner: owner }) : t;
+  });
+  appStore.setState({ tickets: tickets });
+  return result;
+}
+
 export async function deleteTicket(id) {
   const result = await apiDeleteTicket(id);
   const state = appStore.getState();
@@ -86,4 +97,8 @@ export async function verifyTicket(id) {
   // Verification changes server-side state; callers typically reload afterwards.
   appStore.setState({ lastVerifiedAt: Date.now() });
   return result;
+}
+
+export async function exportTicket(id, format) {
+  return apiExportTicket(id, format || 'markdown');
 }
