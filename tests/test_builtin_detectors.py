@@ -3,6 +3,7 @@ from app.plugins.builtin import (
     CSPPolicyWeaknessDetector,
     DirectoryListingDetector,
     PassiveExposureDetector,
+    SensitiveEndpointDetector,
     ServerExposureDetector,
     TraceMethodDetector,
 )
@@ -136,3 +137,66 @@ def test_passive_exposure_detector_flags_source_map_and_debug_markers():
     }
     assert all(finding.type == "info_leak" for finding in findings)
     assert any(finding.severity == "high" for finding in findings)
+
+
+def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):
+    detector = SensitiveEndpointDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/metrics":
+            return __import__("httpx").Response(200, text="# HELP app_requests_total\n# TYPE app_requests_total counter\n")
+        if path == "/actuator/health":
+            return __import__("httpx").Response(200, text='{"status":"UP","components":{"db":{"status":"UP"}}}')
+        return __import__("httpx").Response(403, text="forbidden")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "暴露 Prometheus 指标端点",
+        "暴露 Spring Boot Actuator 健康端点",
+    }
+    assert all(finding.type == "exposed_endpoint" for finding in findings)
+
+
+def test_sensitive_endpoint_detector_ignores_protected_endpoints(monkeypatch):
+    detector = SensitiveEndpointDetector()
+
+    def handler(_request):
+        return __import__("httpx").Response(403, text="forbidden")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert findings == []

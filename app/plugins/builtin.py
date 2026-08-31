@@ -6,6 +6,9 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urljoin, urlparse
+
+import httpx
 
 from app.plugins import BaseVulnDetector, Evidence, Finding, ScanContext, VulnLocation
 
@@ -322,6 +325,82 @@ class PassiveExposureDetector(BaseVulnDetector):
                     cwe_id="CWE-200",
                 )
             )
+
+        return findings
+
+
+class SensitiveEndpointDetector(BaseVulnDetector):
+    """敏感管理/调试端点暴露检测插件。"""
+
+    name = "sensitive_endpoint"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """探测常见管理、指标、调试与文档端点是否公开。"""
+        origin = f"{urlparse(context.url).scheme}://{urlparse(context.url).netloc}"
+        candidates = [
+            ("/metrics", "暴露 Prometheus 指标端点", "high", ["# HELP", "# TYPE", "process_cpu_seconds_total"], "CWE-200"),
+            ("/actuator/health", "暴露 Spring Boot Actuator 健康端点", "medium", ['"status":"UP"', '"components"', '"details"'], "CWE-200"),
+            ("/actuator/env", "暴露 Spring Boot Actuator 环境端点", "high", ['"propertySources"', '"activeProfiles"', '"environment"'], "CWE-200"),
+            ("/openapi.json", "暴露 OpenAPI 描述文件", "medium", ['"openapi"', '"paths"', '"components"'], "CWE-200"),
+            ("/swagger-ui", "暴露 Swagger UI 文档", "medium", ["swagger", "openapi"], "CWE-200"),
+            ("/redoc", "暴露 API 文档页面", "low", ["redoc", "openapi"], "CWE-200"),
+            ("/phpinfo.php", "暴露 PHP 信息页面", "high", ["php version", "phpinfo()"], "CWE-200"),
+            ("/server-status", "暴露服务器状态页面", "medium", ["apache server status", "server status"], "CWE-200"),
+            ("/debug", "暴露调试端点", "high", ["debug", "traceback", "stack trace"], "CWE-489"),
+            ("/console", "暴露管理控制台", "high", ["console", "admin", "login"], "CWE-284"),
+            ("/h2-console", "暴露 H2 控制台", "high", ["h2 console", "welcome to h2"], "CWE-200"),
+        ]
+
+        findings: list[Finding] = []
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                headers=context.headers or None,
+            ) as client:
+                for rel_path, title, severity, markers, cwe in candidates:
+                    endpoint_url = urljoin(origin, rel_path)
+                    try:
+                        resp = await client.get(endpoint_url, timeout=8.0)
+                    except Exception:
+                        continue
+
+                    if resp.status_code != 200:
+                        continue
+                    body = (resp.text or "").lower()
+                    if not any(marker.lower() in body for marker in markers):
+                        continue
+
+                    findings.append(
+                        Finding(
+                            title=title,
+                            type="exposed_endpoint",
+                            severity=severity,
+                            description=f"端点 {rel_path} 可直接访问并返回可识别的管理/调试内容，攻击面已暴露到公网边界。",
+                            url=endpoint_url,
+                            location=VulnLocation(
+                                url=endpoint_url,
+                                parameter="",
+                                parameter_type="path",
+                                snippet=rel_path,
+                            ),
+                            evidence=Evidence(
+                                extra={
+                                    "endpoint": rel_path,
+                                    "status_code": resp.status_code,
+                                    "content_type": resp.headers.get("content-type", ""),
+                                },
+                                response_raw=resp.text[:4000],
+                            ),
+                            fix_suggestion="将这些端点限制到内网、管理员白名单或鉴权后访问，生产环境避免公开调试和运维接口。",
+                            confidence="high",
+                            owasp_category="A05 安全配置错误",
+                            cwe_id=cwe,
+                        )
+                    )
+        except Exception:
+            return findings
 
         return findings
 
@@ -793,6 +872,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(CSPPolicyWeaknessDetector())
     DetectorRegistry.register(ServerExposureDetector())
     DetectorRegistry.register(PassiveExposureDetector())
+    DetectorRegistry.register(SensitiveEndpointDetector())
     DetectorRegistry.register(DirectoryListingDetector())
     DetectorRegistry.register(TraceMethodDetector())
     DetectorRegistry.register(SSLInfoDetector())
