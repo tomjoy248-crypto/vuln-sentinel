@@ -94,8 +94,8 @@ _GROUP_RULES: list[tuple[str, set[str], tuple[str, ...]]] = [
     ),
     (
         "组件与供应链",
-        {"outdated_component"},
-        ("组件", "框架", "版本", "CVE"),
+        {"outdated_component", "supply_chain_exposure"},
+        ("组件", "框架", "版本", "CVE", "供应链", "第三方资源", "SRI", "integrity", "明文资源"),
     ),
 ]
 

@@ -5,6 +5,7 @@ from app.plugins.builtin import (
     CSPPolicyWeaknessDetector,
     DirectoryListingDetector,
     DiscoverySurfaceDetector,
+    FrontendSupplyChainDetector,
     PassiveExposureDetector,
     SRIIntegrityDetector,
     WellKnownExposureDetector,
@@ -174,6 +175,46 @@ def test_sri_integrity_detector_ignores_same_origin_resources():
     assert findings == []
 
 
+def test_frontend_supply_chain_detector_flags_mixed_content_and_unpinned_cdn():
+    detector = FrontendSupplyChainDetector()
+    context = ScanContext(
+        url="https://example.com/",
+        headers={},
+        body=(
+            '<html>'
+            '<script src="http://cdn.example.com/lib.js"></script>'
+            '<script src="https://unpkg.com/react/umd/react.production.min.js"></script>'
+            "</html>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert {finding.title for finding in findings} == {
+        "HTTPS 页面加载明文前端资源",
+        "第三方前端资源未固定版本",
+    }
+    assert all(finding.type == "supply_chain_exposure" for finding in findings)
+
+
+def test_frontend_supply_chain_detector_ignores_pinned_and_same_origin_resources():
+    detector = FrontendSupplyChainDetector()
+    context = ScanContext(
+        url="https://example.com/",
+        headers={},
+        body=(
+            '<html>'
+            '<script src="/static/app.js"></script>'
+            '<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>'
+            "</html>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert findings == []
+
+
 def test_passive_exposure_detector_flags_source_map_and_debug_markers():
     detector = PassiveExposureDetector()
     context = ScanContext(
@@ -260,6 +301,82 @@ def test_sensitive_endpoint_detector_ignores_protected_endpoints(monkeypatch):
 
     def handler(_request):
         return __import__("httpx").Response(403, text="forbidden")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert findings == []
+
+
+def test_sensitive_endpoint_detector_flags_swagger_and_prometheus_variants(monkeypatch):
+    detector = SensitiveEndpointDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/swagger-ui.html":
+            return __import__("httpx").Response(
+                200,
+                text="<html><title>swagger-ui</title><div>openapi</div></html>",
+                headers={"Content-Type": "text/html"},
+            )
+        if path == "/actuator/prometheus":
+            return __import__("httpx").Response(
+                200,
+                text="# HELP jvm_memory_used_bytes\n# TYPE jvm_memory_used_bytes gauge\njvm_memory_used_bytes 1",
+                headers={"Content-Type": "text/plain"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "暴露 Swagger UI 文档",
+        "暴露 Spring Boot Prometheus 指标端点",
+    }
+
+
+def test_sensitive_endpoint_detector_ignores_generic_debug_page(monkeypatch):
+    detector = SensitiveEndpointDetector()
+
+    def handler(request):
+        if request.url.path == "/debug":
+            return __import__("httpx").Response(
+                200,
+                text="<html><body>debug login</body></html>",
+                headers={"Content-Type": "text/html"},
+            )
+        return __import__("httpx").Response(404, text="not found")
 
     client = __import__("httpx").AsyncClient(
         transport=__import__("httpx").MockTransport(handler)

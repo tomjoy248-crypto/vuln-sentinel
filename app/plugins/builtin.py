@@ -179,6 +179,72 @@ def _is_cross_origin_resource(page_url: str, resource_url: str) -> bool:
     )
 
 
+def _iter_html_resource_tags(body: str) -> list[dict[str, str]]:
+    """提取 HTML 中常见前端资源标签。"""
+    resources: list[dict[str, str]] = []
+    tag_pattern = re.compile(r"<(?P<tag>script|link|iframe)\b(?P<attrs>[^>]*)>", re.IGNORECASE)
+    for match in tag_pattern.finditer(body or ""):
+        tag = match.group("tag").lower()
+        attrs = _parse_html_attributes(match.group("attrs"))
+        if tag == "script":
+            resource_url = attrs.get("src", "")
+            if not resource_url:
+                continue
+        elif tag == "link":
+            rel_value = attrs.get("rel", "").lower()
+            if "stylesheet" not in {item.strip() for item in rel_value.split()}:
+                continue
+            resource_url = attrs.get("href", "")
+            if not resource_url:
+                continue
+        else:
+            resource_url = attrs.get("src", "")
+            if not resource_url:
+                continue
+
+        resources.append(
+            {
+                "tag": tag,
+                "url": resource_url,
+                "resolved_url": urljoin("", resource_url),
+                "integrity": attrs.get("integrity", ""),
+                "crossorigin": attrs.get("crossorigin", ""),
+                "rel": attrs.get("rel", ""),
+            }
+        )
+    return resources
+
+
+def _match_unpinned_package_cdn(resource_url: str) -> str | None:
+    """识别未固定版本的第三方包 CDN 资源。"""
+    parsed = urlparse(resource_url)
+    host = parsed.netloc.lower()
+    path = parsed.path or "/"
+
+    if host == "unpkg.com":
+        scoped_pinned = re.match(r"^/@[^/]+/[^/@]+@[^/]+(?:/|$)", path)
+        package_pinned = re.match(r"^/[^/@]+@[^/]+(?:/|$)", path)
+        if not scoped_pinned and not package_pinned:
+            return "unpkg"
+
+    if host == "cdn.jsdelivr.net":
+        if path.startswith("/npm/"):
+            rest = path[len("/npm/") :]
+            scoped_pinned = re.match(r"^@[^/]+/[^/@]+@[^/]+(?:/|$)", rest)
+            package_pinned = re.match(r"^[^/@]+@[^/]+(?:/|$)", rest)
+            if not scoped_pinned and not package_pinned:
+                return "jsdelivr-npm"
+        if path.startswith("/gh/"):
+            rest = path[len("/gh/") :]
+            if not re.match(r"^[^/]+/[^/@]+@[^/]+(?:/|$)", rest):
+                return "jsdelivr-gh"
+
+    if host in {"raw.githubusercontent.com", "gist.githubusercontent.com"}:
+        return "raw-github"
+
+    return None
+
+
 class ServerExposureDetector(BaseVulnDetector):
     """服务器与框架技术栈泄露检测插件。"""
 
@@ -359,30 +425,18 @@ class SRIIntegrityDetector(BaseVulnDetector):
             return []
 
         missing_resources: list[dict[str, str]] = []
-        tag_pattern = re.compile(
-            r"<(?P<tag>script|link)\b(?P<attrs>[^>]*)>",
-            re.IGNORECASE,
-        )
-
-        for match in tag_pattern.finditer(body):
-            tag = match.group("tag").lower()
-            attrs = _parse_html_attributes(match.group("attrs"))
-            if tag == "script":
-                resource_url = attrs.get("src", "")
-            else:
-                rel_value = attrs.get("rel", "").lower()
-                if "stylesheet" not in {item.strip() for item in rel_value.split()}:
-                    continue
-                resource_url = attrs.get("href", "")
-
+        for resource in _iter_html_resource_tags(body):
+            if resource["tag"] not in {"script", "link"}:
+                continue
+            resource_url = resource["url"]
             if not _is_cross_origin_resource(context.url, resource_url):
                 continue
-            if attrs.get("integrity", "").strip():
+            if resource["integrity"].strip():
                 continue
 
             missing_resources.append(
                 {
-                    "tag": tag,
+                    "tag": resource["tag"],
                     "url": urljoin(context.url, resource_url),
                 }
             )
@@ -417,6 +471,108 @@ class SRIIntegrityDetector(BaseVulnDetector):
                 cwe_id="CWE-353",
             )
         ]
+
+
+class FrontendSupplyChainDetector(BaseVulnDetector):
+    """前端供应链与明文资源风险检测插件。"""
+
+    name = "frontend_supply_chain"
+    version = "1.0"
+    supported_depths = ["quick", "standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测 HTTPS 页面明文资源与未固定版本的第三方前端依赖。"""
+        body = context.body or ""
+        if not body:
+            return []
+
+        resources = _iter_html_resource_tags(body)
+        if not resources:
+            return []
+
+        findings: list[Finding] = []
+        parsed_page = urlparse(context.url)
+        mixed_resources: list[dict[str, str]] = []
+        unpinned_resources: list[dict[str, str]] = []
+
+        for resource in resources:
+            resolved_url = urljoin(context.url, resource["url"])
+            parsed_resource = urlparse(resolved_url)
+            if parsed_page.scheme.lower() == "https" and parsed_resource.scheme.lower() == "http":
+                mixed_resources.append(
+                    {
+                        "tag": resource["tag"],
+                        "url": resolved_url,
+                    }
+                )
+
+            if not _is_cross_origin_resource(context.url, resource["url"]):
+                continue
+            source_kind = _match_unpinned_package_cdn(resolved_url)
+            if source_kind:
+                unpinned_resources.append(
+                    {
+                        "tag": resource["tag"],
+                        "url": resolved_url,
+                        "source_kind": source_kind,
+                    }
+                )
+
+        if mixed_resources:
+            findings.append(
+                Finding(
+                    title="HTTPS 页面加载明文前端资源",
+                    type="supply_chain_exposure",
+                    severity="medium",
+                    description="HTTPS 页面中存在通过 HTTP 加载的脚本、样式或 iframe 资源，链路可被中间人篡改，影响前端代码与页面完整性。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="src/href",
+                        parameter_type="html",
+                        snippet=", ".join(item["url"] for item in mixed_resources[:3]),
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "mixed_resources": mixed_resources,
+                            "resource_count": len(mixed_resources),
+                        }
+                    ),
+                    fix_suggestion="将所有前端活动资源统一切换为 HTTPS，并检查 CDN、第三方组件和嵌入页面是否仍引用明文地址。",
+                    confidence="high",
+                    owasp_category="A05 安全配置错误",
+                    cwe_id="CWE-319",
+                )
+            )
+
+        if unpinned_resources:
+            findings.append(
+                Finding(
+                    title="第三方前端资源未固定版本",
+                    type="supply_chain_exposure",
+                    severity="low",
+                    description="页面直接引用了未固定版本或直接来自代码仓库的第三方前端资源，发布内容变化时可能引入供应链不确定性。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="src/href",
+                        parameter_type="html",
+                        snippet=", ".join(item["url"] for item in unpinned_resources[:3]),
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "unpinned_resources": unpinned_resources,
+                            "resource_count": len(unpinned_resources),
+                        }
+                    ),
+                    fix_suggestion="优先使用固定版本的发布地址，并结合 SRI、私有镜像或发布白名单控制第三方前端依赖的变更面。",
+                    confidence="high",
+                    owasp_category="A06 易受攻击和过时的组件",
+                    cwe_id="CWE-494",
+                )
+            )
+
+        return findings
 
 
 class PassiveExposureDetector(BaseVulnDetector):
@@ -591,17 +747,21 @@ class SensitiveEndpointDetector(BaseVulnDetector):
         """探测常见管理、指标、调试与文档端点是否公开。"""
         origin = f"{urlparse(context.url).scheme}://{urlparse(context.url).netloc}"
         candidates = [
-            ("/metrics", "暴露 Prometheus 指标端点", "high", ["# HELP", "# TYPE", "process_cpu_seconds_total"], "CWE-200"),
-            ("/actuator/health", "暴露 Spring Boot Actuator 健康端点", "medium", ['"status":"UP"', '"components"', '"details"'], "CWE-200"),
-            ("/actuator/env", "暴露 Spring Boot Actuator 环境端点", "high", ['"propertySources"', '"activeProfiles"', '"environment"'], "CWE-200"),
-            ("/openapi.json", "暴露 OpenAPI 描述文件", "medium", ['"openapi"', '"paths"', '"components"'], "CWE-200"),
-            ("/swagger-ui", "暴露 Swagger UI 文档", "medium", ["swagger", "openapi"], "CWE-200"),
-            ("/redoc", "暴露 API 文档页面", "low", ["redoc", "openapi"], "CWE-200"),
-            ("/phpinfo.php", "暴露 PHP 信息页面", "high", ["php version", "phpinfo()"], "CWE-200"),
-            ("/server-status", "暴露服务器状态页面", "medium", ["apache server status", "server status"], "CWE-200"),
-            ("/debug", "暴露调试端点", "high", ["debug", "traceback", "stack trace"], "CWE-489"),
-            ("/console", "暴露管理控制台", "high", ["console", "admin", "login"], "CWE-284"),
-            ("/h2-console", "暴露 H2 控制台", "high", ["h2 console", "welcome to h2"], "CWE-200"),
+            ("/metrics", "暴露 Prometheus 指标端点", "high", ["# HELP", "# TYPE", "process_cpu_seconds_total"], 2, "CWE-200"),
+            ("/actuator/prometheus", "暴露 Spring Boot Prometheus 指标端点", "high", ["# HELP", "# TYPE", "jvm_"], 2, "CWE-200"),
+            ("/actuator/health", "暴露 Spring Boot Actuator 健康端点", "medium", ['"status":"UP"', '"components"', '"details"'], 1, "CWE-200"),
+            ("/actuator/env", "暴露 Spring Boot Actuator 环境端点", "high", ['"propertySources"', '"activeProfiles"', '"environment"'], 1, "CWE-200"),
+            ("/openapi.json", "暴露 OpenAPI 描述文件", "medium", ['"openapi"', '"paths"', '"components"'], 2, "CWE-200"),
+            ("/v3/api-docs", "暴露 OpenAPI 描述文件", "medium", ['"openapi"', '"paths"', '"components"'], 2, "CWE-200"),
+            ("/swagger-ui", "暴露 Swagger UI 文档", "medium", ["swagger-ui", "openapi"], 1, "CWE-200"),
+            ("/swagger-ui.html", "暴露 Swagger UI 文档", "medium", ["swagger-ui", "openapi"], 1, "CWE-200"),
+            ("/redoc", "暴露 API 文档页面", "low", ["redoc", "openapi"], 1, "CWE-200"),
+            ("/graphiql", "暴露 GraphiQL 调试界面", "medium", ["graphiql", "graphql"], 1, "CWE-200"),
+            ("/graphql/playground", "暴露 GraphQL Playground 调试界面", "medium", ["graphql playground", "subscriptions endpoint"], 1, "CWE-200"),
+            ("/phpinfo.php", "暴露 PHP 信息页面", "high", ["php version", "phpinfo()"], 1, "CWE-200"),
+            ("/server-status", "暴露服务器状态页面", "medium", ["apache server status", "server uptime"], 1, "CWE-200"),
+            ("/debug", "暴露调试端点", "high", ["traceback", "stack trace", "exception in thread", "debug toolbar"], 1, "CWE-489"),
+            ("/h2-console", "暴露 H2 控制台", "high", ["h2 console", "welcome to h2"], 1, "CWE-200"),
         ]
 
         findings: list[Finding] = []
@@ -610,7 +770,7 @@ class SensitiveEndpointDetector(BaseVulnDetector):
                 follow_redirects=True,
                 headers=context.headers or None,
             ) as client:
-                for rel_path, title, severity, markers, cwe in candidates:
+                for rel_path, title, severity, markers, min_markers, cwe in candidates:
                     endpoint_url = urljoin(origin, rel_path)
                     try:
                         resp = await client.get(endpoint_url, timeout=8.0)
@@ -620,7 +780,10 @@ class SensitiveEndpointDetector(BaseVulnDetector):
                     if resp.status_code != 200:
                         continue
                     body = (resp.text or "").lower()
-                    if not any(marker.lower() in body for marker in markers):
+                    matched_markers = [
+                        marker for marker in markers if marker.lower() in body
+                    ]
+                    if len(matched_markers) < min_markers:
                         continue
 
                     findings.append(
@@ -639,6 +802,7 @@ class SensitiveEndpointDetector(BaseVulnDetector):
                             evidence=Evidence(
                                 extra={
                                     "endpoint": rel_path,
+                                    "matched_markers": matched_markers,
                                     "status_code": resp.status_code,
                                     "content_type": resp.headers.get("content-type", ""),
                                 },
@@ -1362,6 +1526,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(EnhancedHeaderSecurityDetector())
     DetectorRegistry.register(CSPPolicyWeaknessDetector())
     DetectorRegistry.register(SRIIntegrityDetector())
+    DetectorRegistry.register(FrontendSupplyChainDetector())
     DetectorRegistry.register(ServerExposureDetector())
     DetectorRegistry.register(PassiveExposureDetector())
     DetectorRegistry.register(ApiSurfaceExposureDetector())

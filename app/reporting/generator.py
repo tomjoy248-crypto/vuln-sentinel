@@ -229,6 +229,89 @@ def _escape_md_table_cell(text: str) -> str:
     return str(text).replace("|", "\\|").replace("\n", " ")
 
 
+def _collect_risk_surface_snapshot(
+    findings: list[VulnerabilityReportItem],
+) -> list[dict[str, Any]]:
+    """提取风险面摘要快照，便于管理摘要与处置排序复用。"""
+    grouped = group_findings(findings)
+    snapshot: list[dict[str, Any]] = []
+    for group in grouped:
+        counts = group["counts"]
+        worst = "info"
+        for level in ("critical", "high", "medium", "low", "info"):
+            if counts.get(level, 0) > 0:
+                worst = level
+                break
+        snapshot.append(
+            {
+                "label": group["label"],
+                "count": len(group["items"]),
+                "worst": worst,
+                "counts": counts,
+            }
+        )
+    return snapshot
+
+
+def _build_management_focus(findings: list[VulnerabilityReportItem]) -> str:
+    """生成面向管理层的摘要。"""
+    surfaces = _collect_risk_surface_snapshot(findings)
+    if not surfaces:
+        return "### 0.2 管理层关注\n\n- 本次未发现需要进入管理升级流程的风险项，可作为当前版本基线留档。\n"
+
+    narratives = {
+        "公开暴露面": "说明公网边界上存在可被直接枚举或访问的资产，应优先收口入口面。",
+        "配置与响应头": "说明安全基线与浏览器防护策略存在缺口，适合纳入统一加固清单。",
+        "认证与授权": "说明关键访问控制边界可能不足，建议联动账号、权限和会话策略排查。",
+        "注入与输入验证": "说明请求处理链条仍存在高风险输入面，需要优先安排修复与复测。",
+        "组件与供应链": "说明前端或依赖发布链存在可预测风险，建议统一版本与发布治理。",
+        "其他风险": "说明存在尚未归类的风险项，建议结合业务上下文做补充判断。",
+    }
+    lines = ["### 0.2 管理层关注\n"]
+    for item in surfaces[:3]:
+        lines.append(
+            f"- **{item['label']}**：{item['count']} 项，当前最高风险 `{item['worst']}`。{narratives.get(item['label'], narratives['其他风险'])}"
+        )
+    if len(surfaces) > 3:
+        lines.append(f"- 其余风险面共 {len(surfaces) - 3} 类，建议在整改排期中统一纳入复测闭环。")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _build_priority_roadmap(
+    findings: list[VulnerabilityReportItem], summary: ScanExecutiveSummary
+) -> str:
+    """生成修复优先级路线。"""
+    severe_items = [
+        item
+        for item in findings
+        if item.severity.lower() in {"critical", "high"}
+    ]
+    verified_items = [
+        item for item in findings if "已验证" in (item.verification_status or "")
+    ]
+    review_items = [
+        item
+        for item in findings
+        if any(tag in (item.verification_status or "") for tag in ("建议复核", "待人工复核", "可能存在"))
+    ]
+    surfaces = _collect_risk_surface_snapshot(findings)
+    top_surface = surfaces[0]["label"] if surfaces else "当前主要风险面"
+
+    lines = ["### 0.3 修复优先级路线\n"]
+    lines.append(
+        f"1. **第一优先级**：立即处理 {len(severe_items)} 项高危/严重结果，并优先关闭 `{top_surface}` 相关暴露面，避免风险继续停留在公网边界。"
+    )
+    lines.append(
+        f"2. **第二优先级**：围绕 {summary.verified_count or len(verified_items)} 项已验证结果完成加固、回归和证据归档，确保修复动作可复测、可交付。"
+    )
+    lines.append(
+        f"3. **第三优先级**：对 {len(review_items)} 项建议复核或待人工复核结果安排人工确认，保留误报标记与处置结论，形成后续版本基线。"
+    )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def generate_executive_summary(scan_data: dict[str, Any]) -> str:
     """生成 Markdown 执行摘要章节。"""
     summary = _build_summary_from_scan_data(scan_data)
@@ -370,20 +453,14 @@ def _generate_risk_surface_overview_section(
     findings: list[VulnerabilityReportItem],
 ) -> str:
     """生成风险面总览章节。"""
-    grouped = group_findings(findings)
+    grouped = _collect_risk_surface_snapshot(findings)
     if not grouped:
         return "## 二.3 风险面总览\n\n暂无需要展示的风险面总览。\n"
 
     lines = ["## 二.3 风险面总览\n"]
     for group in grouped[:6]:
-        counts = group["counts"]
-        worst = "info"
-        for level in ("critical", "high", "medium", "low", "info"):
-            if counts.get(level, 0) > 0:
-                worst = level
-                break
         lines.append(
-            f"- **{group['label']}**：{len(group['items'])} 项，最高 `{worst}`，构成为 严重 {counts['critical']} / 高危 {counts['high']} / 中危 {counts['medium']} / 低危 {counts['low']} / 信息 {counts['info']}"
+            f"- **{group['label']}**：{group['count']} 项，最高 `{group['worst']}`，构成为 严重 {group['counts']['critical']} / 高危 {group['counts']['high']} / 中危 {group['counts']['medium']} / 低危 {group['counts']['low']} / 信息 {group['counts']['info']}"
         )
     lines.append("")
     return "\n".join(lines)
@@ -540,13 +617,15 @@ def generate_src_report(scan_data: dict[str, Any], format: str = "markdown") -> 
         f"- 扫描时长：{_format_duration(summary.scan_duration_ms)}\n\n"
         "### 0.1 交付结论\n\n"
         "> 本次结果可直接用于客户沟通、上线验收和复扫留档。建议优先关闭高危与已验证项，再复测中低风险项并保留证据链。\n\n"
-        "### 0.2 后续动作\n\n"
+        + _build_management_focus(findings)
+        + _build_priority_roadmap(findings, summary)
+        + "### 0.4 后续动作\n\n"
         "1. 优先关闭高危与已验证问题。\n"
         "2. 复测中低风险项，确认修复是否生效。\n"
         "3. 归档结论、证据和变更记录，形成交付闭环。\n\n"
-        "### 0.3 交付摘要\n\n"
+        "### 0.5 交付摘要\n\n"
         "建议将 PDF 与工单、复测结果、修复记录一并归档，便于后续客户复盘、版本追踪和责任分工。\n\n"
-        "### 0.4 客户阅读顺序\n\n"
+        "### 0.6 客户阅读顺序\n\n"
         "1. 先看客户摘要，快速确认目标、评分和风险等级。\n"
         "2. 再看执行摘要，判断是否需要优先处理高危项。\n"
         "3. 查看漏洞清单与单项详情，核对证据、复现步骤和修复建议。\n"

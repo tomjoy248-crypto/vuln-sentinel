@@ -34,6 +34,13 @@ def _sample_findings():
             "severity": "medium",
             "verification_status": "verified",
         },
+        {
+            "id": "VULN-004",
+            "title": "第三方前端资源未固定版本",
+            "type": "supply_chain_exposure",
+            "severity": "low",
+            "verification_status": "unverified",
+        },
     ]
 
 
@@ -43,6 +50,7 @@ def test_group_findings_returns_stable_risk_surfaces():
     labels = [group["label"] for group in grouped]
     assert "公开暴露面" in labels
     assert "配置与响应头" in labels
+    assert "组件与供应链" in labels
 
 
 def test_markdown_report_includes_grouped_section_once():
@@ -80,3 +88,6 @@ def test_src_report_includes_grouped_section():
     assert "风险面总览" in report
     assert "公开暴露面" in report
     assert "配置与响应头" in report
+    assert "组件与供应链" in report
+    assert "管理层关注" in report
+    assert "修复优先级路线" in report

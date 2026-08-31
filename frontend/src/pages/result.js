@@ -29,7 +29,9 @@ const VULN_TYPE_LABELS = {
   sensitive_config_exposure: '敏感配置泄露',
   clickjacking: '点击劫持',
   file_upload: '不安全文件上传',
-  logic_bypass: '业务逻辑绕过'
+  logic_bypass: '业务逻辑绕过',
+  sri_missing: 'SRI 完整性缺失',
+  supply_chain_exposure: '供应链风险'
 };
 const RISK_SURFACE_RULES = [
   {
@@ -66,8 +68,8 @@ const RISK_SURFACE_RULES = [
   },
   {
     label: '组件与供应链',
-    types: new Set(['outdated_component']),
-    keywords: ['组件', '框架', '版本', 'CVE']
+    types: new Set(['outdated_component', 'supply_chain_exposure']),
+    keywords: ['组件', '框架', '版本', 'CVE', '供应链', '第三方资源', '明文资源']
   }
 ];
 const RISK_SURFACE_ORDER = { '公开暴露面': 0, '配置与响应头': 1, '认证与授权': 2, '注入与输入验证': 3, '组件与供应链': 4, '其他风险': 5 };
@@ -160,6 +162,41 @@ function renderRiskSurfaceOverview(findings) {
       <div class="src-surface-grid">${cards}</div>
     </div>
   `;
+}
+
+function buildManagementHighlights(findings, summary) {
+  const groups = groupFindingsByRiskSurface(findings);
+  if (groups.length === 0) {
+    return {
+      managementSummary: '当前未发现需要升级处理的风险面，可作为本次版本的基线记录。',
+      priorities: [
+        '继续保持现有安全基线，并在后续版本变更后复扫确认。',
+        '将当前结果与修复记录一并留档，便于后续验收比对。',
+        '对新增页面、接口和第三方资源保持持续监控。'
+      ]
+    };
+  }
+
+  const topGroups = groups.slice(0, 3).map((group) => {
+    const counts = group.counts;
+    const worst = ['critical', 'high', 'medium', 'low', 'info'].find((level) => (counts[level] || 0) > 0) || 'info';
+    return `${group.label}${group.items.length}项，最高${worst}`;
+  });
+  const fpCount = summary.fp_count || 0;
+  const managementSummary = '当前主要风险面集中在 ' + topGroups.join('；') + '。结果已按可信度和验证状态分层，可直接用于客户沟通与整改排期。';
+
+  const criticalHigh = (summary.critical || 0) + (summary.high || 0);
+  const priorities = [
+    criticalHigh > 0
+      ? '先关闭严重和高危项，优先收口已经暴露到公网边界的入口与配置缺口。'
+      : '先处理中危项和集中风险面，避免问题在后续版本中继续扩散。',
+    '再对已验证项完成修复、回归和留档，确保这次整改可以复测、可以交付。',
+    fpCount > 0
+      ? '最后安排建议复核项的人工确认，区分真实问题与防护页、软 404 等干扰信号。'
+      : '最后把本次结果沉淀为安全基线，作为后续版本对比和验收依据。'
+  ];
+
+  return { managementSummary, priorities };
 }
 
 /**
@@ -405,6 +442,8 @@ function renderHeader(score, riskLevel, summary, url, data) {
   const actionHint = data.scan_id
     ? '<div class="src-report-action-hint src-report-action-hint-alert">建议优先处置已验证项，再安排人工复核建议复核项。</div>'
     : '';
+  const highlights = buildManagementHighlights(_currentFindings, summary);
+  const priorityItems = highlights.priorities.map((item, index) => `<div class="src-report-priority-item"><span class="src-report-priority-index">${index + 1}</span><span>${escapeHtml(item)}</span></div>`).join('');
 
   return `
     <div class="src-report-header fade-in-up">
@@ -443,6 +482,10 @@ function renderHeader(score, riskLevel, summary, url, data) {
           <div class="src-report-exec-text">结果已按风险等级、验证状态、证据完整度和可信度分层整理，建议复核项已单独标出，适合直接用于客户沟通、整改排期与验收留档。</div>
         </div>
         <div class="src-report-capability">
+          <div class="src-report-capability-title">管理层关注</div>
+          <div class="src-report-capability-text">${escapeHtml(highlights.managementSummary)}</div>
+        </div>
+        <div class="src-report-capability">
           <div class="src-report-capability-title">检测摘要</div>
           <div class="src-report-capability-grid">
             <div class="src-report-capability-item"><span>已验证</span><strong>${vStats.confirmed || 0}</strong></div>
@@ -452,8 +495,9 @@ function renderHeader(score, riskLevel, summary, url, data) {
           <div class="src-report-capability-text">当前更适合做基础安全检测、证据展示、复测验证和整改跟踪；遇到登录墙、WAF/CDN、软 404 等场景会自动降权提示，优先保证结果可信与可交付。</div>
         </div>
         <div class="src-report-next-step">
-          <div class="src-report-next-step-title">处置建议</div>
+          <div class="src-report-next-step-title">修复优先级路线</div>
           <div class="src-report-next-step-text">${escapeHtml(nextStep)}${fpCount > 0 ? ' 当前已识别 ' + fpCount + ' 项建议复核结果，默认优先显示可信项，便于快速进入处置流程。' : ''}</div>
+          <div class="src-report-priority-list">${priorityItems}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <button class="src-filter-btn" onclick="navigateTo('tickets')">工单</button>
             <button class="src-filter-btn" onclick="navigateTo('fixer')">修复</button>
@@ -1095,6 +1139,9 @@ export function injectSRCStyles() {
     .src-report-capability-item strong { font-size:13px; color:var(--text-primary); }
     .src-report-capability-text { margin-top:8px; font-size:12px; color:var(--text-secondary); line-height:1.7; }
     @media (max-width: 900px) { .src-report-capability-grid { grid-template-columns:1fr; } }
+    .src-report-priority-list { display:grid; gap:8px; margin-top:10px; }
+    .src-report-priority-item { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid var(--border-light); border-radius:var(--radius-xs); background:rgba(255,255,255,0.03); }
+    .src-report-priority-index { width:18px; height:18px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:rgba(115,201,144,0.18); color:#73c990; font-size:11px; font-weight:700; flex:0 0 auto; margin-top:1px; }
     .src-surface-overview { margin-bottom:16px; padding:16px 18px; background:linear-gradient(180deg, rgba(75,110,175,0.12), rgba(75,110,175,0.04)); border:1px solid rgba(75,110,175,0.24); border-radius:var(--radius); }
     .src-surface-overview-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
     .src-surface-overview-title { font-size:14px; font-weight:700; color:var(--text-primary); }

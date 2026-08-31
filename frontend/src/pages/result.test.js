@@ -23,6 +23,13 @@ const sampleFindings = [
     severity: 'medium',
     evidence: { request: 'GET /', response: 'ok' },
   },
+  {
+    id: 'F-4',
+    title: '第三方前端资源未固定版本',
+    type: 'supply_chain_exposure',
+    severity: 'low',
+    evidence: { request: 'GET /', response: 'ok' },
+  },
 ];
 
 beforeEach(() => {
@@ -35,6 +42,7 @@ describe('result page risk-surface views', () => {
     expect(grouped.map((group) => group.label)).toEqual([
       '公开暴露面',
       '配置与响应头',
+      '组件与供应链',
     ]);
     expect(getRiskSurfaceLabel(sampleFindings[0])).toBe('公开暴露面');
   });
@@ -52,7 +60,7 @@ describe('result page risk-surface views', () => {
     expect(overview).not.toBeNull();
     expect(overview.textContent).toContain('风险面总览');
     expect(overview.textContent).toContain('公开暴露面');
-    expect(document.querySelectorAll('.src-list-surface')).toHaveLength(3);
+    expect(document.querySelectorAll('.src-list-surface')).toHaveLength(4);
   });
 
   it('keeps formal report language in the header', () => {
@@ -68,6 +76,7 @@ describe('result page risk-surface views', () => {
     const content = document.getElementById('result-content').textContent;
     expect(content).toContain('执行摘要');
     expect(content).toContain('检测摘要');
-    expect(content).toContain('处置建议');
+    expect(content).toContain('管理层关注');
+    expect(content).toContain('修复优先级路线');
   });
 });
