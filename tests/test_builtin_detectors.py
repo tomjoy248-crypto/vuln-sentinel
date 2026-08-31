@@ -3,6 +3,7 @@ from app.plugins.builtin import (
     BackupExposureDetector,
     ApiSurfaceExposureDetector,
     CloudStorageExposureDetector,
+    CloudStorageSecretExposureDetector,
     CSPPolicyWeaknessDetector,
     DirectoryListingDetector,
     DiscoverySurfaceDetector,
@@ -489,11 +490,12 @@ def test_oauth_surface_detector_flags_implicit_flow():
 
     findings = __import__("asyncio").run(detector.detect(context))
 
-    assert len(findings) == 1
-    assert findings[0].type == "oauth_surface_exposure"
-    assert findings[0].severity == "high"
-    assert findings[0].evidence.extra["flow"] == "implicit"
-    assert findings[0].evidence.extra["evidence_score"] >= 70
+    assert len(findings) == 2
+    assert any(finding.type == "oauth_surface_exposure" and finding.severity == "high" for finding in findings)
+    implicit = next(finding for finding in findings if finding.type == "oauth_surface_exposure")
+    assert implicit.evidence.extra["flow"] == "implicit"
+    assert implicit.evidence.extra["evidence_score"] >= 70
+    assert any(finding.title == "OAuth 授权请求未发现 state 参数" for finding in findings)
 
 
 def test_oauth_surface_detector_flags_auth_code_without_pkce():
@@ -514,6 +516,46 @@ def test_oauth_surface_detector_flags_auth_code_without_pkce():
     assert findings[0].type == "oauth_surface_exposure"
     assert findings[0].severity == "medium"
     assert findings[0].evidence.extra["pkce_detected"] is False
+
+
+def test_oauth_surface_detector_flags_missing_state_and_insecure_redirect():
+    detector = OAuthSurfaceDetector()
+    context = ScanContext(
+        url="https://example.com/login",
+        headers={},
+        body=(
+            "<script>"
+            "const auth='https://idp.example.com/oauth2/authorize?client_id=spa123&redirect_uri=http://localhost:3000/callback&response_type=code';"
+            "</script>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert {finding.title for finding in findings} == {
+        "OAuth 授权请求未发现 state 参数",
+        "OAuth 回调地址配置暴露高风险线索",
+        "前端 OAuth 授权码流程未发现 PKCE 线索",
+    }
+    redirect_finding = next(finding for finding in findings if finding.title == "OAuth 回调地址配置暴露高风险线索")
+    assert "http://localhost:3000/callback" in redirect_finding.evidence.extra["insecure_redirects"]
+
+
+def test_oauth_surface_detector_ignores_strong_auth_code_flow():
+    detector = OAuthSurfaceDetector()
+    context = ScanContext(
+        url="https://example.com/login",
+        headers={},
+        body=(
+            "<script>"
+            "const auth='https://idp.example.com/oauth2/authorize?client_id=spa123&redirect_uri=https://app.example.com/auth/callback&response_type=code&state=abc&code_challenge=xyz&code_challenge_method=S256';"
+            "</script>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert findings == []
 
 
 def test_cloud_storage_exposure_detector_flags_public_bucket_listing(monkeypatch):
@@ -550,6 +592,63 @@ def test_cloud_storage_exposure_detector_flags_public_bucket_listing(monkeypatch
     assert findings[0].type == "cloud_storage_exposure"
     assert findings[0].evidence.extra["provider"] == "s3"
     assert findings[0].evidence.extra["evidence_score"] >= 75
+
+
+def test_cloud_storage_exposure_detector_flags_azure_listing(monkeypatch):
+    detector = CloudStorageExposureDetector()
+
+    def handler(request):
+        if "comp=list" in str(request.url):
+            return __import__("httpx").Response(
+                200,
+                text="<?xml version='1.0'?><EnumerationResults><Blobs><Blob><Name>dump.sql</Name></Blob></Blobs></EnumerationResults>",
+                headers={"Content-Type": "application/xml"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body='<a href="https://corpstore.blob.core.windows.net/backups/dump.sql">download</a>',
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert len(findings) == 1
+    assert findings[0].evidence.extra["provider"] == "azure"
+
+
+def test_cloud_storage_secret_exposure_detector_flags_signed_urls():
+    detector = CloudStorageSecretExposureDetector()
+    context = ScanContext(
+        url="https://example.com/assets",
+        headers={},
+        body=(
+            '<script>'
+            'const a="https://public-assets.s3.amazonaws.com/private/report.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=abc&X-Amz-Expires=3600&X-Amz-Signature=deadbeef";'
+            'const b="https://corpstore.blob.core.windows.net/backups/dump.sql?sp=r&se=2026-09-01T00:00:00Z&sig=abcdef";'
+            '</script>'
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 2
+    assert {finding.evidence.extra["provider"] for finding in findings} == {
+        "aws_s3",
+        "azure_blob",
+    }
+    assert all(finding.type == "cloud_storage_secret_exposure" for finding in findings)
 
 
 def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import httpx
 
@@ -111,6 +111,19 @@ def _flatten_strings(value: object) -> list[str]:
 def _score_signal_pairs(pairs: list[tuple[bool, int]]) -> int:
     """按命中信号对证据强度打分。"""
     return min(100, sum(weight for matched, weight in pairs if matched))
+
+
+def _decoded_query_values(url: str) -> dict[str, list[str]]:
+    """提取并解码 URL 查询参数。"""
+    try:
+        parsed = urlparse(url)
+        values = parse_qs(parsed.query, keep_blank_values=True)
+    except Exception:
+        return {}
+    decoded: dict[str, list[str]] = {}
+    for key, items in values.items():
+        decoded[key.lower()] = [unquote(str(item or "")) for item in items]
+    return decoded
 
 
 def _extract_well_known_hits(text: str) -> list[str]:
@@ -1227,6 +1240,33 @@ class OAuthSurfaceDetector(BaseVulnDetector):
         auth_code_flow = "response_type=code" in lowered or "authorization_code" in lowered
         has_pkce = "code_challenge" in lowered or "pkce" in lowered
         has_state = "state=" in lowered or re.search(r"state\s*[:=]\s*['\"]", body, re.I)
+        redirect_targets: list[str] = []
+        insecure_redirects: list[str] = []
+        wildcard_redirects: list[str] = []
+        state_missing_urls: list[str] = []
+        for auth_url in auth_urls:
+            query = _decoded_query_values(auth_url)
+            redirect_values = (
+                query.get("redirect_uri", [])
+                + query.get("post_logout_redirect_uri", [])
+                + query.get("returnto", [])
+                + query.get("relaystate", [])
+            )
+            for target in redirect_values:
+                if target not in redirect_targets:
+                    redirect_targets.append(target)
+                normalized = target.lower().strip()
+                if (
+                    normalized.startswith("http://")
+                    or "localhost" in normalized
+                    or "127.0.0.1" in normalized
+                    or "0.0.0.0" in normalized
+                ) and target not in insecure_redirects:
+                    insecure_redirects.append(target)
+                if "*" in normalized and target not in wildcard_redirects:
+                    wildcard_redirects.append(target)
+            if "state" not in query and auth_url not in state_missing_urls:
+                state_missing_urls.append(auth_url)
 
         findings: list[Finding] = []
         if implicit_flow and auth_urls:
@@ -1310,6 +1350,87 @@ class OAuthSurfaceDetector(BaseVulnDetector):
                     confidence="medium",
                     owasp_category="A07 身份识别与认证失败",
                     cwe_id="CWE-287",
+                )
+            )
+
+        if state_missing_urls:
+            evidence_score = _score_signal_pairs(
+                [
+                    (True, 30),
+                    (len(state_missing_urls) >= 1, 25),
+                    (len(auth_urls) >= 1, 15),
+                    (has_client_id, 10),
+                    (len(callback_paths) >= 1, 10),
+                    (implicit_flow or auth_code_flow, 10),
+                ]
+            )
+            findings.append(
+                Finding(
+                    title="OAuth 授权请求未发现 state 参数",
+                    type="oauth_config_risk",
+                    severity="medium",
+                    description="页面中暴露的 OAuth / SSO 授权请求未发现 state 参数，回跳流程抗 CSRF 与登录串联能力不足。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="state",
+                        parameter_type="html",
+                        snippet="OAuth authorize URL",
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "auth_urls": state_missing_urls[:6],
+                            "callback_paths": callback_paths[:6],
+                            "has_client_id": has_client_id,
+                            "flow": "implicit" if implicit_flow else "authorization_code",
+                            "evidence_score": evidence_score,
+                        },
+                        response_raw=body[:4000],
+                    ),
+                    fix_suggestion="为所有 OAuth / OIDC 授权请求加入强随机 state，并在回调端严格校验来源、会话与一次性使用。对 OIDC 同时校验 nonce。",
+                    confidence="medium",
+                    owasp_category="A07 身份识别与认证失败",
+                    cwe_id="CWE-352",
+                )
+            )
+
+        if insecure_redirects or wildcard_redirects:
+            evidence_score = _score_signal_pairs(
+                [
+                    (len(insecure_redirects) >= 1, 35),
+                    (len(wildcard_redirects) >= 1, 30),
+                    (len(redirect_targets) >= 1, 15),
+                    (len(auth_urls) >= 1, 10),
+                    (has_client_id, 10),
+                ]
+            )
+            findings.append(
+                Finding(
+                    title="OAuth 回调地址配置暴露高风险线索",
+                    type="oauth_config_risk",
+                    severity="high" if insecure_redirects else "medium",
+                    description="页面中可见的 OAuth / SSO 授权配置包含非 HTTPS、本地调试或通配回调地址线索，若 IdP 放行，可能扩大令牌回跳与钓鱼利用面。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="redirect_uri",
+                        parameter_type="html",
+                        snippet="redirect_uri / post_logout_redirect_uri",
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "auth_urls": auth_urls[:6],
+                            "redirect_targets": redirect_targets[:8],
+                            "insecure_redirects": insecure_redirects[:8],
+                            "wildcard_redirects": wildcard_redirects[:8],
+                            "evidence_score": evidence_score,
+                        },
+                        response_raw=body[:4000],
+                    ),
+                    fix_suggestion="在 IdP 侧仅允许精确匹配的 HTTPS redirect URI，移除 localhost、测试域名和通配配置，并同步限制 post_logout_redirect_uri / RelayState 落点。",
+                    confidence="high" if insecure_redirects else "medium",
+                    owasp_category="A07 身份识别与认证失败",
+                    cwe_id="CWE-601",
                 )
             )
 
@@ -1422,6 +1543,84 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                     )
         except Exception:
             return findings
+
+        return findings
+
+
+class CloudStorageSecretExposureDetector(BaseVulnDetector):
+    """对象存储签名访问链接暴露检测插件。"""
+
+    name = "cloud_storage_secret_exposure"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        body = context.body or ""
+        if not body:
+            return []
+
+        patterns = [
+            (
+                "aws_s3",
+                r"(https://[a-z0-9.\-_]+\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com/[^'\"<>\s]+\?[^'\"<>\s]*X-Amz-Signature=[^'\"<>\s]+)",
+                ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
+            ),
+            (
+                "gcs",
+                r"(https://storage\.googleapis\.com/[^'\"<>\s]+\?[^'\"<>\s]*X-Goog-Signature=[^'\"<>\s]+)",
+                ["x-goog-signature", "x-goog-credential", "x-goog-expires"],
+            ),
+            (
+                "azure_blob",
+                r"(https://[a-z0-9\-]+\.blob\.core\.windows\.net/[^'\"<>\s]+\?[^'\"<>\s]*sig=[^'\"<>\s]+)",
+                ["sig=", "se=", "sp="],
+            ),
+        ]
+
+        findings: list[Finding] = []
+        lowered = body.lower()
+        for provider, pattern, markers in patterns:
+            urls = sorted({match.group(1) for match in re.finditer(pattern, body, re.I)})
+            if not urls:
+                continue
+            matched_markers = [marker for marker in markers if marker in lowered]
+            evidence_score = _score_signal_pairs(
+                [
+                    (len(urls) >= 1, 40),
+                    (len(matched_markers) >= 2, 25),
+                    (len(urls) >= 2, 10),
+                    (provider == "azure_blob", 10),
+                    (provider in {"aws_s3", "gcs"}, 15),
+                ]
+            )
+            findings.append(
+                Finding(
+                    title="前端暴露对象存储签名访问链接",
+                    type="cloud_storage_secret_exposure",
+                    severity="high",
+                    description="页面源码中直接出现对象存储签名访问链接或 SAS 参数，可能被他人复用以读取受限资源、枚举文件或绕过预期访问边界。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="signed storage url",
+                        parameter_type="html",
+                        snippet=provider,
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "provider": provider,
+                            "signed_urls": urls[:5],
+                            "matched_markers": matched_markers,
+                            "evidence_score": evidence_score,
+                        },
+                        response_raw=body[:4000],
+                    ),
+                    fix_suggestion="避免在前端源码中硬编码签名对象存储链接；改为后端按需短时签发，并限制权限、路径范围、来源与过期时间。",
+                    confidence="high",
+                    owasp_category="A05 安全配置错误",
+                    cwe_id="CWE-200",
+                )
+            )
 
         return findings
 
@@ -2224,6 +2423,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(ApiSurfaceExposureDetector())
     DetectorRegistry.register(OAuthSurfaceDetector())
     DetectorRegistry.register(CloudStorageExposureDetector())
+    DetectorRegistry.register(CloudStorageSecretExposureDetector())
     DetectorRegistry.register(SensitiveEndpointDetector())
     DetectorRegistry.register(BackupExposureDetector())
     DetectorRegistry.register(DiscoverySurfaceDetector())

@@ -30,6 +30,7 @@ _GROUP_RULES: list[tuple[str, set[str], tuple[str, ...]]] = [
             "passive_exposure",
             "api_surface_exposure",
             "cloud_storage_exposure",
+            "cloud_storage_secret_exposure",
         },
         (
             "敏感路径",
@@ -83,6 +84,7 @@ _GROUP_RULES: list[tuple[str, set[str], tuple[str, ...]]] = [
             "admin_page_exposure",
             "user_profile_exposure",
             "user_data_api_exposure",
+            "oauth_config_risk",
         },
         ("认证", "授权", "登录", "越权", "权限", "爆破", "CSRF", "IDOR", "劫持", "oauth", "sso"),
     ),
