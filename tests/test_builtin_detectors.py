@@ -1,5 +1,6 @@
 from app.plugins import ScanContext
 from app.plugins.builtin import (
+    BackupExposureDetector,
     CSPPolicyWeaknessDetector,
     DirectoryListingDetector,
     PassiveExposureDetector,
@@ -177,6 +178,75 @@ def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):
 
 def test_sensitive_endpoint_detector_ignores_protected_endpoints(monkeypatch):
     detector = SensitiveEndpointDetector()
+
+    def handler(_request):
+        return __import__("httpx").Response(403, text="forbidden")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert findings == []
+
+
+def test_backup_exposure_detector_flags_dump_and_backup_files(monkeypatch):
+    detector = BackupExposureDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/backup.sql":
+            return __import__("httpx").Response(
+                200,
+                text="-- MySQL dump\nCREATE TABLE users (id INT);\nINSERT INTO users VALUES (1);",
+            )
+        if path == "/config.bak":
+            return __import__("httpx").Response(
+                200,
+                text="DATABASE_URL=postgres://user:pass@db.local/app\nJWT_SECRET=supersecret",
+            )
+        return __import__("httpx").Response(403, text="forbidden")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "数据库备份文件暴露",
+        "配置备份文件暴露",
+    }
+    assert all(finding.type == "backup_exposure" for finding in findings)
+
+
+def test_backup_exposure_detector_ignores_forbidden_files(monkeypatch):
+    detector = BackupExposureDetector()
 
     def handler(_request):
         return __import__("httpx").Response(403, text="forbidden")

@@ -405,6 +405,86 @@ class SensitiveEndpointDetector(BaseVulnDetector):
         return findings
 
 
+class BackupExposureDetector(BaseVulnDetector):
+    """备份与导出文件暴露检测插件。"""
+
+    name = "backup_exposure"
+    version = "1.0"
+    supported_depths = ["standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """探测常见备份、导出与旧版本文件是否公开。"""
+        origin = f"{urlparse(context.url).scheme}://{urlparse(context.url).netloc}"
+        candidates = [
+            ("/backup.sql", "数据库备份文件暴露", "high", ["create table", "insert into", "drop table", "mysql dump", "postgresql database dump"], "CWE-200"),
+            ("/dump.sql", "数据库导出文件暴露", "high", ["create table", "insert into", "drop table", "mysqldump", "dump completed"], "CWE-200"),
+            ("/db.sql", "数据库文件暴露", "high", ["create table", "insert into", "drop table", "pragma", "sqlite"], "CWE-200"),
+            ("/backup.bak", "备份文件暴露", "medium", ["password", "secret", "token", "api_key", "database"], "CWE-200"),
+            ("/config.bak", "配置备份文件暴露", "high", ["password", "secret", "token", "api_key", "database_url"], "CWE-200"),
+            ("/config.old", "旧配置文件暴露", "high", ["password", "secret", "token", "api_key", "database_url"], "CWE-200"),
+            ("/settings.old", "旧配置文件暴露", "high", ["password", "secret", "token", "api_key", "database_url"], "CWE-200"),
+            ("/.env.bak", "环境变量备份暴露", "high", ["password", "secret", "token", "api_key", "jwt_secret"], "CWE-200"),
+            ("/application.yml.bak", "应用配置备份暴露", "high", ["password:", "secret:", "token:", "api_key:", "spring:"], "CWE-200"),
+            ("/web.config.bak", "Web 配置备份暴露", "high", ["connectionstrings", "appsettings", "password", "secret"], "CWE-200"),
+        ]
+
+        findings: list[Finding] = []
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                headers=context.headers or None,
+            ) as client:
+                for rel_path, title, severity, markers, cwe in candidates:
+                    target_url = urljoin(origin, rel_path)
+                    try:
+                        resp = await client.get(target_url, timeout=8.0)
+                    except Exception:
+                        continue
+
+                    body = (resp.text or "").lower()
+                    if resp.status_code != 200 or not body:
+                        continue
+                    if len(body) < 20 and not any(marker in body for marker in markers):
+                        continue
+
+                    matched = [marker for marker in markers if marker.lower() in body]
+                    if not matched:
+                        continue
+
+                    findings.append(
+                        Finding(
+                            title=title,
+                            type="backup_exposure",
+                            severity=severity,
+                            description=f"公开可访问的 {rel_path} 暴露了备份或导出内容，攻击者可能直接获得配置、凭据或数据库结构。",
+                            url=target_url,
+                            location=VulnLocation(
+                                url=target_url,
+                                parameter="",
+                                parameter_type="path",
+                                snippet=rel_path,
+                            ),
+                            evidence=Evidence(
+                                extra={
+                                    "endpoint": rel_path,
+                                    "matched_markers": matched,
+                                    "status_code": resp.status_code,
+                                    "content_type": resp.headers.get("content-type", ""),
+                                },
+                                response_raw=resp.text[:4000],
+                            ),
+                            fix_suggestion="将备份、导出和旧版本文件移出 Web 根目录，并在服务器层显式禁止访问这些后缀。",
+                            confidence="high",
+                            owasp_category="A05 安全配置错误",
+                            cwe_id=cwe,
+                        )
+                    )
+        except Exception:
+            return findings
+
+        return findings
+
+
 class HeaderSecurityDetector(BaseVulnDetector):
     """安全响应头检测插件。"""
 
@@ -873,6 +953,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(ServerExposureDetector())
     DetectorRegistry.register(PassiveExposureDetector())
     DetectorRegistry.register(SensitiveEndpointDetector())
+    DetectorRegistry.register(BackupExposureDetector())
     DetectorRegistry.register(DirectoryListingDetector())
     DetectorRegistry.register(TraceMethodDetector())
     DetectorRegistry.register(SSLInfoDetector())
