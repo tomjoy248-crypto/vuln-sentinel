@@ -31,6 +31,46 @@ const VULN_TYPE_LABELS = {
   file_upload: '不安全文件上传',
   logic_bypass: '业务逻辑绕过'
 };
+const RISK_SURFACE_RULES = [
+  {
+    label: '公开暴露面',
+    types: new Set([
+      'discovery_exposure',
+      'well_known_exposure',
+      'exposed_endpoint',
+      'backup_exposure',
+      'sensitive_path',
+      'sensitive_config_exposure',
+      'directory_listing',
+      'server_exposure',
+      'info_leak',
+      'passive_exposure',
+      'api_surface_exposure'
+    ]),
+    keywords: ['敏感路径', '敏感文件', '备份', '目录', '信息泄露', 'source map', '调试', '公开', 'well-known', 'api 文档', 'swagger', 'openapi', 'metrics', 'actuator', 'console', 'phpinfo']
+  },
+  {
+    label: '配置与响应头',
+    types: new Set(['header_missing', 'cookie_security', 'cors_misconfig', 'csp_weakness', 'trace_method', 'ssl']),
+    keywords: ['CSP', 'Cookie', 'CORS', 'HSTS', 'X-Frame-Options', 'TRACE', 'TLS', 'HTTPS']
+  },
+  {
+    label: '认证与授权',
+    types: new Set(['csrf', 'auth_weakness', 'bruteforce_protection', 'api_auth_missing', 'broken_access_control', 'idor', 'unauthorized_access', 'logic_bypass', 'clickjacking']),
+    keywords: ['认证', '授权', '登录', '越权', '权限', '爆破', 'CSRF', 'IDOR', '劫持']
+  },
+  {
+    label: '注入与输入验证',
+    types: new Set(['sqli', 'ssti', 'reflected_xss', 'xxe', 'cmdi', 'traversal', 'ssrf', 'open_redirect', 'deserialization']),
+    keywords: ['注入', 'XSS', 'XXE', '命令', '遍历', 'SSRF', '重定向', '反序列化']
+  },
+  {
+    label: '组件与供应链',
+    types: new Set(['outdated_component']),
+    keywords: ['组件', '框架', '版本', 'CVE']
+  }
+];
+const RISK_SURFACE_ORDER = { '公开暴露面': 0, '配置与响应头': 1, '认证与授权': 2, '注入与输入验证': 3, '组件与供应链': 4, '其他风险': 5 };
 
 let _currentFindings = [];
 let _selectedIndex = 0;
@@ -50,6 +90,76 @@ export function isSRCFormat(data) {
   const first = data.findings[0];
   return first && typeof first === 'object' &&
     'id' in first && 'severity' in first && 'evidence' in first;
+}
+
+export function getRiskSurfaceLabel(finding) {
+  const vulnType = String(finding?.type || finding?.vulnerability_type || '').toLowerCase();
+  const text = [finding?.name, finding?.title, finding?.summary, finding?.description, vulnType]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  for (const rule of RISK_SURFACE_RULES) {
+    if (rule.types.has(vulnType)) return rule.label;
+    if (rule.keywords.some((keyword) => text.includes(keyword.toLowerCase()))) return rule.label;
+  }
+  return '其他风险';
+}
+
+export function groupFindingsByRiskSurface(findings) {
+  const grouped = new Map();
+  (findings || []).forEach((finding) => {
+    const label = getRiskSurfaceLabel(finding);
+    if (!grouped.has(label)) {
+      grouped.set(label, { label, items: [], counts: { critical: 0, high: 0, medium: 0, low: 0, info: 0 } });
+    }
+    const bucket = grouped.get(label);
+    bucket.items.push(finding);
+    const sev = String(finding?.severity || 'info').toLowerCase();
+    bucket.counts[Object.prototype.hasOwnProperty.call(bucket.counts, sev) ? sev : 'info'] += 1;
+  });
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    const worstA = ['critical', 'high', 'medium', 'low', 'info'].find((level) => (a.counts[level] || 0) > 0) || 'info';
+    const worstB = ['critical', 'high', 'medium', 'low', 'info'].find((level) => (b.counts[level] || 0) > 0) || 'info';
+    const bySeverity = (SEVERITY_ORDER[worstA] ?? 99) - (SEVERITY_ORDER[worstB] ?? 99);
+    if (bySeverity !== 0) return bySeverity;
+    if (b.items.length !== a.items.length) return b.items.length - a.items.length;
+    return (RISK_SURFACE_ORDER[a.label] ?? 99) - (RISK_SURFACE_ORDER[b.label] ?? 99);
+  });
+}
+
+function renderRiskSurfaceOverview(findings) {
+  const grouped = groupFindingsByRiskSurface(findings);
+  if (grouped.length === 0) return '';
+
+  const cards = grouped.slice(0, 4).map((group) => {
+    const counts = group.counts;
+    const worst = ['critical', 'high', 'medium', 'low', 'info'].find((level) => (counts[level] || 0) > 0) || 'info';
+    const labelClass = worst === 'critical' || worst === 'high' ? 'surface-card critical' : worst === 'medium' ? 'surface-card medium' : 'surface-card low';
+    return `
+      <div class="${labelClass}">
+        <div class="surface-card-head">
+          <span class="surface-card-title">${escapeHtml(group.label)}</span>
+          <span class="surface-card-badge">${escapeHtml(worst)}</span>
+        </div>
+        <div class="surface-card-count">${group.items.length}</div>
+        <div class="surface-card-detail">严重 ${counts.critical} / 高危 ${counts.high} / 中危 ${counts.medium} / 低危 ${counts.low} / 信息 ${counts.info}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="src-surface-overview fade-in-up">
+      <div class="src-surface-overview-head">
+        <div>
+          <div class="src-surface-overview-title">风险面总览</div>
+          <div class="src-surface-overview-subtitle">先看攻击面分布，再进入明细与证据。</div>
+        </div>
+        <div class="src-surface-overview-pill">${grouped.length} 个风险面</div>
+      </div>
+      <div class="src-surface-grid">${cards}</div>
+    </div>
+  `;
 }
 
 /**
@@ -84,6 +194,8 @@ export function renderSRCResult(data) {
   if (data.quality && data.quality.overall_score !== undefined) {
     html += renderQualityPanel(data.quality, data.dedup_stats);
   }
+
+  html += renderRiskSurfaceOverview(_currentFindings);
 
   // 主体：左列表 + 右详情
   const firstFinding = _currentFindings.length > 0 ? _currentFindings[0] : null;
@@ -372,6 +484,7 @@ function renderFindingList(findings, selectedIndex) {
       const rawType = String(f.type || '').toLowerCase();
       const typeText = VULN_TYPE_LABELS[rawType] || (f.type ? String(f.type).toUpperCase() : '');
       const typeLabel = typeText ? `<span class="src-list-type">${escapeHtml(typeText)}</span>` : '';
+      const surfaceLabel = `<span class="src-list-surface">${escapeHtml(getRiskSurfaceLabel(f))}</span>`;
       const host = f.url ? new URL(f.url, window.location.href).hostname : '';
       const path = f.url ? new URL(f.url, window.location.href).pathname : '';
       const fpTags = buildFpTags(Array.isArray(f.fp_reasons) ? f.fp_reasons : []);
@@ -395,6 +508,7 @@ function renderFindingList(findings, selectedIndex) {
           </div>
           <div class="src-list-row meta">
             ${typeLabel}
+            ${surfaceLabel}
             ${param}
             <span class="src-list-host" title="${escapeAttr(f.url || '')}">${escapeHtml(host)}${escapeHtml(path)}</span>
             <span class="src-list-confidence ${escapeHtml(rawConfidence)}">${escapeHtml(confidenceLabel)}</span>
@@ -981,6 +1095,23 @@ export function injectSRCStyles() {
     .src-report-capability-item strong { font-size:13px; color:var(--text-primary); }
     .src-report-capability-text { margin-top:8px; font-size:12px; color:var(--text-secondary); line-height:1.7; }
     @media (max-width: 900px) { .src-report-capability-grid { grid-template-columns:1fr; } }
+    .src-surface-overview { margin-bottom:16px; padding:16px 18px; background:linear-gradient(180deg, rgba(75,110,175,0.12), rgba(75,110,175,0.04)); border:1px solid rgba(75,110,175,0.24); border-radius:var(--radius); }
+    .src-surface-overview-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .src-surface-overview-title { font-size:14px; font-weight:700; color:var(--text-primary); }
+    .src-surface-overview-subtitle { margin-top:3px; font-size:12px; color:var(--text-secondary); line-height:1.5; }
+    .src-surface-overview-pill { font-size:11px; font-weight:700; color:var(--primary-light); background:rgba(75,110,175,0.12); border:1px solid rgba(75,110,175,0.24); border-radius:999px; padding:4px 10px; white-space:nowrap; }
+    .src-surface-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; }
+    @media (max-width: 1100px) { .src-surface-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 640px) { .src-surface-grid { grid-template-columns:1fr; } .src-surface-overview-head { flex-direction:column; } }
+    .surface-card { padding:12px; border-radius:var(--radius-sm); border:1px solid var(--border-light); background:rgba(255,255,255,0.03); display:flex; flex-direction:column; gap:8px; }
+    .surface-card.critical { border-color:rgba(199,84,80,0.34); background:rgba(199,84,80,0.08); }
+    .surface-card.medium { border-color:rgba(240,167,50,0.34); background:rgba(240,167,50,0.08); }
+    .surface-card.low { border-color:rgba(115,201,144,0.28); background:rgba(115,201,144,0.06); }
+    .surface-card-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .surface-card-title { font-size:13px; font-weight:700; color:var(--text-primary); }
+    .surface-card-badge { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.2px; color:var(--text-secondary); background:var(--token-bg); padding:2px 6px; border-radius:999px; }
+    .surface-card-count { font-size:26px; font-weight:800; line-height:1; color:var(--text-primary); }
+    .surface-card-detail { font-size:11px; color:var(--text-secondary); line-height:1.5; }
 
     .src-quality-panel { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:16px; overflow:hidden; }
     .src-quality-header { display:flex; align-items:center; gap:20px; padding:14px 18px; cursor:pointer; }
@@ -1040,6 +1171,7 @@ export function injectSRCStyles() {
     .src-sev-badge.info { background:#808080; }
     .src-list-title { font-size:13px; font-weight:600; color:var(--text-primary); flex:1; word-break:break-word; line-height:1.4; }
     .src-list-type { font-size:10px; background:var(--token-bg); padding:2px 6px; border-radius:var(--radius-xs); color:var(--text-secondary); }
+    .src-list-surface { font-size:10px; background:rgba(115,201,144,0.12); color:#73c990; padding:2px 6px; border-radius:var(--radius-xs); }
     .src-list-param { font-size:10px; background:rgba(75,110,175,0.15); color:var(--primary-light); padding:2px 6px; border-radius:var(--radius-xs); }
     .src-list-host { color:var(--text-secondary); font-family:var(--font); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; }
     .src-list-confidence { font-size:11px; color:var(--text-secondary); margin-left:auto; text-transform:uppercase; }
