@@ -342,11 +342,49 @@ def test_protected_route_exposure_detector_flags_admin_page_and_api(monkeypatch)
         __import__("asyncio").run(client.aclose())
 
     assert {finding.title for finding in findings} == {
-        "后台页面匿名可访问",
-        "匿名可访问敏感接口",
+        "后台管理页面匿名可访问",
+        "管理接口匿名可访问",
     }
-    assert any(finding.type == "unauthorized_access" for finding in findings)
-    assert any(finding.type == "api_auth_missing" for finding in findings)
+    assert any(finding.type == "admin_page_exposure" for finding in findings)
+    assert any(finding.type == "admin_api_exposure" for finding in findings)
+    assert any(finding.severity == "critical" for finding in findings)
+    assert any(finding.evidence.extra.get("exposure_kind") == "admin_api_data" for finding in findings)
+
+
+def test_protected_route_exposure_detector_flags_profile_page(monkeypatch):
+    detector = ProtectedRouteExposureDetector()
+
+    def handler(request):
+        if request.url.path == "/profile":
+            return __import__("httpx").Response(
+                200,
+                text="<html><body>profile username email account</body></html>",
+                headers={"Content-Type": "text/html"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert len(findings) == 1
+    assert findings[0].title == "用户账户页面匿名可访问"
+    assert findings[0].type == "user_profile_exposure"
+    assert findings[0].severity == "medium"
 
 
 def test_protected_route_exposure_detector_ignores_login_redirect_and_challenge(monkeypatch):

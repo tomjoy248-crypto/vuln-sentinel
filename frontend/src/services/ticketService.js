@@ -5,14 +5,23 @@ import {
   updateTicket,
   deleteTicket as apiDeleteTicket,
   exportTicket as apiExportTicket,
+  listTicketCollaborators,
   apiPost,
   apiGet
 } from '../api.js';
 
 export async function loadTickets() {
-  const data = await listTickets();
-  const tickets = (data && data.tickets) ? data.tickets : [];
-  appStore.setState({ tickets: tickets });
+  const results = await Promise.all([
+    listTickets(),
+    listTicketCollaborators().catch(function () { return { members: [] }; })
+  ]);
+  const data = results[0];
+  const collaboratorData = results[1];
+  const ticketPayload = (data && data.data) ? data.data : data;
+  const collaboratorPayload = (collaboratorData && collaboratorData.data) ? collaboratorData.data : collaboratorData;
+  const tickets = (ticketPayload && ticketPayload.tickets) ? ticketPayload.tickets : [];
+  const collaborators = (collaboratorPayload && collaboratorPayload.members) ? collaboratorPayload.members : [];
+  appStore.setState({ tickets: tickets, ticketCollaborators: collaborators });
   return data;
 }
 
@@ -55,6 +64,16 @@ export async function updateTicketOwner(id, owner) {
   const state = appStore.getState();
   const tickets = state.tickets.map(function (t) {
     return t.id === id ? Object.assign({}, t, { owner: owner }) : t;
+  });
+  appStore.setState({ tickets: tickets });
+  return result;
+}
+
+export async function updateTicketCollaborators(id, payload) {
+  const result = await updateTicket(id, payload);
+  const state = appStore.getState();
+  const tickets = state.tickets.map(function (t) {
+    return t.id === id ? Object.assign({}, t, payload) : t;
   });
   appStore.setState({ tickets: tickets });
   return result;

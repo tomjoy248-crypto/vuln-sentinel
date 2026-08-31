@@ -32,5 +32,6 @@ export function createStore(initialState) {
 export const appStore = createStore({
   tickets: [],
   ticketFilter: 'pending',
+  ticketCollaborators: [],
   user: null
 });

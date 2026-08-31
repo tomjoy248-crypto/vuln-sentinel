@@ -157,10 +157,49 @@ def _format_ticket_event_label(event: dict[str, Any]) -> str:
         details = event.get("details") or {}
         owner = details.get("owner") or "未指定"
         return f"负责人变更为 {owner}"
+    if event_type == "assignee":
+        details = event.get("details") or {}
+        assignee = details.get("assignee") or "未指定"
+        return f"处理人变更为 {assignee}"
+    if event_type == "reviewer":
+        details = event.get("details") or {}
+        reviewer = details.get("reviewer") or "未指定"
+        return f"复核人变更为 {reviewer}"
     to_status = str(event.get("to_status") or "").strip()
     if to_status:
         return f"状态更新为 {to_status}"
     return "工单事件"
+
+
+def _ticket_collaborator_names(user: dict[str, Any]) -> list[str]:
+    team_id = int(user.get("team_id") or 0)
+    conn = get_db()
+    try:
+        if team_id > 0:
+            rows = conn.execute(
+                "SELECT username FROM users WHERE team_id=? ORDER BY username COLLATE NOCASE",
+                (team_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT username FROM users WHERE id=?",
+                (user["user_id"],),
+            ).fetchall()
+        return [str(row["username"]) for row in rows if row["username"]]
+    finally:
+        conn.close()
+
+
+def _validate_ticket_actor(
+    user: dict[str, Any], actor_name: str | None, field_label: str
+) -> str:
+    value = str(actor_name or "").strip()
+    if not value:
+        return ""
+    allowed = _ticket_collaborator_names(user)
+    if value not in allowed:
+        raise BusinessException(f"{field_label} 必须是当前团队成员")
+    return value
 
 
 def _build_ticket_markdown_export(
@@ -176,6 +215,8 @@ def _build_ticket_markdown_export(
         f"- 风险等级：{ticket.get('severity') or ''}",
         f"- 当前状态：{ticket.get('status') or ''}",
         f"- 负责人：{ticket.get('owner') or '未指定'}",
+        f"- 处理人：{ticket.get('assignee') or '未指定'}",
+        f"- 复核人：{ticket.get('reviewer') or '未指定'}",
         f"- 来源扫描：{ticket.get('scan_id') or '未关联'}",
         f"- 目标地址：{ticket.get('url') or ticket.get('target_host') or '未记录'}",
         f"- 创建时间：{ticket.get('created_at') or ''}",
@@ -1110,6 +1151,8 @@ def init_db() -> None:
             fix_code TEXT,
             notes TEXT,
             owner TEXT DEFAULT '',
+            assignee TEXT DEFAULT '',
+            reviewer TEXT DEFAULT '',
             created_at TEXT,
             updated_at TEXT,
             fixed_at TEXT
@@ -1199,6 +1242,8 @@ def init_db() -> None:
     _fix_tickets_columns = [
         ("finding_id", "ALTER TABLE fix_tickets ADD COLUMN finding_id TEXT DEFAULT ''"),
         ("owner", "ALTER TABLE fix_tickets ADD COLUMN owner TEXT DEFAULT ''"),
+        ("assignee", "ALTER TABLE fix_tickets ADD COLUMN assignee TEXT DEFAULT ''"),
+        ("reviewer", "ALTER TABLE fix_tickets ADD COLUMN reviewer TEXT DEFAULT ''"),
         (
             "finding_type",
             "ALTER TABLE fix_tickets ADD COLUMN finding_type TEXT DEFAULT ''",
@@ -11782,6 +11827,9 @@ async def api_history_delete(user: dict = Depends(require_login)) -> dict:
 async def api_create_fix_ticket(
     req: FixTicketCreate, user: dict = Depends(require_login)
 ) -> dict:
+    owner = _validate_ticket_actor(user, req.owner, "负责人")
+    assignee = _validate_ticket_actor(user, req.assignee, "处理人")
+    reviewer = _validate_ticket_actor(user, req.reviewer, "复核人")
     ticket_id = create_fix_ticket(
         user["user_id"],
         req.scan_id,
@@ -11789,7 +11837,9 @@ async def api_create_fix_ticket(
         req.severity,
         req.fix_code,
         req.notes,
-        req.owner,
+        owner,
+        assignee,
+        reviewer,
     )
     return success_response(data={"ticket_id": ticket_id}, message="工单创建成功")
 
@@ -11800,6 +11850,12 @@ async def api_list_fix_tickets(
 ) -> dict:
     tickets = get_fix_tickets(user["user_id"], status)
     return success_response(data={"tickets": tickets})
+
+
+@app.get("/api/fix-tickets/meta/collaborators")
+async def api_fix_ticket_collaborators(user: dict = Depends(require_login)) -> dict:
+    """返回当前用户可选的工单协同成员。"""
+    return success_response(data={"members": _ticket_collaborator_names(user)})
 
 
 @app.get("/api/fix-tickets/{ticket_id}")
@@ -11817,13 +11873,30 @@ async def api_get_fix_ticket(
 async def api_update_fix_ticket(
     ticket_id: int, req: FixTicketUpdate, user: dict = Depends(require_login)
 ) -> dict:
+    owner = (
+        _validate_ticket_actor(user, req.owner, "负责人")
+        if req.owner is not None
+        else None
+    )
+    assignee = (
+        _validate_ticket_actor(user, req.assignee, "处理人")
+        if req.assignee is not None
+        else None
+    )
+    reviewer = (
+        _validate_ticket_actor(user, req.reviewer, "复核人")
+        if req.reviewer is not None
+        else None
+    )
     ok = update_fix_ticket(
         ticket_id,
         user["user_id"],
         status=req.status,
         fix_code=req.fix_code,
         notes=req.notes,
-        owner=req.owner,
+        owner=owner,
+        assignee=assignee,
+        reviewer=reviewer,
         rollback_code=req.rollback_code,
     )
     if not ok:
@@ -11836,13 +11909,30 @@ async def api_put_fix_ticket(
     ticket_id: int, req: FixTicketUpdate, user: dict = Depends(require_login)
 ) -> dict:
     """PUT 方式更新工单（与 PATCH 等价，兼容不同调用风格）。"""
+    owner = (
+        _validate_ticket_actor(user, req.owner, "负责人")
+        if req.owner is not None
+        else None
+    )
+    assignee = (
+        _validate_ticket_actor(user, req.assignee, "处理人")
+        if req.assignee is not None
+        else None
+    )
+    reviewer = (
+        _validate_ticket_actor(user, req.reviewer, "复核人")
+        if req.reviewer is not None
+        else None
+    )
     ok = update_fix_ticket(
         ticket_id,
         user["user_id"],
         status=req.status,
         fix_code=req.fix_code,
         notes=req.notes,
-        owner=req.owner,
+        owner=owner,
+        assignee=assignee,
+        reviewer=reviewer,
         rollback_code=req.rollback_code,
     )
     if not ok:

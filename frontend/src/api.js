@@ -192,6 +192,7 @@ export function exportTicket(id, format = 'markdown') {
     method: 'GET'
   });
 }
+export function listTicketCollaborators() { return apiGet('/api/fix-tickets/meta/collaborators'); }
 
 // Assets
 export function listAssets() { return apiGet('/api/assets'); }

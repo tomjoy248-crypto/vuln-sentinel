@@ -800,10 +800,12 @@ class ProtectedRouteExposureDetector(BaseVulnDetector):
     _protected_path_hints = [
         "/admin",
         "/admin/dashboard",
+        "/admin/users",
         "/dashboard",
         "/account",
         "/profile",
         "/settings",
+        "/management",
         "/user",
         "/user/profile",
         "/api/me",
@@ -811,6 +813,8 @@ class ProtectedRouteExposureDetector(BaseVulnDetector):
         "/api/account",
         "/api/profile",
         "/api/admin",
+        "/api/admin/audit",
+        "/api/admin/users",
         "/api/users",
         "/api/settings",
     ]
@@ -841,6 +845,44 @@ class ProtectedRouteExposureDetector(BaseVulnDetector):
         "admin",
         "settings",
     )
+    _admin_json_keys = ("role", "permission", "admin", "settings", "token", "secret")
+    _profile_keywords = ("account", "profile", "email", "username", "user center")
+
+    def _classify_page_exposure(self, rel_path: str, body_lower: str) -> tuple[str, str, str, str, str]:
+        is_admin_surface = any(token in rel_path for token in ("/admin", "/management", "/settings", "/dashboard"))
+        if is_admin_surface or "admin" in body_lower or "permission" in body_lower:
+            return (
+                "后台管理页面匿名可访问",
+                "admin_page_exposure",
+                "high",
+                "high",
+                "management_page",
+            )
+        return (
+            "用户账户页面匿名可访问",
+            "user_profile_exposure",
+            "medium",
+            "medium",
+            "profile_page",
+        )
+
+    def _classify_api_exposure(self, rel_path: str, matched_keys: list[str]) -> tuple[str, str, str, str, str]:
+        admin_keys = [key for key in matched_keys if key in self._admin_json_keys]
+        if admin_keys or "/api/admin" in rel_path or "/api/settings" in rel_path:
+            return (
+                "管理接口匿名可访问",
+                "admin_api_exposure",
+                "critical",
+                "high",
+                "admin_api_data",
+            )
+        return (
+            "用户数据接口匿名可访问",
+            "user_data_api_exposure",
+            "high",
+            "high" if matched_keys else "medium",
+            "user_api_data",
+        )
 
     async def detect(self, context: ScanContext) -> list[Finding]:
         """检测匿名请求是否能直接访问后台页面或敏感接口。"""
@@ -891,26 +933,29 @@ class ProtectedRouteExposureDetector(BaseVulnDetector):
                         ]
                         has_sensitive_json = len(matched_keys) >= 1
 
-                    has_sensitive_text = any(
-                        term in body_lower for term in self._protected_keywords
-                    )
+                    matched_keywords = [
+                        term for term in self._protected_keywords if term in body_lower
+                    ]
+                    has_sensitive_text = len(matched_keywords) >= 1
                     if not has_sensitive_json and not has_sensitive_text:
                         continue
 
-                    severity = "high" if is_api or "/admin" in rel_path else "medium"
-                    confidence = "high" if has_sensitive_json or "/admin" in rel_path else "medium"
-                    finding_type = "api_auth_missing" if is_api else "unauthorized_access"
-                    title = "匿名可访问敏感接口" if is_api else "后台页面匿名可访问"
-                    description = (
-                        "未登录请求即可访问敏感接口并返回疑似用户或管理数据。"
-                        if is_api
-                        else "未登录请求即可访问后台或用户中心类页面，访问控制边界可能不足。"
-                    )
-                    fix = (
-                        "为相关 API 统一增加会话或 Bearer 鉴权，并补充对象级授权，匿名请求应返回 401/403。"
-                        if is_api
-                        else "对后台页面统一挂载认证中间件和角色校验，未登录访问应跳转登录页或返回 401/403。"
-                    )
+                    if is_api:
+                        title, finding_type, severity, confidence, exposure_kind = self._classify_api_exposure(rel_path, matched_keys)
+                        description = (
+                            "未登录请求即可访问管理类接口并返回权限、配置或后台管理数据。"
+                            if exposure_kind == "admin_api_data"
+                            else "未登录请求即可访问用户数据接口并返回账号、身份或资料信息。"
+                        )
+                        fix = "为相关 API 统一增加会话或 Bearer 鉴权，并补充对象级授权，匿名请求应返回 401/403。"
+                    else:
+                        title, finding_type, severity, confidence, exposure_kind = self._classify_page_exposure(rel_path, body_lower)
+                        description = (
+                            "未登录请求即可访问后台管理页面，管理面暴露在匿名访问边界之外。"
+                            if exposure_kind == "management_page"
+                            else "未登录请求即可访问账户或个人资料页面，访问控制边界可能不足。"
+                        )
+                        fix = "对后台页面统一挂载认证中间件和角色校验，未登录访问应跳转登录页或返回 401/403。"
 
                     findings.append(
                         Finding(
@@ -931,6 +976,13 @@ class ProtectedRouteExposureDetector(BaseVulnDetector):
                                     "status_code": resp.status_code,
                                     "content_type": content_type,
                                     "matched_keys": matched_keys[:8],
+                                    "matched_keywords": matched_keywords[:8],
+                                    "exposure_kind": exposure_kind,
+                                    "data_classification": (
+                                        "admin"
+                                        if exposure_kind in {"admin_api_data", "management_page"}
+                                        else "user"
+                                    ),
                                     "is_api": is_api,
                                 },
                                 response_raw=body[:4000],

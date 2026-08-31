@@ -142,6 +142,8 @@ def create_fix_ticket(
     fix_code: str | None = None,
     notes: str | None = None,
     owner: str | None = None,
+    assignee: str | None = None,
+    reviewer: str | None = None,
     finding_id: str | None = None,
     finding_type: str | None = None,
     url: str | None = None,
@@ -153,9 +155,9 @@ def create_fix_ticket(
         cur = conn.execute(
             """INSERT INTO fix_tickets (
                 user_id, scan_id, finding_name, severity, status,
-                fix_code, notes, owner, finding_id, finding_type, url, target_host,
-                created_at, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                fix_code, notes, owner, assignee, reviewer,
+                finding_id, finding_type, url, target_host, created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 user_id,
                 scan_id,
@@ -165,6 +167,8 @@ def create_fix_ticket(
                 fix_code,
                 notes,
                 owner or "",
+                assignee or "",
+                reviewer or "",
                 finding_id or "",
                 finding_type or "",
                 url or "",
@@ -181,8 +185,46 @@ def create_fix_ticket(
             "",
             TicketStatus.PENDING,
             note="创建工单",
-            details={"owner": owner or "", "severity": severity},
+            details={
+                "owner": owner or "",
+                "assignee": assignee or "",
+                "reviewer": reviewer or "",
+                "severity": severity,
+            },
         )
+        if owner:
+            _record_ticket_event(
+                conn,
+                ticket_id,
+                user_id,
+                TicketStatus.PENDING,
+                TicketStatus.PENDING,
+                event_type="owner",
+                note=f"负责人更新为 {owner}",
+                details={"owner": owner},
+            )
+        if assignee:
+            _record_ticket_event(
+                conn,
+                ticket_id,
+                user_id,
+                TicketStatus.PENDING,
+                TicketStatus.PENDING,
+                event_type="assignee",
+                note=f"处理人更新为 {assignee}",
+                details={"assignee": assignee},
+            )
+        if reviewer:
+            _record_ticket_event(
+                conn,
+                ticket_id,
+                user_id,
+                TicketStatus.PENDING,
+                TicketStatus.PENDING,
+                event_type="reviewer",
+                note=f"复核人更新为 {reviewer}",
+                details={"reviewer": reviewer},
+            )
         conn.commit()
         return ticket_id
     finally:
@@ -226,6 +268,8 @@ def update_fix_ticket(
     fix_code: str | None = None,
     notes: str | None = None,
     owner: str | None = None,
+    assignee: str | None = None,
+    reviewer: str | None = None,
     applied_at: str | None = None,
     rolled_back_at: str | None = None,
     rollback_code: str | None = None,
@@ -235,7 +279,7 @@ def update_fix_ticket(
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT status, notes, owner FROM fix_tickets WHERE id=? AND user_id=?",
+            "SELECT status, notes, owner, assignee, reviewer FROM fix_tickets WHERE id=? AND user_id=?",
             (ticket_id, user_id),
         ).fetchone()
         if not row:
@@ -244,6 +288,8 @@ def update_fix_ticket(
         current_status = row["status"]
         current_notes = row["notes"] or ""
         current_owner = row["owner"] or ""
+        current_assignee = row["assignee"] or ""
+        current_reviewer = row["reviewer"] or ""
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         fields: list[str] = []
         params: list[Any] = []
@@ -306,6 +352,40 @@ def update_fix_ticket(
                     details={
                         "previous_owner": current_owner,
                         "owner": owner or "",
+                    },
+                )
+        if assignee is not None:
+            fields.append("assignee=?")
+            params.append(assignee)
+            if (assignee or "") != current_assignee:
+                _record_ticket_event(
+                    conn,
+                    ticket_id,
+                    user_id,
+                    current_status,
+                    current_status,
+                    event_type="assignee",
+                    note=f"处理人更新为 {assignee or '未指定'}",
+                    details={
+                        "previous_assignee": current_assignee,
+                        "assignee": assignee or "",
+                    },
+                )
+        if reviewer is not None:
+            fields.append("reviewer=?")
+            params.append(reviewer)
+            if (reviewer or "") != current_reviewer:
+                _record_ticket_event(
+                    conn,
+                    ticket_id,
+                    user_id,
+                    current_status,
+                    current_status,
+                    event_type="reviewer",
+                    note=f"复核人更新为 {reviewer or '未指定'}",
+                    details={
+                        "previous_reviewer": current_reviewer,
+                        "reviewer": reviewer or "",
                     },
                 )
         if applied_at is not None:
