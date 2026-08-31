@@ -517,7 +517,7 @@ def test_oauth_surface_detector_flags_oidc_nonce_missing():
     assert any(finding.title == "OIDC 授权请求未发现 nonce 参数" for finding in findings)
     nonce_finding = next(finding for finding in findings if finding.title == "OIDC 授权请求未发现 nonce 参数")
     assert nonce_finding.severity == "high"
-    assert nonce_finding.evidence.extra["flow"] == "implicit"
+    assert "implicit" in nonce_finding.evidence.extra["flows"]
 
 
 def test_oauth_surface_detector_ignores_oidc_nonce_when_present():
@@ -536,6 +536,44 @@ def test_oauth_surface_detector_ignores_oidc_nonce_when_present():
 
     assert len(findings) == 1
     assert findings[0].title == "前端暴露 OAuth 隐式流入口"
+
+
+def test_oauth_surface_detector_flags_oidc_code_flow_nonce_missing():
+    detector = OAuthSurfaceDetector()
+    context = ScanContext(
+        url="https://example.com/login",
+        headers={},
+        body=(
+            "<script>"
+            "const auth='https://login.example.com/oauth2/authorize?client_id=web123&redirect_uri=https://app.example.com/oidc/callback&response_type=code&scope=openid%20profile&state=abc';"
+            "</script>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 2
+    nonce_finding = next(finding for finding in findings if finding.title == "OIDC 授权请求未发现 nonce 参数")
+    assert nonce_finding.severity == "medium"
+    assert nonce_finding.evidence.extra["flows"] == ["authorization_code"]
+
+
+def test_oauth_surface_detector_ignores_oidc_code_nonce_when_present():
+    detector = OAuthSurfaceDetector()
+    context = ScanContext(
+        url="https://example.com/login",
+        headers={},
+        body=(
+            "<script>"
+            "const auth='https://login.example.com/oauth2/authorize?client_id=web123&redirect_uri=https://app.example.com/oidc/callback&response_type=code&scope=openid%20profile&state=abc&nonce=nonce-123';"
+            "</script>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].title == "前端 OAuth 授权码流程未发现 PKCE 线索"
 
 
 def test_oauth_surface_detector_flags_auth_code_without_pkce():
