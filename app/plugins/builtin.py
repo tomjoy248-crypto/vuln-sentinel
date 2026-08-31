@@ -141,6 +141,44 @@ def _extract_well_known_hits(text: str) -> list[str]:
     return list(dict.fromkeys(hits))
 
 
+def _parse_html_attributes(raw_attrs: str) -> dict[str, str]:
+    """从 HTML 标签属性片段中提取属性名和值。"""
+    attrs: dict[str, str] = {}
+    for match in re.finditer(
+        r"""(?P<name>[\w:-]+)(?:\s*=\s*(?:
+            "(?P<dq>[^"]*)"
+            |'(?P<sq>[^']*)'
+            |(?P<bare>[^\s"'=<>`]+)
+        ))?""",
+        raw_attrs,
+        re.IGNORECASE | re.VERBOSE,
+    ):
+        name = match.group("name").lower()
+        value = match.group("dq") or match.group("sq") or match.group("bare") or ""
+        attrs[name] = value.strip()
+    return attrs
+
+
+def _is_cross_origin_resource(page_url: str, resource_url: str) -> bool:
+    """判断资源是否为跨域子资源。"""
+    if not resource_url:
+        return False
+    resolved = urljoin(page_url, resource_url)
+    parsed_page = urlparse(page_url)
+    parsed_resource = urlparse(resolved)
+    if parsed_resource.scheme not in {"http", "https"}:
+        return False
+    if not parsed_resource.netloc:
+        return False
+    return (
+        parsed_resource.scheme.lower(),
+        parsed_resource.netloc.lower(),
+    ) != (
+        parsed_page.scheme.lower(),
+        parsed_page.netloc.lower(),
+    )
+
+
 class ServerExposureDetector(BaseVulnDetector):
     """服务器与框架技术栈泄露检测插件。"""
 
@@ -303,6 +341,80 @@ class CSPPolicyWeaknessDetector(BaseVulnDetector):
                 confidence="high",
                 owasp_category="A05 安全配置错误",
                 cwe_id="CWE-693",
+            )
+        ]
+
+
+class SRIIntegrityDetector(BaseVulnDetector):
+    """跨域脚本与样式缺少 SRI 保护检测插件。"""
+
+    name = "sri_integrity"
+    version = "1.0"
+    supported_depths = ["quick", "standard", "deep"]
+
+    async def detect(self, context: ScanContext) -> list[Finding]:
+        """检测跨域 script / stylesheet 是否缺少 integrity 属性。"""
+        body = context.body or ""
+        if not body:
+            return []
+
+        missing_resources: list[dict[str, str]] = []
+        tag_pattern = re.compile(
+            r"<(?P<tag>script|link)\b(?P<attrs>[^>]*)>",
+            re.IGNORECASE,
+        )
+
+        for match in tag_pattern.finditer(body):
+            tag = match.group("tag").lower()
+            attrs = _parse_html_attributes(match.group("attrs"))
+            if tag == "script":
+                resource_url = attrs.get("src", "")
+            else:
+                rel_value = attrs.get("rel", "").lower()
+                if "stylesheet" not in {item.strip() for item in rel_value.split()}:
+                    continue
+                resource_url = attrs.get("href", "")
+
+            if not _is_cross_origin_resource(context.url, resource_url):
+                continue
+            if attrs.get("integrity", "").strip():
+                continue
+
+            missing_resources.append(
+                {
+                    "tag": tag,
+                    "url": urljoin(context.url, resource_url),
+                }
+            )
+
+        if not missing_resources:
+            return []
+
+        snippet = ", ".join(item["url"] for item in missing_resources[:3])
+        resource_kinds = sorted({item["tag"] for item in missing_resources})
+        return [
+            Finding(
+                title="跨域子资源缺少 SRI 完整性保护",
+                type="sri_missing",
+                severity="low",
+                description="页面引用了跨域脚本或样式资源，但未配置 integrity 属性，供应链资源被篡改时浏览器无法进行完整性校验。",
+                url=context.url,
+                location=VulnLocation(
+                    url=context.url,
+                    parameter="integrity",
+                    parameter_type="html",
+                    snippet=snippet,
+                ),
+                evidence=Evidence(
+                    extra={
+                        "missing_resources": missing_resources,
+                        "resource_types": resource_kinds,
+                    }
+                ),
+                fix_suggestion="为跨域 script 和 stylesheet 增加 SRI integrity 属性，并配合固定版本资源或可信发布流程统一维护哈希值。",
+                confidence="high",
+                owasp_category="A05 安全配置错误",
+                cwe_id="CWE-353",
             )
         ]
 
@@ -1249,6 +1361,7 @@ def register_builtin_detectors() -> None:
     DetectorRegistry.register(HeaderSecurityDetector())
     DetectorRegistry.register(EnhancedHeaderSecurityDetector())
     DetectorRegistry.register(CSPPolicyWeaknessDetector())
+    DetectorRegistry.register(SRIIntegrityDetector())
     DetectorRegistry.register(ServerExposureDetector())
     DetectorRegistry.register(PassiveExposureDetector())
     DetectorRegistry.register(ApiSurfaceExposureDetector())

@@ -56,10 +56,11 @@ _GROUP_RULES: list[tuple[str, set[str], tuple[str, ...]]] = [
             "cookie_security",
             "cors_misconfig",
             "csp_weakness",
+            "sri_missing",
             "trace_method",
             "ssl",
         },
-        ("CSP", "Cookie", "CORS", "HSTS", "X-Frame-Options", "TRACE", "TLS", "HTTPS"),
+        ("CSP", "Cookie", "CORS", "HSTS", "X-Frame-Options", "TRACE", "TLS", "HTTPS", "SRI", "integrity"),
     ),
     (
         "认证与授权",

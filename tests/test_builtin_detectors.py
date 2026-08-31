@@ -6,6 +6,7 @@ from app.plugins.builtin import (
     DirectoryListingDetector,
     DiscoverySurfaceDetector,
     PassiveExposureDetector,
+    SRIIntegrityDetector,
     WellKnownExposureDetector,
     SensitiveEndpointDetector,
     ServerExposureDetector,
@@ -114,6 +115,58 @@ def test_csp_policy_weakness_detector_ignores_strict_policy():
             )
         },
         body="",
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert findings == []
+
+
+def test_sri_integrity_detector_flags_cross_origin_script_without_integrity():
+    detector = SRIIntegrityDetector()
+    context = ScanContext(
+        url="https://example.com/",
+        headers={},
+        body='<html><script src="https://cdn.example.com/lib.js"></script></html>',
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].type == "sri_missing"
+    assert findings[0].severity == "low"
+    assert findings[0].evidence.extra["missing_resources"] == [
+        {"tag": "script", "url": "https://cdn.example.com/lib.js"}
+    ]
+
+
+def test_sri_integrity_detector_ignores_cross_origin_resource_with_integrity():
+    detector = SRIIntegrityDetector()
+    context = ScanContext(
+        url="https://example.com/",
+        headers={},
+        body=(
+            '<html><script src="https://cdn.example.com/lib.js" '
+            'integrity="sha384-abc" crossorigin="anonymous"></script></html>'
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert findings == []
+
+
+def test_sri_integrity_detector_ignores_same_origin_resources():
+    detector = SRIIntegrityDetector()
+    context = ScanContext(
+        url="https://example.com/app/",
+        headers={},
+        body=(
+            '<html>'
+            '<script src="/static/app.js"></script>'
+            '<link rel="stylesheet" href="https://example.com/assets/site.css">'
+            "</html>"
+        ),
     )
 
     findings = __import__("asyncio").run(detector.detect(context))
