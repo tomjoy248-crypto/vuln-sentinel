@@ -71,8 +71,10 @@ from fastapi.responses import (
     StreamingResponse,
 )
 from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+import app.core.config as core_config
+import app.core.rate_limiter as rate_limiter_module
+from app.core.config import AppSettings
 
 def _resolve_static_dir() -> str:
     candidates = []
@@ -169,6 +171,99 @@ def _attach_evidence_snapshots(findings: list[dict[str, Any]], page_url: str) ->
         updated.append(item)
     return updated
 
+
+def _grouped_finding_summaries(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按风险面聚合 finding，供报告展示使用。"""
+    grouped = group_findings(findings)
+    summaries: list[dict[str, Any]] = []
+    for group in grouped:
+        items = group.get("items", [])
+        counts = group.get("counts", {})
+        summaries.append(
+            {
+                "label": group.get("label", "其他风险"),
+                "items": items,
+                "counts": counts,
+                "total": len(items),
+            }
+        )
+    return summaries
+
+
+def _render_grouped_findings_html(findings: list[dict[str, Any]]) -> str:
+    """渲染 HTML 风险分组摘要。"""
+    grouped = _grouped_finding_summaries(findings)
+    if not grouped:
+        return ""
+
+    blocks = [
+        """
+        <div class="section" style="margin-top:30px">
+            <h2 style="font-size:18px;font-weight:700;color:#1e293b;margin:0 0 16px 0;padding-bottom:8px;border-bottom:2px solid #e2e8f0">🧭 按风险面分组</h2>
+        """
+    ]
+    for group in grouped:
+        counts = group["counts"]
+        items = group["items"]
+        preview = "".join(
+            f"<li style='margin-bottom:4px'>{_html_escape(str(item.get('name', item.get('title', ''))))} "
+            f"<span style='color:#64748b'>({ _html_escape(str(item.get('severity', ''))) })</span></li>"
+            for item in items[:5]
+        )
+        more = (
+            f"<div style='margin-top:6px;font-size:12px;color:#64748b'>另外还有 {len(items) - 5} 项未展开。</div>"
+            if len(items) > 5
+            else ""
+        )
+        blocks.append(
+            f"""
+            <div style="margin-bottom:18px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#fafafa">
+                <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px">
+                    <div style="font-size:15px;font-weight:700;color:#1e293b">{_html_escape(group['label'])}</div>
+                    <div style="font-size:12px;color:#64748b">共 {group['total']} 项</div>
+                </div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px">
+                    严重 {counts.get('critical', 0)} / 高危 {counts.get('high', 0)} / 中危 {counts.get('medium', 0)} / 低危 {counts.get('low', 0)} / 信息 {counts.get('info', 0)}
+                </div>
+                <ul style="margin:0;padding-left:18px">{preview}</ul>
+                {more}
+            </div>
+            """
+        )
+    blocks.append("</div>")
+    return "\n".join(blocks)
+
+
+def _render_grouped_findings_pdf(
+    elements: list[Any], findings: list[dict[str, Any]], styles: Any
+) -> None:
+    """将风险分组摘要写入 PDF 元素列表。"""
+    grouped = _grouped_finding_summaries(findings)
+    if not grouped:
+        elements.append(Paragraph("暂无需要分组展示的结果。", styles["CN"]))
+        return
+    elements.append(Paragraph("按风险面分组", styles["Heading2"]))
+    for group in grouped:
+        counts = group["counts"]
+        items = group["items"]
+        elements.append(Paragraph(f"{group['label']}（{len(items)} 项）", styles["CNBold"]))
+        elements.append(
+            Paragraph(
+                f"严重 {counts.get('critical', 0)} / 高危 {counts.get('high', 0)} / 中危 {counts.get('medium', 0)} / 低危 {counts.get('low', 0)} / 信息 {counts.get('info', 0)}",
+                styles["CN"],
+            )
+        )
+        for item in items[:5]:
+            elements.append(
+                Paragraph(
+                    f"• {item.get('name', item.get('title', ''))} [{item.get('severity', '')}]",
+                    styles["CN"],
+                )
+            )
+        if len(items) > 5:
+            elements.append(Paragraph(f"另外还有 {len(items) - 5} 项未展开。", styles["CN"]))
+        elements.append(Spacer(1, 6))
+
 # ---------- 代码拆分模块导入 ----------
 import src_scanner
 from app.core.compliance import get_compliance_summary, validate_scan_target_full
@@ -192,6 +287,7 @@ from app.metrics import setup_metrics, record_scan_start, record_scan_end, recor
 from app.middleware import request_id_middleware
 from app.plugins import Finding
 from app.plugins.builtin import register_builtin_detectors
+from app.reporting.grouping import group_findings
 from app.quality.feedback_loop import apply_user_feedback
 from app.remediation import generate_remediation_plan
 from app.reporting import generate_src_report
@@ -286,14 +382,8 @@ logger = logging.getLogger("vuln_sentinel")
 # ---------- Settings ----------
 
 
-class Settings(BaseSettings):
+class Settings(AppSettings):
     """应用配置，支持 .env 文件与环境变量覆盖。"""
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
 
     app_title: str = "Vuln Sentinel - 安全扫描与修复平台"
     app_version: str = "1.0.10"
@@ -367,6 +457,12 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+core_config.settings = settings
+rate_limiter_module.rate_limiter = rate_limiter_module.create_rate_limiter(
+    settings.redis_url,
+    settings.rate_limit_global_per_minute,
+    10,
+)
 
 # 生产模式判定：ENV=production 或 PRODUCTION=1
 _IS_PRODUCTION = settings.env == "production" or os.environ.get(
@@ -8847,6 +8943,10 @@ def generate_pdf_report(scan_data: dict) -> bytes:
         elements.append(Spacer(1, 5 * mm))
     elements.append(PageBreak())
 
+    # ===== 风险面分组 =====
+    _render_grouped_findings_pdf(elements, findings, styles)
+    elements.append(PageBreak())
+
     # ===== 证据页 =====
     elements.append(Paragraph(evidence_title, styles["Heading2"]))
     if findings:
@@ -9110,6 +9210,27 @@ def generate_src_markdown_report(
         )
     lines.append("")
 
+    grouped = _grouped_finding_summaries(findings)
+    lines.extend(["## 风险面分组", ""])
+    if grouped:
+        for group in grouped:
+            counts = group["counts"]
+            items = group["items"]
+            lines.append(f"### {group['label']}（{len(items)} 项）")
+            lines.append(
+                f"- 严重 {counts.get('critical', 0)} / 高危 {counts.get('high', 0)} / 中危 {counts.get('medium', 0)} / 低危 {counts.get('low', 0)} / 信息 {counts.get('info', 0)}"
+            )
+            for item in items[:5]:
+                lines.append(
+                    f"- {item.get('title', '')} [{item.get('severity', '')}]"
+                )
+            if len(items) > 5:
+                lines.append(f"- 另外还有 {len(items) - 5} 项未展开。")
+            lines.append("")
+    else:
+        lines.append("暂无需要分组展示的结果。")
+        lines.append("")
+
     for i, f in enumerate(findings, 1):
         ev = f.get("evidence", {})
         steps = f.get("reproduce_steps", [])
@@ -9285,6 +9406,8 @@ def generate_html_report(scan_data: dict) -> str:
             findings_html += "</div>"
 
         findings_html += "</div>"
+
+    grouped_html = _render_grouped_findings_html(findings)
 
     # 评分解读 HTML
     breakdown_html = ""
@@ -9522,6 +9645,9 @@ def generate_html_report(scan_data: dict) -> str:
 
     <!-- 评分解读 -->
     {breakdown_html}
+
+    <!-- 风险面分组 -->
+    {grouped_html}
 
     <!-- 漏洞详情 -->
     <div class="section">
@@ -16111,6 +16237,8 @@ async def free_trial_scan(req: FreeTrialRequest, request: Request):
             detail="免费试用请求过于频繁，请稍后再试",
             headers={"Retry-After": "60"},
         )
+    if not settings.public_demo_enabled:
+        raise HTTPException(403, "公开演示已关闭")
     if not settings.free_trial_enabled:
         raise HTTPException(403, "免费试用已关闭")
     raw_url = req.url.strip()
@@ -16170,7 +16298,7 @@ async def free_trial_scan(req: FreeTrialRequest, request: Request):
         except Exception as e:
             logger.warning("free trial legacy metadata failed: %s", e)
             legacy = {}
-        result["findings"] = _attach_evidence_snapshots(result.get("findings", []), url)
+        result["findings"] = _attach_evidence_snapshots(result.get("findings", []), raw_url)
         result.update(
             {
                 "scan_type": "real",

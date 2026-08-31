@@ -16,6 +16,7 @@ from .models import (
     VulnerabilityEvidence,
     VulnerabilityReportItem,
 )
+from .grouping import group_findings
 from .templates import (
     APPENDIX_TEMPLATE,
     DISCLAIMER_TEMPLATE,
@@ -338,6 +339,33 @@ def _generate_findings_summary(
     )
 
 
+def _generate_grouped_findings_section(
+    findings: list[VulnerabilityReportItem],
+) -> str:
+    """生成按风险面分组的章节。"""
+    grouped = group_findings(findings)
+    if not grouped:
+        return "## 二.4 按风险面分组\n\n暂无发现需要分组展示的结果。\n"
+
+    lines = ["## 二.4 按风险面分组\n"]
+    for group in grouped:
+        items = group["items"]
+        counts = group["counts"]
+        lines.append(f"### {group['label']}（{len(items)} 项）\n")
+        lines.append(
+            f"- 严重 {counts['critical']}，高危 {counts['high']}，中危 {counts['medium']}，低危 {counts['low']}，信息 {counts['info']}\n"
+        )
+        for item in items[:5]:
+            lines.append(
+                f"- **{_escape_md_table_cell(getattr(item, 'title', '') or '')}** / {getattr(item, 'severity', '')} / {getattr(item, 'verification_status', '')}"
+            )
+        if len(items) > 5:
+            lines.append(f"- 另外还有 {len(items) - 5} 项未展开。")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def _generate_detailed_findings(findings: list[VulnerabilityReportItem]) -> str:
     """生成详细漏洞章节。"""
     if not findings:
@@ -508,6 +536,7 @@ def generate_src_report(scan_data: dict[str, Any], format: str = "markdown") -> 
         client_summary,
         generate_executive_summary(scan_data),
         _generate_findings_summary(findings, summary),
+        _generate_grouped_findings_section(findings),
         _generate_detailed_findings(findings),
         generate_technical_appendix(scan_data),
     ]
