@@ -257,6 +257,27 @@ def _match_unpinned_package_cdn(resource_url: str) -> str | None:
             if not re.match(r"^[^/]+/[^/@]+@[^/]+(?:/|$)", rest):
                 return "jsdelivr-gh"
 
+    if host == "cdnjs.cloudflare.com":
+        if path.startswith("/ajax/libs/"):
+            rest = path[len("/ajax/libs/") :]
+            parts = [segment for segment in rest.split("/") if segment]
+            if len(parts) < 2:
+                return "cdnjs"
+            version = parts[1]
+            if not re.match(r"^\d+(?:\.\d+)*(?:-[a-z0-9.-]+)?$", version):
+                return "cdnjs"
+
+    if host in {"esm.sh", "cdn.skypack.dev", "jspm.dev", "ga.jspm.io"}:
+        stripped = path.strip("/")
+        if not stripped:
+            return host
+        if host == "esm.sh":
+            if "@" not in stripped:
+                return "esm.sh"
+        else:
+            if not re.search(r"@[\w.-]+", stripped):
+                return host
+
     if host in {"raw.githubusercontent.com", "gist.githubusercontent.com"}:
         return "raw-github"
 

@@ -191,6 +191,8 @@ def test_frontend_supply_chain_detector_flags_mixed_content_and_unpinned_cdn():
             '<html>'
             '<script src="http://cdn.example.com/lib.js"></script>'
             '<script src="https://unpkg.com/react/umd/react.production.min.js"></script>'
+            '<script src="https://cdnjs.cloudflare.com/ajax/libs/lodash/lodash.min.js"></script>'
+            '<script src="https://esm.sh/react"></script>'
             "</html>"
         ),
     )
@@ -202,6 +204,9 @@ def test_frontend_supply_chain_detector_flags_mixed_content_and_unpinned_cdn():
         "第三方前端资源未固定版本",
     }
     assert all(finding.type == "supply_chain_exposure" for finding in findings)
+    unpinned = next(finding for finding in findings if finding.title == "第三方前端资源未固定版本")
+    source_kinds = {item["source_kind"] for item in unpinned.evidence.extra["unpinned_resources"]}
+    assert {"unpkg", "cdnjs", "esm.sh"} <= source_kinds
 
 
 def test_frontend_supply_chain_detector_ignores_pinned_and_same_origin_resources():
