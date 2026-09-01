@@ -210,10 +210,14 @@ def _iter_html_resource_tags(body: str) -> list[dict[str, str]]:
                 continue
         elif tag == "link":
             rel_value = attrs.get("rel", "").lower()
-            if "stylesheet" not in {item.strip() for item in rel_value.split()}:
-                continue
+            rel_tokens = {item.strip() for item in rel_value.split()}
             resource_url = attrs.get("href", "")
             if not resource_url:
+                continue
+            is_stylesheet = "stylesheet" in rel_tokens
+            is_preload = "preload" in rel_tokens and attrs.get("as", "").lower() in {"script", "style"}
+            is_modulepreload = "modulepreload" in rel_tokens
+            if not (is_stylesheet or is_preload or is_modulepreload):
                 continue
         else:
             resource_url = attrs.get("src", "")
@@ -230,6 +234,40 @@ def _iter_html_resource_tags(body: str) -> list[dict[str, str]]:
                 "rel": attrs.get("rel", ""),
             }
         )
+    return resources
+
+
+def _iter_importmap_resources(body: str) -> list[dict[str, str]]:
+    """提取 importmap 中引用的模块资源。"""
+    resources: list[dict[str, str]] = []
+    script_pattern = re.compile(r"<script\b(?P<attrs>[^>]*)>(?P<body>.*?)</script>", re.IGNORECASE | re.DOTALL)
+    for match in script_pattern.finditer(body or ""):
+        attrs = _parse_html_attributes(match.group("attrs"))
+        if attrs.get("type", "").lower() != "importmap":
+            continue
+        script_body = (match.group("body") or "").strip()
+        if not script_body:
+            continue
+        try:
+            parsed = json.loads(script_body)
+        except Exception:
+            continue
+        for candidate in _flatten_strings(parsed):
+            value = candidate.strip()
+            if not value:
+                continue
+            if not re.match(r"^(?:(?:https?:)?//|/|\.{1,2}/)", value):
+                continue
+            resources.append(
+                {
+                    "tag": "importmap",
+                    "url": value,
+                    "resolved_url": urljoin("", value),
+                    "integrity": "",
+                    "crossorigin": "",
+                    "rel": "importmap",
+                }
+            )
     return resources
 
 
@@ -553,7 +591,7 @@ class FrontendSupplyChainDetector(BaseVulnDetector):
         if not body:
             return []
 
-        resources = _iter_html_resource_tags(body)
+        resources = _iter_html_resource_tags(body) + _iter_importmap_resources(body)
         if not resources:
             return []
 
@@ -561,9 +599,14 @@ class FrontendSupplyChainDetector(BaseVulnDetector):
         parsed_page = urlparse(context.url)
         mixed_resources: list[dict[str, str]] = []
         unpinned_resources: list[dict[str, str]] = []
+        seen_resources: set[tuple[str, str]] = set()
 
         for resource in resources:
             resolved_url = urljoin(context.url, resource["url"])
+            resource_key = (resource["tag"], resolved_url)
+            if resource_key in seen_resources:
+                continue
+            seen_resources.add(resource_key)
             parsed_resource = urlparse(resolved_url)
             if parsed_page.scheme.lower() == "https" and parsed_resource.scheme.lower() == "http":
                 mixed_resources.append(

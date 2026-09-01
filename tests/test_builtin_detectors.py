@@ -182,6 +182,23 @@ def test_sri_integrity_detector_ignores_same_origin_resources():
     assert findings == []
 
 
+def test_sri_integrity_detector_flags_modulepreload_without_integrity():
+    detector = SRIIntegrityDetector()
+    context = ScanContext(
+        url="https://example.com/",
+        headers={},
+        body='<html><link rel="modulepreload" href="https://cdn.example.com/app.mjs"></html>',
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].type == "sri_missing"
+    assert findings[0].evidence.extra["missing_resources"] == [
+        {"tag": "link", "url": "https://cdn.example.com/app.mjs"}
+    ]
+
+
 def test_frontend_supply_chain_detector_flags_mixed_content_and_unpinned_cdn():
     detector = FrontendSupplyChainDetector()
     context = ScanContext(
@@ -207,6 +224,35 @@ def test_frontend_supply_chain_detector_flags_mixed_content_and_unpinned_cdn():
     unpinned = next(finding for finding in findings if finding.title == "第三方前端资源未固定版本")
     source_kinds = {item["source_kind"] for item in unpinned.evidence.extra["unpinned_resources"]}
     assert {"unpkg", "cdnjs", "esm.sh"} <= source_kinds
+
+
+def test_frontend_supply_chain_detector_flags_modulepreload_and_importmap_resources():
+    detector = FrontendSupplyChainDetector()
+    context = ScanContext(
+        url="https://example.com/",
+        headers={},
+        body=(
+            '<html>'
+            '<link rel="modulepreload" href="http://cdn.example.com/app.mjs">'
+            '<script type="importmap">'
+            '{"imports":{"react":"https://esm.sh/react","lit":"https://unpkg.com/lit-html/lit-html.js"}}'
+            '</script>'
+            "</html>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert {finding.title for finding in findings} == {
+        "HTTPS 页面加载明文前端资源",
+        "第三方前端资源未固定版本",
+    }
+    mixed = next(finding for finding in findings if finding.title == "HTTPS 页面加载明文前端资源")
+    unpinned = next(finding for finding in findings if finding.title == "第三方前端资源未固定版本")
+    mixed_tags = {item["tag"] for item in mixed.evidence.extra["mixed_resources"]}
+    assert "link" in mixed_tags
+    tags = {item["tag"] for item in unpinned.evidence.extra["unpinned_resources"]}
+    assert "importmap" in tags
 
 
 def test_frontend_supply_chain_detector_ignores_pinned_and_same_origin_resources():
