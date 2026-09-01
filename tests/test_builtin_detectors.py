@@ -1491,6 +1491,18 @@ def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):
             return __import__("httpx").Response(200, text="# HELP app_requests_total\n# TYPE app_requests_total counter\n")
         if path == "/actuator/health":
             return __import__("httpx").Response(200, text='{"status":"UP","components":{"db":{"status":"UP"}}}')
+        if path == "/actuator/info":
+            return __import__("httpx").Response(
+                200,
+                text='{"app":{"name":"vuln-sentinel"},"build":{"version":"1.0.0"},"git":{"commit":{"id":"deadbeef"}}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/actuator/metrics":
+            return __import__("httpx").Response(
+                200,
+                text='{"names":["jvm.memory.used","http.server.requests"]}',
+                headers={"Content-Type": "application/json"},
+            )
         return __import__("httpx").Response(403, text="forbidden")
 
     client = __import__("httpx").AsyncClient(
@@ -1514,6 +1526,8 @@ def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):
     assert {finding.title for finding in findings} == {
         "暴露 Prometheus 指标端点",
         "暴露 Spring Boot Actuator 健康端点",
+        "暴露 Spring Boot Actuator 信息端点",
+        "暴露 Spring Boot Actuator 指标目录",
     }
     assert all(finding.type == "exposed_endpoint" for finding in findings)
 
@@ -1523,6 +1537,12 @@ def test_sensitive_endpoint_detector_flags_spring_actuator_management_endpoints(
 
     def handler(request):
         path = request.url.path
+        if path == "/actuator/env":
+            return __import__("httpx").Response(
+                200,
+                text='{"activeProfiles":["prod"],"propertySources":[{"name":"systemProperties"}],"environment":"prod"}',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/actuator/configprops":
             return __import__("httpx").Response(
                 200,
@@ -1565,6 +1585,12 @@ def test_sensitive_endpoint_detector_flags_spring_actuator_management_endpoints(
                 text='{"message":"shutdown"}',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/actuator/conditions":
+            return __import__("httpx").Response(
+                200,
+                text='{"contexts":{"app":{"positiveMatches":{"WebMvcAutoConfiguration":[]},"negativeMatches":{"JerseyAutoConfiguration":[]},"exclusions":[]}}}',
+                headers={"Content-Type": "application/json"},
+            )
         return __import__("httpx").Response(404, text="not found")
 
     client = __import__("httpx").AsyncClient(
@@ -1586,9 +1612,11 @@ def test_sensitive_endpoint_detector_flags_spring_actuator_management_endpoints(
         __import__("asyncio").run(client.aclose())
 
     assert {finding.title for finding in findings} == {
+        "暴露 Spring Boot Actuator 环境端点",
         "暴露 Spring Boot Actuator 配置属性端点",
         "暴露 Spring Boot Actuator Beans 端点",
         "暴露 Spring Boot Actuator 路由映射端点",
+        "暴露 Spring Boot Actuator 条件评估端点",
         "暴露 Spring Boot HeapDump 端点",
         "暴露 Spring Boot ThreadDump 端点",
         "暴露 Spring Boot 日志文件端点",
