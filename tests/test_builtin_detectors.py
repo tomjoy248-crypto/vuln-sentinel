@@ -1764,6 +1764,12 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text='[{"id":1,"harbor":"harbor.example.com","label_name":"security","scope":"p"}]',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/api/v2.0/replication/policies":
+            return __import__("httpx").Response(
+                200,
+                text='[{"id":1,"name":"mirror-prod","dest_registry":{"id":2,"name":"dockerhub"},"trigger_mode":"event_based"}]',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/api/v2.0/projects":
             return __import__("httpx").Response(
                 200,
@@ -1822,6 +1828,18 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
             return __import__("httpx").Response(
                 200,
                 text='[{"title":"Main Dashboard","uid":"abc123","type":"dash-db","uri":"db/main"}]',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/folders":
+            return __import__("httpx").Response(
+                200,
+                text='[{"id":1,"uid":"folder-1","title":"Ops"}]',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/datasources":
+            return __import__("httpx").Response(
+                200,
+                text='[{"id":1,"uid":"ds-1","name":"Prometheus","type":"prometheus","url":"http://prometheus:9090"}]',
                 headers={"Content-Type": "application/json"},
             )
         if path == "/v2/_catalog":
@@ -1914,6 +1932,7 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
         "暴露 Harbor 统计信息端点",
         "暴露 Harbor 仓库注册信息",
         "暴露 Harbor 标签信息",
+        "暴露 Harbor 复制策略",
         "暴露 Harbor 项目端点",
         "暴露 Harbor 当前用户信息",
         "暴露 Argo CD 版本信息",
@@ -1924,6 +1943,8 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
         "暴露 Argo CD 当前会话信息",
         "暴露 Argo CD 设置页面",
         "暴露 Grafana 搜索接口",
+        "暴露 Grafana 文件夹接口",
+        "暴露 Grafana 数据源接口",
         "暴露 Docker Registry 目录",
         "暴露 Docker Remote API 版本信息",
         "暴露 Docker Remote API 详细信息",
