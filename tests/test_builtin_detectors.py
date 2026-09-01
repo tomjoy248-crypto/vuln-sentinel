@@ -2590,10 +2590,65 @@ def test_sensitive_config_exposure_detector_flags_infra_and_ci_files(monkeypatch
                     "}\n"
                 ),
             )
+        if path == "/application-prod.yaml":
+            return __import__("httpx").Response(
+                200,
+                text="spring:\n  datasource:\n    password: prod-secret\n  redis:\n    password: prod-redis\n",
+            )
+        if path == "/docker-compose.yaml":
+            return __import__("httpx").Response(
+                200,
+                text="services:\n  app:\n    environment:\n      - PASSWORD=compose-secret\n      - DB_HOST=db\n",
+            )
+        if path == "/settings.yml":
+            return __import__("httpx").Response(
+                200,
+                text="secret: settings-secret\npassword: settings-password\nredis:\n  url: redis://localhost\n",
+            )
+        if path == "/config.yml":
+            return __import__("httpx").Response(
+                200,
+                text="database:\n  password: config-secret\nclient_secret: config-client-secret\n",
+            )
+        if path == "/secrets.yml":
+            return __import__("httpx").Response(
+                200,
+                text="private_key: -----BEGIN PRIVATE KEY-----\naccess_key: AKIAFAKE\n",
+            )
+        if path == "/secrets.yaml":
+            return __import__("httpx").Response(
+                200,
+                text="client_secret: yaml-client-secret\npassword: yaml-password\n",
+            )
         if path == "/.aws/credentials":
             return __import__("httpx").Response(
                 200,
                 text="[default]\naws_access_key_id=AKIAFAKE\naws_secret_access_key=FAKESECRET\n",
+            )
+        if path == "/.kube/config":
+            return __import__("httpx").Response(
+                200,
+                text="clusters:\n- cluster:\n    server: https://kubernetes.default.svc\nusers:\n- name: admin\n  user:\n    token: kube-token\ncontexts:\n- context:\n    cluster: prod\n    user: admin\n",
+            )
+        if path == "/helm/values.yaml":
+            return __import__("httpx").Response(
+                200,
+                text="password: helm-secret\nclientSecret: helm-client-secret\ndatabase: postgres\n",
+            )
+        if path == "/.npmrc":
+            return __import__("httpx").Response(
+                200,
+                text="//registry.npmjs.org/:_authToken=npm-token-123\nalways-auth=true\n",
+            )
+        if path == "/.pypirc":
+            return __import__("httpx").Response(
+                200,
+                text="[distutils]\nindex-servers = pypi\n[pypi]\nusername = __token__\npassword = pypi-token-123\n",
+            )
+        if path == "/Jenkinsfile":
+            return __import__("httpx").Response(
+                200,
+                text='pipeline {\n  environment {\n    SECRET_TOKEN = "jenkins-secret"\n  }\n}\n',
             )
         if path == "/.github/workflows/ci.yml":
             return __import__("httpx").Response(
@@ -2628,7 +2683,16 @@ def test_sensitive_config_exposure_detector_flags_infra_and_ci_files(monkeypatch
 
     assert {finding.title for finding in findings} == {
         "Nginx 配置文件暴露",
+        "生产 Spring 配置文件暴露",
+        "Docker Compose 配置暴露",
+        "应用 YAML 配置暴露",
+        "密钥 YAML 文件暴露",
         "AWS 凭据文件暴露",
+        "Kubernetes 配置文件暴露",
+        "Helm Values 配置暴露",
+        "包管理配置暴露",
+        "PyPI 配置暴露",
+        "Jenkins 流水线文件暴露",
         "GitHub Actions 工作流暴露",
     }
     assert all(finding.type == "sensitive_config_exposure" for finding in findings)
