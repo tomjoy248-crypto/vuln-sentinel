@@ -1730,6 +1730,18 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                 f"https://{bucket}.s3.amazonaws.com/?list-type=2",
                 bucket,
             )
+        for match in re.finditer(r"https://([a-z0-9.\-_]+)\.s3(?:\.([a-z0-9-]+))?\.wasabisys\.com(?:/[^'\"<>\s]*)?", body, re.I):
+            bucket = match.group(1)
+            region = match.group(2) or ""
+            label = f"{bucket}/{region}" if region else bucket
+            probe_url = f"https://{bucket}.s3.wasabisys.com/?list-type=2"
+            if region:
+                probe_url = f"https://{bucket}.s3.{region}.wasabisys.com/?list-type=2"
+            targets[("wasabi", label)] = (
+                "wasabi",
+                probe_url,
+                label,
+            )
         for match in re.finditer(r"https://storage\.googleapis\.com/([a-z0-9.\-_]+)(?:/[^'\"<>\s]*)?", body, re.I):
             bucket = match.group(1)
             targets[("gcs", bucket)] = (
@@ -1745,6 +1757,20 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                 "azure",
                 f"https://{account}.blob.core.windows.net/{container}?restype=container&comp=list",
                 label,
+            )
+        for match in re.finditer(
+            r"https://s3(?:\.(?:private|direct))?(?:\.([a-z0-9-]+))?\.cloud-object-storage\.appdomain\.cloud/([a-z0-9.\-_]+)(?:/[^'\"<>\s]*)?",
+            body,
+            re.I,
+        ):
+            region = match.group(1) or "us-south"
+            bucket = match.group(2)
+            if not bucket:
+                continue
+            targets[("ibm_cos", bucket)] = (
+                "ibm_cos",
+                f"https://s3.{region}.cloud-object-storage.appdomain.cloud/{bucket}/?list-type=2",
+                bucket,
             )
         for match in re.finditer(r"https://([a-z0-9.\-_]+)\.([a-z0-9-]+)\.digitaloceanspaces\.com(?:/[^'\"<>\s]*)?", body, re.I):
             bucket = match.group(1)
@@ -1815,6 +1841,8 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                         "s3": s3_like_markers,
                         "gcs": ["<listbucketresult", "<contents>", "<key>", "<name>"],
                         "azure": ["enumerationresults", "<blobs>", "<blob>"],
+                        "wasabi": s3_like_markers,
+                        "ibm_cos": s3_like_markers,
                         "spaces": s3_like_markers,
                         "oss": s3_like_markers,
                         "cos": s3_like_markers,
@@ -1828,7 +1856,7 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                             (resp.status_code == 200, 30),
                             (len(matched) >= 2, 35),
                             (provider == "azure", 10),
-                            (provider in {"s3", "gcs", "spaces", "oss", "cos", "r2"}, 15),
+                            (provider in {"s3", "gcs", "wasabi", "ibm_cos", "spaces", "oss", "cos", "r2"}, 15),
                         ]
                     )
                     findings.append(
@@ -1889,6 +1917,16 @@ class CloudStorageSecretExposureDetector(BaseVulnDetector):
                 ["x-goog-signature", "x-goog-credential", "x-goog-expires"],
             ),
             (
+                "ibm_cos",
+                r"(https://s3(?:\.(?:private|direct))?\.(?:[a-z0-9-]+\.)?cloud-object-storage\.appdomain\.cloud/[^'\"<>\s]+\?[^'\"<>\s]*X-Amz-Signature=[^'\"<>\s]+)",
+                ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
+            ),
+            (
+                "wasabi",
+                r"(https://[a-z0-9.\-_]+\.s3(?:\.[a-z0-9-]+)?\.wasabisys\.com/[^'\"<>\s]+\?[^'\"<>\s]*X-Amz-Signature=[^'\"<>\s]+)",
+                ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
+            ),
+            (
                 "azure_blob",
                 r"(https://[a-z0-9\-]+\.blob\.core\.windows\.net/[^'\"<>\s]+\?[^'\"<>\s]*sig=[^'\"<>\s]+)",
                 ["sig=", "se=", "sp="],
@@ -1928,7 +1966,7 @@ class CloudStorageSecretExposureDetector(BaseVulnDetector):
                     (len(matched_markers) >= 2, 25),
                     (len(urls) >= 2, 10),
                     (provider == "azure_blob", 10),
-                    (provider in {"aws_s3", "gcs", "digitalocean_spaces", "cloudflare_r2", "tencent_cos", "alibaba_oss"}, 15),
+                    (provider in {"aws_s3", "gcs", "ibm_cos", "wasabi", "digitalocean_spaces", "cloudflare_r2", "tencent_cos", "alibaba_oss"}, 15),
                 ]
             )
             findings.append(
