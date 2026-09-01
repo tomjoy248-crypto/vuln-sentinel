@@ -59,6 +59,7 @@ def test_server_exposure_detector_flags_version_headers():
         headers={
             "Server": "nginx/1.24.0 (Ubuntu)",
             "X-Powered-By": "PHP/8.2.12",
+            "X-AspNetMvc-Version": "5.2.9",
         },
         body="",
     )
@@ -68,6 +69,7 @@ def test_server_exposure_detector_flags_version_headers():
     assert {finding.title for finding in findings} == {
         "Server 头泄露",
         "X-Powered-By 信息泄露",
+        "ASP.NET MVC 版本泄露",
     }
     assert all(finding.type == "server_exposure" for finding in findings)
     assert all(finding.confidence == "high" for finding in findings)

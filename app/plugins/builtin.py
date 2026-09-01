@@ -388,6 +388,14 @@ class ServerExposureDetector(BaseVulnDetector):
                 "owasp": "A05 安全配置错误",
                 "fix": "关闭 ASP.NET 版本响应头输出。",
             },
+            "x-aspnetmvc-version": {
+                "title": "ASP.NET MVC 版本泄露",
+                "parameter": "X-AspNetMvc-Version",
+                "severity": "medium",
+                "cwe": "CWE-200",
+                "owasp": "A05 安全配置错误",
+                "fix": "关闭 ASP.NET MVC 版本响应头输出。",
+            },
             "x-generator": {
                 "title": "X-Generator 信息泄露",
                 "parameter": "X-Generator",
