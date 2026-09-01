@@ -1730,6 +1730,15 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                 f"https://{bucket}.s3.amazonaws.com/?list-type=2",
                 bucket,
             )
+        for match in re.finditer(r"https://s3\.([a-z0-9-]+)\.backblazeb2\.com/([a-z0-9.\-_]+)(?:/[^'\"<>\s]*)?", body, re.I):
+            region = match.group(1)
+            bucket = match.group(2)
+            label = f"{bucket}/{region}"
+            targets[("backblaze", label)] = (
+                "backblaze",
+                f"https://s3.{region}.backblazeb2.com/{bucket}/?list-type=2",
+                label,
+            )
         for match in re.finditer(r"https://([a-z0-9.\-_]+)\.s3(?:\.([a-z0-9-]+))?\.wasabisys\.com(?:/[^'\"<>\s]*)?", body, re.I):
             bucket = match.group(1)
             region = match.group(2) or ""
@@ -1771,6 +1780,20 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                 "ibm_cos",
                 f"https://s3.{region}.cloud-object-storage.appdomain.cloud/{bucket}/?list-type=2",
                 bucket,
+            )
+        for match in re.finditer(
+            r"https://([a-z0-9-]+)\.compat\.objectstorage\.([a-z0-9-]+)\.oraclecloud\.com/([a-z0-9.\-_]+)(?:/[^'\"<>\s]*)?",
+            body,
+            re.I,
+        ):
+            namespace = match.group(1)
+            region = match.group(2)
+            bucket = match.group(3)
+            label = f"{namespace}/{bucket}/{region}"
+            targets[("oci", label)] = (
+                "oci",
+                f"https://{namespace}.compat.objectstorage.{region}.oraclecloud.com/{bucket}/?list-type=2",
+                label,
             )
         for match in re.finditer(r"https://([a-z0-9.\-_]+)\.([a-z0-9-]+)\.digitaloceanspaces\.com(?:/[^'\"<>\s]*)?", body, re.I):
             bucket = match.group(1)
@@ -1839,10 +1862,12 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                     s3_like_markers = ["listbucketresult", "<key>", "<name>", "<contents>"]
                     listing_markers = {
                         "s3": s3_like_markers,
+                        "backblaze": s3_like_markers,
                         "gcs": ["<listbucketresult", "<contents>", "<key>", "<name>"],
                         "azure": ["enumerationresults", "<blobs>", "<blob>"],
                         "wasabi": s3_like_markers,
                         "ibm_cos": s3_like_markers,
+                        "oci": s3_like_markers,
                         "spaces": s3_like_markers,
                         "oss": s3_like_markers,
                         "cos": s3_like_markers,
@@ -1856,7 +1881,7 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                             (resp.status_code == 200, 30),
                             (len(matched) >= 2, 35),
                             (provider == "azure", 10),
-                            (provider in {"s3", "gcs", "wasabi", "ibm_cos", "spaces", "oss", "cos", "r2"}, 15),
+                            (provider in {"s3", "backblaze", "gcs", "wasabi", "ibm_cos", "oci", "spaces", "oss", "cos", "r2"}, 15),
                         ]
                     )
                     findings.append(
@@ -1912,6 +1937,11 @@ class CloudStorageSecretExposureDetector(BaseVulnDetector):
                 ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
             ),
             (
+                "backblaze",
+                r"(https://s3\.[a-z0-9-]+\.backblazeb2\.com/[^'\"<>\s]+\?[^'\"<>\s]*X-Amz-Signature=[^'\"<>\s]+)",
+                ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
+            ),
+            (
                 "gcs",
                 r"(https://storage\.googleapis\.com/[^'\"<>\s]+\?[^'\"<>\s]*X-Goog-Signature=[^'\"<>\s]+)",
                 ["x-goog-signature", "x-goog-credential", "x-goog-expires"],
@@ -1919,6 +1949,11 @@ class CloudStorageSecretExposureDetector(BaseVulnDetector):
             (
                 "ibm_cos",
                 r"(https://s3(?:\.(?:private|direct))?\.(?:[a-z0-9-]+\.)?cloud-object-storage\.appdomain\.cloud/[^'\"<>\s]+\?[^'\"<>\s]*X-Amz-Signature=[^'\"<>\s]+)",
+                ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
+            ),
+            (
+                "oci",
+                r"(https://[a-z0-9-]+\.compat\.objectstorage\.[a-z0-9-]+\.oraclecloud\.com/[^'\"<>\s]+\?[^'\"<>\s]*X-Amz-Signature=[^'\"<>\s]+)",
                 ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
             ),
             (
@@ -1966,7 +2001,7 @@ class CloudStorageSecretExposureDetector(BaseVulnDetector):
                     (len(matched_markers) >= 2, 25),
                     (len(urls) >= 2, 10),
                     (provider == "azure_blob", 10),
-                    (provider in {"aws_s3", "gcs", "ibm_cos", "wasabi", "digitalocean_spaces", "cloudflare_r2", "tencent_cos", "alibaba_oss"}, 15),
+                    (provider in {"aws_s3", "backblaze", "gcs", "ibm_cos", "oci", "wasabi", "digitalocean_spaces", "cloudflare_r2", "tencent_cos", "alibaba_oss"}, 15),
                 ]
             )
             findings.append(

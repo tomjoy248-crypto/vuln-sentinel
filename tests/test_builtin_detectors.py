@@ -1139,6 +1139,40 @@ def test_cloud_storage_exposure_detector_flags_wasabi_listing(monkeypatch):
     assert findings[0].evidence.extra["provider"] == "wasabi"
 
 
+def test_cloud_storage_exposure_detector_flags_backblaze_listing(monkeypatch):
+    detector = CloudStorageExposureDetector()
+
+    def handler(request):
+        if "list-type=2" in str(request.url):
+            return __import__("httpx").Response(
+                200,
+                text="<?xml version='1.0'?><ListBucketResult><Name>public-assets</Name><Contents><Key>backup.zip</Key></Contents></ListBucketResult>",
+                headers={"Content-Type": "application/xml"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body='<img src="https://s3.us-west-004.backblazeb2.com/public-assets/logo.png">',
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert len(findings) == 1
+    assert findings[0].evidence.extra["provider"] == "backblaze"
+
+
 def test_cloud_storage_secret_exposure_detector_flags_signed_urls():
     detector = CloudStorageSecretExposureDetector()
     context = ScanContext(
@@ -1196,6 +1230,42 @@ def test_cloud_storage_secret_exposure_detector_flags_ibm_cos_signed_urls():
 
     assert len(findings) == 1
     assert findings[0].evidence.extra["provider"] == "ibm_cos"
+
+
+def test_cloud_storage_secret_exposure_detector_flags_backblaze_signed_urls():
+    detector = CloudStorageSecretExposureDetector()
+    context = ScanContext(
+        url="https://example.com/assets",
+        headers={},
+        body=(
+            '<script>'
+            'const a="https://s3.us-west-004.backblazeb2.com/public-assets/report.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=abc&X-Amz-Expires=3600&X-Amz-Signature=deadbeef";'
+            '</script>'
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].evidence.extra["provider"] == "backblaze"
+
+
+def test_cloud_storage_secret_exposure_detector_flags_oci_signed_urls():
+    detector = CloudStorageSecretExposureDetector()
+    context = ScanContext(
+        url="https://example.com/assets",
+        headers={},
+        body=(
+            '<script>'
+            'const a="https://mynamespace.compat.objectstorage.us-ashburn-1.oraclecloud.com/backups/report.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=abc&X-Amz-Expires=3600&X-Amz-Signature=deadbeef";'
+            '</script>'
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].evidence.extra["provider"] == "oci"
 
 
 def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):
