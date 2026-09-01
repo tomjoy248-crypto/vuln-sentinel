@@ -1279,6 +1279,48 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text="<html><title>Kubernetes Dashboard</title><body>overview namespace</body></html>",
                 headers={"Content-Type": "text/html"},
             )
+        if path == "/api/v2/status":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":{"cluster":"main","version":"0.25.0"}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v2/silences":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":[{"id":"silence-1","createdBy":"admin"}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v2/alerts":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":[{"labels":{"alertname":"HighCPU"},"annotations":{"summary":"cpu"}}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v2.0/configurations":
+            return __import__("httpx").Response(
+                200,
+                text='{"auth_mode":"db_auth","project_creation_restriction":"adminonly"}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v2.0/projects":
+            return __import__("httpx").Response(
+                200,
+                text='[{"project_id":1,"metadata":{"name":"library"}}]',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/version":
+            return __import__("httpx").Response(
+                200,
+                text='{"Version":"v2.14.0","GitCommit":"deadbeef"}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/settings":
+            return __import__("httpx").Response(
+                200,
+                text="<html><title>Argo CD Settings</title><body>settings repository</body></html>",
+                headers={"Content-Type": "text/html"},
+            )
         if path == "/v2/_catalog":
             return __import__("httpx").Response(
                 200,
@@ -1353,6 +1395,13 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
         "暴露 Kubernetes 节点 API",
         "暴露 Kubernetes Pod API",
         "暴露 Kubernetes Dashboard",
+        "暴露 Alertmanager 状态端点",
+        "暴露 Alertmanager 静音端点",
+        "暴露 Alertmanager 告警端点",
+        "暴露 Harbor 配置端点",
+        "暴露 Harbor 项目端点",
+        "暴露 Argo CD 版本信息",
+        "暴露 Argo CD 设置页面",
         "暴露 Docker Registry 目录",
         "暴露 Docker Remote API 版本信息",
         "暴露 Docker Remote API 详细信息",
