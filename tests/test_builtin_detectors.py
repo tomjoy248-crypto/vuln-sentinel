@@ -1641,11 +1641,23 @@ def test_sensitive_endpoint_detector_flags_common_admin_panels(monkeypatch):
                 text="<html><title>Grafana</title><body>dashboard login</body></html>",
                 headers={"Content-Type": "text/html"},
             )
+        if path == "/api/health":
+            return __import__("httpx").Response(
+                200,
+                text='{"database":"ok","version":"10.4.1","commit":"abc123"}',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/kibana":
             return __import__("httpx").Response(
                 200,
                 text="<html><title>Kibana</title><body>elastic dashboard login</body></html>",
                 headers={"Content-Type": "text/html"},
+            )
+        if path == "/api/status":
+            return __import__("httpx").Response(
+                200,
+                text='{"name":"kibana","overall":{"state":"green"},"version":{"number":"8.12.0"}}',
+                headers={"Content-Type": "application/json"},
             )
         if path == "/phpmyadmin":
             return __import__("httpx").Response(
@@ -1682,7 +1694,9 @@ def test_sensitive_endpoint_detector_flags_common_admin_panels(monkeypatch):
     assert {finding.title for finding in findings} == {
         "暴露 Jenkins 管理面板",
         "暴露 Grafana 管理面板",
+        "暴露 Grafana 健康状态端点",
         "暴露 Kibana 管理面板",
+        "暴露 Kibana 状态端点",
         "暴露 phpMyAdmin 管理面板",
         "暴露 Tomcat Manager 管理面板",
     }
