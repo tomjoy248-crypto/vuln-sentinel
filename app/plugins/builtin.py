@@ -2136,6 +2136,10 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                     registration_endpoint = str(config.get("registration_endpoint") or "")
                     pushed_authorization_request_endpoint = str(config.get("pushed_authorization_request_endpoint") or "")
                     backchannel_authentication_endpoint = str(config.get("backchannel_authentication_endpoint") or "")
+                    op_policy_uri = str(config.get("op_policy_uri") or "")
+                    op_tos_uri = str(config.get("op_tos_uri") or "")
+                    service_documentation = str(config.get("service_documentation") or "")
+                    check_session_iframe = str(config.get("check_session_iframe") or "")
                     end_session_endpoint = str(config.get("end_session_endpoint") or "")
                     jwks_uri = str(config.get("jwks_uri") or "")
                     issuer = str(config.get("issuer") or "")
@@ -2169,6 +2173,10 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             registration_endpoint,
                             pushed_authorization_request_endpoint,
                             backchannel_authentication_endpoint,
+                            op_policy_uri,
+                            op_tos_uri,
+                            service_documentation,
+                            check_session_iframe,
                         )
                     ):
                         issues.append("insecure_oauth_endpoint")
@@ -2261,6 +2269,10 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             "registration_endpoint": registration_endpoint,
                             "pushed_authorization_request_endpoint": pushed_authorization_request_endpoint,
                             "backchannel_authentication_endpoint": backchannel_authentication_endpoint,
+                            "op_policy_uri": op_policy_uri,
+                            "op_tos_uri": op_tos_uri,
+                            "service_documentation": service_documentation,
+                            "check_session_iframe": check_session_iframe,
                             "id_token_signing_alg_values_supported": sorted(id_token_algs),
                             "userinfo_signing_alg_values_supported": sorted(userinfo_algs),
                             "request_object_signing_alg_values_supported": sorted(request_object_algs),
