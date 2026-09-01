@@ -1730,6 +1730,16 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                 f"https://{bucket}.s3.amazonaws.com/?list-type=2",
                 bucket,
             )
+        for match in re.finditer(r"https?://([a-z0-9.\-_]+(?::\d{2,5})?)/([a-z0-9.\-_]+)(?:/[^'\"<>\s]*)?", body, re.I):
+            host = match.group(1)
+            bucket = match.group(2)
+            if "minio" in host.lower() or host.endswith(":9000"):
+                label = f"{host}/{bucket}"
+                targets[("minio", label)] = (
+                    "minio",
+                    f"https://{host}/{bucket}/?list-type=2",
+                    label,
+                )
         for match in re.finditer(r"https://s3\.([a-z0-9-]+)\.backblazeb2\.com/([a-z0-9.\-_]+)(?:/[^'\"<>\s]*)?", body, re.I):
             region = match.group(1)
             bucket = match.group(2)
@@ -1862,6 +1872,7 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                     s3_like_markers = ["listbucketresult", "<key>", "<name>", "<contents>"]
                     listing_markers = {
                         "s3": s3_like_markers,
+                        "minio": s3_like_markers,
                         "backblaze": s3_like_markers,
                         "gcs": ["<listbucketresult", "<contents>", "<key>", "<name>"],
                         "azure": ["enumerationresults", "<blobs>", "<blob>"],
@@ -1881,7 +1892,7 @@ class CloudStorageExposureDetector(BaseVulnDetector):
                             (resp.status_code == 200, 30),
                             (len(matched) >= 2, 35),
                             (provider == "azure", 10),
-                            (provider in {"s3", "backblaze", "gcs", "wasabi", "ibm_cos", "oci", "spaces", "oss", "cos", "r2"}, 15),
+                            (provider in {"s3", "minio", "backblaze", "gcs", "wasabi", "ibm_cos", "oci", "spaces", "oss", "cos", "r2"}, 15),
                         ]
                     )
                     findings.append(
@@ -1934,6 +1945,11 @@ class CloudStorageSecretExposureDetector(BaseVulnDetector):
             (
                 "aws_s3",
                 r"(https://[a-z0-9.\-_]+\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com/[^'\"<>\s]+\?[^'\"<>\s]*X-Amz-Signature=[^'\"<>\s]+)",
+                ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
+            ),
+            (
+                "minio",
+                r"(https?://(?:[^'\"<>\s]*minio[^'\"<>\s]*|[^'\"<>\s]*:9000)/[^'\"<>\s]+\?[^'\"<>\s]*X-Amz-Signature=[^'\"<>\s]+)",
                 ["x-amz-signature", "x-amz-credential", "x-amz-expires"],
             ),
             (
@@ -2001,7 +2017,7 @@ class CloudStorageSecretExposureDetector(BaseVulnDetector):
                     (len(matched_markers) >= 2, 25),
                     (len(urls) >= 2, 10),
                     (provider == "azure_blob", 10),
-                    (provider in {"aws_s3", "backblaze", "gcs", "ibm_cos", "oci", "wasabi", "digitalocean_spaces", "cloudflare_r2", "tencent_cos", "alibaba_oss"}, 15),
+                    (provider in {"aws_s3", "minio", "backblaze", "gcs", "ibm_cos", "oci", "wasabi", "digitalocean_spaces", "cloudflare_r2", "tencent_cos", "alibaba_oss"}, 15),
                 ]
             )
             findings.append(
