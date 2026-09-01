@@ -1226,6 +1226,9 @@ class ApiSurfaceExposureDetector(BaseVulnDetector):
         graphql_refs = []
         if "/graphql" in lowered:
             graphql_refs.append("/graphql")
+        for graphql_variant in ("/api/graphql", "/v1/graphql", "/graphql/"):
+            if graphql_variant in lowered and graphql_variant not in graphql_refs:
+                graphql_refs.append(graphql_variant)
         if "graphql" in lowered and ("fetch(" in lowered or "axios" in lowered or "query" in lowered):
             graphql_refs.append("graphql")
 

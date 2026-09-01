@@ -517,7 +517,7 @@ def test_api_surface_exposure_detector_flags_route_references():
             "<html><script>"
             "fetch('/api/v1/users');"
             "axios.get('/api/admin/audit');"
-            "const schema='/graphql';"
+            "const schema='/api/graphql';"
             "</script></html>"
         ),
     )
@@ -529,6 +529,7 @@ def test_api_surface_exposure_detector_flags_route_references():
     assert findings[0].severity == "medium"
     assert "/api/v1/users" in findings[0].evidence.extra["matched_routes"]
     assert "/api/admin/audit" in findings[0].evidence.extra["matched_routes"]
+    assert "/api/graphql" in findings[0].evidence.extra["graphql_refs"]
 
 
 def test_oauth_surface_detector_flags_implicit_flow():
