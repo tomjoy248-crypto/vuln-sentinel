@@ -1948,6 +1948,60 @@ def test_backup_exposure_detector_flags_sqlite_database_files(monkeypatch):
     assert all(finding.type == "backup_exposure" for finding in findings)
 
 
+def test_backup_exposure_detector_flags_legacy_and_compressed_variants(monkeypatch):
+    detector = BackupExposureDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/backup.sql.bak":
+            return __import__("httpx").Response(
+                200,
+                text="-- MySQL dump\nCREATE TABLE users (id INT);\nINSERT INTO users VALUES (1);",
+            )
+        if path == "/database.db.bak":
+            return __import__("httpx").Response(
+                200,
+                text="SQLite format 3\nCREATE TABLE accounts (id INTEGER PRIMARY KEY);\nPRAGMA user_version=1;",
+            )
+        if path == "/backup.tar.bz2":
+            return __import__("httpx").Response(
+                200,
+                text="postgresql database dump archive with database and backup manifests",
+            )
+        if path == "/application.yaml.bak":
+            return __import__("httpx").Response(
+                200,
+                text="spring:\n  datasource:\n    password: secret\n    url: jdbc:postgresql://db/app",
+            )
+        return __import__("httpx").Response(403, text="forbidden")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "数据库备份旧版本暴露",
+        "数据库旧备份文件暴露",
+        "压缩备份文件暴露",
+        "应用配置备份暴露",
+    }
+    assert all(finding.type == "backup_exposure" for finding in findings)
+
+
 def test_backup_exposure_detector_ignores_forbidden_files(monkeypatch):
     detector = BackupExposureDetector()
 
