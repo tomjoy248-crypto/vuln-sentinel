@@ -1380,6 +1380,12 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text='{"status":"success","data":[{"labels":{"alertname":"HighCPU"},"annotations":{"summary":"cpu"}}]}',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/api/v2/receivers":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":[{"name":"default","routes":[{"receiver":"team-a"}],"matchers":[{"name":"severity","value":"critical"}]}]}',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/api/v2.0/configurations":
             return __import__("httpx").Response(
                 200,
@@ -1392,10 +1398,22 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text='[{"project_id":1,"metadata":{"name":"library"}}]',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/api/v2.0/users/current":
+            return __import__("httpx").Response(
+                200,
+                text='{"user_id":1,"username":"admin","has_admin_role":true}',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/api/version":
             return __import__("httpx").Response(
                 200,
                 text='{"Version":"v2.14.0","GitCommit":"deadbeef"}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/applications":
+            return __import__("httpx").Response(
+                200,
+                text='{"items":[{"metadata":{"name":"demo"},"status":{"health":{"status":"Healthy"}}}]}',
                 headers={"Content-Type": "application/json"},
             )
         if path == "/settings":
@@ -1403,6 +1421,12 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 200,
                 text="<html><title>Argo CD Settings</title><body>settings repository</body></html>",
                 headers={"Content-Type": "text/html"},
+            )
+        if path == "/api/search":
+            return __import__("httpx").Response(
+                200,
+                text='[{"title":"Main Dashboard","uid":"abc123","type":"dash-db","uri":"db/main"}]',
+                headers={"Content-Type": "application/json"},
             )
         if path == "/v2/_catalog":
             return __import__("httpx").Response(
@@ -1486,10 +1510,14 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
         "暴露 Alertmanager 状态端点",
         "暴露 Alertmanager 静音端点",
         "暴露 Alertmanager 告警端点",
+        "暴露 Alertmanager 接收器配置",
         "暴露 Harbor 配置端点",
         "暴露 Harbor 项目端点",
+        "暴露 Harbor 当前用户信息",
         "暴露 Argo CD 版本信息",
+        "暴露 Argo CD 应用列表",
         "暴露 Argo CD 设置页面",
+        "暴露 Grafana 搜索接口",
         "暴露 Docker Registry 目录",
         "暴露 Docker Remote API 版本信息",
         "暴露 Docker Remote API 详细信息",
@@ -1641,6 +1669,12 @@ def test_sensitive_endpoint_detector_flags_common_admin_panels(monkeypatch):
                 text="<html><title>Grafana</title><body>dashboard login</body></html>",
                 headers={"Content-Type": "text/html"},
             )
+        if path == "/api/search":
+            return __import__("httpx").Response(
+                200,
+                text='[{"title":"Main Dashboard","uid":"abc123","type":"dash-db","uri":"db/main"}]',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/api/health":
             return __import__("httpx").Response(
                 200,
@@ -1694,6 +1728,7 @@ def test_sensitive_endpoint_detector_flags_common_admin_panels(monkeypatch):
     assert {finding.title for finding in findings} == {
         "暴露 Jenkins 管理面板",
         "暴露 Grafana 管理面板",
+        "暴露 Grafana 搜索接口",
         "暴露 Grafana 健康状态端点",
         "暴露 Kibana 管理面板",
         "暴露 Kibana 状态端点",
