@@ -1740,6 +1740,18 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text='{"project_count":12,"public_project_count":3,"repository_count":42,"registry_count":5}',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/api/v2.0/registries":
+            return __import__("httpx").Response(
+                200,
+                text='[{"id":1,"name":"dockerhub","endpoint":"https://registry-1.docker.io","provider_name":"docker-hub"}]',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v2.0/labels":
+            return __import__("httpx").Response(
+                200,
+                text='[{"id":1,"harbor":"harbor.example.com","label_name":"security","scope":"p"}]',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/api/v2.0/projects":
             return __import__("httpx").Response(
                 200,
@@ -1774,6 +1786,18 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
             return __import__("httpx").Response(
                 200,
                 text='{"items":[{"name":"prod","server":"https://kubernetes.default.svc"}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/repositories":
+            return __import__("httpx").Response(
+                200,
+                text='{"items":[{"name":"demo","repoURL":"https://github.com/example/repo.git","connectionState":{"status":"Successful"}}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/session/userinfo":
+            return __import__("httpx").Response(
+                200,
+                text='{"email":"admin@example.com","subject":"user-123","issuer":"https://argocd.example.com"}',
                 headers={"Content-Type": "application/json"},
             )
         if path == "/settings":
@@ -1874,12 +1898,16 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
         "暴露 Harbor 配置端点",
         "暴露 Harbor 系统信息端点",
         "暴露 Harbor 统计信息端点",
+        "暴露 Harbor 仓库注册信息",
+        "暴露 Harbor 标签信息",
         "暴露 Harbor 项目端点",
         "暴露 Harbor 当前用户信息",
         "暴露 Argo CD 版本信息",
         "暴露 Argo CD 应用列表",
         "暴露 Argo CD 项目列表",
         "暴露 Argo CD 集群列表",
+        "暴露 Argo CD 仓库列表",
+        "暴露 Argo CD 当前会话信息",
         "暴露 Argo CD 设置页面",
         "暴露 Grafana 搜索接口",
         "暴露 Docker Registry 目录",
