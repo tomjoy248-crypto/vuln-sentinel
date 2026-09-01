@@ -1081,6 +1081,71 @@ def test_sensitive_endpoint_detector_flags_swagger_and_prometheus_variants(monke
     }
 
 
+def test_sensitive_endpoint_detector_flags_common_admin_panels(monkeypatch):
+    detector = SensitiveEndpointDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/jenkins":
+            return __import__("httpx").Response(
+                200,
+                text="<html><title>Dashboard [Jenkins]</title><body>build history</body></html>",
+                headers={"Content-Type": "text/html"},
+            )
+        if path == "/grafana":
+            return __import__("httpx").Response(
+                200,
+                text="<html><title>Grafana</title><body>dashboard login</body></html>",
+                headers={"Content-Type": "text/html"},
+            )
+        if path == "/kibana":
+            return __import__("httpx").Response(
+                200,
+                text="<html><title>Kibana</title><body>elastic dashboard login</body></html>",
+                headers={"Content-Type": "text/html"},
+            )
+        if path == "/phpmyadmin":
+            return __import__("httpx").Response(
+                200,
+                text="<html><title>phpMyAdmin</title><body>server version login</body></html>",
+                headers={"Content-Type": "text/html"},
+            )
+        if path == "/manager/html":
+            return __import__("httpx").Response(
+                200,
+                text="<html><title>Tomcat Manager Application</title><body>application manager deploy undeploy</body></html>",
+                headers={"Content-Type": "text/html"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "暴露 Jenkins 管理面板",
+        "暴露 Grafana 管理面板",
+        "暴露 Kibana 管理面板",
+        "暴露 phpMyAdmin 管理面板",
+        "暴露 Tomcat Manager 管理面板",
+    }
+    assert all(finding.type == "exposed_endpoint" for finding in findings)
+
+
 def test_sensitive_endpoint_detector_ignores_generic_debug_page(monkeypatch):
     detector = SensitiveEndpointDetector()
 
