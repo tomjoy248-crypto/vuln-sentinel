@@ -1503,6 +1503,10 @@ def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):
                 text='{"names":["jvm.memory.used","http.server.requests"]}',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/actuator/health/liveness":
+            return __import__("httpx").Response(200, text='{"status":"UP","livenessState":"CORRECT"}')
+        if path == "/actuator/health/readiness":
+            return __import__("httpx").Response(200, text='{"status":"UP","readinessState":"ACCEPTING_TRAFFIC"}')
         return __import__("httpx").Response(403, text="forbidden")
 
     client = __import__("httpx").AsyncClient(
@@ -1528,6 +1532,8 @@ def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):
         "暴露 Spring Boot Actuator 健康端点",
         "暴露 Spring Boot Actuator 信息端点",
         "暴露 Spring Boot Actuator 指标目录",
+        "暴露 Spring Boot Actuator 存活探针端点",
+        "暴露 Spring Boot Actuator 就绪探针端点",
     }
     assert all(finding.type == "exposed_endpoint" for finding in findings)
 
@@ -1591,6 +1597,24 @@ def test_sensitive_endpoint_detector_flags_spring_actuator_management_endpoints(
                 text='{"contexts":{"app":{"positiveMatches":{"WebMvcAutoConfiguration":[]},"negativeMatches":{"JerseyAutoConfiguration":[]},"exclusions":[]}}}',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/actuator/loggers":
+            return __import__("httpx").Response(
+                200,
+                text='{"levels":["OFF","ERROR","WARN","INFO","DEBUG","TRACE"],"loggers":{"root":{"configuredLevel":"INFO","effectiveLevel":"INFO"}}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/actuator/caches":
+            return __import__("httpx").Response(
+                200,
+                text='{"cacheManagers":{"cacheManager":{"caches":{"users":{"target":"com.github.benmanes.caffeine.cache.Cache"}}}}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/actuator/scheduledtasks":
+            return __import__("httpx").Response(
+                200,
+                text='{"cron":[{"runnable":{"target":"com.example.ReportJob"},"expression":"0 0 * * * *"}],"fixedDelay":[{"runnable":{"target":"com.example.RefreshJob"},"interval":60000}],"fixedRate":[{"runnable":{"target":"com.example.SyncJob"},"interval":300000}]}',
+                headers={"Content-Type": "application/json"},
+            )
         return __import__("httpx").Response(404, text="not found")
 
     client = __import__("httpx").AsyncClient(
@@ -1617,6 +1641,9 @@ def test_sensitive_endpoint_detector_flags_spring_actuator_management_endpoints(
         "暴露 Spring Boot Actuator Beans 端点",
         "暴露 Spring Boot Actuator 路由映射端点",
         "暴露 Spring Boot Actuator 条件评估端点",
+        "暴露 Spring Boot Actuator 日志级别端点",
+        "暴露 Spring Boot Actuator 缓存端点",
+        "暴露 Spring Boot Actuator 定时任务端点",
         "暴露 Spring Boot HeapDump 端点",
         "暴露 Spring Boot ThreadDump 端点",
         "暴露 Spring Boot 日志文件端点",
