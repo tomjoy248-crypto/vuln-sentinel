@@ -2090,7 +2090,22 @@ def test_backup_exposure_detector_flags_legacy_and_compressed_variants(monkeypat
                 200,
                 text="postgresql database dump archive with database and backup manifests",
             )
+        if path == "/backup.sql.zst":
+            return __import__("httpx").Response(
+                200,
+                text="mysql dump archive compressed with zstd and backup metadata",
+            )
+        if path == "/backup.db.gz":
+            return __import__("httpx").Response(
+                200,
+                text="sqlite database archive with create table schema pragma",
+            )
         if path == "/application.yaml.bak":
+            return __import__("httpx").Response(
+                200,
+                text="spring:\n  datasource:\n    password: secret\n    url: jdbc:postgresql://db/app",
+            )
+        if path == "/config.yaml.gz":
             return __import__("httpx").Response(
                 200,
                 text="spring:\n  datasource:\n    password: secret\n    url: jdbc:postgresql://db/app",
@@ -2119,7 +2134,9 @@ def test_backup_exposure_detector_flags_legacy_and_compressed_variants(monkeypat
         "数据库备份旧版本暴露",
         "数据库旧备份文件暴露",
         "压缩备份文件暴露",
+        "压缩数据库备份文件暴露",
         "应用配置备份暴露",
+        "YAML 配置压缩备份暴露",
     }
     assert all(finding.type == "backup_exposure" for finding in findings)
 
