@@ -1830,6 +1830,30 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text='[{"title":"Main Dashboard","uid":"abc123","type":"dash-db","uri":"db/main"}]',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/api/org":
+            return __import__("httpx").Response(
+                200,
+                text='{"id":1,"name":"Main Org.","address":"","timezone":"UTC"}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/org/users":
+            return __import__("httpx").Response(
+                200,
+                text='[{"login":"admin","email":"admin@example.com","role":"Admin"}]',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/org/users/lookup":
+            return __import__("httpx").Response(
+                200,
+                text='[{"login":"alice","email":"alice@example.com","avatarUrl":"https://example.com/avatar.png"}]',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/user":
+            return __import__("httpx").Response(
+                200,
+                text='{"login":"admin","email":"admin@example.com","theme":"dark"}',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/api/folders":
             return __import__("httpx").Response(
                 200,
@@ -1942,6 +1966,10 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
         "暴露 Argo CD 仓库列表",
         "暴露 Argo CD 当前会话信息",
         "暴露 Argo CD 设置页面",
+        "暴露 Grafana 组织信息",
+        "暴露 Grafana 组织用户列表",
+        "暴露 Grafana 组织用户查找接口",
+        "暴露 Grafana 当前用户信息",
         "暴露 Grafana 搜索接口",
         "暴露 Grafana 文件夹接口",
         "暴露 Grafana 数据源接口",
@@ -2096,6 +2124,30 @@ def test_sensitive_endpoint_detector_flags_common_admin_panels(monkeypatch):
                 text="<html><title>Grafana</title><body>dashboard login</body></html>",
                 headers={"Content-Type": "text/html"},
             )
+        if path == "/api/org":
+            return __import__("httpx").Response(
+                200,
+                text='{"id":1,"name":"Main Org.","address":"","timezone":"UTC"}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/org/users":
+            return __import__("httpx").Response(
+                200,
+                text='[{"login":"admin","email":"admin@example.com","role":"Admin"}]',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/org/users/lookup":
+            return __import__("httpx").Response(
+                200,
+                text='[{"login":"alice","email":"alice@example.com","avatarUrl":"https://example.com/avatar.png"}]',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/user":
+            return __import__("httpx").Response(
+                200,
+                text='{"login":"admin","email":"admin@example.com","theme":"dark"}',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/api/search":
             return __import__("httpx").Response(
                 200,
@@ -2155,6 +2207,10 @@ def test_sensitive_endpoint_detector_flags_common_admin_panels(monkeypatch):
     assert {finding.title for finding in findings} == {
         "暴露 Jenkins 管理面板",
         "暴露 Grafana 管理面板",
+        "暴露 Grafana 组织信息",
+        "暴露 Grafana 组织用户列表",
+        "暴露 Grafana 组织用户查找接口",
+        "暴露 Grafana 当前用户信息",
         "暴露 Grafana 搜索接口",
         "暴露 Grafana 健康状态端点",
         "暴露 Kibana 管理面板",
