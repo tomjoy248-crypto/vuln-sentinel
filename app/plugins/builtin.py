@@ -2077,6 +2077,8 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                         issues.append("risky_response_mode")
                     if response_modes and "form_post" not in response_modes and {"fragment", "query"} & response_modes:
                         issues.append("form_post_missing")
+                    if "code" in response_types and not pkce_methods:
+                        issues.append("missing_pkce_support")
                     if "code" in response_types and pkce_methods and "s256" not in pkce_methods:
                         issues.append("weak_pkce_support")
 
@@ -2107,6 +2109,7 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             ("public_subject" in issues, 10),
                             ("risky_response_mode" in issues, 10),
                             ("form_post_missing" in issues, 10),
+                            ("missing_pkce_support" in issues, 15),
                             ("weak_pkce_support" in issues, 10),
                         ]
                     )
