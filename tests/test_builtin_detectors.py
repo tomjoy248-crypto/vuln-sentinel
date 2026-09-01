@@ -851,6 +851,59 @@ def test_oidc_discovery_detector_ignores_hardened_metadata(monkeypatch):
     assert findings == []
 
 
+def test_oidc_discovery_detector_flags_weak_client_auth_and_par(monkeypatch):
+    detector = OIDCDiscoveryConfigDetector()
+    metadata = {
+        "issuer": "https://auth.example.com",
+        "authorization_endpoint": "https://auth.example.com/oauth2/authorize",
+        "token_endpoint": "https://auth.example.com/oauth2/token",
+        "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
+        "response_types_supported": ["code"],
+        "response_modes_supported": ["form_post"],
+        "grant_types_supported": ["authorization_code"],
+        "token_endpoint_auth_methods_supported": ["client_secret_post"],
+        "pushed_authorization_request_endpoint": "https://auth.example.com/oauth2/par",
+        "require_pushed_authorization_requests": False,
+        "frontchannel_logout_supported": True,
+        "backchannel_logout_supported": True,
+        "frontchannel_logout_session_supported": True,
+        "scopes_supported": ["openid", "profile", "email"],
+        "subject_types_supported": ["pairwise"],
+        "code_challenge_methods_supported": ["S256"],
+    }
+
+    def handler(request):
+        if request.url.path.endswith("openid-configuration"):
+            return __import__("httpx").Response(200, json=metadata)
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://app.example.com/login",
+                    headers={},
+                    body='<script>const oidc="/.well-known/openid-configuration";</script>',
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.type == "oidc_discovery_risk"
+    assert "weak_client_auth" in finding.evidence.extra["issues"]
+    assert "weak_par_support" in finding.evidence.extra["issues"]
+    assert finding.evidence.extra["require_pushed_authorization_requests"] is False
+    assert finding.evidence.extra["token_endpoint_auth_methods_supported"] == ["client_secret_post"]
+
+
 def test_oidc_discovery_detector_flags_missing_pkce_support(monkeypatch):
     detector = OIDCDiscoveryConfigDetector()
     metadata = {

@@ -2118,6 +2118,7 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                     grant_types = {str(item).lower() for item in config.get("grant_types_supported", [])}
                     token_methods = {str(item).lower() for item in config.get("token_endpoint_auth_methods_supported", [])}
                     subject_types = {str(item).lower() for item in config.get("subject_types_supported", [])}
+                    require_pushed_authorization_requests = bool(config.get("require_pushed_authorization_requests"))
                     frontchannel_logout_supported = bool(config.get("frontchannel_logout_supported"))
                     backchannel_logout_supported = bool(config.get("backchannel_logout_supported"))
                     frontchannel_logout_session_supported = bool(config.get("frontchannel_logout_session_supported"))
@@ -2152,6 +2153,8 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                         issues.append("implicit_grant")
                     if "none" in token_methods:
                         issues.append("none_client_auth")
+                    if "client_secret_post" in token_methods:
+                        issues.append("weak_client_auth")
                     if jwks_uri.startswith("http://") or "localhost" in jwks_uri or "127.0.0.1" in jwks_uri:
                         issues.append("insecure_jwks_uri")
                     if issuer.startswith("http://") or "localhost" in issuer or "127.0.0.1" in issuer:
@@ -2188,6 +2191,8 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                         issues.append("unsigned_request_object")
                     if end_session_endpoint.startswith("http://") or "localhost" in end_session_endpoint or "127.0.0.1" in end_session_endpoint:
                         issues.append("insecure_logout_endpoint")
+                    if pushed_authorization_request_endpoint and not require_pushed_authorization_requests:
+                        issues.append("weak_par_support")
                     if end_session_endpoint and not (frontchannel_logout_supported or backchannel_logout_supported):
                         issues.append("logout_channel_weak")
                     if end_session_endpoint and not frontchannel_logout_session_supported and not backchannel_logout_supported:
@@ -2218,6 +2223,7 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             ("implicit_response" in issues, 25),
                             ("implicit_grant" in issues, 25),
                             ("none_client_auth" in issues, 20),
+                            ("weak_client_auth" in issues, 10),
                             ("insecure_jwks_uri" in issues, 20),
                             ("insecure_issuer" in issues, 15),
                             ("insecure_auth_endpoint" in issues, 15),
@@ -2231,6 +2237,7 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             ("form_post_missing" in issues, 10),
                             ("missing_pkce_support" in issues, 15),
                             ("weak_pkce_support" in issues, 10),
+                            ("weak_par_support" in issues, 10),
                         ]
                     )
                     severity = "high" if any(item in issues for item in ("implicit_response", "implicit_grant", "none_client_auth", "insecure_jwks_uri", "insecure_issuer")) else "medium"
@@ -2262,6 +2269,7 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                                     "response_modes_supported": sorted(response_modes),
                                     "grant_types_supported": sorted(grant_types),
                             "token_endpoint_auth_methods_supported": sorted(token_methods),
+                            "require_pushed_authorization_requests": require_pushed_authorization_requests,
                             "frontchannel_logout_supported": frontchannel_logout_supported,
                             "backchannel_logout_supported": backchannel_logout_supported,
                             "frontchannel_logout_session_supported": frontchannel_logout_session_supported,
