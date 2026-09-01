@@ -1110,6 +1110,47 @@ def test_backup_exposure_detector_flags_dump_and_backup_files(monkeypatch):
     assert all(finding.type == "backup_exposure" for finding in findings)
 
 
+def test_backup_exposure_detector_flags_compressed_backup_files(monkeypatch):
+    detector = BackupExposureDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/backup.zip":
+            return __import__("httpx").Response(
+                200,
+                text="PK\x03\x04 mysql dump backup archive contains DB_PASSWORD and secrets",
+            )
+        if path == "/backup.tar.gz":
+            return __import__("httpx").Response(
+                200,
+                text="postgresql database dump archive with database and backup manifests",
+            )
+        return __import__("httpx").Response(403, text="forbidden")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "压缩备份文件暴露",
+    }
+    assert all(finding.type == "backup_exposure" for finding in findings)
+
+
 def test_backup_exposure_detector_ignores_forbidden_files(monkeypatch):
     detector = BackupExposureDetector()
 
@@ -1175,6 +1216,66 @@ def test_sensitive_config_exposure_detector_flags_config_and_log_files(monkeypat
     assert {finding.title for finding in findings} == {
         "环境变量文件暴露",
         "调试日志暴露",
+    }
+    assert all(finding.type == "sensitive_config_exposure" for finding in findings)
+
+
+def test_sensitive_config_exposure_detector_flags_infra_and_ci_files(monkeypatch):
+    detector = SensitiveConfigExposureDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/nginx.conf":
+            return __import__("httpx").Response(
+                200,
+                text=(
+                    "server {\n"
+                    "    server_name app.example.com;\n"
+                    "    ssl_certificate /etc/ssl/cert.pem;\n"
+                    "    proxy_pass http://10.0.0.8:8080;\n"
+                    "}\n"
+                ),
+            )
+        if path == "/.aws/credentials":
+            return __import__("httpx").Response(
+                200,
+                text="[default]\naws_access_key_id=AKIAFAKE\naws_secret_access_key=FAKESECRET\n",
+            )
+        if path == "/.github/workflows/ci.yml":
+            return __import__("httpx").Response(
+                200,
+                text=(
+                    "name: ci\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    steps:\n"
+                    "      - run: echo ${{ secrets.DEPLOY_TOKEN }}\n"
+                ),
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.detectors.business.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "Nginx 配置文件暴露",
+        "AWS 凭据文件暴露",
+        "GitHub Actions 工作流暴露",
     }
     assert all(finding.type == "sensitive_config_exposure" for finding in findings)
 
