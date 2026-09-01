@@ -2133,6 +2133,9 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                     revocation_endpoint = str(config.get("revocation_endpoint") or "")
                     introspection_endpoint = str(config.get("introspection_endpoint") or "")
                     device_authorization_endpoint = str(config.get("device_authorization_endpoint") or "")
+                    registration_endpoint = str(config.get("registration_endpoint") or "")
+                    pushed_authorization_request_endpoint = str(config.get("pushed_authorization_request_endpoint") or "")
+                    backchannel_authentication_endpoint = str(config.get("backchannel_authentication_endpoint") or "")
                     end_session_endpoint = str(config.get("end_session_endpoint") or "")
                     jwks_uri = str(config.get("jwks_uri") or "")
                     issuer = str(config.get("issuer") or "")
@@ -2163,6 +2166,9 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             revocation_endpoint,
                             introspection_endpoint,
                             device_authorization_endpoint,
+                            registration_endpoint,
+                            pushed_authorization_request_endpoint,
+                            backchannel_authentication_endpoint,
                         )
                     ):
                         issues.append("insecure_oauth_endpoint")
@@ -2247,16 +2253,19 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                                     "response_types_supported": sorted(response_types),
                                     "response_modes_supported": sorted(response_modes),
                                     "grant_types_supported": sorted(grant_types),
-                                    "token_endpoint_auth_methods_supported": sorted(token_methods),
-                                    "frontchannel_logout_supported": frontchannel_logout_supported,
-                                    "backchannel_logout_supported": backchannel_logout_supported,
-                                    "frontchannel_logout_session_supported": frontchannel_logout_session_supported,
-                                    "end_session_endpoint": end_session_endpoint,
-                                    "id_token_signing_alg_values_supported": sorted(id_token_algs),
-                                    "userinfo_signing_alg_values_supported": sorted(userinfo_algs),
-                                    "request_object_signing_alg_values_supported": sorted(request_object_algs),
-                                    "code_challenge_methods_supported": sorted(pkce_methods),
-                                    "evidence_score": evidence_score,
+                            "token_endpoint_auth_methods_supported": sorted(token_methods),
+                            "frontchannel_logout_supported": frontchannel_logout_supported,
+                            "backchannel_logout_supported": backchannel_logout_supported,
+                            "frontchannel_logout_session_supported": frontchannel_logout_session_supported,
+                            "end_session_endpoint": end_session_endpoint,
+                            "registration_endpoint": registration_endpoint,
+                            "pushed_authorization_request_endpoint": pushed_authorization_request_endpoint,
+                            "backchannel_authentication_endpoint": backchannel_authentication_endpoint,
+                            "id_token_signing_alg_values_supported": sorted(id_token_algs),
+                            "userinfo_signing_alg_values_supported": sorted(userinfo_algs),
+                            "request_object_signing_alg_values_supported": sorted(request_object_algs),
+                            "code_challenge_methods_supported": sorted(pkce_methods),
+                            "evidence_score": evidence_score,
                                 },
                                 response_raw=resp.text[:4000],
                             ),
