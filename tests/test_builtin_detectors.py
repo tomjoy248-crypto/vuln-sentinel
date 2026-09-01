@@ -1151,6 +1151,48 @@ def test_backup_exposure_detector_flags_compressed_backup_files(monkeypatch):
     assert all(finding.type == "backup_exposure" for finding in findings)
 
 
+def test_backup_exposure_detector_flags_sqlite_database_files(monkeypatch):
+    detector = BackupExposureDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/backup.sqlite3":
+            return __import__("httpx").Response(
+                200,
+                text="SQLite format 3\nCREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);\nPRAGMA user_version=1;",
+            )
+        if path == "/database.db":
+            return __import__("httpx").Response(
+                200,
+                text="sqlite database schema with table accounts and pragma settings",
+            )
+        return __import__("httpx").Response(403, text="forbidden")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "SQLite 备份文件暴露",
+        "数据库文件暴露",
+    }
+    assert all(finding.type == "backup_exposure" for finding in findings)
+
+
 def test_backup_exposure_detector_ignores_forbidden_files(monkeypatch):
     detector = BackupExposureDetector()
 
@@ -1276,6 +1318,54 @@ def test_sensitive_config_exposure_detector_flags_infra_and_ci_files(monkeypatch
         "Nginx 配置文件暴露",
         "AWS 凭据文件暴露",
         "GitHub Actions 工作流暴露",
+    }
+    assert all(finding.type == "sensitive_config_exposure" for finding in findings)
+
+
+def test_sensitive_config_exposure_detector_flags_credentials_files(monkeypatch):
+    detector = SensitiveConfigExposureDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/.git-credentials":
+            return __import__("httpx").Response(
+                200,
+                text="https://alice:supersecret@example.com\n",
+            )
+        if path == "/.docker/config.json":
+            return __import__("httpx").Response(
+                200,
+                text='{"auths":{"registry.example.com":{"auth":"YWxpY2U6c3VwZXJzZWNyZXQ="}}}',
+            )
+        if path == "/.htpasswd":
+            return __import__("httpx").Response(
+                200,
+                text="admin:$apr1$abcdefghijklmnop$qwertyuiopasdfghjklz\n",
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.detectors.business.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "Git 凭据文件暴露",
+        "Docker 凭据文件暴露",
+        "HTTP Basic 认证口令文件暴露",
     }
     assert all(finding.type == "sensitive_config_exposure" for finding in findings)
 

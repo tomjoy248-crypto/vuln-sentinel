@@ -2162,7 +2162,12 @@ class BackupExposureDetector(BaseVulnDetector):
         candidates = [
             ("/backup.sql", "数据库备份文件暴露", "high", ["create table", "insert into", "drop table", "mysql dump", "postgresql database dump"], "CWE-200"),
             ("/dump.sql", "数据库导出文件暴露", "high", ["create table", "insert into", "drop table", "mysqldump", "dump completed"], "CWE-200"),
+            ("/backup.sql.gz", "压缩数据库备份文件暴露", "high", ["mysql", "postgresql", "database", "dump", "backup"], "CWE-200"),
+            ("/dump.sql.gz", "压缩数据库导出文件暴露", "high", ["mysql", "postgresql", "database", "dump", "backup"], "CWE-200"),
             ("/db.sql", "数据库文件暴露", "high", ["create table", "insert into", "drop table", "pragma", "sqlite"], "CWE-200"),
+            ("/backup.sqlite", "SQLite 备份文件暴露", "high", ["sqlite", "create table", "schema", "pragma"], "CWE-200"),
+            ("/backup.sqlite3", "SQLite 备份文件暴露", "high", ["sqlite", "create table", "schema", "pragma"], "CWE-200"),
+            ("/database.db", "数据库文件暴露", "high", ["sqlite", "create table", "schema", "pragma"], "CWE-200"),
             ("/backup.bak", "备份文件暴露", "medium", ["password", "secret", "token", "api_key", "database"], "CWE-200"),
             ("/backup.zip", "压缩备份文件暴露", "high", ["mysql", "postgresql", "database", "dump", "backup"], "CWE-200"),
             ("/dump.zip", "压缩导出文件暴露", "high", ["mysql", "postgresql", "database", "dump", "backup"], "CWE-200"),
