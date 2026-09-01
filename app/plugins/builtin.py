@@ -2196,6 +2196,11 @@ class SensitiveEndpointDetector(BaseVulnDetector):
         candidates = [
             ("/metrics", "暴露 Prometheus 指标端点", "high", ["# HELP", "# TYPE", "process_cpu_seconds_total"], 2, "CWE-200"),
             ("/actuator/prometheus", "暴露 Spring Boot Prometheus 指标端点", "high", ["# HELP", "# TYPE", "jvm_"], 2, "CWE-200"),
+            ("/-/ready", "暴露 Prometheus 就绪检查端点", "medium", ["ready", "prometheus"], 2, "CWE-200"),
+            ("/-/healthy", "暴露 Prometheus 健康检查端点", "medium", ["healthy", "prometheus"], 2, "CWE-200"),
+            ("/api/v1/status/config", "暴露 Prometheus 配置状态端点", "high", ["scrape_interval", "query_timeout", "global"], 2, "CWE-200"),
+            ("/api/v1/status/flags", "暴露 Prometheus 启动参数端点", "high", ["web.enable-lifecycle", "storage.tsdb", "query.max-concurrency"], 2, "CWE-200"),
+            ("/api/v1/targets", "暴露 Prometheus 抓取目标端点", "high", ["activeTargets", "discoveredLabels", "scrapePool"], 2, "CWE-200"),
             ("/actuator/health", "暴露 Spring Boot Actuator 健康端点", "medium", ['"status":"UP"', '"components"', '"details"'], 1, "CWE-200"),
             ("/actuator/env", "暴露 Spring Boot Actuator 环境端点", "high", ['"propertySources"', '"activeProfiles"', '"environment"'], 1, "CWE-200"),
             ("/actuator/configprops", "暴露 Spring Boot Actuator 配置属性端点", "high", ['"contexts"', '"beans"', '"prefix"'], 2, "CWE-200"),

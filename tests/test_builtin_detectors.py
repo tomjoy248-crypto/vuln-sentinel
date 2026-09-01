@@ -1338,6 +1338,36 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text='{"status":"success","data":{"cluster":"main","version":"0.25.0"}}',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/-/ready":
+            return __import__("httpx").Response(
+                200,
+                text="Prometheus Server is Ready.",
+                headers={"Content-Type": "text/plain"},
+            )
+        if path == "/-/healthy":
+            return __import__("httpx").Response(
+                200,
+                text="Prometheus Server is Healthy.",
+                headers={"Content-Type": "text/plain"},
+            )
+        if path == "/api/v1/status/config":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":{"yaml":"global:\\n  scrape_interval: 15s\\n  query_timeout: 2m"}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/status/flags":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":{"web.enable-lifecycle":"true","storage.tsdb.retention.time":"15d","query.max-concurrency":"20"}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/targets":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":{"activeTargets":[{"scrapePool":"node","discoveredLabels":{"job":"node"},"labels":{"instance":"node-1"}}]}}',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/api/v2/silences":
             return __import__("httpx").Response(
                 200,
@@ -1437,6 +1467,11 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
         __import__("asyncio").run(client.aclose())
 
     assert {finding.title for finding in findings} == {
+        "暴露 Prometheus 就绪检查端点",
+        "暴露 Prometheus 健康检查端点",
+        "暴露 Prometheus 配置状态端点",
+        "暴露 Prometheus 启动参数端点",
+        "暴露 Prometheus 抓取目标端点",
         "暴露 Vault 健康检查端点",
         "暴露 Vault 挂载配置端点",
         "暴露 Consul 集群领导者信息",
@@ -1533,6 +1568,59 @@ def test_sensitive_endpoint_detector_flags_swagger_and_prometheus_variants(monke
     assert {finding.title for finding in findings} == {
         "暴露 Swagger UI 文档",
         "暴露 Spring Boot Prometheus 指标端点",
+    }
+
+
+def test_sensitive_endpoint_detector_flags_prometheus_control_plane(monkeypatch):
+    detector = SensitiveEndpointDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/-/ready":
+            return __import__("httpx").Response(200, text="Prometheus Server is Ready.")
+        if path == "/api/v1/status/config":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":{"yaml":"global:\\n  scrape_interval: 15s\\n  query_timeout: 2m"}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/status/flags":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":{"web.enable-lifecycle":"true","storage.tsdb.retention.time":"15d","query.max-concurrency":"20"}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/targets":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":{"activeTargets":[{"scrapePool":"node","discoveredLabels":{"job":"node"},"labels":{"instance":"node-1"}}]}}',
+                headers={"Content-Type": "application/json"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "暴露 Prometheus 就绪检查端点",
+        "暴露 Prometheus 配置状态端点",
+        "暴露 Prometheus 启动参数端点",
+        "暴露 Prometheus 抓取目标端点",
     }
 
 
