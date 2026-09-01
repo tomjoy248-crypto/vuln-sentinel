@@ -2659,6 +2659,12 @@ class WellKnownExposureDetector(BaseVulnDetector):
         origin = f"{urlparse(context.url).scheme}://{urlparse(context.url).netloc}"
         targets = [
             "/.well-known/openid-configuration",
+            "/.well-known/oauth-authorization-server",
+            "/.well-known/jwks.json",
+            "/.well-known/webfinger",
+            "/.well-known/host-meta",
+            "/.well-known/host-meta.json",
+            "/.well-known/change-password",
             "/.well-known/security.txt",
             "/.well-known/assetlinks.json",
             "/.well-known/apple-app-site-association",

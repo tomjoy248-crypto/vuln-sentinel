@@ -2917,6 +2917,110 @@ def test_well_known_detector_flags_internal_openid_metadata(monkeypatch):
     assert "internal_host" in findings[0].evidence.extra["matched_signals"]
 
 
+def test_well_known_detector_flags_common_metadata_variants(monkeypatch):
+    detector = WellKnownExposureDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path in {"/.well-known/openid-configuration", "/.well-known/oauth-authorization-server"}:
+            return __import__("httpx").Response(
+                200,
+                json={
+                    "issuer": "https://auth.example.com",
+                    "authorization_endpoint": "https://auth.example.com/admin/login",
+                    "token_endpoint": "https://127.0.0.1/token",
+                    "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
+                },
+            )
+        if path == "/.well-known/jwks.json":
+            return __import__("httpx").Response(
+                200,
+                text='{"jwks_uri":"https://auth.example.com/.well-known/jwks.json","issuer":"https://auth.example.com"}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/.well-known/webfinger":
+            return __import__("httpx").Response(
+                200,
+                text='{"subject":"acct:alice@example.com","links":[{"href":"https://10.0.0.8/internal"}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/.well-known/host-meta":
+            return __import__("httpx").Response(
+                200,
+                text='<XRD><Link rel="lrdd" template="https://app.example.com/console?resource={uri}"/></XRD>',
+                headers={"Content-Type": "application/xml"},
+            )
+        if path == "/.well-known/host-meta.json":
+            return __import__("httpx").Response(
+                200,
+                text='{"links":[{"rel":"lrdd","template":"https://app.example.com/settings"}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/.well-known/change-password":
+            return __import__("httpx").Response(
+                200,
+                text="Please visit /account/settings to change your password.",
+                headers={"Content-Type": "text/plain"},
+            )
+        if path == "/.well-known/security.txt":
+            return __import__("httpx").Response(
+                200,
+                text="Contact: https://example.com/admin\nPolicy: https://example.com/backup\n",
+                headers={"Content-Type": "text/plain"},
+            )
+        if path == "/.well-known/assetlinks.json":
+            return __import__("httpx").Response(
+                200,
+                text='[{"target":{"namespace":"web","site":"https://example.com/debug"}}]',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/.well-known/apple-app-site-association":
+            return __import__("httpx").Response(
+                200,
+                text='{"applinks":{"details":[{"appID":"ABCDE.com.example.app","paths":["/admin/*","/internal/*"]}]}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/.well-known/mta-sts.txt":
+            return __import__("httpx").Response(
+                200,
+                text="version: STSv1\nmode: enforce\nmx: mail.example.com\nid: 20260901\n",
+                headers={"Content-Type": "text/plain"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.evidence.extra["path"] for finding in findings} == {
+        "/.well-known/openid-configuration",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/jwks.json",
+        "/.well-known/webfinger",
+        "/.well-known/host-meta",
+        "/.well-known/host-meta.json",
+        "/.well-known/change-password",
+        "/.well-known/security.txt",
+        "/.well-known/assetlinks.json",
+        "/.well-known/apple-app-site-association",
+    }
+    assert all(finding.type == "well_known_exposure" for finding in findings)
+
+
 def test_well_known_detector_ignores_blocked_endpoints(monkeypatch):
     detector = WellKnownExposureDetector()
 
