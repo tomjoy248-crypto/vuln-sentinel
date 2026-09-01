@@ -1987,6 +1987,7 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                     frontchannel_logout_supported = bool(config.get("frontchannel_logout_supported"))
                     backchannel_logout_supported = bool(config.get("backchannel_logout_supported"))
                     frontchannel_logout_session_supported = bool(config.get("frontchannel_logout_session_supported"))
+                    pkce_methods = {str(item).lower() for item in config.get("code_challenge_methods_supported", [])}
                     scopes = {str(item).lower() for item in config.get("scopes_supported", [])}
                     id_token_algs = {str(item).lower() for item in config.get("id_token_signing_alg_values_supported", [])}
                     userinfo_algs = {str(item).lower() for item in config.get("userinfo_signing_alg_values_supported", [])}
@@ -2031,6 +2032,8 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                         issues.append("risky_response_mode")
                     if response_modes and "form_post" not in response_modes and {"fragment", "query"} & response_modes:
                         issues.append("form_post_missing")
+                    if "code" in response_types and pkce_methods and "s256" not in pkce_methods:
+                        issues.append("weak_pkce_support")
 
                     if not issues:
                         continue
@@ -2059,6 +2062,7 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             ("public_subject" in issues, 10),
                             ("risky_response_mode" in issues, 10),
                             ("form_post_missing" in issues, 10),
+                            ("weak_pkce_support" in issues, 10),
                         ]
                     )
                     severity = "high" if any(item in issues for item in ("implicit_response", "implicit_grant", "none_client_auth", "insecure_jwks_uri", "insecure_issuer")) else "medium"
@@ -2092,6 +2096,7 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             "id_token_signing_alg_values_supported": sorted(id_token_algs),
                             "userinfo_signing_alg_values_supported": sorted(userinfo_algs),
                             "request_object_signing_alg_values_supported": sorted(request_object_algs),
+                            "code_challenge_methods_supported": sorted(pkce_methods),
                             "evidence_score": evidence_score,
                         },
                                 response_raw=resp.text[:4000],
@@ -2130,6 +2135,12 @@ class SensitiveEndpointDetector(BaseVulnDetector):
             ("/actuator/threaddump", "暴露 Spring Boot ThreadDump 端点", "high", ["full thread dump", "java.lang.thread.state", "nid="], 1, "CWE-200"),
             ("/actuator/logfile", "暴露 Spring Boot 日志文件端点", "high", ["traceback", "error", "exception", "authorization", "password"], 2, "CWE-200"),
             ("/actuator/shutdown", "暴露 Spring Boot 关停端点", "high", ["shutdown", "spring boot"], 1, "CWE-200"),
+            ("/v1/sys/health", "暴露 Vault 健康检查端点", "high", ['"sealed"', '"initialized"', '"version"', '"cluster_name"'], 2, "CWE-200"),
+            ("/v1/sys/mounts", "暴露 Vault 挂载配置端点", "high", ['"auth/"', '"kv/"', '"transit/"', '"database/"'], 2, "CWE-200"),
+            ("/api/v1/nodes", "暴露 Kubernetes 节点 API", "high", ['"kind":"NodeList"', '"items"', '"metadata"'], 2, "CWE-200"),
+            ("/api/v1/pods", "暴露 Kubernetes Pod API", "high", ['"kind":"PodList"', '"items"', '"metadata"', '"status"'], 2, "CWE-200"),
+            ("/v2/_catalog", "暴露 Docker Registry 目录", "high", ['"repositories"', '"name"', '"catalog"'], 1, "CWE-200"),
+            ("/debug/pprof/", "暴露 Go pprof 调试端点", "high", ["profiles", "goroutine", "heap"], 1, "CWE-200"),
             ("/openapi.json", "暴露 OpenAPI 描述文件", "medium", ['"openapi"', '"paths"', '"components"'], 2, "CWE-200"),
             ("/v3/api-docs", "暴露 OpenAPI 描述文件", "medium", ['"openapi"', '"paths"', '"components"'], 2, "CWE-200"),
             ("/swagger-ui", "暴露 Swagger UI 文档", "medium", ["swagger-ui", "openapi"], 1, "CWE-200"),

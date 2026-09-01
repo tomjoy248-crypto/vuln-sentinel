@@ -830,6 +830,55 @@ def test_oidc_discovery_detector_ignores_hardened_metadata(monkeypatch):
     assert findings == []
 
 
+def test_oidc_discovery_detector_flags_weak_pkce_support(monkeypatch):
+    detector = OIDCDiscoveryConfigDetector()
+    metadata = {
+        "issuer": "https://auth.example.com",
+        "authorization_endpoint": "https://auth.example.com/oauth2/authorize",
+        "token_endpoint": "https://auth.example.com/oauth2/token",
+        "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
+        "response_types_supported": ["code"],
+        "response_modes_supported": ["form_post"],
+        "grant_types_supported": ["authorization_code"],
+        "token_endpoint_auth_methods_supported": ["client_secret_basic"],
+        "code_challenge_methods_supported": ["plain"],
+        "frontchannel_logout_supported": True,
+        "backchannel_logout_supported": True,
+        "frontchannel_logout_session_supported": True,
+        "scopes_supported": ["openid", "profile", "email"],
+        "subject_types_supported": ["pairwise"],
+    }
+
+    def handler(request):
+        if request.url.path.endswith("openid-configuration"):
+            return __import__("httpx").Response(200, json=metadata)
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://app.example.com/login",
+                    headers={},
+                    body='<script>const oidc="/.well-known/openid-configuration";</script>',
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.type == "oidc_discovery_risk"
+    assert "weak_pkce_support" in finding.evidence.extra["issues"]
+    assert finding.evidence.extra["code_challenge_methods_supported"] == ["plain"]
+
+
 def test_cloud_storage_exposure_detector_flags_public_bucket_listing(monkeypatch):
     detector = CloudStorageExposureDetector()
 
@@ -1086,6 +1135,78 @@ def test_sensitive_endpoint_detector_flags_spring_actuator_management_endpoints(
         "暴露 Spring Boot ThreadDump 端点",
         "暴露 Spring Boot 日志文件端点",
         "暴露 Spring Boot 关停端点",
+    }
+    assert all(finding.type == "exposed_endpoint" for finding in findings)
+
+
+def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(monkeypatch):
+    detector = SensitiveEndpointDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/v1/sys/health":
+            return __import__("httpx").Response(
+                200,
+                text='{"initialized":true,"sealed":false,"version":"1.15.0","cluster_name":"vault-cluster"}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/v1/sys/mounts":
+            return __import__("httpx").Response(
+                200,
+                text='{"auth/token/":{"type":"token"},"kv/":{"type":"kv"},"transit/":{"type":"transit"}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/nodes":
+            return __import__("httpx").Response(
+                200,
+                text='{"kind":"NodeList","items":[{"metadata":{"name":"node-1"}}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/pods":
+            return __import__("httpx").Response(
+                200,
+                text='{"kind":"PodList","items":[{"metadata":{"name":"pod-1"},"status":{"phase":"Running"}}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/v2/_catalog":
+            return __import__("httpx").Response(
+                200,
+                text='{"repositories":["app/backend","app/frontend"]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/debug/pprof/":
+            return __import__("httpx").Response(
+                200,
+                text="profiles\ngoroutine\nheap\n",
+                headers={"Content-Type": "text/plain"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "暴露 Vault 健康检查端点",
+        "暴露 Vault 挂载配置端点",
+        "暴露 Kubernetes 节点 API",
+        "暴露 Kubernetes Pod API",
+        "暴露 Docker Registry 目录",
+        "暴露 Go pprof 调试端点",
     }
     assert all(finding.type == "exposed_endpoint" for finding in findings)
 
