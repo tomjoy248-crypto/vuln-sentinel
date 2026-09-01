@@ -948,6 +948,59 @@ def test_oidc_discovery_detector_flags_weak_pkce_support(monkeypatch):
     assert finding.evidence.extra["code_challenge_methods_supported"] == ["plain"]
 
 
+def test_oidc_discovery_detector_flags_insecure_oauth_endpoints(monkeypatch):
+    detector = OIDCDiscoveryConfigDetector()
+    metadata = {
+        "issuer": "https://auth.example.com",
+        "authorization_endpoint": "https://auth.example.com/oauth2/authorize",
+        "token_endpoint": "http://idp.local/oauth2/token",
+        "userinfo_endpoint": "http://127.0.0.1:8080/oauth2/userinfo",
+        "revocation_endpoint": "http://idp.local/oauth2/revoke",
+        "introspection_endpoint": "http://idp.local/oauth2/introspect",
+        "device_authorization_endpoint": "http://idp.local/oauth2/device",
+        "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
+        "response_types_supported": ["code"],
+        "response_modes_supported": ["form_post"],
+        "grant_types_supported": ["authorization_code"],
+        "token_endpoint_auth_methods_supported": ["client_secret_basic"],
+        "frontchannel_logout_supported": True,
+        "backchannel_logout_supported": True,
+        "frontchannel_logout_session_supported": True,
+        "scopes_supported": ["openid", "profile", "email"],
+        "subject_types_supported": ["pairwise"],
+    }
+
+    def handler(request):
+        if request.url.path.endswith("openid-configuration"):
+            return __import__("httpx").Response(200, json=metadata)
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://app.example.com/login",
+                    headers={},
+                    body='<script>const oidc="/.well-known/openid-configuration";</script>',
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.type == "oidc_discovery_risk"
+    assert "insecure_oauth_endpoint" in finding.evidence.extra["issues"]
+    assert finding.evidence.extra["token_endpoint"] == "http://idp.local/oauth2/token"
+    assert finding.evidence.extra["userinfo_endpoint"] == "http://127.0.0.1:8080/oauth2/userinfo"
+
+
 def test_cloud_storage_exposure_detector_flags_public_bucket_listing(monkeypatch):
     detector = CloudStorageExposureDetector()
 

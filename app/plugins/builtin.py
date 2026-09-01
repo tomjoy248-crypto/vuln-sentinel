@@ -2039,6 +2039,11 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                     request_object_algs = {
                         str(item).lower() for item in config.get("request_object_signing_alg_values_supported", [])
                     }
+                    token_endpoint = str(config.get("token_endpoint") or "")
+                    userinfo_endpoint = str(config.get("userinfo_endpoint") or "")
+                    revocation_endpoint = str(config.get("revocation_endpoint") or "")
+                    introspection_endpoint = str(config.get("introspection_endpoint") or "")
+                    device_authorization_endpoint = str(config.get("device_authorization_endpoint") or "")
                     end_session_endpoint = str(config.get("end_session_endpoint") or "")
                     jwks_uri = str(config.get("jwks_uri") or "")
                     issuer = str(config.get("issuer") or "")
@@ -2061,6 +2066,17 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                         issues.append("openid_scope_missing")
                     if auth_endpoint.startswith("http://") or "localhost" in auth_endpoint:
                         issues.append("insecure_auth_endpoint")
+                    if any(
+                        endpoint.startswith("http://") or "localhost" in endpoint or "127.0.0.1" in endpoint
+                        for endpoint in (
+                            token_endpoint,
+                            userinfo_endpoint,
+                            revocation_endpoint,
+                            introspection_endpoint,
+                            device_authorization_endpoint,
+                        )
+                    ):
+                        issues.append("insecure_oauth_endpoint")
                     if "none" in id_token_algs:
                         issues.append("unsigned_id_token")
                     if "none" in userinfo_algs:
@@ -2102,6 +2118,7 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             ("insecure_jwks_uri" in issues, 20),
                             ("insecure_issuer" in issues, 15),
                             ("insecure_auth_endpoint" in issues, 15),
+                            ("insecure_oauth_endpoint" in issues, 15),
                             ("insecure_logout_endpoint" in issues, 15),
                             ("logout_channel_weak" in issues, 10),
                             ("logout_session_weak" in issues, 10),
@@ -2130,23 +2147,28 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
                             evidence=Evidence(
                                 extra={
                                     "issues": issues,
-                            "issuer": issuer,
-                            "jwks_uri": jwks_uri,
-                            "authorization_endpoint": auth_endpoint,
-                            "response_types_supported": sorted(response_types),
-                            "response_modes_supported": sorted(response_modes),
-                            "grant_types_supported": sorted(grant_types),
-                            "token_endpoint_auth_methods_supported": sorted(token_methods),
-                            "frontchannel_logout_supported": frontchannel_logout_supported,
-                            "backchannel_logout_supported": backchannel_logout_supported,
-                            "frontchannel_logout_session_supported": frontchannel_logout_session_supported,
-                            "end_session_endpoint": end_session_endpoint,
-                            "id_token_signing_alg_values_supported": sorted(id_token_algs),
-                            "userinfo_signing_alg_values_supported": sorted(userinfo_algs),
-                            "request_object_signing_alg_values_supported": sorted(request_object_algs),
-                            "code_challenge_methods_supported": sorted(pkce_methods),
-                            "evidence_score": evidence_score,
-                        },
+                                    "issuer": issuer,
+                                    "jwks_uri": jwks_uri,
+                                    "authorization_endpoint": auth_endpoint,
+                                    "token_endpoint": token_endpoint,
+                                    "userinfo_endpoint": userinfo_endpoint,
+                                    "revocation_endpoint": revocation_endpoint,
+                                    "introspection_endpoint": introspection_endpoint,
+                                    "device_authorization_endpoint": device_authorization_endpoint,
+                                    "response_types_supported": sorted(response_types),
+                                    "response_modes_supported": sorted(response_modes),
+                                    "grant_types_supported": sorted(grant_types),
+                                    "token_endpoint_auth_methods_supported": sorted(token_methods),
+                                    "frontchannel_logout_supported": frontchannel_logout_supported,
+                                    "backchannel_logout_supported": backchannel_logout_supported,
+                                    "frontchannel_logout_session_supported": frontchannel_logout_session_supported,
+                                    "end_session_endpoint": end_session_endpoint,
+                                    "id_token_signing_alg_values_supported": sorted(id_token_algs),
+                                    "userinfo_signing_alg_values_supported": sorted(userinfo_algs),
+                                    "request_object_signing_alg_values_supported": sorted(request_object_algs),
+                                    "code_challenge_methods_supported": sorted(pkce_methods),
+                                    "evidence_score": evidence_score,
+                                },
                                 response_raw=resp.text[:4000],
                             ),
                             fix_suggestion="在 IdP discovery 配置中关闭隐式流与 none 客户端认证，确保 issuer、jwks_uri 与授权端点均为 HTTPS，并限制到正式环境域名。",
