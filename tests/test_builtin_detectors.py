@@ -1728,6 +1728,18 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text='{"auth_mode":"db_auth","project_creation_restriction":"adminonly"}',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/api/v2.0/systeminfo":
+            return __import__("httpx").Response(
+                200,
+                text='{"harbor_version":"v2.11.0","external_url":"https://harbor.example.com","registry_url":"https://registry.example.com"}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v2.0/statistics":
+            return __import__("httpx").Response(
+                200,
+                text='{"project_count":12,"public_project_count":3,"repository_count":42,"registry_count":5}',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/api/v2.0/projects":
             return __import__("httpx").Response(
                 200,
@@ -1750,6 +1762,18 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
             return __import__("httpx").Response(
                 200,
                 text='{"items":[{"metadata":{"name":"demo"},"status":{"health":{"status":"Healthy"}}}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/projects":
+            return __import__("httpx").Response(
+                200,
+                text='{"items":[{"metadata":{"name":"default"},"spec":{"destinations":[{"server":"https://kubernetes.default.svc"}],"clusterResourceWhitelist":[{"group":"*","kind":"*"}]}}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/clusters":
+            return __import__("httpx").Response(
+                200,
+                text='{"items":[{"name":"prod","server":"https://kubernetes.default.svc"}]}',
                 headers={"Content-Type": "application/json"},
             )
         if path == "/settings":
@@ -1848,10 +1872,14 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
         "暴露 Alertmanager 告警端点",
         "暴露 Alertmanager 接收器配置",
         "暴露 Harbor 配置端点",
+        "暴露 Harbor 系统信息端点",
+        "暴露 Harbor 统计信息端点",
         "暴露 Harbor 项目端点",
         "暴露 Harbor 当前用户信息",
         "暴露 Argo CD 版本信息",
         "暴露 Argo CD 应用列表",
+        "暴露 Argo CD 项目列表",
+        "暴露 Argo CD 集群列表",
         "暴露 Argo CD 设置页面",
         "暴露 Grafana 搜索接口",
         "暴露 Docker Registry 目录",
