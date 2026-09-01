@@ -688,6 +688,26 @@ def test_oauth_surface_detector_ignores_strong_auth_code_flow():
     assert findings == []
 
 
+def test_oauth_surface_detector_flags_plain_pkce_method():
+    detector = OAuthSurfaceDetector()
+    context = ScanContext(
+        url="https://example.com/login",
+        headers={},
+        body=(
+            "<script>"
+            "const auth='https://idp.example.com/oauth2/authorize?client_id=spa123&redirect_uri=https://app.example.com/auth/callback&response_type=code&state=abc&code_challenge=xyz&code_challenge_method=plain';"
+            "</script>"
+        ),
+    )
+
+    findings = __import__("asyncio").run(detector.detect(context))
+
+    assert len(findings) == 1
+    assert findings[0].title == "OAuth 授权码流程使用明文 PKCE"
+    assert findings[0].severity == "high"
+    assert findings[0].evidence.extra["auth_urls"]
+
+
 def test_oauth_surface_detector_flags_oidc_response_mode_fragment():
     detector = OAuthSurfaceDetector()
     context = ScanContext(
@@ -1156,6 +1176,24 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text='{"auth/token/":{"type":"token"},"kv/":{"type":"kv"},"transit/":{"type":"transit"}}',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/v1/status/leader":
+            return __import__("httpx").Response(
+                200,
+                text='"127.0.0.1:8300" "127.0.0.1:8300"',
+                headers={"Content-Type": "text/plain"},
+            )
+        if path == "/v1/agent/self":
+            return __import__("httpx").Response(
+                200,
+                text='{"Config":{"NodeName":"consul-1"},"Member":{"Name":"consul-1"},"Checks":[{"CheckID":"service:api"}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/ui/":
+            return __import__("httpx").Response(
+                200,
+                text="<html><title>Consul</title><body>datacenter services kv</body></html>",
+                headers={"Content-Type": "text/html"},
+            )
         if path == "/api/v1/nodes":
             return __import__("httpx").Response(
                 200,
@@ -1167,6 +1205,12 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 200,
                 text='{"kind":"PodList","items":[{"metadata":{"name":"pod-1"},"status":{"phase":"Running"}}]}',
                 headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v1/namespaces/kube-system/services/https:kubernetes-dashboard:/proxy/":
+            return __import__("httpx").Response(
+                200,
+                text="<html><title>Kubernetes Dashboard</title><body>overview namespace</body></html>",
+                headers={"Content-Type": "text/html"},
             )
         if path == "/v2/_catalog":
             return __import__("httpx").Response(
@@ -1233,8 +1277,12 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
     assert {finding.title for finding in findings} == {
         "暴露 Vault 健康检查端点",
         "暴露 Vault 挂载配置端点",
+        "暴露 Consul 集群领导者信息",
+        "暴露 Consul Agent 自检端点",
+        "暴露 Consul UI 管理面板",
         "暴露 Kubernetes 节点 API",
         "暴露 Kubernetes Pod API",
+        "暴露 Kubernetes Dashboard",
         "暴露 Docker Registry 目录",
         "暴露 Docker Remote API 版本信息",
         "暴露 Docker Remote API 详细信息",

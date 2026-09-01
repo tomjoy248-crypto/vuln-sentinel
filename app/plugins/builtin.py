@@ -1320,6 +1320,7 @@ class OAuthSurfaceDetector(BaseVulnDetector):
         state_missing_urls: list[str] = []
         nonce_missing_entries: list[tuple[str, str, str]] = []
         response_mode_risk_urls: list[tuple[str, str, str]] = []
+        weak_pkce_entries: list[str] = []
         for auth_url in auth_urls:
             query = _decoded_query_values(auth_url)
             scope_values = " ".join(query.get("scope", [])).lower()
@@ -1332,6 +1333,7 @@ class OAuthSurfaceDetector(BaseVulnDetector):
             has_oidc_implicit = bool(response_type_tokens & {"token", "id_token"})
             has_oidc_code = "code" in response_type_tokens
             has_nonce = bool(query.get("nonce"))
+            code_challenge_method = " ".join(query.get("code_challenge_method", [])).lower()
             has_risky_response_mode = bool(response_mode_tokens & {"fragment", "query"})
             redirect_values = (
                 query.get("redirect_uri", [])
@@ -1365,6 +1367,9 @@ class OAuthSurfaceDetector(BaseVulnDetector):
                 entry = (auth_url, severity_label, ",".join(sorted(response_mode_tokens)) or response_mode_values or "unknown")
                 if entry not in response_mode_risk_urls:
                     response_mode_risk_urls.append(entry)
+            if has_oidc_code and code_challenge_method == "plain":
+                if auth_url not in weak_pkce_entries:
+                    weak_pkce_entries.append(auth_url)
 
         logout_missing_id_token_urls: list[str] = []
         for logout_url in logout_urls:
@@ -1581,6 +1586,46 @@ class OAuthSurfaceDetector(BaseVulnDetector):
                     ),
                     fix_suggestion="对 OIDC 登录优先使用 response_mode=form_post，并避免让授权结果以 query 或 fragment 形式落到浏览器地址栏。",
                     confidence="high" if "high" in response_mode_severities else "medium",
+                    owasp_category="A07 身份识别与认证失败",
+                    cwe_id="CWE-287",
+                )
+            )
+
+        if weak_pkce_entries:
+            evidence_score = _score_signal_pairs(
+                [
+                    (True, 35),
+                    (len(weak_pkce_entries) >= 1, 20),
+                    (len(auth_urls) >= 1, 15),
+                    (has_client_id, 10),
+                    (len(callback_paths) >= 1, 10),
+                    (auth_code_flow, 10),
+                ]
+            )
+            findings.append(
+                Finding(
+                    title="OAuth 授权码流程使用明文 PKCE",
+                    type="oauth_config_risk",
+                    severity="high",
+                    description="页面暴露的 OAuth 授权码流程使用了 code_challenge_method=plain，PKCE 抗拦截能力会明显下降。",
+                    url=context.url,
+                    location=VulnLocation(
+                        url=context.url,
+                        parameter="code_challenge_method",
+                        parameter_type="html",
+                        snippet="OAuth authorize URL",
+                    ),
+                    evidence=Evidence(
+                        extra={
+                            "auth_urls": weak_pkce_entries[:6],
+                            "callback_paths": callback_paths[:6],
+                            "has_client_id": has_client_id,
+                            "evidence_score": evidence_score,
+                        },
+                        response_raw=body[:4000],
+                    ),
+                    fix_suggestion="将 OAuth 授权码流程的 code_challenge_method 固定为 S256，并拒绝 plain 以及其他弱方法。",
+                    confidence="high",
                     owasp_category="A07 身份识别与认证失败",
                     cwe_id="CWE-287",
                 )
@@ -2137,8 +2182,12 @@ class SensitiveEndpointDetector(BaseVulnDetector):
             ("/actuator/shutdown", "暴露 Spring Boot 关停端点", "high", ["shutdown", "spring boot"], 1, "CWE-200"),
             ("/v1/sys/health", "暴露 Vault 健康检查端点", "high", ['"sealed"', '"initialized"', '"version"', '"cluster_name"'], 2, "CWE-200"),
             ("/v1/sys/mounts", "暴露 Vault 挂载配置端点", "high", ['"auth/"', '"kv/"', '"transit/"', '"database/"'], 2, "CWE-200"),
+            ("/v1/status/leader", "暴露 Consul 集群领导者信息", "high", ["leader", "consul", "\"knownleader\"", ":8300"], 1, "CWE-200"),
+            ("/v1/agent/self", "暴露 Consul Agent 自检端点", "high", ["config", "member", "checks", "consul"], 2, "CWE-200"),
+            ("/ui/", "暴露 Consul UI 管理面板", "medium", ["consul", "datacenter", "services", "kv"], 2, "CWE-200"),
             ("/api/v1/nodes", "暴露 Kubernetes 节点 API", "high", ['"kind":"NodeList"', '"items"', '"metadata"'], 2, "CWE-200"),
             ("/api/v1/pods", "暴露 Kubernetes Pod API", "high", ['"kind":"PodList"', '"items"', '"metadata"', '"status"'], 2, "CWE-200"),
+            ("/api/v1/namespaces/kube-system/services/https:kubernetes-dashboard:/proxy/", "暴露 Kubernetes Dashboard", "high", ["kubernetes dashboard", "overview", "namespace"], 1, "CWE-200"),
             ("/v2/_catalog", "暴露 Docker Registry 目录", "high", ['"repositories"', '"name"', '"catalog"'], 1, "CWE-200"),
             ("/version", "暴露 Docker Remote API 版本信息", "high", ["apiversion", "version", "gitcommit"], 2, "CWE-200"),
             ("/info", "暴露 Docker Remote API 详细信息", "high", ["containers", "images", "operatingsystem", "ncpu"], 2, "CWE-200"),
