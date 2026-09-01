@@ -1332,6 +1332,16 @@ def test_sensitive_config_exposure_detector_flags_credentials_files(monkeypatch)
                 200,
                 text="https://alice:supersecret@example.com\n",
             )
+        if path == "/.netrc":
+            return __import__("httpx").Response(
+                200,
+                text="machine api.example.com login alice password supersecret\n",
+            )
+        if path == "/.pgpass":
+            return __import__("httpx").Response(
+                200,
+                text="db.example.com:5432:appdb:appuser:pgsecret\n",
+            )
         if path == "/.docker/config.json":
             return __import__("httpx").Response(
                 200,
@@ -1341,6 +1351,16 @@ def test_sensitive_config_exposure_detector_flags_credentials_files(monkeypatch)
             return __import__("httpx").Response(
                 200,
                 text="admin:$apr1$abcdefghijklmnop$qwertyuiopasdfghjklz\n",
+            )
+        if path == "/service-account.json":
+            return __import__("httpx").Response(
+                200,
+                text='{"type":"service_account","project_id":"demo","client_email":"svc@example.iam.gserviceaccount.com","private_key":"-----BEGIN PRIVATE KEY-----"}',
+            )
+        if path == "/firebase-service-account.json":
+            return __import__("httpx").Response(
+                200,
+                text='{"type":"service_account","project_id":"demo","client_email":"firebase@example.iam.gserviceaccount.com","private_key":"-----BEGIN PRIVATE KEY-----"}',
             )
         return __import__("httpx").Response(404, text="not found")
 
@@ -1364,8 +1384,12 @@ def test_sensitive_config_exposure_detector_flags_credentials_files(monkeypatch)
 
     assert {finding.title for finding in findings} == {
         "Git 凭据文件暴露",
+        "Netrc 凭据文件暴露",
+        "PostgreSQL 凭据文件暴露",
         "Docker 凭据文件暴露",
         "HTTP Basic 认证口令文件暴露",
+        "云服务账号文件暴露",
+        "Firebase 服务账号文件暴露",
     }
     assert all(finding.type == "sensitive_config_exposure" for finding in findings)
 
