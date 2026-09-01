@@ -2343,6 +2343,8 @@ class SensitiveEndpointDetector(BaseVulnDetector):
             ("/api/v2/silences", "暴露 Alertmanager 静音端点", "high", ["alertmanager", "silences", "status"], 1, "CWE-200"),
             ("/api/v2/alerts", "暴露 Alertmanager 告警端点", "high", ["alertmanager", "labels", "annotations"], 1, "CWE-200"),
             ("/api/v2/receivers", "暴露 Alertmanager 接收器配置", "high", ["alertmanager", "routes", "matchers"], 2, "CWE-200"),
+            ("/api/v2/alertmanagers", "暴露 Alertmanager 实例配置", "high", ["alertmanager", "url", "name"], 2, "CWE-200"),
+            ("/api/v2/alerts/groups", "暴露 Alertmanager 告警分组", "medium", ["alertmanager", "groupLabels", "receiver"], 2, "CWE-200"),
             ("/api/v2.0/configurations", "暴露 Harbor 配置端点", "medium", ["harbor", "auth_mode", "project_creation_restriction"], 2, "CWE-200"),
             ("/api/v2.0/systeminfo", "暴露 Harbor 系统信息端点", "medium", ["harbor", "registry", "external_url"], 2, "CWE-200"),
             ("/api/v2.0/statistics", "暴露 Harbor 统计信息端点", "medium", ["harbor", "project_count", "registry_count"], 2, "CWE-200"),

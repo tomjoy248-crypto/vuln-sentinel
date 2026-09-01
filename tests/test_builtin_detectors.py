@@ -1722,6 +1722,18 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text='{"status":"success","data":[{"name":"default","routes":[{"receiver":"team-a"}],"matchers":[{"name":"severity","value":"critical"}]}]}',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/api/v2/alertmanagers":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":{"active":[{"url":"https://alertmanager.example.com","name":"primary","cluster":"prod"}]}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/api/v2/alerts/groups":
+            return __import__("httpx").Response(
+                200,
+                text='{"status":"success","data":[{"groupLabels":{"severity":"critical"},"receiver":"team-a","alerts":[{"labels":{"alertname":"HighCPU"}}]}]}',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/api/v2.0/configurations":
             return __import__("httpx").Response(
                 200,
@@ -1895,6 +1907,8 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
         "暴露 Alertmanager 静音端点",
         "暴露 Alertmanager 告警端点",
         "暴露 Alertmanager 接收器配置",
+        "暴露 Alertmanager 实例配置",
+        "暴露 Alertmanager 告警分组",
         "暴露 Harbor 配置端点",
         "暴露 Harbor 系统信息端点",
         "暴露 Harbor 统计信息端点",
