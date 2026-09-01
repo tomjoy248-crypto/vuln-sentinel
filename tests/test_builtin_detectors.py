@@ -1174,11 +1174,41 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text='{"repositories":["app/backend","app/frontend"]}',
                 headers={"Content-Type": "application/json"},
             )
+        if path == "/version":
+            return __import__("httpx").Response(
+                200,
+                text='{"ApiVersion":"1.45","Version":"24.0.7","GitCommit":"deadbeef"}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/info":
+            return __import__("httpx").Response(
+                200,
+                text='{"Containers":2,"Images":5,"OperatingSystem":"Ubuntu","NCPU":4}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/containers/json":
+            return __import__("httpx").Response(
+                200,
+                text='[{"Id":"abc123","Image":"nginx:latest","Names":["/web"],"State":"running"}]',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/images/json":
+            return __import__("httpx").Response(
+                200,
+                text='[{"Id":"img123","RepoTags":["app/backend:latest"],"Size":123456}]',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/debug/pprof/":
             return __import__("httpx").Response(
                 200,
                 text="profiles\ngoroutine\nheap\n",
                 headers={"Content-Type": "text/plain"},
+            )
+        if path == "/debug/vars":
+            return __import__("httpx").Response(
+                200,
+                text='{"cmdline":["app"],"memstats":{"Alloc":1234},"goroutines":5}',
+                headers={"Content-Type": "application/json"},
             )
         return __import__("httpx").Response(404, text="not found")
 
@@ -1206,7 +1236,12 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
         "暴露 Kubernetes 节点 API",
         "暴露 Kubernetes Pod API",
         "暴露 Docker Registry 目录",
+        "暴露 Docker Remote API 版本信息",
+        "暴露 Docker Remote API 详细信息",
+        "暴露 Docker 容器列表接口",
+        "暴露 Docker 镜像列表接口",
         "暴露 Go pprof 调试端点",
+        "暴露 Go expvar 调试端点",
     }
     assert all(finding.type == "exposed_endpoint" for finding in findings)
 
