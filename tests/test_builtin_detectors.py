@@ -1194,6 +1194,24 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
                 text="<html><title>Consul</title><body>datacenter services kv</body></html>",
                 headers={"Content-Type": "text/html"},
             )
+        if path == "/v2/keys/":
+            return __import__("httpx").Response(
+                200,
+                text='{"action":"get","node":{"key":"/","dir":true,"nodes":[{"key":"/config"}]}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/v2/members":
+            return __import__("httpx").Response(
+                200,
+                text='{"members":[{"name":"etcd-1","peerURLs":["http://127.0.0.1:2380"],"clientURLs":["http://127.0.0.1:2379"]}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/v2/stats/self":
+            return __import__("httpx").Response(
+                200,
+                text='{"dbSize":1234,"leaderInfo":{"leader":"etcd-1"},"recvAppendRequestCnt":5}',
+                headers={"Content-Type": "application/json"},
+            )
         if path == "/api/v1/nodes":
             return __import__("httpx").Response(
                 200,
@@ -1280,6 +1298,9 @@ def test_sensitive_endpoint_detector_flags_cloud_native_operations_endpoints(mon
         "暴露 Consul 集群领导者信息",
         "暴露 Consul Agent 自检端点",
         "暴露 Consul UI 管理面板",
+        "暴露 etcd v2 Key API",
+        "暴露 etcd 成员信息",
+        "暴露 etcd 自身状态",
         "暴露 Kubernetes 节点 API",
         "暴露 Kubernetes Pod API",
         "暴露 Kubernetes Dashboard",
