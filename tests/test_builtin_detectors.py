@@ -1011,6 +1011,85 @@ def test_sensitive_endpoint_detector_flags_public_ops_endpoints(monkeypatch):
     assert all(finding.type == "exposed_endpoint" for finding in findings)
 
 
+def test_sensitive_endpoint_detector_flags_spring_actuator_management_endpoints(monkeypatch):
+    detector = SensitiveEndpointDetector()
+
+    def handler(request):
+        path = request.url.path
+        if path == "/actuator/configprops":
+            return __import__("httpx").Response(
+                200,
+                text='{"contexts":{"app":{"beans":{"serverProperties":{"prefix":"server","properties":{"port":8080}}}}}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/actuator/beans":
+            return __import__("httpx").Response(
+                200,
+                text='{"contexts":{"app":{"beans":{"dataSource":{"scope":"singleton"}}}}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/actuator/mappings":
+            return __import__("httpx").Response(
+                200,
+                text='{"contexts":{"app":{"dispatcherServlets":{"dispatcherServlet":{"handlerMappings":[{"predicate":"GET /admin"}]}}}}}',
+                headers={"Content-Type": "application/json"},
+            )
+        if path == "/actuator/heapdump":
+            return __import__("httpx").Response(
+                200,
+                text="JAVA HEAP DUMP\nclass histogram\n",
+                headers={"Content-Type": "application/octet-stream"},
+            )
+        if path == "/actuator/threaddump":
+            return __import__("httpx").Response(
+                200,
+                text="Full thread dump Java HotSpot(TM)\n\"main\" #1 prio=5 os_prio=0 tid=0x0000 nid=0x1 waiting",
+                headers={"Content-Type": "text/plain"},
+            )
+        if path == "/actuator/logfile":
+            return __import__("httpx").Response(
+                200,
+                text="2026-09-01 ERROR Authorization: Bearer token\n2026-09-01 password=secret\n",
+                headers={"Content-Type": "text/plain"},
+            )
+        if path == "/actuator/shutdown":
+            return __import__("httpx").Response(
+                200,
+                text='{"message":"shutdown"}',
+                headers={"Content-Type": "application/json"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+    monkeypatch.setattr("app.plugins.builtin.httpx.AsyncClient", lambda *args, **kwargs: client)
+
+    try:
+        findings = __import__("asyncio").run(
+            detector.detect(
+                ScanContext(
+                    url="https://example.com/",
+                    headers={},
+                    body="",
+                )
+            )
+        )
+    finally:
+        __import__("asyncio").run(client.aclose())
+
+    assert {finding.title for finding in findings} == {
+        "暴露 Spring Boot Actuator 配置属性端点",
+        "暴露 Spring Boot Actuator Beans 端点",
+        "暴露 Spring Boot Actuator 路由映射端点",
+        "暴露 Spring Boot HeapDump 端点",
+        "暴露 Spring Boot ThreadDump 端点",
+        "暴露 Spring Boot 日志文件端点",
+        "暴露 Spring Boot 关停端点",
+    }
+    assert all(finding.type == "exposed_endpoint" for finding in findings)
+
+
 def test_sensitive_endpoint_detector_ignores_protected_endpoints(monkeypatch):
     detector = SensitiveEndpointDetector()
 
