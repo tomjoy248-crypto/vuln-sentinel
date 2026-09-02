@@ -5071,6 +5071,38 @@ async def check_sensitive_paths(host: str, is_https: bool) -> list[dict]:
             "required_any": ["files", "entrypoints", "main.js"],
             "forbidden": ["<html", "<!doctype", "<head"],
         },
+        "/docker-compose.yml": {
+            "required_any": ["services:", "image:", "environment:", "ports:"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/docker-compose.yaml": {
+            "required_any": ["services:", "image:", "environment:", "ports:"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/application.yml": {
+            "required_any": ["spring:", "datasource:", "server:", "management:"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/application.yaml": {
+            "required_any": ["spring:", "datasource:", "server:", "management:"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/config.yml": {
+            "required_any": ["spring:", "datasource:", "server:", "management:"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/config.yaml": {
+            "required_any": ["spring:", "datasource:", "server:", "management:"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/web.config": {
+            "required_any": ["configuration", "system.webServer", "rewrite"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/nginx.conf": {
+            "required_any": ["server {", "location", "proxy_pass", "listen "],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
     }
 
     def analyze_content(path: str, text: str) -> dict:
