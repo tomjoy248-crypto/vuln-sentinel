@@ -854,7 +854,7 @@ def test_asset_scan_detects_source_map_assets():
     fake_headers = {"content-type": "text/html", "server": "nginx"}
 
     def handler(request):
-        if request.url.path == "/app.js.map":
+        if request.url.path == "/_next/static/chunks/main.js.map":
             return __import__("httpx").Response(
                 200,
                 text='{"version":3,"file":"app.js","sources":["src/app.tsx"],"mappings":"AAAA","sourcesContent":["console.log(1);"]}',
@@ -898,7 +898,7 @@ def test_asset_scan_detects_source_map_assets():
         conn.close()
 
     assert row is not None
-    assert "/app.js.map" in row[0]
+    assert "/_next/static/chunks/main.js.map" in row[0]
 
 
 # --- POST /api/apply-fix-and-rescan ---
