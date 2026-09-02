@@ -5051,6 +5051,26 @@ async def check_sensitive_paths(host: str, is_https: bool) -> list[dict]:
             "required": ["CREATE TABLE", "INSERT INTO"],
             "forbidden": ["<html", "<!doctype", "<head"],
         },
+        "/_next/build-manifest.json": {
+            "required_any": ["pages", "devFiles", "polyfillFiles"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/_next/prerender-manifest.json": {
+            "required_any": ["version", "routes", "notFoundRoutes"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/_next/routes-manifest.json": {
+            "required_any": ["dynamicRoutes", "staticRoutes", "rewrites"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/asset-manifest.json": {
+            "required_any": ["files", "entrypoints", "main.js"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/build/asset-manifest.json": {
+            "required_any": ["files", "entrypoints", "main.js"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
     }
 
     def analyze_content(path: str, text: str) -> dict:

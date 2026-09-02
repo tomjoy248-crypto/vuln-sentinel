@@ -854,10 +854,10 @@ def test_asset_scan_detects_source_map_assets():
     fake_headers = {"content-type": "text/html", "server": "nginx"}
 
     def handler(request):
-        if request.url.path == "/_next/static/chunks/main.js.map":
+        if request.url.path == "/_next/build-manifest.json":
             return __import__("httpx").Response(
                 200,
-                text='{"version":3,"file":"app.js","sources":["src/app.tsx"],"mappings":"AAAA","sourcesContent":["console.log(1);"]}',
+                text='{"devFiles":["static/chunks/react-refresh.js"],"polyfillFiles":["static/chunks/polyfills.js"],"pages":{"/":["static/chunks/pages/index.js"]}}',
                 headers={"Content-Type": "application/json"},
             )
         return __import__("httpx").Response(404, text="not found")
@@ -898,7 +898,7 @@ def test_asset_scan_detects_source_map_assets():
         conn.close()
 
     assert row is not None
-    assert "/_next/static/chunks/main.js.map" in row[0]
+    assert "/_next/build-manifest.json" in row[0]
 
 
 # --- POST /api/apply-fix-and-rescan ---
