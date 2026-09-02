@@ -972,6 +972,137 @@ def test_asset_scan_detects_docker_compose_assets():
     assert "/docker-compose.yml" in row[0]
 
 
+def test_asset_scan_detects_package_manifest_assets():
+    """Asset scans should surface exposed dependency manifests as scan findings."""
+    headers = _auth_headers()
+    domain = f"manifest-asset-{int(time.time() * 1000)}.com"
+    create = client.post(
+        "/api/assets",
+        json={"domain": domain, "owner": "", "description": ""},
+        headers=headers,
+    )
+    assert create.status_code == 200
+    asset_id = create.json()["asset_id"]
+
+    fake_headers = {"content-type": "text/html", "server": "nginx"}
+
+    def handler(request):
+        if request.url.path == "/package.json":
+            return __import__("httpx").Response(
+                200,
+                text=(
+                    '{\n'
+                    '  "name": "vuln-sentinel-web",\n'
+                    '  "version": "1.0.0",\n'
+                    '  "scripts": {"build": "vite build"},\n'
+                    '  "dependencies": {"react": "^18.0.0"}\n'
+                    "}\n"
+                ),
+                headers={"Content-Type": "application/json"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    http_client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+
+    try:
+        with patch.object(
+            main,
+            "fetch_headers",
+            new_callable=AsyncMock,
+            return_value=(fake_headers, True, "https://" + domain, None),
+        ), patch.object(
+            main,
+            "get_ssl_info",
+            new_callable=AsyncMock,
+            return_value={"has_cert": True, "days_left": 90, "expired": False, "weak": False},
+        ), patch.object(
+            main,
+            "get_httpx_client",
+            return_value=http_client,
+        ):
+            resp = client.post(f"/api/assets/{asset_id}/scan", headers=headers)
+    finally:
+        asyncio.run(http_client.aclose())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    scan_id = body["scan_id"]
+    conn = main.get_db()
+    try:
+        row = conn.execute(
+            "SELECT findings_json FROM scans WHERE id=?", (scan_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row is not None
+    assert "/package.json" in row[0]
+
+
+def test_asset_scan_detects_backup_archive_assets():
+    """Asset scans should surface exposed backup archives as scan findings."""
+    headers = _auth_headers()
+    domain = f"backup-asset-{int(time.time() * 1000)}.com"
+    create = client.post(
+        "/api/assets",
+        json={"domain": domain, "owner": "", "description": ""},
+        headers=headers,
+    )
+    assert create.status_code == 200
+    asset_id = create.json()["asset_id"]
+
+    fake_headers = {"content-type": "text/html", "server": "nginx"}
+
+    def handler(request):
+        if request.url.path == "/backup.zip":
+            return __import__("httpx").Response(
+                200,
+                text="PK\x03\x04backup archive contents listing users.sql config.env",
+                headers={"Content-Type": "application/zip"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    http_client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+
+    try:
+        with patch.object(
+            main,
+            "fetch_headers",
+            new_callable=AsyncMock,
+            return_value=(fake_headers, True, "https://" + domain, None),
+        ), patch.object(
+            main,
+            "get_ssl_info",
+            new_callable=AsyncMock,
+            return_value={"has_cert": True, "days_left": 90, "expired": False, "weak": False},
+        ), patch.object(
+            main,
+            "get_httpx_client",
+            return_value=http_client,
+        ):
+            resp = client.post(f"/api/assets/{asset_id}/scan", headers=headers)
+    finally:
+        asyncio.run(http_client.aclose())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    scan_id = body["scan_id"]
+    conn = main.get_db()
+    try:
+        row = conn.execute(
+            "SELECT findings_json FROM scans WHERE id=?", (scan_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row is not None
+    assert "/backup.zip" in row[0]
+
+
 # --- POST /api/apply-fix-and-rescan ---
 
 def test_apply_fix_and_rescan_requires_auth():
