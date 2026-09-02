@@ -839,6 +839,68 @@ def test_asset_scan_creates_scan_record():
     assert body["scan_id"] > 0
 
 
+def test_asset_scan_detects_source_map_assets():
+    """Asset scans should surface exposed source maps as scan findings."""
+    headers = _auth_headers()
+    domain = f"sourcemap-asset-{int(time.time() * 1000)}.com"
+    create = client.post(
+        "/api/assets",
+        json={"domain": domain, "owner": "", "description": ""},
+        headers=headers,
+    )
+    assert create.status_code == 200
+    asset_id = create.json()["asset_id"]
+
+    fake_headers = {"content-type": "text/html", "server": "nginx"}
+
+    def handler(request):
+        if request.url.path == "/app.js.map":
+            return __import__("httpx").Response(
+                200,
+                text='{"version":3,"file":"app.js","sources":["src/app.tsx"],"mappings":"AAAA","sourcesContent":["console.log(1);"]}',
+                headers={"Content-Type": "application/json"},
+            )
+        return __import__("httpx").Response(404, text="not found")
+
+    http_client = __import__("httpx").AsyncClient(
+        transport=__import__("httpx").MockTransport(handler)
+    )
+
+    try:
+        with patch.object(
+            main,
+            "fetch_headers",
+            new_callable=AsyncMock,
+            return_value=(fake_headers, True, "https://" + domain, None),
+        ), patch.object(
+            main,
+            "get_ssl_info",
+            new_callable=AsyncMock,
+            return_value={"has_cert": True, "days_left": 90, "expired": False, "weak": False},
+        ), patch.object(
+            main,
+            "get_httpx_client",
+            return_value=http_client,
+        ):
+            resp = client.post(f"/api/assets/{asset_id}/scan", headers=headers)
+    finally:
+        asyncio.run(http_client.aclose())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    scan_id = body["scan_id"]
+    conn = main.get_db()
+    try:
+        row = conn.execute(
+            "SELECT findings_json FROM scans WHERE id=?", (scan_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row is not None
+    assert "/app.js.map" in row[0]
+
+
 # --- POST /api/apply-fix-and-rescan ---
 
 def test_apply_fix_and_rescan_requires_auth():
