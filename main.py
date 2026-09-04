@@ -35,6 +35,7 @@ import tempfile
 import threading
 import time
 import uuid
+import zipfile
 
 # 当以 python main.py 方式启动时，模块名为 __main__，而路由文件通过 from main import ... 导入共享函数，
 # 会导致 main.py 被二次加载触发循环导入。将 __main__ 注册为 main 别名可避免此问题。
@@ -58,7 +59,7 @@ import httpx
 import jwt
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from cryptography.fernet import Fernet
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.encoders import jsonable_encoder as jsonable
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -1420,6 +1421,12 @@ def init_db() -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_finding_feedback_name ON finding_feedback(finding_name)"
     )
+    conn.execute("""CREATE TABLE IF NOT EXISTS code_audit_feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+        audit_id TEXT NOT NULL, finding_key TEXT NOT NULL, is_false_positive INTEGER DEFAULT 0,
+        is_confirmed INTEGER DEFAULT 0, note TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_code_audit_feedback_audit ON code_audit_feedback(user_id, audit_id)")
     # 审计日志表（Vuln Sentinel 专业化进化：阶段一）
     conn.execute(
         """CREATE TABLE IF NOT EXISTS audit_logs (
@@ -16596,6 +16603,60 @@ class RequestHistoryCreate(BaseModel):
     url: str
     headers: dict[str, str] = Field(default_factory=dict, max_length=40)
     body: str = Field(default="", max_length=64 * 1024)
+
+
+@app.post("/api/code-audit")
+async def api_code_audit(file: UploadFile = File(...), user: dict = Depends(require_login)) -> dict:
+    """审计源码文件或 ZIP，返回文件、行号、片段和修复建议。"""
+    from app.services.code_audit import MAX_FILES, audit_source
+    raw = await file.read(10 * 1024 * 1024 + 1)
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(413, "源码包不能超过 10MB")
+    audit_id = f"AUDIT-{uuid.uuid4().hex[:12].upper()}"
+    findings: list[dict] = []
+    filename = file.filename or "source.txt"
+    if filename.lower().endswith(".zip"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                names = [n for n in archive.namelist() if not n.endswith("/") and ".." not in n.replace("\\", "/")]
+                if len(names) > MAX_FILES:
+                    raise HTTPException(413, "ZIP 中源码文件不能超过 200 个")
+                for name in names:
+                    findings.extend(audit_source(name, archive.read(name), audit_id))
+        except zipfile.BadZipFile as exc:
+            raise HTTPException(422, "ZIP 文件格式无效") from exc
+    else:
+        findings = audit_source(filename, raw, audit_id)
+    from app.audit import save_audit_log
+    save_audit_log(user["user_id"], "code_audit", "code_audit", audit_id, {"filename": filename, "finding_count": len(findings)})
+    return {"success": True, "audit_id": audit_id, "findings": findings, "total": len(findings)}
+
+
+class CodeAuditFeedbackRequest(BaseModel):
+    audit_id: str = Field(min_length=5, max_length=40)
+    finding_key: str = Field(min_length=1, max_length=300)
+    is_false_positive: bool = False
+    is_confirmed: bool = False
+    note: str = Field(default="", max_length=500)
+
+
+@app.post("/api/code-audit/feedback")
+async def api_code_audit_feedback(req: CodeAuditFeedbackRequest, user: dict = Depends(require_login)) -> dict:
+    conn = get_db()
+    cur = conn.execute("INSERT INTO code_audit_feedback (user_id, audit_id, finding_key, is_false_positive, is_confirmed, note) VALUES (?, ?, ?, ?, ?, ?)", (user["user_id"], req.audit_id, req.finding_key, int(req.is_false_positive), int(req.is_confirmed), req.note))
+    conn.commit()
+    feedback_id = cur.lastrowid
+    conn.close()
+    return {"success": True, "feedback_id": feedback_id}
+
+
+@app.get("/api/code-audit/feedback")
+async def api_code_audit_feedback_list(audit_id: str = Query(..., min_length=5, max_length=40), user: dict = Depends(require_login)) -> dict:
+    """返回当前用户对本次代码审计结果的最新反馈状态。"""
+    conn = get_db()
+    rows = conn.execute("SELECT audit_id, finding_key, is_false_positive, is_confirmed, note, created_at FROM code_audit_feedback WHERE user_id=? AND audit_id=? ORDER BY id DESC", (user["user_id"], audit_id)).fetchall()
+    conn.close()
+    return {"success": True, "audit_id": audit_id, "feedbacks": [dict(row) for row in rows]}
 
 
 def _validate_auth_headers(headers: dict[str, str]) -> dict[str, str]:
