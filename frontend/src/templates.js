@@ -1326,6 +1326,10 @@ export const APP_TEMPLATE = `</head>
       <span>管理员日志</span>
       <span class="settings-arrow">&#x203A;</span>
     </div>
+    <div class="settings-row" onclick="showProfileTab('scan-tasks')">
+      <span>扫描任务管理</span>
+      <span class="settings-arrow">&#x203A;</span>
+    </div>
 
     <div class="settings-row" onclick="showProfileTab('ai-config')">
 
@@ -1665,6 +1669,14 @@ export const APP_TEMPLATE = `</head>
       <div id="admin-audit-logs" style="margin-top:10px"></div>
       <div style="margin-top:20px;font-size:13px;font-weight:600">邮件投递日志</div>
       <div id="admin-email-logs" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div id="profile-tab-scan-tasks" class="profile-tab" style="display:none">
+    <div class="card">
+      <div class="card-title">扫描任务管理</div>
+      <p class="card-desc">统一查看批量扫描进度，可暂停排队任务、恢复或取消任务。</p>
+      <div id="scan-task-list" style="margin-top:12px">正在读取任务...</div>
     </div>
   </div>
 

@@ -208,6 +208,13 @@ export function usage(limit = 20, offset = 0) {
 export function scan(body) { return apiPost('/api/scan', body); }
 export function history(limit = 50) { return apiGet('/api/history?limit=' + limit); }
 export function deleteHistory() { return apiDelete('/api/history'); }
+export function saveRequestHistory(body) { return apiPost('/api/request-history', body); }
+export function listRequestHistory(limit = 50, offset = 0) { return apiGet('/api/request-history?limit=' + limit + '&offset=' + offset); }
+export function replayRequestHistory(id) { return apiPost('/api/request-history/' + encodeURIComponent(id) + '/replay', {}); }
+export function listScanTasks(status = '') { return apiGet('/api/scan/tasks' + (status ? '?status=' + encodeURIComponent(status) : '')); }
+export function pauseScanTask(id) { return apiPost('/api/scan/tasks/' + encodeURIComponent(id) + '/pause', {}); }
+export function resumeScanTask(id) { return apiPost('/api/scan/tasks/' + encodeURIComponent(id) + '/resume', {}); }
+export function cancelScanTask(id) { return apiPost('/api/scan/tasks/' + encodeURIComponent(id) + '/cancel', {}); }
 export function trend(url, limit = 30) {
   let q = '/api/trend?limit=' + limit;
   if (url) q += '&url=' + encodeURIComponent(url);

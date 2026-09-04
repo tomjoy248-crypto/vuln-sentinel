@@ -1444,6 +1444,22 @@ def init_db() -> None:
         "CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)"
     )
     conn.execute(
+        """CREATE TABLE IF NOT EXISTS request_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            method TEXT NOT NULL,
+            url TEXT NOT NULL,
+            headers_json TEXT DEFAULT '{}',
+            body TEXT DEFAULT '',
+            response_status INTEGER,
+            response_headers_json TEXT DEFAULT '{}',
+            response_preview TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            replayed_at TIMESTAMP
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_request_history_user ON request_history(user_id, id DESC)")
+    conn.execute(
         """CREATE TABLE IF NOT EXISTS auth_challenges (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             token_hash TEXT UNIQUE NOT NULL,
@@ -16563,6 +16579,13 @@ class BatchScanRequest(BaseModel):
     auth_headers: dict[str, str] = Field(default_factory=dict, max_length=30)
 
 
+class RequestHistoryCreate(BaseModel):
+    method: str = "GET"
+    url: str
+    headers: dict[str, str] = Field(default_factory=dict, max_length=40)
+    body: str = Field(default="", max_length=64 * 1024)
+
+
 def _validate_auth_headers(headers: dict[str, str]) -> dict[str, str]:
     """校验认证扫描头并移除危险的逐跳请求头。"""
     blocked = {"host", "content-length", "connection", "transfer-encoding"}
@@ -16575,6 +16598,36 @@ def _validate_auth_headers(headers: dict[str, str]) -> dict[str, str]:
             raise HTTPException(422, "认证请求头长度超出限制")
         clean[name] = str(value)
     return clean
+
+
+@app.post("/api/request-history")
+async def api_save_request_history(req: RequestHistoryCreate, user: dict = Depends(require_login)) -> dict:
+    """保存当前用户的脱敏请求，供后续复测使用。"""
+    from app.services.request_history import save_request
+    try:
+        request_id = save_request(user["user_id"], req.method, req.url, req.headers, req.body)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"success": True, "request_id": request_id}
+
+
+@app.get("/api/request-history")
+async def api_list_request_history(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), user: dict = Depends(require_login)) -> dict:
+    from app.services.request_history import list_requests
+    return {"success": True, "requests": list_requests(user["user_id"], limit, offset), "limit": limit, "offset": offset}
+
+
+@app.post("/api/request-history/{request_id}/replay")
+async def api_replay_request(request_id: int, user: dict = Depends(require_login)) -> dict:
+    """在安全边界内重放当前用户自己的请求，不跟随跨域跳转。"""
+    from app.services.request_history import replay_request
+    try:
+        result = await replay_request(user["user_id"], request_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (ValueError, httpx.HTTPError) as exc:
+        raise HTTPException(422, f"重放失败：{str(exc)[:200]}") from exc
+    return {"success": True, "result": result}
 
 
 @app.post("/api/scan/async")
