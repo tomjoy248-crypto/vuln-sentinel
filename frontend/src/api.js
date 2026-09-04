@@ -248,9 +248,12 @@ export function markAlertRead(id) { return apiPost('/api/alerts/' + id + '/read'
 export function aiAdvisor(body) { return apiPost('/api/ai-advisor', body); }
 export function aiStatus() { return apiGet('/api/ai-status'); }
 
-export function adminAuditLogs(limit = 50, offset = 0, action = '') {
+export function adminAuditLogs(limit = 50, offset = 0, action = '', filters = {}) {
   let q = '/api/admin/audit-logs?limit=' + encodeURIComponent(limit) + '&offset=' + encodeURIComponent(offset);
   if (action) q += '&action=' + encodeURIComponent(action);
+  ['user_id', 'username', 'resource_type', 'resource_id', 'status', 'start_at', 'end_at'].forEach(function(key) {
+    if (filters[key]) q += '&' + key + '=' + encodeURIComponent(filters[key]);
+  });
   return apiGet(q);
 }
 

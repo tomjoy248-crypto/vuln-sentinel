@@ -74,6 +74,11 @@ def get_audit_logs(
     user_id: int | None = None,
     action: str | None = None,
     resource_type: str | None = None,
+    resource_id: str | None = None,
+    username: str | None = None,
+    status: str | None = None,
+    start_at: str | None = None,
+    end_at: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
@@ -102,10 +107,27 @@ def get_audit_logs(
         if resource_type:
             where_parts.append("resource_type = ?")
             params.append(resource_type)
+        if resource_id:
+            where_parts.append("resource_id LIKE ?")
+            params.append(f"%{resource_id}%")
+        if username:
+            where_parts.append("u.username LIKE ?")
+            params.append(f"%{username}%")
+        if status:
+            where_parts.append("json_extract(details_json, '$.status') = ?")
+            params.append(status)
+        if start_at:
+            where_parts.append("created_at >= ?")
+            params.append(start_at)
+        if end_at:
+            where_parts.append("created_at <= ?")
+            params.append(end_at)
         where_clause = "WHERE " + " AND ".join(where_parts) if where_parts else ""
         sql = f"""SELECT id, user_id, action, resource_type, resource_id,
-                         details_json, client_ip, request_id, created_at
+                         details_json, client_ip, request_id, created_at,
+                         u.username AS username
                   FROM audit_logs
+                  LEFT JOIN users u ON u.id = audit_logs.user_id
                   {where_clause}
                   ORDER BY created_at DESC
                   LIMIT ? OFFSET ?"""  # nosec B608 - where_clause 由硬编码列名构建，值通过参数化查询传递
@@ -116,6 +138,7 @@ def get_audit_logs(
             {
                 "id": r["id"],
                 "user_id": r["user_id"],
+                "username": r["username"],
                 "action": r["action"],
                 "resource_type": r["resource_type"],
                 "resource_id": r["resource_id"],

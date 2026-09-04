@@ -229,7 +229,29 @@ async def audit_logging_middleware(
     resource_id = _extract_resource_id(path)
     action = f"{method.lower()}_{resource_type}"
 
-    response = await call_next(request)
+    started = time.time()
+    try:
+        response = await call_next(request)
+    except Exception:
+        try:
+            from app.audit import save_audit_log
+            save_audit_log(
+                user_id=user_id,
+                action=action,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                details={
+                    "path": path,
+                    "method": method,
+                    "status": "error",
+                    "status_code": 500,
+                    "duration_ms": round((time.time() - started) * 1000, 2),
+                },
+                client_ip=client_ip,
+            )
+        except Exception:
+            pass
+        raise
 
     # 请求完成后记录审计日志（不阻塞、不抛异常）
     try:
@@ -237,7 +259,10 @@ async def audit_logging_middleware(
 
         details = {
             "path": path,
+            "method": method,
             "status_code": response.status_code,
+            "status": "success" if response.status_code < 400 else "failure",
+            "duration_ms": round((time.time() - started) * 1000, 2),
         }
         save_audit_log(
             user_id=user_id,

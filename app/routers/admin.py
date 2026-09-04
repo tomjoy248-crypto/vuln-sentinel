@@ -19,7 +19,13 @@ async def api_admin_audit_logs(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     user_id: int | None = Query(None),
-    action: str = "",
+    action: str = Query("", max_length=80),
+    resource_type: str = Query("", max_length=40),
+    resource_id: str = Query("", max_length=120),
+    username: str = Query("", max_length=80),
+    status: str = Query("", max_length=20),
+    start_at: str = Query("", max_length=30),
+    end_at: str = Query("", max_length=30),
     user: dict = Depends(require_login),
 ) -> dict:
     """管理员查询审计日志。"""
@@ -30,10 +36,17 @@ async def api_admin_audit_logs(
     logs = get_audit_logs(
         user_id=user_id,
         action=action or None,
+        resource_type=resource_type or None,
+        resource_id=resource_id or None,
+        username=username or None,
+        status=status or None,
+        start_at=start_at or None,
+        end_at=end_at or None,
         limit=limit,
         offset=offset,
     )
-    return success_response(data={"logs": logs, "limit": limit, "offset": offset})
+    return success_response(data={"logs": logs, "limit": limit, "offset": offset,
+                                  "has_more": len(logs) == limit})
 
 
 @router.get("/api/admin/email-logs", response_model=AuditLogListResponse)

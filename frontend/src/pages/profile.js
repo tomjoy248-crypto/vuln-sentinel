@@ -372,7 +372,12 @@ function loadAdminLogs() {
   let emailEl = document.getElementById('admin-email-logs');
   if (auditEl) auditEl.innerHTML = '<div class="loading">正在读取操作日志...</div>';
   if (emailEl) emailEl.innerHTML = '<div class="loading">正在读取邮件日志...</div>';
-  Promise.all([adminAuditLogs(), adminEmailLogs()]).then(function(results) {
+  let filters = {
+    username: (document.getElementById('admin-log-username') || {}).value || '',
+    resource_id: (document.getElementById('admin-log-target') || {}).value || '',
+    status: (document.getElementById('admin-log-status') || {}).value || ''
+  };
+  Promise.all([adminAuditLogs(50, 0, '', filters), adminEmailLogs()]).then(function(results) {
     let audit = results[0] && results[0].data && results[0].data.logs || [];
     let emails = results[1] && results[1].data && results[1].data.logs || [];
     if (auditEl) auditEl.innerHTML = renderAdminLogRows(audit, 'action');
@@ -384,6 +389,10 @@ function loadAdminLogs() {
   });
 }
 
+document.addEventListener('click', function(event) {
+  if (event.target && event.target.id === 'admin-log-filter') loadAdminLogs();
+});
+
 function renderAdminLogRows(logs, labelKey) {
   if (!logs.length) return '<div class="card-desc">暂无记录</div>';
   return '<div style="display:grid;gap:8px">' + logs.map(function(log) {
@@ -394,7 +403,7 @@ function renderAdminLogRows(logs, labelKey) {
     let status = log.status ? ' · ' + log.status : '';
     return '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px">' +
       '<strong>' + escapeHtml(label) + '</strong>' + escapeHtml(status) +
-      '<div style="color:var(--text-secondary);margin-top:4px">' + escapeHtml(target) + ' · ' + escapeHtml(log.created_at || '') + '</div>' +
+      '<div style="color:var(--text-secondary);margin-top:4px">' + escapeHtml(log.username || ('用户#' + (log.user_id || '匿名'))) + ' · ' + escapeHtml(target) + ' · ' + escapeHtml(log.client_ip || '-') + ' · ' + escapeHtml(log.created_at || '') + '</div>' +
       (log.error_message ? '<div style="color:var(--danger);margin-top:4px">' + escapeHtml(log.error_message) + '</div>' : '') +
       '</div>';
   }).join('') + '</div>';
