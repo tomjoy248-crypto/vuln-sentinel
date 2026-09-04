@@ -26,7 +26,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -37,7 +37,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
           New-Item -ItemType Directory -Force runtime/backend-dist | Out-Null
-          pyinstaller --noconfirm --clean --onefile --name vuln-sentinel-backend --distpath runtime/backend-dist --workpath build/pyinstaller --specpath build --collect-submodules app --hidden-import=main main.py
+          python -m PyInstaller --noconfirm --clean --onefile --name vuln-sentinel-backend --distpath runtime/backend-dist --workpath build/pyinstaller --specpath build --collect-submodules app --hidden-import=main main.py
           npm ci --prefix frontend
           npm run build --prefix frontend
           Push-Location src-tauri
