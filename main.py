@@ -2257,6 +2257,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Scheduler disabled (ENABLE_SCHEDULER=false)")
     # 初始化 Redis 异步扫描队列（如配置了 REDIS_URL）
+    # 认证头可能包含会话令牌，禁止写入 Redis 或其他持久化队列。
     if settings.redis_url:
         try:
             queue = init_scan_queue(settings.redis_url)
@@ -2303,7 +2304,7 @@ async def lifespan(app: FastAPI):
     yield
     # 关闭阶段：按顺序释放资源，每个步骤独立 try/except 确保全部执行
     # 0. 停止 Redis 扫描队列 worker
-    if settings.redis_url:
+    if settings.redis_url and not auth_headers:
         try:
             queue = get_scan_queue()
             await queue.stop_worker()
