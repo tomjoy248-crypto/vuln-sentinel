@@ -16609,9 +16609,9 @@ async def api_async_scan(
             auth_headers=auth_headers,
         )
 
-    # 优先使用 Redis 队列；若 Redis 不可用则降级到内存任务管理器
+    # 优先使用 Redis 队列；含认证头的任务只保留在内存中。
     _use_redis = False
-    if settings.redis_url:
+    if settings.redis_url and not auth_headers:
         try:
             queue = get_scan_queue()
             task_id = await queue.submit(
