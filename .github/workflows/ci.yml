@@ -134,6 +134,14 @@ jobs:
           if (-not (Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -ErrorAction SilentlyContinue)) { throw 'installer missing after tauri build' }
           Write-Host 'Windows desktop smoke checks passed.'
 
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: vuln-sentinel-windows-installer
+          path: src-tauri/target/release/bundle/nsis/*setup.exe
+          if-no-files-found: error
+          retention-days: 14
+
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest

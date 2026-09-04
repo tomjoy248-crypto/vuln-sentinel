@@ -10,27 +10,55 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build complete Windows installer
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          New-Item -ItemType Directory -Force runtime/backend-dist | Out-Null
+          pyinstaller --noconfirm --clean --onefile --name vuln-sentinel-backend --distpath runtime/backend-dist --workpath build/pyinstaller --specpath build --collect-submodules app --hidden-import=main main.py
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+          Push-Location src-tauri
+          npx tauri build
+          Pop-Location
+
       - name: Prepare installer asset
         id: prep
-        shell: bash
+        shell: pwsh
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          mkdir -p release-assets
-          cp "artifacts/windows/Vuln Sentinel Setup.exe" "release-assets/Vuln-Sentinel-${version}-win64-setup.exe"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*setup.exe' | Select-Object -First 1
+          Copy-Item $installer.FullName "release-assets/Vuln-Sentinel-$version-win64-setup.exe"
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
-          files: |
-            release-assets/Vuln-Sentinel-${{ steps.prep.outputs.version }}-win64-setup.exe
+          files: release-assets/Vuln-Sentinel-${{ steps.prep.outputs.version }}-win64-setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
