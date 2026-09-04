@@ -416,7 +416,7 @@ def _render_risk_surface_overview_pdf(
     """将风险面总览写入 PDF 元素列表。"""
     from reportlab.lib import colors
     from reportlab.lib.units import mm
-    from reportlab.platypus import Table, TableStyle
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
     grouped = _grouped_finding_summaries(findings)
     if not grouped:
@@ -464,6 +464,8 @@ def _render_grouped_findings_pdf(
     elements: list[Any], findings: list[dict[str, Any]], styles: Any
 ) -> None:
     """将风险分组摘要写入 PDF 元素列表。"""
+    from reportlab.platypus import Paragraph, Spacer
+
     grouped = _grouped_finding_summaries(findings)
     if not grouped:
         elements.append(Paragraph("暂无需要分组展示的结果。", styles["CN"]))
@@ -612,8 +614,8 @@ logger = logging.getLogger("vuln_sentinel")
 class Settings(AppSettings):
     """应用配置，支持 .env 文件与环境变量覆盖。"""
 
-    app_title: str = "Vuln Sentinel - 安全扫描与修复平台"
-    app_version: str = "1.0.10"
+    app_title: str = "Vuln Sentinel"
+    app_version: str = "11-S"
     build_time: str = "2026-06-25"
     port: int = int(os.environ.get("PORT", "8000"))
     host: str = "0.0.0.0"  # nosec B104 - 默认监听所有接口，生产环境可通过环境变量覆盖
@@ -679,11 +681,14 @@ class Settings(AppSettings):
     log_level: str = Field(default="INFO", description="日志级别")
     tls_verify: bool = Field(default=True, description="是否验证 TLS 证书")
     public_demo_enabled: bool = Field(
-        default=False, description="是否开放公开演示扫描端点"
+        default=True, description="是否开放公开演示扫描端点"
     )
 
 
 settings = Settings()
+# 公开演示仅为开发体验默认开启；生产环境必须显式设置 PUBLIC_DEMO_ENABLED=1。
+if settings.env == "production" and "PUBLIC_DEMO_ENABLED" not in os.environ:
+    settings.public_demo_enabled = False
 core_config.settings = settings
 rate_limiter_module.rate_limiter = rate_limiter_module.create_rate_limiter(
     settings.redis_url,
@@ -834,12 +839,23 @@ def verify_token(token: str) -> dict | None:
 
 
 
-def require_admin_user(user: dict) -> dict:
-    """统一管理员权限守卫。"""
+def require_admin_user(user: dict, detail: str = "权限不足") -> dict:
+    """验证管理员身份并返回用户信息。
+
+    Args:
+        user: 已由登录依赖解析出的当前用户。
+        detail: 非管理员时返回给客户端的业务提示。
+
+    Returns:
+        通过校验的用户字典。
+
+    Raises:
+        HTTPException: 未登录或当前用户不是管理员。
+    """
     if not user:
         raise HTTPException(status_code=401, detail="请先登录")
     if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="仅管理员可执行此操作")
+        raise HTTPException(status_code=403, detail=detail)
     return user
 
 
@@ -3065,22 +3081,6 @@ def _extract_passive_exposure_findings(base_url: str, pages: list[dict]) -> list
                 "confidence_level": "高",
                 "location": {"type": "page", "target": url, "detail": "发现目录索引暴露"},
                 "ai_advice": "**漏洞**：目录列表暴露\n**优先级**：高\n**建议**：关闭目录浏览并清理敏感文件。",
-            })
-        if "source_map" in signals and (url, "source_map_info") not in seen:
-            seen.add((url, "source_map_info"))
-            findings.append({
-                "name": "信息泄露（Source Map）",
-                "severity": "medium",
-                "level": "中风险",
-                "level_zh": "中风险",
-                "owasp": "A05:2021 - Security Misconfiguration",
-                "summary": "页面暴露 source map，可能帮助攻击者还原前端源码和接口结构。",
-                "fix": "生产环境移除 source map 或限制访问权限。",
-                "type": "info_leak",
-                "evidence": {"url": url, "location": "sourceMappingURL / .map 引用", "reason": title or "source map 泄露"},
-                "confidence_level": "高",
-                "location": {"type": "page", "target": url, "detail": "发现 source map 泄露"},
-                "ai_advice": "**漏洞**：信息泄露\n**优先级**：中\n**建议**：关闭或保护 source map。",
             })
         if "html_comment" in signals and (url, "html_comment_info") not in seen:
             seen.add((url, "html_comment_info"))
@@ -10591,7 +10591,7 @@ def generate_fixes(
 async def api_version() -> dict:
     return {
         "version": settings.app_version,
-        "title": settings.app_title,
+        "title": f"{settings.app_title} {settings.app_version}",
         "build_time": settings.build_time,
     }
 
@@ -19098,10 +19098,20 @@ async def api_demo_status(request: Request, user: dict = Depends(require_login))
     await rate_limit_dependency(request)
     try:
         # 检查 nginx 是否在运行
-        result = subprocess.run(
-            ["pgrep", "-f", DEMO_NGINX_CONF], capture_output=True, text=True, timeout=10
-        )
-        running = result.returncode == 0
+        try:
+            if os.name == "nt":
+                # Windows 安装包没有 pgrep，用 tasklist 做兼容探测；配置文件不存在时仍返回可用状态。
+                result = subprocess.run(
+                    ["tasklist"], capture_output=True, text=True, timeout=10
+                )
+                running = "nginx.exe" in result.stdout.lower()
+            else:
+                result = subprocess.run(
+                    ["pgrep", "-f", DEMO_NGINX_CONF], capture_output=True, text=True, timeout=10
+                )
+                running = result.returncode == 0
+        except (FileNotFoundError, subprocess.SubprocessError):
+            running = False
 
         # 快速探测安全头状态
         headers_status = {}

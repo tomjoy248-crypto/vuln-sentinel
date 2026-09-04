@@ -107,7 +107,7 @@ async def api_billing_order_status(
     # 用户只能查看自己的订单
     from main import require_admin_user
     if record.get("user_id") != user["user_id"]:
-        require_admin_user(user)
+        require_admin_user(user, "权限不足")
     status = get_order_status(transaction_id)
     return success_response(data=status)
 

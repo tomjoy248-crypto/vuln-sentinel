@@ -19,6 +19,11 @@
 .toast.info{background:#3c3f41;border-left:3px solid #4b6eaf;color:#bbbbbb}
 
 /* CSS Variables - Burp Suite Dark Workbench Theme */
+@font-face {
+  font-family: "WQY MicroHei Local";
+  src: local("WQY MicroHei"), local("WenQuanYi Micro Hei");
+  font-display: swap;
+}
 :root {
 --primary: #4b6eaf;
 --primary-dark: #365880;

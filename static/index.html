@@ -4,19 +4,46 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
   <meta name="description" content="Vuln Sentinel - 安全修复闭环平台：扫描发现风险、生成修复配置、复测验证、导出报告">
+  <meta name="application-version" content="11-S">
   <meta name="theme-color" content="#0f172a">
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="apple-touch-icon" href="./icon-192x192.png">
   <title>Vuln Sentinel</title>
   <style>
-    html, body { width: 100%; min-height: 100%; margin: 0; background: linear-gradient(180deg, #0f172a 0%, #111827 100%); color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; }
+    html, body { width: 100%; min-height: 100%; margin: 0; background: linear-gradient(180deg, #0f172a 0%, #111827 100%); color: #e5e7eb; font-family: "WQY MicroHei Local", "WQY MicroHei", "Noto Sans CJK", "PingFang SC", -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; }
     #app { min-height: 100vh; }
+    @font-face { font-family: "WQY MicroHei Local"; src: local("WQY MicroHei"), local("WenQuanYi Micro Hei"); }
+    .scan-depth-opt { cursor: pointer; }
+    .ai-chat { background: var(--card) !important; opacity: 1 !important; }
+    .ai-msg.bot { color: #bbbbbb; }
+    @media (max-width: 640px) { .ai-chat { max-width: 640px; } .ai-msg { font-size: 15px; } }
   </style>
-  <script type="module" crossorigin src="./assets/index-BRNWxXDS.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-gYnEhJOX.css">
+  <script type="module" crossorigin src="./assets/index-BEmJf3v0.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DQbF6Kr1.css">
 </head>
 <body>
   <div id="app"></div>
+  <template id="scan-depth-fallback"><label class="scan-depth-opt" data-value="standard">标准扫描</label></template>
+  <script>
+    // Keep keyboard accessibility available during the short Vite bootstrap window.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        var aiChat = document.getElementById('ai-chat');
+        if (aiChat && aiChat.classList.contains('show')) aiChat.classList.remove('show');
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "/") {
+        e.preventDefault();
+        var button = document.querySelector('.ai-advisor-fab, #ai-advisor-btn');
+        if (button) button.click();
+      }
+    });
+    document.addEventListener('click', function (e) {
+      var label = e.target.closest && e.target.closest('.scan-depth-opt');
+      if (!label) return;
+      document.querySelectorAll('.scan-depth-opt').forEach(function (item) { item.classList.toggle('active', item === label); });
+    });
+  </script>
 </body>
 </html>

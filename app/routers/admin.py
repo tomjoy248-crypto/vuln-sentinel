@@ -24,7 +24,7 @@ async def api_admin_audit_logs(
 ) -> dict:
     """管理员查询审计日志。"""
     from main import require_admin_user
-    require_admin_user(user)
+    require_admin_user(user, "仅管理员可查询审计日志")
     from app.audit import get_audit_logs
 
     logs = get_audit_logs(
@@ -46,7 +46,7 @@ async def api_admin_email_logs(
 ) -> dict:
     """管理员查询邮件投递状态，不返回正文、令牌或完整邮箱地址。"""
     from main import require_admin_user
-    require_admin_user(user)
+    require_admin_user(user, "仅管理员可查询邮件日志")
     from app.services.email_service import get_email_delivery_logs
 
     logs = get_email_delivery_logs(

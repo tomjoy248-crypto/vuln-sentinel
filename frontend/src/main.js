@@ -1052,7 +1052,7 @@ function showEvolutionDetail(name) {
     html += '      <div class="ai-msg-avatar">顾问</div>';
     html += '      <div class="ai-msg-body">';
     html += '        <div class="ai-msg-name">安全顾问</div>';
-    html += '        <div class="ai-msg-content">你好！我是漏洞哨兵的安全顾问。<br><br>我可以帮你：<br>• 分析扫描报告与漏洞优先级<br>• 给出可执行的安全修复步骤<br>• 解释安全概念与配置示例<br>• 基于你的历史给出个性化建议<br><br>试试上方的快捷问题，或直接输入想了解的安全问题。</div>';
+    html += '        <div class="ai-msg-content">你好！我是Vuln Sentinel的安全顾问。<br><br>我可以帮你：<br>• 分析扫描报告与漏洞优先级<br>• 给出可执行的安全修复步骤<br>• 解释安全概念与配置示例<br>• 基于你的历史给出个性化建议<br><br>试试上方的快捷问题，或直接输入想了解的安全问题。</div>';
     html += '      </div>';
     html += '    </div>';
     html += '  </div>';

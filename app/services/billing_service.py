@@ -275,7 +275,7 @@ def admin_recharge_user(
     # 服务层必须返回统一的业务异常，不能把路由层 HTTPException 泄漏给调用方。
     # 空用户或非管理员都按权限不足处理，避免服务接口出现 401/403 契约分裂。
     if not admin_user or admin_user.get("role") != "admin":
-        raise ForbiddenException("仅管理员可执行此操作")
+        raise ForbiddenException("权限不足")
     if credits <= 0:
         raise BusinessException("充值积分必须大于 0", code="INVALID_AMOUNT", status_code=400)
 

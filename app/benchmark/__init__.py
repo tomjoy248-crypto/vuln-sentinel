@@ -63,4 +63,4 @@ __all__ = [
     "generate_json_report",
 ]
 
-__version__ = "1.0.10"
+__version__ = "11-S"
