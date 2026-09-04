@@ -2152,6 +2152,7 @@ async def _run_scan_task(
     authorized: bool,
     verification_token: str | None = None,
     progress_cb: Callable[[int, str], Any] | None = None,
+    auth_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """执行一次扫描任务，供内存管理器与 Redis 队列共用。"""
     from app.services.scan_service import run_plugin_scan
@@ -2160,7 +2161,7 @@ async def _run_scan_task(
     if progress_cb:
         progress_cb(10, "初始化扫描")
     parsed = urlparse(raw_url)
-    headers, is_https, final_url, err = await fetch_headers(raw_url)
+    headers, is_https, final_url, err = await fetch_headers(raw_url, headers=auth_headers or {})
     if err:
         raise RuntimeError(f"无法连接目标: {err}")
     if progress_cb:
@@ -2217,6 +2218,7 @@ async def _redis_scan_runner(task: RedisScanTask) -> dict[str, Any]:
         user_id=task.user_id,
         deep=task.deep,
         authorized=task.authorized,
+        auth_headers=task.auth_headers,
     )
 
 
@@ -4468,7 +4470,9 @@ async def check_host_reachable(host: str) -> str | None:
         return "域名解析失败"
 
 
-async def fetch_headers(url: str) -> tuple[dict, bool, str, str | None]:
+async def fetch_headers(
+    url: str, headers: dict[str, str] | None = None
+) -> tuple[dict, bool, str, str | None]:
     """获取目标 URL 的响应头，区分各种失败情况。
     返回: (headers, is_https, final_url, error)
     error 为 None 表示成功；否则为分类错误信息。
@@ -4545,6 +4549,7 @@ async def fetch_headers(url: str) -> tuple[dict, bool, str, str | None]:
             pass
 
     client = get_httpx_client()
+    request_headers = headers or {}
 
     # 辅助函数：根据 HTTP 状态码分类
     def classify_status(status: int, resp_headers: dict) -> tuple:
@@ -4585,7 +4590,7 @@ async def fetch_headers(url: str) -> tuple[dict, bool, str, str | None]:
                 pass
         try:
             resp = await asyncio.wait_for(
-                client.head("https://" + host + path, follow_redirects=False),
+                client.head("https://" + host + path, headers=request_headers, follow_redirects=False),
                 timeout=5.0,
             )
             h = dict(resp.headers)
@@ -4632,7 +4637,7 @@ async def fetch_headers(url: str) -> tuple[dict, bool, str, str | None]:
 
         async def _try_head() -> tuple[dict, bool, str, str | None]:
             resp = await asyncio.wait_for(
-                client.head(url, follow_redirects=False),
+                client.head(url, headers=request_headers, follow_redirects=False),
                 timeout=6.0,
             )
             h = dict(resp.headers)
@@ -4644,7 +4649,7 @@ async def fetch_headers(url: str) -> tuple[dict, bool, str, str | None]:
 
         async def _try_get() -> tuple[dict, bool, str, str | None]:
             resp = await asyncio.wait_for(
-                client.stream("GET", url, follow_redirects=False).__aenter__(),
+                client.stream("GET", url, headers=request_headers, follow_redirects=False).__aenter__(),
                 timeout=6.0,
             )
             try:
@@ -16544,6 +16549,31 @@ class AsyncScanRequest(BaseModel):
     deep: bool = False
     authorized: bool = False
     verification_token: str | None = None
+    auth_headers: dict[str, str] = Field(default_factory=dict, max_length=30)
+
+
+class BatchScanRequest(BaseModel):
+    """批量扫描请求，限制数量以保护本地客户端资源。"""
+
+    urls: list[str] = Field(min_length=1, max_length=20)
+    deep: bool = False
+    authorized: bool = False
+    verification_token: str | None = None
+    auth_headers: dict[str, str] = Field(default_factory=dict, max_length=30)
+
+
+def _validate_auth_headers(headers: dict[str, str]) -> dict[str, str]:
+    """校验认证扫描头并移除危险的逐跳请求头。"""
+    blocked = {"host", "content-length", "connection", "transfer-encoding"}
+    clean: dict[str, str] = {}
+    for key, value in headers.items():
+        name = str(key).strip()
+        if not name or name.lower() in blocked:
+            continue
+        if len(name) > 128 or len(str(value)) > 4096:
+            raise HTTPException(422, "认证请求头长度超出限制")
+        clean[name] = str(value)
+    return clean
 
 
 @app.post("/api/scan/async")
@@ -16552,6 +16582,7 @@ async def api_async_scan(
 ) -> dict:
     """提交异步扫描任务，返回 task_id 供前端轮询。"""
     raw_url = req.url.strip()
+    auth_headers = _validate_auth_headers(req.auth_headers)
     if not raw_url.startswith(("http://", "https://")):
         raw_url = "https://" + raw_url
 
@@ -16574,6 +16605,7 @@ async def api_async_scan(
             authorized=req.authorized,
             verification_token=req.verification_token,
             progress_cb=progress_cb,
+            auth_headers=auth_headers,
         )
 
     # 优先使用 Redis 队列；若 Redis 不可用则降级到内存任务管理器
@@ -16589,6 +16621,7 @@ async def api_async_scan(
                     depth="deep" if req.deep else "standard",
                     deep=req.deep,
                     authorized=req.authorized,
+                    auth_headers=auth_headers,
                 )
             )
             _use_redis = True
@@ -16605,8 +16638,53 @@ async def api_async_scan(
             depth="deep" if req.deep else "standard",
             scan_func=_scan_fn,
             deep=req.deep,
+            auth_headers=auth_headers,
         )
     return {"task_id": task_id, "status": "pending", "url": raw_url}
+
+
+@app.post("/api/scan/batch")
+async def api_batch_scan(
+    req: BatchScanRequest, user: dict = Depends(require_login)
+) -> dict:
+    """批量提交授权扫描任务，返回任务清单供统一轮询。"""
+    auth_headers = _validate_auth_headers(req.auth_headers)
+    tasks: list[dict[str, str]] = []
+    for item in req.urls:
+        raw_url = item.strip()
+        if not raw_url.startswith(("http://", "https://")):
+            raw_url = "https://" + raw_url
+        valid, reason, code = validate_scan_target_full(
+            raw_url,
+            user_id=user["user_id"],
+            authorized=req.authorized,
+            deep=req.deep,
+            verification_token=req.verification_token,
+            allowed_demo=True,
+        )
+        if not valid:
+            raise HTTPException(403, detail={"error": reason, "code": code, "url": raw_url})
+
+        async def _scan_fn(scan_url: str, progress_cb=None, **kwargs):
+            return await _run_scan_task(
+                url=scan_url,
+                user_id=user["user_id"],
+                deep=req.deep,
+                authorized=req.authorized,
+                verification_token=req.verification_token,
+                progress_cb=progress_cb,
+                auth_headers=auth_headers,
+            )
+
+        task_id = await _scan_task_manager.submit(
+            url=raw_url,
+            user_id=user["user_id"],
+            depth="deep" if req.deep else "standard",
+            scan_func=_scan_fn,
+            deep=req.deep,
+        )
+        tasks.append({"task_id": task_id, "url": raw_url, "status": "pending"})
+    return {"success": True, "tasks": tasks, "total": len(tasks)}
 
 
 @app.get("/api/scan/tasks/{task_id}")
@@ -16704,6 +16782,36 @@ async def api_cancel_scan_task(
     if not cancelled:
         raise HTTPException(409, "任务已完成或无法取消")
     return {"task_id": task_id, "status": "cancelled"}
+
+
+@app.post("/api/scan/tasks/{task_id}/pause")
+async def api_pause_scan_task(
+    task_id: str, user: dict = Depends(require_login)
+) -> dict:
+    """暂停尚未开始的扫描任务，避免中断正在进行的目标请求。"""
+    task = _scan_task_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if task.user_id != user["user_id"]:
+        raise HTTPException(403, "无权操作此任务")
+    if not await _scan_task_manager.pause_task(task_id):
+        raise HTTPException(409, "任务已开始或无法暂停")
+    return {"task_id": task_id, "status": "paused"}
+
+
+@app.post("/api/scan/tasks/{task_id}/resume")
+async def api_resume_scan_task(
+    task_id: str, user: dict = Depends(require_login)
+) -> dict:
+    """恢复已暂停的扫描任务。"""
+    task = _scan_task_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if task.user_id != user["user_id"]:
+        raise HTTPException(403, "无权操作此任务")
+    if not await _scan_task_manager.resume_task(task_id):
+        raise HTTPException(409, "任务未暂停或无法恢复")
+    return {"task_id": task_id, "status": "pending"}
 
 
 @app.post("/api/public-demo-scan", response_model=None)

@@ -34,6 +34,7 @@ class ScanTask:
     depth: str
     deep: bool
     authorized: bool
+    auth_headers: dict[str, str] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
@@ -44,6 +45,7 @@ class ScanTask:
             "depth": self.depth,
             "deep": self.deep,
             "authorized": self.authorized,
+            "auth_headers": self.auth_headers,
             "created_at": self.created_at,
         }
 

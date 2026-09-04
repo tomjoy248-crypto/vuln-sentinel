@@ -1,6 +1,6 @@
 [package]
 name = "vuln-sentinel-desktop"
-version = "1.0.10"
+version = "11.0.0"
 edition = "2021"
 build = "build.rs"
 

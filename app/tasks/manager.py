@@ -75,6 +75,7 @@ class TaskStatus(str, Enum):
     """
 
     PENDING = "pending"
+    PAUSED = "paused"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -185,6 +186,7 @@ class ScanTaskManager:
         self._tasks: dict[str, ScanTask] = {}
         # task_id -> asyncio.Task（后台协程句柄，用于取消）
         self._handles: dict[str, asyncio.Task] = {}
+        self._pause_events: dict[str, asyncio.Event] = {}
 
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._lock = asyncio.Lock()
@@ -233,6 +235,8 @@ class ScanTaskManager:
 
         async with self._lock:
             self._tasks[task_id] = task
+            self._pause_events[task_id] = asyncio.Event()
+            self._pause_events[task_id].set()
 
         # 调度后台协程：fire-and-forget，异常在 _run_task 内部消化
         handle = asyncio.create_task(self._run_task(task, scan_func, kwargs))
@@ -293,9 +297,13 @@ class ScanTaskManager:
         call_kwargs["progress_cb"] = _progress_cb
 
         try:
+            # 暂停只作用于尚未开始的任务，避免中断目标站点请求。
+            pause_event = self._pause_events.get(task.task_id)
+            if pause_event is not None:
+                await pause_event.wait()
             async with self._semaphore:
                 # 排队期间若已被取消，直接退出，不占用执行槽位
-                if task.status == TaskStatus.CANCELLED:
+                if task.status in (TaskStatus.CANCELLED, TaskStatus.PAUSED):
                     return
 
                 task.status = TaskStatus.RUNNING
@@ -422,6 +430,7 @@ class ScanTaskManager:
         return {
             "total": len(self._tasks),
             "pending": counts[TaskStatus.PENDING.value],
+            "paused": counts[TaskStatus.PAUSED.value],
             "running": counts[TaskStatus.RUNNING.value],
             "completed": counts[TaskStatus.COMPLETED.value],
             "failed": counts[TaskStatus.FAILED.value],
@@ -475,6 +484,30 @@ class ScanTaskManager:
 
         logger.info("Task cancel requested: id=%s", task_id)
         return True
+
+    async def pause_task(self, task_id: str) -> bool:
+        """暂停尚未开始的任务，避免中断正在进行的网络请求。"""
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.status != TaskStatus.PENDING:
+                return False
+            task.status = TaskStatus.PAUSED
+            event = self._pause_events.get(task_id)
+            if event:
+                event.clear()
+            return True
+
+    async def resume_task(self, task_id: str) -> bool:
+        """恢复已暂停任务。"""
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.status != TaskStatus.PAUSED:
+                return False
+            task.status = TaskStatus.PENDING
+            event = self._pause_events.get(task_id)
+            if event:
+                event.set()
+            return True
 
     # ------------------------------------------------------------------
     # 清理
