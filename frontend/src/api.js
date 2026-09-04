@@ -12,7 +12,14 @@ function buildApiBases() {
   if (typeof window !== 'undefined' && window.__CONFIG__ && window.__CONFIG__.api_base_url) {
     bases.push(normalizeBase(window.__CONFIG__.api_base_url));
   }
-  if (typeof window !== 'undefined' && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
+  const isTauriWindow = typeof window !== 'undefined' && (
+    window.location.protocol === 'tauri:' ||
+    window.location.protocol === 'asset:' ||
+    window.location.hostname === 'tauri.localhost'
+  );
+  if (typeof window !== 'undefined' &&
+      (window.location.protocol === 'http:' || window.location.protocol === 'https:') &&
+      !isTauriWindow) {
     bases.push('');
   }
   bases.push('http://127.0.0.1:8011');
@@ -20,6 +27,29 @@ function buildApiBases() {
 }
 
 export const API_BASE = buildApiBases()[0] || '';
+
+/**
+ * Parse a JSON API response without exposing the browser's raw JSON parse error.
+ * A HTML response normally means the desktop shell reached its static page
+ * instead of the local backend, so report that actionable condition directly.
+ */
+export async function parseJsonResponse(resp) {
+  const contentType = (resp.headers && resp.headers.get('content-type')) || '';
+  const text = await resp.text();
+  const trimmed = text.trim();
+  const looksLikeHtml = /^<!doctype\s+html\b/i.test(trimmed) || /^<html[\s>]/i.test(trimmed);
+
+  if (looksLikeHtml || (!contentType.toLowerCase().includes('json') && trimmed.startsWith('<'))) {
+    throw new Error('本地后端没有正确响应，请确认安装包内本地服务已启动后重试');
+  }
+
+  if (!trimmed) return {};
+  try {
+    return JSON.parse(trimmed);
+  } catch (error) {
+    throw new Error('本地后端返回了无效数据，请重启安装包后重试');
+  }
+}
 
 function delay(ms) {
   return new Promise(function(resolve) { setTimeout(resolve, ms); });
@@ -43,6 +73,14 @@ export function isLoggedIn() {
 
 export function getUsername() {
   try { return localStorage.getItem('vs_username') || ''; } catch (e) { return ''; }
+}
+
+export function getRole() {
+  try { return localStorage.getItem('vs_role') || 'member'; } catch (e) { return 'member'; }
+}
+
+export function setRole(role) {
+  try { localStorage.setItem('vs_role', role || 'member'); } catch (e) {}
 }
 
 export function authHeaders() {
@@ -108,7 +146,7 @@ export async function apiPost(url, body) {
     method: 'POST',
     body: JSON.stringify(body)
   });
-  const data = await resp.json().catch(() => ({}));
+  const data = await parseJsonResponse(resp);
   if (data && typeof data === 'object') {
     data._status = resp.status;
     data._statusText = resp.statusText;
@@ -118,7 +156,7 @@ export async function apiPost(url, body) {
 
 export async function apiGet(url) {
   const resp = await authFetch(url);
-  const data = await resp.json().catch(() => ({}));
+  const data = await parseJsonResponse(resp);
   if (data && typeof data === 'object') {
     data._status = resp.status;
     data._statusText = resp.statusText;
@@ -128,7 +166,7 @@ export async function apiGet(url) {
 
 export async function apiDelete(url) {
   const resp = await authFetch(url, { method: 'DELETE' });
-  const data = await resp.json().catch(() => ({}));
+  const data = await parseJsonResponse(resp);
   if (data && typeof data === 'object') {
     data._status = resp.status;
     data._statusText = resp.statusText;
@@ -141,7 +179,7 @@ export async function apiPatch(url, body) {
     method: 'PATCH',
     body: JSON.stringify(body)
   });
-  const data = await resp.json().catch(() => ({}));
+  const data = await parseJsonResponse(resp);
   if (data && typeof data === 'object') {
     data._status = resp.status;
     data._statusText = resp.statusText;
@@ -209,6 +247,19 @@ export function markAlertRead(id) { return apiPost('/api/alerts/' + id + '/read'
 // AI Advisor
 export function aiAdvisor(body) { return apiPost('/api/ai-advisor', body); }
 export function aiStatus() { return apiGet('/api/ai-status'); }
+
+export function adminAuditLogs(limit = 50, offset = 0, action = '') {
+  let q = '/api/admin/audit-logs?limit=' + encodeURIComponent(limit) + '&offset=' + encodeURIComponent(offset);
+  if (action) q += '&action=' + encodeURIComponent(action);
+  return apiGet(q);
+}
+
+export function adminEmailLogs(limit = 50, offset = 0, emailType = '', status = '') {
+  let q = '/api/admin/email-logs?limit=' + encodeURIComponent(limit) + '&offset=' + encodeURIComponent(offset);
+  if (emailType) q += '&email_type=' + encodeURIComponent(emailType);
+  if (status) q += '&status=' + encodeURIComponent(status);
+  return apiGet(q);
+}
 
 // SRC 报告导出 / 验证复现 / 反馈
 export function exportSRCReport(body) {

@@ -7,7 +7,7 @@ import { initTicketsPage, loadTickets } from './pages/tickets.js';
 import { addAsset } from './pages/assets.js';
 import { updateUserCredits, loadCreditsUsage } from './pages/profile.js';
 import { init as initBillingPage, loadBillingPage } from './pages/billing.js';
-import { publicConfig } from './api.js';
+import { API_BASE, parseJsonResponse, publicConfig, setRole } from './api.js';
 
 let lastFixerResult = null;
 
@@ -317,8 +317,6 @@ function getUsername() { try { return localStorage.getItem('vs_username') || '';
 // ========== Auth & 令牌 Management ==========
 
 // authFetch: 自动附加 Authorization header 的 fetch 封装
-var API_BASE = '';
-
 function authHeaders() {
   let token = getToken();
   return token ? { 'Authorization': 'Bearer ' + token } : {};
@@ -367,8 +365,8 @@ async function loadAuthChallenge() {
   let answerEl = document.getElementById('login-challenge-answer');
   let answerElReg = document.getElementById('reg-challenge-answer');
   try {
-    let resp = await fetch('/api/auth/challenge', { credentials: 'same-origin' });
-    let data = await resp.json();
+    let resp = await authFetch('/api/auth/challenge', { skipAuthExpiry: true });
+    let data = await parseJsonResponse(resp);
     if (data && data.data) data = data.data;
     if (qEl) qEl.textContent = '验证码：' + (data.question || '请先刷新验证码');
     if (qElReg) qElReg.textContent = '验证码：' + (data.question || '请先刷新验证码');
@@ -479,7 +477,7 @@ function doResetPassword() {
   authFetch('/api/reset-password', {
     method: 'POST',
     body: JSON.stringify({ new_password: pw1 })
-  }).then(function(r) { return r.json(); }).then(function(data) {
+  }).then(parseJsonResponse).then(function(data) {
     if (data.success) {
       showToast('密码已修改，请用新密码登录');
       doLogout();
@@ -507,11 +505,12 @@ function doLogin() {
     skipAuthExpiry: true,
     method: 'POST',
     body: JSON.stringify({ username: username, password: password })
-  }).then(function(resp) { return resp.json(); }).then(function(data) {
+  }).then(parseJsonResponse).then(function(data) {
     let token = data.token || (data.data && data.data.token);
     let resolvedUsername = data.username || (data.data && data.data.username) || username;
     if (token) {
       setToken(token);
+      setRole(data.role || (data.data && data.data.role) || 'member');
       try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
@@ -556,11 +555,12 @@ function doRegister() {
     skipAuthExpiry: true,
     method: 'POST',
     body: JSON.stringify(payload)
-  }).then(function(resp) { return resp.json(); }).then(function(data) {
+  }).then(parseJsonResponse).then(function(data) {
     let token = data.token || (data.data && data.data.token);
     let resolvedUsername = data.username || (data.data && data.data.username) || username;
     if (token) {
       setToken(token);
+      setRole(data.role || (data.data && data.data.role) || 'member');
       try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
@@ -582,7 +582,7 @@ function doRegister() {
 
 function doLogout() {
   removeToken();
-  try { localStorage.removeItem('vs_username'); } catch(e) {}
+  try { localStorage.removeItem('vs_username'); localStorage.removeItem('vs_role'); } catch(e) {}
   updateAuthUI();
   let badge = document.getElementById('nav-alert-badge');
   if (badge) badge.style.display = 'none';

@@ -139,6 +139,7 @@ class MessageResponse(BaseModel):
 
     success: bool = True
     message: str = "ok"
+    data: Any | None = None
 
 
 class TeamListResponse(BaseModel):

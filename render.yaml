@@ -38,9 +38,9 @@ services:
       - key: ENABLE_SCHEDULER
         value: "true"
       - key: PUBLIC_DEMO_ENABLED
-        value: "1"
+        value: "0"
       - key: FREE_TRIAL_ENABLED
-        value: "1"
+        value: "0"
       - key: ENABLE_METRICS
         value: "1"
       - key: METRICS_PUBLIC

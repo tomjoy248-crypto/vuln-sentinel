@@ -1420,6 +1420,61 @@ async def test_discover_dedupes_same_url_method():
     assert len(homepage_urls) == 1
 
 
+async def test_discover_probes_public_files_and_manifest_urls():
+    robots = "User-agent: *\nDisallow: /admin\n"
+    manifest = json.dumps(
+        {
+            "name": "Vuln Sentinel",
+            "start_url": "/app/",
+            "scope": "/app/",
+            "icons": [{"src": "/icon.png"}],
+        }
+    )
+    pages = {
+        "https://example.com/": httpx.Response(
+            200, text="<html><body>home</body></html>", headers={"content-type": "text/html"}
+        ),
+        "https://example.com/robots.txt": httpx.Response(200, text=robots),
+        "https://example.com/security.txt": httpx.Response(
+            200,
+            text="Contact: mailto:sec@example.com\nPolicy: https://example.com/security-policy\n",
+            headers={"content-type": "text/plain"},
+        ),
+        "https://example.com/manifest.json": httpx.Response(
+            200,
+            text=manifest,
+            headers={"content-type": "application/json"},
+        ),
+        "https://example.com/admin": httpx.Response(
+            200, text="<html><body>admin</body></html>", headers={"content-type": "text/html"}
+        ),
+        "https://example.com/app/": httpx.Response(
+            200, text="<html><body>app</body></html>", headers={"content-type": "text/html"}
+        ),
+        "https://example.com/security-policy": httpx.Response(
+            200, text="<html><body>policy</body></html>", headers={"content-type": "text/html"}
+        ),
+        "https://example.com/opensource": httpx.Response(404),
+        "https://example.com/sitemap.xml": httpx.Response(404),
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return pages.get(str(request.url), httpx.Response(404))
+
+    crawler = DiscoveryCrawler(max_pages=6, total_timeout=10.0)
+    with _mock_httpx(handler):
+        endpoints = await crawler.discover("https://example.com/")
+
+    urls = {ep.url for ep in endpoints}
+    assert "https://example.com/admin" in urls
+    assert "https://example.com/manifest.json" in urls
+    assert "https://example.com/security.txt" in urls
+    assert "https://example.com/app/" in urls
+    assert "https://example.com/security-policy" in urls
+    admin_ep = next(ep for ep in endpoints if ep.url == "https://example.com/admin")
+    assert admin_ep.source == "robots"
+
+
 # ===========================================================================
 # cve_sources.py tests
 # ===========================================================================

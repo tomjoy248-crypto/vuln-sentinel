@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import sqlite3
 import time
+import hashlib
+import secrets
 import jwt
 from datetime import datetime
 
@@ -34,6 +36,7 @@ from main import (
     limiter_password_reset,
     limiter_password_reset_confirm,
     limiter_register,
+    limiter_auth_challenge,
     require_login,
     verify_password,
     _TEST_MODE,
@@ -41,17 +44,68 @@ from main import (
 from models import LoginRequest, RegisterRequest
 
 router = APIRouter(tags=["认证"])
+AUTH_CHALLENGE_TTL_SECONDS = 30
+
+
+def _record_auth_event(
+    action: str,
+    username: str,
+    client_ip: str,
+    user_id: int | None = None,
+) -> None:
+    """记录认证事件，不写入密码、验证码或令牌。"""
+    from app.audit import save_audit_log
+
+    save_audit_log(
+        user_id=user_id,
+        action=action,
+        resource_type="auth",
+        details={"username": (username or "")[:100]},
+        client_ip=client_ip,
+    )
+
+
+def _ensure_auth_challenge_table() -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS auth_challenges (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_hash TEXT UNIQUE NOT NULL,
+                client_ip TEXT,
+                expires_at REAL NOT NULL,
+                used_at TEXT,
+                created_at TEXT NOT NULL
+            )"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_auth_challenges_expires ON auth_challenges(expires_at)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _make_auth_challenge() -> dict:
-    a = int(time.time()) % 9 + 1
-    b = (int(time.time()) // 7) % 9 + 1
+    a = secrets.randbelow(9) + 1
+    b = secrets.randbelow(9) + 1
     answer = str(a + b)
-    token = jwt.encode({"a": a, "b": b, "ans": answer, "exp": time.time() + 300, "purpose": "auth_challenge"}, __import__("main").settings.jwt_secret, algorithm="HS256")
+    token = jwt.encode(
+        {
+            "a": a,
+            "b": b,
+            "ans": answer,
+            "jti": secrets.token_urlsafe(16),
+            "exp": time.time() + AUTH_CHALLENGE_TTL_SECONDS,
+            "purpose": "auth_challenge",
+        },
+        __import__("main").settings.jwt_secret,
+        algorithm="HS256",
+    )
     return {"token": token, "question": f"{a} + {b} = ?", "hint": "请输入验证码答案"}
 
 
-def _verify_auth_challenge(token: str, answer: str) -> None:
+def _verify_auth_challenge(token: str, answer: str, client_ip: str = "") -> None:
     if _TEST_MODE or not is_production(__import__("main").settings) or os.environ.get("AUTH_CHALLENGE_DISABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
         return
     if not token or not answer:
@@ -62,6 +116,21 @@ def _verify_auth_challenge(token: str, answer: str) -> None:
         raise BusinessException("验证码已过期，请刷新重试")
     if payload.get("purpose") != "auth_challenge" or str(payload.get("ans", "")) != str(answer).strip():
         raise BusinessException("验证码错误")
+    _ensure_auth_challenge_table()
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            """UPDATE auth_challenges
+               SET used_at = ?
+               WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?""",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), token_hash, time.time()),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            raise BusinessException("验证码已过期或已使用，请刷新重试")
+    finally:
+        conn.close()
 
 
 # ---------- 请求模型 ----------
@@ -80,8 +149,32 @@ class PasswordResetConfirmModel(BaseModel):
 
 
 @router.get("/api/auth/challenge", response_model=MessageResponse)
-async def api_auth_challenge() -> dict:
-    return success_response(data=_make_auth_challenge())
+async def api_auth_challenge(request: Request) -> dict:
+    client_ip = get_client_ip(request)
+    if not await limiter_auth_challenge.is_allowed(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail="验证码请求过于频繁，请 1 分钟后再试",
+            headers={"Retry-After": "60"},
+        )
+    challenge = _make_auth_challenge()
+    _ensure_auth_challenge_table()
+    conn = get_db()
+    try:
+        conn.execute(
+            """INSERT INTO auth_challenges (token_hash, client_ip, expires_at, created_at)
+               VALUES (?, ?, ?, ?)""",
+            (
+                hashlib.sha256(challenge["token"].encode("utf-8")).hexdigest(),
+                client_ip,
+                time.time() + AUTH_CHALLENGE_TTL_SECONDS,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return success_response(data=challenge)
 
 
 @router.post("/api/register", response_model=RegisterResponse)
@@ -93,7 +186,7 @@ async def api_register(req: RegisterRequest, request: Request) -> dict:
             detail="注册请求过于频繁，请稍后再试",
             headers={"Retry-After": "60"},
         )
-    _verify_auth_challenge(req.challenge_token, req.challenge_answer)
+    _verify_auth_challenge(req.challenge_token, req.challenge_answer, client_ip)
     conn = get_db()
     try:
         existing = conn.execute(
@@ -118,6 +211,7 @@ async def api_register(req: RegisterRequest, request: Request) -> dict:
             "SELECT * FROM users WHERE username COLLATE NOCASE=?", (req.username,)
         ).fetchone()
         user = dict(user_row)
+        _record_auth_event("register_success", req.username, client_ip, user["id"])
         token = create_token(
             user["id"],
             user["username"],
@@ -147,17 +241,20 @@ async def api_login(req: LoginRequest, request: Request) -> dict:
             detail="登录请求过于频繁，请稍后再试",
             headers={"Retry-After": "60"},
         )
-    _verify_auth_challenge(req.challenge_token, req.challenge_answer)
+    _verify_auth_challenge(req.challenge_token, req.challenge_answer, client_ip)
     conn = get_db()
     try:
         user_row = conn.execute(
             "SELECT * FROM users WHERE username COLLATE NOCASE=?", (req.username,)
         ).fetchone()
         if not user_row:
+            _record_auth_event("login_failed", req.username, client_ip)
             raise UnauthorizedException("用户名或密码错误")
         user = dict(user_row)
         if not verify_password(req.password, user["password"]):
+            _record_auth_event("login_failed", req.username, client_ip, user["id"])
             raise UnauthorizedException("用户名或密码错误")
+        _record_auth_event("login_success", req.username, client_ip, user["id"])
         token = create_token(
             user["id"],
             user["username"],

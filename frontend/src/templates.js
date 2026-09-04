@@ -1021,7 +1021,7 @@ export const APP_TEMPLATE = `</head>
 
           <div id="auth-challenge-question" class="auth-form-hint" style="margin-bottom:8px">验证码加载中...</div>
           <input type="hidden" id="auth-challenge-token" />
-          <input type="text" id="login-challenge-answer" placeholder="验证码答案" aria-label="验证码答案" />
+          <input type="text" id="login-challenge-answer" placeholder="验证码答案（30秒有效）" aria-label="验证码答案（30秒有效）" />
 
         </div>
 
@@ -1139,7 +1139,7 @@ export const APP_TEMPLATE = `</head>
 
           <div id="auth-challenge-question-reg" class="auth-form-hint" style="margin-bottom:8px">验证码加载中...</div>
           <input type="hidden" id="auth-challenge-token-reg" />
-          <input type="text" id="reg-challenge-answer" placeholder="验证码答案" aria-label="验证码答案" />
+          <input type="text" id="reg-challenge-answer" placeholder="验证码答案（30秒有效）" aria-label="验证码答案（30秒有效）" />
 
         </div>
 
@@ -1321,6 +1321,10 @@ export const APP_TEMPLATE = `</head>
 
       <span class="settings-arrow">&#x203A;</span>
 
+    </div>
+    <div class="settings-row" id="admin-logs-menu" style="display:none" onclick="showProfileTab('admin-logs')">
+      <span>管理员日志</span>
+      <span class="settings-arrow">&#x203A;</span>
     </div>
 
     <div class="settings-row" onclick="showProfileTab('ai-config')">
@@ -1646,6 +1650,17 @@ export const APP_TEMPLATE = `</head>
 
 
   <!-- 安全顾问配置面板 -->
+
+  <div id="profile-tab-admin-logs" class="profile-tab" style="display:none">
+    <div class="card">
+      <div class="card-title">管理员日志</div>
+      <p class="card-desc">查看账号操作记录与邮件投递状态。邮箱地址已脱敏，邮件正文和验证令牌不会保存。</p>
+      <div style="margin-top:16px;font-size:13px;font-weight:600">操作审计日志</div>
+      <div id="admin-audit-logs" style="margin-top:10px"></div>
+      <div style="margin-top:20px;font-size:13px;font-weight:600">邮件投递日志</div>
+      <div id="admin-email-logs" style="margin-top:10px"></div>
+    </div>
+  </div>
 
   <div id="profile-tab-ai-config" class="profile-tab" style="display:none">
 

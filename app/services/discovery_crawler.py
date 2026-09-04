@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import json
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any
@@ -199,6 +200,52 @@ def _extract_query_param_names(url: str) -> list[str]:
     return param_names
 
 
+def _flatten_strings(value: object) -> list[str]:
+    """递归提取结构化数据里的字符串。"""
+    strings: list[str] = []
+    if isinstance(value, str):
+        strings.append(value)
+    elif isinstance(value, dict):
+        for item in value.values():
+            strings.extend(_flatten_strings(item))
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            strings.extend(_flatten_strings(item))
+    return strings
+
+
+def _extract_same_origin_urls(text: str, base_url: str) -> list[str]:
+    """从文本/JSON 中提取同域 URL 或相对路径。"""
+    if not text:
+        return []
+
+    candidates: list[str] = []
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        parsed = None
+
+    if parsed is not None:
+        for item in _flatten_strings(parsed):
+            candidates.append(item)
+    else:
+        candidates.extend(
+            re.findall(r"""(?:(?:https?:)?//[^\s"'<>]+|/[^\s"'<>]+)""", text, re.I)
+        )
+
+    urls: list[str] = []
+    for candidate in candidates:
+        value = candidate.strip()
+        if not value:
+            continue
+        if not re.match(r"^(?:(?:https?:)?//|/|\.{1,2}/)", value, re.I):
+            continue
+        resolved = urljoin(base_url, value)
+        if _same_origin(base_url, resolved):
+            urls.append(_normalize_url(resolved))
+    return list(dict.fromkeys(urls))
+
+
 class DiscoveryCrawler:
     """轻量级同域端点发现器。"""
 
@@ -224,6 +271,7 @@ class DiscoveryCrawler:
             return []
 
         endpoints: list[DiscoveredEndpoint] = []
+        seen_keys: set[str] = set()
         visited: set[str] = set()
         queue: list[str] = [start_url]
 
@@ -238,7 +286,12 @@ class DiscoveryCrawler:
                 deadline = asyncio.get_event_loop().time() + self.total_timeout
 
                 # 1. 尝试 robots.txt / sitemap.xml
-                await self._discover_from_robots(client, start_url, endpoints, visited)
+                await self._discover_from_robots(
+                    client, start_url, endpoints, visited, seen_keys, queue
+                )
+                await self._discover_public_endpoints(
+                    client, start_url, endpoints, seen_keys, queue
+                )
 
                 while (
                     queue
@@ -272,17 +325,23 @@ class DiscoveryCrawler:
                         pass
 
                     # 当前页面本身作为一个入口
-                    endpoints.append(DiscoveredEndpoint(url=current, source="homepage"))
+                    self._append_endpoint(
+                        endpoints,
+                        seen_keys,
+                        DiscoveredEndpoint(url=current, source="homepage"),
+                    )
 
                     # 页面 URL 自带参数时，也作为一个可 fuzz 的入口
                     query_params = _extract_query_param_names(current)
                     if query_params:
-                        endpoints.append(
+                        self._append_endpoint(
+                            endpoints,
+                            seen_keys,
                             DiscoveredEndpoint(
                                 url=current,
                                 parameter_names=query_params,
                                 source="link",
-                            )
+                            ),
                         )
 
                     # 发现表单
@@ -294,7 +353,9 @@ class DiscoveryCrawler:
                         if not _same_origin(start_url, action):
                             continue
                         body_str = _build_form_body(form.get("inputs", []))
-                        endpoints.append(
+                        self._append_endpoint(
+                            endpoints,
+                            seen_keys,
                             DiscoveredEndpoint(
                                 url=action,
                                 method=method,
@@ -305,11 +366,13 @@ class DiscoveryCrawler:
                                     if i.get("name")
                                 ],
                                 source="form",
-                            )
+                            ),
                         )
 
                         if body_str:
-                            endpoints.append(
+                            self._append_endpoint(
+                                endpoints,
+                                seen_keys,
                                 DiscoveredEndpoint(
                                     url=action,
                                     method=method,
@@ -320,7 +383,7 @@ class DiscoveryCrawler:
                                         if i.get("name")
                                     ],
                                     source="param_fuzz",
-                                )
+                                ),
                             )
 
                     # 收集新链接
@@ -336,20 +399,10 @@ class DiscoveryCrawler:
         except Exception as exc:
             logger.warning("Discovery crawler failed gracefully: %s", exc)
 
-        # 去重：相同 URL+method 保留一个
-        seen: set[str] = set()
-        unique: list[DiscoveredEndpoint] = []
-        for ep in endpoints:
-            key = f"{ep.method}:{_normalize_url(ep.url)}"
-            if key in seen:
-                continue
-            seen.add(key)
-            unique.append(ep)
-
         logger.info(
-            "Discovery crawler finished: %d endpoints from %s", len(unique), start_url
+            "Discovery crawler finished: %d endpoints from %s", len(endpoints), start_url
         )
-        return unique
+        return endpoints
 
     async def _discover_from_robots(
         self,
@@ -357,6 +410,8 @@ class DiscoveryCrawler:
         start_url: str,
         endpoints: list[DiscoveredEndpoint],
         visited: set[str],
+        seen_keys: set[str],
+        queue: list[str],
     ) -> None:
         """从 robots.txt 和 sitemap.xml 中提取路径。"""
         parsed = urlparse(start_url)
@@ -367,18 +422,92 @@ class DiscoveryCrawler:
             if robots_resp.status_code == 200:
                 for line in robots_resp.text.splitlines():
                     line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    lower = line.lower()
                     if line.lower().startswith("sitemap:"):
                         sitemap_url = line.split(":", 1)[1].strip()
                         await self._parse_sitemap(
-                            client, sitemap_url, start_url, endpoints, visited
+                            client, sitemap_url, start_url, endpoints, visited, seen_keys
                         )
+                    elif lower.startswith("disallow:") or lower.startswith("allow:"):
+                        candidate = line.split(":", 1)[1].strip()
+                        if candidate and candidate != "/":
+                            resolved = _normalize_url(urljoin(base, candidate))
+                            if _same_origin(start_url, resolved) and _is_interesting_path(
+                                urlparse(resolved).path
+                            ):
+                                if resolved not in queue and resolved not in visited:
+                                    queue.append(resolved)
+                                self._append_endpoint(
+                                    endpoints,
+                                    seen_keys,
+                                    DiscoveredEndpoint(url=resolved, source="robots"),
+                                )
         except Exception:
             pass
 
         # 同时尝试根 sitemap
         await self._parse_sitemap(
-            client, f"{base}/sitemap.xml", start_url, endpoints, visited
+            client, f"{base}/sitemap.xml", start_url, endpoints, visited, seen_keys
         )
+
+    async def _discover_public_endpoints(
+        self,
+        client: httpx.AsyncClient,
+        start_url: str,
+        endpoints: list[DiscoveredEndpoint],
+        seen_keys: set[str],
+        queue: list[str],
+    ) -> None:
+        """主动探测常见公开入口和文档入口。"""
+        parsed = urlparse(start_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        candidates = [
+            ("/security.txt", "security_txt"),
+            ("/.well-known/security.txt", "security_txt"),
+            ("/.well-known/assetlinks.json", "well_known"),
+            ("/.well-known/apple-app-site-association", "well_known"),
+            ("/manifest.json", "manifest"),
+            ("/site.webmanifest", "manifest"),
+            ("/swagger.json", "openapi"),
+            ("/openapi.json", "openapi"),
+            ("/api/openapi.json", "openapi"),
+            ("/v2/api-docs", "openapi"),
+            ("/api-docs", "openapi"),
+            ("/redoc", "api_docs"),
+            ("/swagger", "api_docs"),
+            ("/graphql", "graphql"),
+            ("/graphiql", "graphql"),
+            ("/playground", "graphql"),
+        ]
+        for path, source in candidates:
+            url = _normalize_url(urljoin(base, path))
+            if not _same_origin(start_url, url):
+                continue
+            try:
+                resp = await client.get(url)
+            except Exception:
+                continue
+            if resp.status_code != 200:
+                continue
+            content_type = resp.headers.get("content-type", "").lower()
+            body = resp.text or ""
+            if not body.strip():
+                continue
+            if not any(
+                token in content_type
+                for token in ("text/", "json", "xml", "javascript", "html", "plain")
+            ):
+                continue
+            self._append_endpoint(
+                endpoints,
+                seen_keys,
+                DiscoveredEndpoint(url=url, source=source),
+            )
+            for next_url in _extract_same_origin_urls(body, base):
+                if next_url not in queue:
+                    queue.append(next_url)
 
     async def _parse_sitemap(
         self,
@@ -387,6 +516,7 @@ class DiscoveryCrawler:
         start_url: str,
         endpoints: list[DiscoveredEndpoint],
         visited: set[str],
+        seen_keys: set[str],
     ) -> None:
         """从 sitemap 中提取 URL。"""
         try:
@@ -400,6 +530,23 @@ class DiscoveryCrawler:
                     continue
                 u = _normalize_url(u)
                 if _is_interesting_path(urlparse(u).path):
-                    endpoints.append(DiscoveredEndpoint(url=u, source="sitemap"))
+                    self._append_endpoint(
+                        endpoints,
+                        seen_keys,
+                        DiscoveredEndpoint(url=u, source="sitemap"),
+                    )
         except Exception:
             pass
+
+    @staticmethod
+    def _append_endpoint(
+        endpoints: list[DiscoveredEndpoint],
+        seen_keys: set[str],
+        endpoint: DiscoveredEndpoint,
+    ) -> None:
+        """按 method+url 去重后追加端点。"""
+        key = f"{endpoint.method}:{_normalize_url(endpoint.url)}"
+        if key in seen_keys:
+            return
+        seen_keys.add(key)
+        endpoints.append(endpoint)

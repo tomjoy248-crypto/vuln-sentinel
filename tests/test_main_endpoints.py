@@ -681,6 +681,27 @@ def test_target_create_list_and_delete():
     assert delete.json()["success"] is True
 
 
+def test_target_create_records_audit_user_id():
+    headers = _auth_headers()
+    url = "https://audit.example.com"
+    create = client.post(
+        "/api/targets", json={"url": url, "schedule": "daily"}, headers=headers
+    )
+    assert create.status_code == 200
+
+    conn = main.get_db()
+    try:
+        row = conn.execute(
+            "SELECT user_id, action, resource_type FROM audit_logs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert row is not None
+        assert row["user_id"] == _demo_user_id()
+        assert row["action"] == "post_target"
+        assert row["resource_type"] == "target"
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Demo (auth / public)
 # ---------------------------------------------------------------------------
@@ -696,11 +717,23 @@ def test_demo_full_cycle_requires_auth():
 
 
 def test_public_demo_scan_non_whitelist_returns_403():
+    main.settings.public_demo_enabled = True
+    main.settings.free_trial_enabled = True
     resp = client.post("/api/public-demo-scan", json={"url": "https://evil.com"})
     assert resp.status_code == 403
 
 
+def test_public_demo_scan_disabled_returns_403(monkeypatch):
+    monkeypatch.setattr(main.settings, "public_demo_enabled", False, raising=False)
+    monkeypatch.setattr(main.settings, "free_trial_enabled", True, raising=False)
+
+    resp = client.post("/api/public-demo-scan", json={"url": "https://example.com"})
+    assert resp.status_code == 403
+
+
 def test_public_demo_scan_whitelist_returns_200():
+    main.settings.public_demo_enabled = True
+    main.settings.free_trial_enabled = True
     resp = client.post("/api/public-demo-scan", json={"url": "https://example.com"})
     assert resp.status_code == 200
     body = resp.json()

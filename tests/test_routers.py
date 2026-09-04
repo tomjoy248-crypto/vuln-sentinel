@@ -200,6 +200,17 @@ def test_login_returns_token():
     assert body["username"] == name
 
 
+def test_auth_challenge_returns_question_and_token():
+    """验证码接口返回题目和一次性令牌。"""
+    resp = client.get("/api/auth/challenge")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["question"]
+    assert data["token"]
+    payload = jwt.decode(data["token"], settings.jwt_secret, algorithms=["HS256"])
+    assert 0 < payload["exp"] - time.time() <= 30
+
+
 def test_login_wrong_password_returns_401():
     """密码错误返回 401。"""
     name, _, _ = _register_unique(prefix="wp")
@@ -939,3 +950,24 @@ def test_admin_audit_logs_invalid_limit_returns_422():
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert resp.status_code == 422
+
+
+def test_admin_email_logs_requires_admin():
+    """非管理员不能查看邮件投递日志。"""
+    _, _, token = _register_unique(prefix="el")
+    resp = client.get(
+        "/api/admin/email-logs", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resp.status_code == 403
+
+
+def test_admin_email_logs_returns_logs():
+    """管理员可以查看邮件投递状态，且接口返回日志列表。"""
+    admin_token, _ = _make_admin()
+    resp = client.get(
+        "/api/admin/email-logs", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert "logs" in data
+    assert isinstance(data["logs"], list)

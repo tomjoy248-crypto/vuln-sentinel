@@ -1,9 +1,13 @@
 import pytest
+from pathlib import Path
 
 from types import SimpleNamespace
 
 import main
 from app.core.rate_limiter import get_client_ip
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_get_client_ip_prefers_x_forwarded_for():
@@ -36,3 +40,14 @@ def test_validate_production_config_flags_bad_settings(monkeypatch):
     message = str(excinfo.value)
     assert "CORS_ORIGINS" in message
     assert "PUBLIC_BASE_URL" in message
+
+
+def test_deployment_templates_disable_public_demo_by_default():
+    """Production templates must not expose the anonymous scanning endpoint by default."""
+    env_example = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8")
+    render_blueprint = (PROJECT_ROOT / "render.yaml").read_text(encoding="utf-8")
+
+    assert "PUBLIC_DEMO_ENABLED=0" in env_example
+    assert "FREE_TRIAL_ENABLED=0" in env_example
+    assert 'key: PUBLIC_DEMO_ENABLED\n        value: "0"' in render_blueprint
+    assert 'key: FREE_TRIAL_ENABLED\n        value: "0"' in render_blueprint

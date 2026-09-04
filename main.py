@@ -1017,6 +1017,7 @@ limiter_scan_deep = RateLimiter(2, 60, disabled=_TEST_MODE)  # 深度模式：2�
 limiter_fix = RateLimiter(settings.rate_limit_fix_per_minute, 60, disabled=_TEST_MODE)
 limiter_register = RateLimiter(3, 60, disabled=_TEST_MODE)  # 注册：3次/分
 limiter_login = RateLimiter(5, 60, disabled=_TEST_MODE)  # 登录：5次/分
+limiter_auth_challenge = RateLimiter(5, 60, disabled=_TEST_MODE)  # 验证码：5次/分/IP
 limiter_password_reset = RateLimiter(3, 60, disabled=_TEST_MODE)  # 密码重置请求：3次/分（防邮件轰炸）
 limiter_password_reset_confirm = RateLimiter(5, 60, disabled=_TEST_MODE)  # 密码重置确认：5次/分（防令牌暴力破解）
 limiter_ai = RateLimiter(20, 60, disabled=_TEST_MODE)
@@ -1425,6 +1426,34 @@ def init_db() -> None:
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)"
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS auth_challenges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token_hash TEXT UNIQUE NOT NULL,
+            client_ip TEXT,
+            expires_at REAL NOT NULL,
+            used_at TEXT,
+            created_at TEXT NOT NULL
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_auth_challenges_expires ON auth_challenges(expires_at)"
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS email_delivery_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email_type TEXT NOT NULL,
+            recipient_masked TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            status TEXT NOT NULL,
+            error_message TEXT,
+            request_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_email_delivery_logs_created_at ON email_delivery_logs(created_at)"
     )
     _scans_columns = [
         ("share_id", "ALTER TABLE scans ADD COLUMN share_id TEXT"),
@@ -5101,6 +5130,54 @@ async def check_sensitive_paths(host: str, is_https: bool) -> list[dict]:
         },
         "/nginx.conf": {
             "required_any": ["server {", "location", "proxy_pass", "listen "],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/package.json": {
+            "required_any": ["dependencies", "devDependencies", "scripts", "\"name\""],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/package-lock.json": {
+            "required_any": ["lockfileVersion", "packages", "dependencies"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/yarn.lock": {
+            "required_any": ["dependencies", "\"", ":"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/pnpm-lock.yaml": {
+            "required_any": ["lockfileVersion", "packages:", "dependencies:"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/requirements.txt": {
+            "required_any": ["==", ">=", "<=", "pip"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/pyproject.toml": {
+            "required_any": ["[project]", "dependencies", "[tool."],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/go.mod": {
+            "required_any": ["module ", "go ", "require ("],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/pom.xml": {
+            "required_any": ["<project", "<dependencies", "<groupId>"],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/composer.json": {
+            "required_any": ["\"require\"", "\"autoload\"", "\"name\""],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/Cargo.toml": {
+            "required_any": ["[package]", "[dependencies]", "edition ="],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/Gemfile": {
+            "required_any": ["source ", "gem ", "ruby "],
+            "forbidden": ["<html", "<!doctype", "<head"],
+        },
+        "/Dockerfile": {
+            "required_any": ["FROM ", "RUN ", "COPY ", "EXPOSE "],
             "forbidden": ["<html", "<!doctype", "<head"],
         },
     }

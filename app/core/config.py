@@ -180,3 +180,7 @@ def validate_production_config(settings: AppSettings) -> None:
     if settings.enable_metrics and not metrics_public and not os.environ.get("METRICS_AUTH_TOKEN", "").strip():
         raise RuntimeError("生产环境启用 /metrics 时应配置 METRICS_AUTH_TOKEN 或关闭公开暴露。")
 
+
+# 模块级默认配置实例，供尚未加载 main.py 的模块安全读取。
+settings = AppSettings()
+

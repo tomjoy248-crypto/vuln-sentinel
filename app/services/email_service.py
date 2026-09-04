@@ -15,7 +15,83 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+from app.core.logging import get_request_id
+from app.db.session import get_db
+
 logger = logging.getLogger("vuln_sentinel.email")
+
+
+def _mask_email(email: str) -> str:
+    """仅保留收件人邮箱的最少可识别信息，避免日志泄露完整地址。"""
+    value = (email or "").strip()
+    if "@" not in value:
+        return "***"
+    local, domain = value.split("@", 1)
+    if len(local) <= 2:
+        masked_local = "*" * len(local)
+    else:
+        masked_local = local[:1] + "***" + local[-1:]
+    return f"{masked_local}@{domain}"
+
+
+def _save_delivery_log(
+    email_type: str,
+    recipient: str,
+    subject: str,
+    status: str,
+    error_message: str = "",
+) -> None:
+    """记录邮件投递结果，但不保存正文、令牌或完整邮箱地址。"""
+    try:
+        conn = get_db()
+        conn.execute(
+            """INSERT INTO email_delivery_logs
+               (email_type, recipient_masked, subject, status, error_message, request_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                email_type,
+                _mask_email(recipient),
+                subject[:200],
+                status,
+                (error_message or "")[:500],
+                get_request_id(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:  # logging must never break email delivery
+        logger.warning("邮件投递日志写入失败: %s", exc)
+
+
+def get_email_delivery_logs(
+    email_type: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict]:
+    """查询邮件投递记录，供管理员审计使用。"""
+    conn = get_db()
+    try:
+        conditions = []
+        params: list = []
+        if email_type:
+            conditions.append("email_type = ?")
+            params.append(email_type)
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
+        params.extend([limit, offset])
+        rows = conn.execute(
+            f"""SELECT id, email_type, recipient_masked, subject, status,
+                       error_message, request_id, created_at
+                FROM email_delivery_logs {where}
+                ORDER BY created_at DESC LIMIT ? OFFSET ?""",
+            params,
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
 
 
 def _get_smtp_config() -> dict[str, str | int]:
@@ -39,7 +115,13 @@ def is_smtp_configured() -> bool:
     return bool(cfg["host"] and cfg["user"] and cfg["password"])
 
 
-def _send_email(to_email: str, subject: str, html_body: str) -> bool:
+def _send_email(
+    to_email: str,
+    subject: str,
+    html_body: str,
+    *,
+    email_type: str = "unknown",
+) -> bool:
     """发送 HTML 邮件的内部实现。
 
     Args:
@@ -52,9 +134,11 @@ def _send_email(to_email: str, subject: str, html_body: str) -> bool:
     """
     if not is_smtp_configured():
         logger.warning("SMTP 未配置，跳过发送邮件（subject=%s）", subject)
+        _save_delivery_log(email_type, to_email, subject, "skipped", "SMTP 未配置")
         return False
     if not to_email:
         logger.warning("收件人邮箱为空，跳过发送邮件（subject=%s）", subject)
+        _save_delivery_log(email_type, to_email, subject, "skipped", "收件人邮箱为空")
         return False
 
     cfg = _get_smtp_config()
@@ -83,9 +167,11 @@ def _send_email(to_email: str, subject: str, html_body: str) -> bool:
                 server.login(user, password)
                 server.sendmail(sender, [to_email], msg.as_string())
         logger.info("邮件发送成功: to=%s subject=%s", to_email, subject)
+        _save_delivery_log(email_type, to_email, subject, "sent")
         return True
     except Exception as exc:  # noqa: BLE001 - 邮件发送失败需吞掉异常并返回 False
         logger.warning("邮件发送失败: to=%s subject=%s error=%s", to_email, subject, exc)
+        _save_delivery_log(email_type, to_email, subject, "failed", str(exc))
         return False
 
 
@@ -147,7 +233,7 @@ def send_verification_email(user_email: str, token: str, base_url: str) -> bool:
     base = (base_url or "").rstrip("/")
     verify_link = f"{base}/verify-email?token={token}"
     html = _verification_html(verify_link)
-    return _send_email(user_email, "【Vuln Sentinel】邮箱验证", html)
+    return _send_email(user_email, "【Vuln Sentinel】邮箱验证", html, email_type="verification")
 
 
 def send_password_reset_email(user_email: str, token: str, base_url: str) -> bool:
@@ -166,5 +252,5 @@ def send_password_reset_email(user_email: str, token: str, base_url: str) -> boo
     base = (base_url or "").rstrip("/")
     reset_link = f"{base}/reset-password?token={token}"
     html = _password_reset_html(reset_link)
-    return _send_email(user_email, "【Vuln Sentinel】密码重置", html)
+    return _send_email(user_email, "【Vuln Sentinel】密码重置", html, email_type="password_reset")
 

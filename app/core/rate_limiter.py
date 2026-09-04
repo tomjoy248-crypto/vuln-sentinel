@@ -462,11 +462,11 @@ def _extract_user_id(request: Request) -> str | None:
 
 
 def _get_jwt_secret() -> str:
-    """获取 JWT 密钥，依次尝试 ``app.core.config`` 与 ``main`` 中的 settings。
+    """获取 JWT 密钥，优先使用 ``main`` 中的运行时 settings。
 
-    任一来源缺失或抛异常均静默跳过；都取不到时返回空串（按匿名处理）。
+    这样可以确保限流身份解析与实际签发 token 的密钥一致。
     """
-    for getter in (_secret_from_config, _secret_from_main):
+    for getter in (_secret_from_main, _secret_from_config):
         try:
             secret = getter()
         except Exception:

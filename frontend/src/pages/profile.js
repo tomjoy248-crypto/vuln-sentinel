@@ -2,6 +2,7 @@
 
 import {
   authFetch,
+  parseJsonResponse,
   apiPost,
   apiGet,
   apiDelete,
@@ -18,6 +19,10 @@ import {
   setToken,
   removeToken,
   getUsername,
+  getRole,
+  setRole,
+  adminAuditLogs,
+  adminEmailLogs,
   authHeaders
 } from '../api.js';
 
@@ -95,6 +100,8 @@ function updateAuthUI() {
   let scanLoginTip = document.getElementById('scan-login-tip');
   let tokenInput = document.getElementById('api-token-input');
   let statusMessage = document.getElementById('auth-status-message');
+  let roleEl = document.getElementById('auth-user-role');
+  let adminMenu = document.getElementById('admin-logs-menu');
   if (isLoggedIn()) {
     if (guest) guest.style.display = 'none';
     if (reg) reg.style.display = 'none';
@@ -102,6 +109,9 @@ function updateAuthUI() {
     if (logged) logged.style.display = 'block';
     if (scanLoginTip) scanLoginTip.style.display = 'none';
     if (statusMessage) statusMessage.textContent = '已登录，可直接扫描或查看历史记录';
+    let role = getRole();
+    if (roleEl) roleEl.textContent = role === 'admin' ? '管理员' : '已登录';
+    if (adminMenu) adminMenu.style.display = role === 'admin' ? 'flex' : 'none';
     let name = getUsername();
     let displayName = document.getElementById('auth-display-name');
     if (displayName) displayName.textContent = name || '用户';
@@ -117,6 +127,7 @@ function updateAuthUI() {
     if (logged) logged.style.display = 'none';
     if (scanLoginTip) scanLoginTip.style.display = 'block';
     if (statusMessage) statusMessage.textContent = '如果登录失败，请先确认后端服务已启动。';
+    if (adminMenu) adminMenu.style.display = 'none';
     if (tokenInput) tokenInput.value = '登录后显示 令牌';
   }
 }
@@ -135,7 +146,7 @@ function doResetPassword() {
   authFetch('/api/reset-password', {
     method: 'POST',
     body: JSON.stringify({ new_password: pw1 })
-  }).then(function(r) { return r.json(); }).then(function(data) {
+  }).then(parseJsonResponse).then(function(data) {
     if (data.success) {
       showToast('密码已修改，请用新密码登录');
       doLogout();
@@ -161,11 +172,12 @@ function doLogin() {
     skipAuthExpiry: true,
     method: 'POST',
     body: JSON.stringify({ username: username, password: password })
-  }).then(function(resp) { return resp.json(); }).then(function(data) {
+  }).then(parseJsonResponse).then(function(data) {
     let token = data.token || (data.data && data.data.token);
     let resolvedUsername = data.username || (data.data && data.data.username) || username;
     if (token) {
       setToken(token);
+      setRole(data.role || (data.data && data.data.role) || 'member');
       try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
@@ -204,11 +216,12 @@ function doRegister() {
     skipAuthExpiry: true,
     method: 'POST',
     body: JSON.stringify(payload)
-  }).then(function(resp) { return resp.json(); }).then(function(data) {
+  }).then(parseJsonResponse).then(function(data) {
     let token = data.token || (data.data && data.data.token);
     let resolvedUsername = data.username || (data.data && data.data.username) || username;
     if (token) {
       setToken(token);
+      setRole(data.role || (data.data && data.data.role) || 'member');
       try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
@@ -226,7 +239,7 @@ function doRegister() {
 
 function doLogout() {
   removeToken();
-  try { localStorage.removeItem('vs_username'); } catch(e) {}
+  try { localStorage.removeItem('vs_username'); localStorage.removeItem('vs_role'); } catch(e) {}
   updateAuthUI();
   let badge = document.getElementById('nav-alert-badge');
   if (badge) badge.style.display = 'none';
@@ -351,6 +364,40 @@ function showProfileTab(tab) {
   if (tab === 'alerts') loadAlerts();
   if (tab === 'notifications') loadNotificationSettings();
   if (tab === 'credits') loadCreditsUsage();
+  if (tab === 'admin-logs') loadAdminLogs();
+}
+
+function loadAdminLogs() {
+  let auditEl = document.getElementById('admin-audit-logs');
+  let emailEl = document.getElementById('admin-email-logs');
+  if (auditEl) auditEl.innerHTML = '<div class="loading">正在读取操作日志...</div>';
+  if (emailEl) emailEl.innerHTML = '<div class="loading">正在读取邮件日志...</div>';
+  Promise.all([adminAuditLogs(), adminEmailLogs()]).then(function(results) {
+    let audit = results[0] && results[0].data && results[0].data.logs || [];
+    let emails = results[1] && results[1].data && results[1].data.logs || [];
+    if (auditEl) auditEl.innerHTML = renderAdminLogRows(audit, 'action');
+    if (emailEl) emailEl.innerHTML = renderAdminLogRows(emails, 'email_type');
+  }).catch(function(e) {
+    let message = escapeHtml(e.message || '日志读取失败');
+    if (auditEl) auditEl.innerHTML = '<div class="auth-form-error">' + message + '</div>';
+    if (emailEl) emailEl.innerHTML = '<div class="auth-form-error">' + message + '</div>';
+  });
+}
+
+function renderAdminLogRows(logs, labelKey) {
+  if (!logs.length) return '<div class="card-desc">暂无记录</div>';
+  return '<div style="display:grid;gap:8px">' + logs.map(function(log) {
+    let label = log[labelKey] || '-';
+    let target = log.resource_type
+      ? (log.resource_type + ':' + (log.resource_id || '-'))
+      : (log.recipient_masked || '');
+    let status = log.status ? ' · ' + log.status : '';
+    return '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px">' +
+      '<strong>' + escapeHtml(label) + '</strong>' + escapeHtml(status) +
+      '<div style="color:var(--text-secondary);margin-top:4px">' + escapeHtml(target) + ' · ' + escapeHtml(log.created_at || '') + '</div>' +
+      (log.error_message ? '<div style="color:var(--danger);margin-top:4px">' + escapeHtml(log.error_message) + '</div>' : '') +
+      '</div>';
+  }).join('') + '</div>';
 }
 
 function toggleSetting(el, key) {
@@ -614,7 +661,8 @@ export {
   loadNotificationSettings,
   saveNotificationSettings,
   toggleApiKeyVisibility,
-  renderAIConfig
+  renderAIConfig,
+  loadAdminLogs
 };
 
 

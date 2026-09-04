@@ -179,9 +179,19 @@ def _parse_user_id_from_request(request: Request) -> int | None:
     try:
         import jwt
 
-        from app.core.config import settings
+        try:
+            from main import settings as main_settings
 
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+            secret = getattr(main_settings, "jwt_secret", "") or ""
+        except Exception:
+            secret = ""
+        if not secret:
+            from app.core.config import settings as config_settings
+
+            secret = getattr(config_settings, "jwt_secret", "") or ""
+        if not secret:
+            return None
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
         return payload.get("user_id")
     except Exception:
         return None
