@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 import httpx
 
