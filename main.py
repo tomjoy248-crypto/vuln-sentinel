@@ -2304,7 +2304,7 @@ async def lifespan(app: FastAPI):
     yield
     # 关闭阶段：按顺序释放资源，每个步骤独立 try/except 确保全部执行
     # 0. 停止 Redis 扫描队列 worker
-    if settings.redis_url and not auth_headers:
+    if settings.redis_url:
         try:
             queue = get_scan_queue()
             await queue.stop_worker()
