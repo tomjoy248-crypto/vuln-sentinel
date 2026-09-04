@@ -45,7 +45,8 @@ class ScanTask:
             "depth": self.depth,
             "deep": self.deep,
             "authorized": self.authorized,
-            "auth_headers": self.auth_headers,
+            # Never expose session tokens through task status APIs or logs.
+            "auth_headers": {key: "***REDACTED***" for key in self.auth_headers},
             "created_at": self.created_at,
         }
 

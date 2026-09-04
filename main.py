@@ -16567,6 +16567,8 @@ class AsyncScanRequest(BaseModel):
     authorized: bool = False
     verification_token: str | None = None
     auth_headers: dict[str, str] = Field(default_factory=dict, max_length=30)
+    verification_mode: str = Field(default="safe", pattern="^(safe|isolated)$")
+    risk_confirmed: bool = False
 
 
 class BatchScanRequest(BaseModel):
@@ -16577,6 +16579,16 @@ class BatchScanRequest(BaseModel):
     authorized: bool = False
     verification_token: str | None = None
     auth_headers: dict[str, str] = Field(default_factory=dict, max_length=30)
+    verification_mode: str = Field(default="safe", pattern="^(safe|isolated)$")
+    risk_confirmed: bool = False
+
+
+def _validate_verification_mode(mode: str, authorized: bool, confirmed: bool) -> str:
+    from app.security.active_validation import validate_mode
+    try:
+        return validate_mode(mode, authorized, confirmed)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 class RequestHistoryCreate(BaseModel):
@@ -16637,6 +16649,7 @@ async def api_async_scan(
     """提交异步扫描任务，返回 task_id 供前端轮询。"""
     raw_url = req.url.strip()
     auth_headers = _validate_auth_headers(req.auth_headers)
+    verification_mode = _validate_verification_mode(req.verification_mode, req.authorized, req.risk_confirmed)
     if not raw_url.startswith(("http://", "https://")):
         raw_url = "https://" + raw_url
 
@@ -16650,6 +16663,8 @@ async def api_async_scan(
     )
     if not valid:
         raise HTTPException(403, detail={"error": reason, "code": code})
+    from app.audit import save_audit_log
+    save_audit_log(user["user_id"], "scan_submitted", "scan", details={"target": raw_url, "verification_mode": verification_mode, "deep": req.deep, "authorized": req.authorized})
 
     async def _scan_fn(scan_url: str, progress_cb=None, **kwargs):
         return await _run_scan_task(
@@ -16703,6 +16718,7 @@ async def api_batch_scan(
 ) -> dict:
     """批量提交授权扫描任务，返回任务清单供统一轮询。"""
     auth_headers = _validate_auth_headers(req.auth_headers)
+    verification_mode = _validate_verification_mode(req.verification_mode, req.authorized, req.risk_confirmed)
     tasks: list[dict[str, str]] = []
     for item in req.urls:
         raw_url = item.strip()
@@ -16718,6 +16734,8 @@ async def api_batch_scan(
         )
         if not valid:
             raise HTTPException(403, detail={"error": reason, "code": code, "url": raw_url})
+        from app.audit import save_audit_log
+        save_audit_log(user["user_id"], "scan_submitted", "scan", details={"target": raw_url, "verification_mode": verification_mode, "deep": req.deep, "authorized": req.authorized})
 
         async def _scan_fn(scan_url: str, progress_cb=None, **kwargs):
             return await _run_scan_task(
