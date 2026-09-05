@@ -120,7 +120,8 @@ jobs:
         run: cargo build --release --manifest-path src-tauri/Cargo.toml
 
       - name: Build desktop installer
-        run: npm --prefix frontend exec -- tauri build -- --config src-tauri/tauri.conf.json
+        working-directory: src-tauri
+        run: npm --prefix ../frontend exec -- tauri build
 
       - name: Verify desktop bundle inputs
         shell: pwsh
