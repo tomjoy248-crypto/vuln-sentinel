@@ -137,7 +137,7 @@ jobs:
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: vuln-sentinel-windows-installer-v11.0.1
+          name: vuln-sentinel-windows-installer-v11.0.2
           path: src-tauri/target/release/bundle/nsis/*setup.exe
           if-no-files-found: error
           retention-days: 14
