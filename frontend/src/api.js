@@ -263,6 +263,11 @@ export function adminAuditLogs(limit = 50, offset = 0, action = '', filters = {}
   });
   return apiGet(q);
 }
+export function adminAuditSummary() { return apiGet('/api/admin/audit-logs/summary'); }
+export function adminAuditExport(filters = {}) {
+  const q = new URLSearchParams(filters).toString();
+  return apiGet('/api/admin/audit-logs/export' + (q ? '?' + q : ''));
+}
 
 export function adminEmailLogs(limit = 50, offset = 0, emailType = '', status = '') {
   let q = '/api/admin/email-logs?limit=' + encodeURIComponent(limit) + '&offset=' + encodeURIComponent(offset);

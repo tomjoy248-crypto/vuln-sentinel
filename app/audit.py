@@ -152,3 +152,26 @@ def get_audit_logs(
     except Exception as e:
         logger.warning("Audit log query failed: %s", e)
         return []
+
+
+def get_audit_summary() -> dict[str, Any]:
+    """Return compact aggregate counts for the administrator dashboard."""
+    try:
+        conn = get_db()
+        total = conn.execute("SELECT COUNT(*) AS count FROM audit_logs").fetchone()["count"]
+        by_action = conn.execute(
+            "SELECT action, COUNT(*) AS count FROM audit_logs GROUP BY action ORDER BY count DESC LIMIT 50"
+        ).fetchall()
+        by_status = conn.execute(
+            "SELECT COALESCE(json_extract(details_json, '$.status'), 'unknown') AS status, COUNT(*) AS count "
+            "FROM audit_logs GROUP BY status ORDER BY count DESC"
+        ).fetchall()
+        conn.close()
+        return {
+            "total": total,
+            "by_action": [{"action": row["action"], "count": row["count"]} for row in by_action],
+            "by_status": [{"status": row["status"], "count": row["count"]} for row in by_status],
+        }
+    except Exception as e:
+        logger.warning("Audit summary query failed: %s", e)
+        return {"total": 0, "by_action": [], "by_status": []}

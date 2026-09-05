@@ -16,6 +16,14 @@ _RULES = [
     ("java", re.compile(r"Statement\s+\w+\s*=|createStatement\s*\(\)"), "可能使用未参数化 SQL", "medium", "改用 PreparedStatement 并绑定参数。"),
     ("php", re.compile(r"\b(eval|system|shell_exec|passthru|exec)\s*\("), "危险 PHP 执行函数", "high", "移除动态执行，使用白名单业务操作。"),
     ("php", re.compile(r"mysql_query\s*\(|\$wpdb->query\s*\("), "数据库查询需要检查参数化", "medium", "使用 PDO 预处理或框架参数绑定。"),
+    ("python", re.compile(r"render_template_string\s*\(|Markup\s*\("), "模板内容可能引入服务端模板注入", "high", "不要把用户输入直接交给模板引擎，使用固定模板和自动转义。"),
+    ("python", re.compile(r"@(?:app|router)\.(?:route|get|post)\([^)]*\).*csrf|csrf=False"), "Web 框架路由可能缺少 CSRF 防护", "medium", "为状态变更请求启用 CSRF 校验，并使用 SameSite Cookie。"),
+    ("javascript", re.compile(r"(?:express|app)\.(?:get|post|put|delete)\([^,]+,\s*(?:async\s*)?\(?(?:req|request)\)?\s*=>"), "Express 路由需要确认认证与授权中间件", "medium", "在敏感路由前挂载认证、权限和输入校验中间件。"),
+    ("javascript", re.compile(r"cors\s*\(\s*\{[^}]*origin\s*:\s*['\"]\*"), "CORS 允许任意来源", "medium", "使用受控来源白名单，禁止生产环境使用 origin: '*'."),
+    ("java", re.compile(r"@(?:GetMapping|PostMapping|RequestMapping)\([^)]*\)\s*(?:public|private|protected)"), "Spring Web 接口需要确认访问控制", "medium", "为敏感接口增加 Spring Security 权限注解和输入校验。"),
+    ("java", re.compile(r"setHeader\s*\(\s*['\"]Access-Control-Allow-Origin['\"]\s*,\s*['\"]\*"), "Java 接口允许任意 CORS 来源", "medium", "改为受控来源白名单，并避免凭据请求配合通配来源。"),
+    ("php", re.compile(r"\$request->(?:input|query|get)\([^)]*\).*DB::raw|DB::raw\s*\("), "Laravel 原始 SQL 可能未参数化", "high", "使用查询构造器绑定参数，避免把请求参数拼接到 DB::raw。"),
+    ("php", re.compile(r"header\s*\(\s*['\"]Access-Control-Allow-Origin:\s*\*"), "PHP 接口允许任意 CORS 来源", "medium", "使用受控来源白名单并限制跨域凭据。"),
 ]
 
 def _language(name: str) -> str | None:
