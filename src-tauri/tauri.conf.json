@@ -33,10 +33,7 @@
     "resources": ["../runtime/backend-dist/vuln-sentinel-backend.exe"],
     "windows": {
       "nsis": {
-        "languages": ["SimpChinese"],
-        "installMode": "currentUser",
-        "startMenuFolder": "Vuln Sentinel",
-        "uninstallerIcon": "icons/icon.ico"
+        "installMode": "currentUser"
       }
     },
     "useLocalToolsDir": true
