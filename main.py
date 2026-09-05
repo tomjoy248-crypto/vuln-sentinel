@@ -16581,7 +16581,8 @@ class AsyncScanRequest(BaseModel):
 class BatchScanRequest(BaseModel):
     """批量扫描请求，限制数量以保护本地客户端资源。"""
 
-    urls: list[str] = Field(min_length=1, max_length=20)
+    # 空列表交由路由统一返回 400，避免客户端收到不一致的 422。
+    urls: list[str] = Field(max_length=5)
     deep: bool = False
     authorized: bool = False
     verification_token: str | None = None
