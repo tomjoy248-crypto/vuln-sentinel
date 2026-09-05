@@ -1,6 +1,6 @@
 [package]
 name = "vuln-sentinel-desktop"
-version = "11.0.0"
+version = "11.0.1"
 edition = "2021"
 build = "build.rs"
 
@@ -15,4 +15,3 @@ url = '2'
 windows-sys = { version = '0.59', features = ['Win32_Foundation', 'Win32_System_Threading'] }
 
 [package.metadata.tauri]
-

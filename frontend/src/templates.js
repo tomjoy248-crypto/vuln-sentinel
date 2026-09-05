@@ -156,7 +156,7 @@ export const APP_TEMPLATE = `</head>
     </div>
 
     <h1 class="home-hero-title">Vuln Sentinel Web 安全检测平台</h1>
-    <div class="home-hero-version">Version 11-S</div>
+    <div class="home-hero-version">Version 11.0.1</div>
 
     <div class="home-hero-actions">
       <button onclick="navigateTo('home')" class="home-hero-icon" aria-label="首页">⌂</button>
