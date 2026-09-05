@@ -5,7 +5,6 @@
   "identifier": "com.tomjoy248.vulnsentinel",
   "build": {
     "beforeDevCommand": "npm --prefix ../frontend run dev",
-    "beforeBuildCommand": "npm --prefix ../frontend run build",
     "frontendDist": "../frontend/dist",
     "devUrl": "http://localhost:5173"
   },
