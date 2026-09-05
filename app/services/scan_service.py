@@ -14,6 +14,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
+
 from app.dedup import FindingDeduplicator
 from app.plugins import DetectorRegistry, EvidenceStore, ScanContext
 from app.plugins._compat import findings_to_old_list

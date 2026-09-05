@@ -128,7 +128,6 @@ def _decoded_query_values(url: str) -> dict[str, list[str]]:
 
 def _extract_well_known_hits(text: str) -> list[str]:
     """从 well-known 文本或 JSON 中提取敏感暴露信号。"""
-    lowered = text.lower()
     hits: list[str] = []
 
     try:
@@ -2106,7 +2105,6 @@ class OIDCDiscoveryConfigDetector(BaseVulnDetector):
         return urls
 
     async def detect(self, context: ScanContext) -> list[Finding]:
-        body = context.body or ""
         urls = self._candidate_urls(context)
         if not urls:
             return []

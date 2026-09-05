@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from app.core.exceptions import BusinessException, ForbiddenException, ForbiddenException
+from app.core.exceptions import BusinessException, ForbiddenException
 from app.db.session import get_db
 from app.services.credits_service import add_credits
 

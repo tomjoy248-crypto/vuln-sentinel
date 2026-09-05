@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_FILES = 200

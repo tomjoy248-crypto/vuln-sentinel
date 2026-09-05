@@ -2711,7 +2711,7 @@ async def _verify_sensitive_path(
                     techniques.append({
                         "name": "path_accessible",
                         "passed": True,
-                        "note": f"敏感路径返回 HTTP 200，确认可访问",
+                        "note": "敏感路径返回 HTTP 200，确认可访问",
                     })
                 elif resp.status_code in (301, 302, 307):
                     score += 25
@@ -2795,7 +2795,7 @@ async def _verify_sensitive_path(
             techniques.append({
                 "name": "path_pattern",
                 "passed": True,
-                "note": f"路径匹配已知敏感路径模式",
+                "note": "路径匹配已知敏感路径模式",
             })
         else:
             techniques.append({
