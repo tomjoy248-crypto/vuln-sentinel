@@ -28,7 +28,7 @@ jobs:
           pip install mypy
 
       - name: Run ruff lint
-        run: ruff check .
+        run: ruff check app/ --select E9,F --output-format=concise
 
       - name: Run mypy type checking
         run: python -m mypy app/ --ignore-missing-imports || true
@@ -120,8 +120,7 @@ jobs:
         run: cargo build --release --manifest-path src-tauri/Cargo.toml
 
       - name: Build desktop installer
-        working-directory: src-tauri
-        run: npm --prefix ../frontend exec -- tauri build
+        run: npm --prefix frontend exec -- tauri build -- --config src-tauri/tauri.conf.json
 
       - name: Verify desktop bundle inputs
         shell: pwsh

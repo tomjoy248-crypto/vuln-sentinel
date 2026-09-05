@@ -40,9 +40,7 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onefile --name vuln-sentinel-backend --distpath runtime/backend-dist --workpath build/pyinstaller --specpath build --collect-submodules app --hidden-import=main main.py
           npm ci --prefix frontend
           npm run build --prefix frontend
-          Push-Location src-tauri
-          npm --prefix ../frontend exec -- tauri build
-          Pop-Location
+          npm --prefix frontend exec -- tauri build -- --config src-tauri/tauri.conf.json
 
       - name: Prepare installer asset
         id: prep
