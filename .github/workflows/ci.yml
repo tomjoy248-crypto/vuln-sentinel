@@ -121,7 +121,7 @@ jobs:
 
       - name: Build desktop installer
         working-directory: src-tauri
-        run: ..\frontend\node_modules\.bin\tauri.cmd build
+        run: npm --prefix ../frontend exec -- tauri build
 
       - name: Verify desktop bundle inputs
         shell: pwsh

@@ -41,7 +41,7 @@ jobs:
           npm ci --prefix frontend
           npm run build --prefix frontend
           Push-Location src-tauri
-          ..\frontend\node_modules\.bin\tauri.cmd build
+          npm --prefix ../frontend exec -- tauri build
           Pop-Location
 
       - name: Prepare installer asset
