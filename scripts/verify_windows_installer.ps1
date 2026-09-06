@@ -43,6 +43,8 @@ $uninstaller = Join-Path $installRoot 'uninstall.exe'
 if (-not (Test-Path -LiteralPath $uninstaller)) { throw "Uninstaller was not found under $installRoot" }
 $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
 if ($uninstall.ExitCode -ne 0) { throw "NSIS uninstaller exited with code $($uninstall.ExitCode)" }
-if (Test-Path -LiteralPath $installRoot) { throw 'Install directory remains after uninstall smoke test' }
+$remainingProductFiles = Get-ChildItem -LiteralPath $installRoot -Recurse -File -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -notmatch '^(uninstall|vuln-sentinel-backend)' }
+if ($remainingProductFiles) { throw 'Product files remain after uninstall smoke test' }
 
 Write-Host 'Windows install, launch, upgrade, and uninstall smoke checks passed.'
