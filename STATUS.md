@@ -45,6 +45,7 @@ Vuln Sentinel 已经不是纯原型，当前更接近“可演示、可内测、
 - WAF、CDN、软 404、强登录态、重定向这类场景仍可能扫不稳
 - Windows 安装包自动化验收已通过；仍建议在干净 Windows 环境做一次人工安装、启动、扫描、卸载和升级验收
 - Windows 人工验收步骤已整理到 `WINDOWS_MANUAL_ACCEPTANCE.md`，真实双账号、业务流程和 Redis 验收仍需测试环境输入
+- 外部验收记录模板已整理到 `EXTERNAL_ACCEPTANCE_TEMPLATE.md`，用于记录清洁 Windows、双账号、业务流程、Redis 和 WAF/CDN 实测证据
 - 当前更适合基础安全体检、证据展示、复测验证和修复跟踪
 - 若本地资源缓存未刷新，旧 `_up_` 资源可能影响首次体验
 
