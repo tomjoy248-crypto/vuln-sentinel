@@ -194,11 +194,16 @@ def get_admin_dashboard_stats(days: int = 30) -> dict[str, Any]:
         Scan, finding, task, and audit aggregates suitable for charts.
     """
     days = max(1, min(int(days), 365))
-    since = (datetime.utcnow() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    today = datetime.utcnow().date()
+    period_dates = [
+        (today - timedelta(days=days - index - 1)).isoformat()
+        for index in range(days)
+    ]
+    since = period_dates[0]
     empty = {
         "period_days": days,
-        "scans": {"total": 0, "by_day": [], "by_risk": []},
-        "findings": {"total": 0, "by_severity": []},
+        "scans": {"total": 0, "by_day": [{"date": day, "count": 0} for day in period_dates], "by_risk": []},
+        "findings": {"total": 0, "by_severity": [], "by_type": []},
         "tasks": {"total": 0, "by_status": [], "failed": 0},
         "audit": {"total": 0, "by_action": []},
     }
@@ -211,6 +216,8 @@ def get_admin_dashboard_stats(days: int = 30) -> dict[str, Any]:
         day_counts: Counter[str] = Counter()
         risk_counts: Counter[str] = Counter()
         severity_counts: Counter[str] = Counter()
+        finding_type_counts: Counter[str] = Counter()
+        day_counts.update({day: 0 for day in period_dates})
         for row in scan_rows:
             created = str(row["created_at"] or "")
             day_counts[created[:10] or "unknown"] += 1
@@ -223,6 +230,7 @@ def get_admin_dashboard_stats(days: int = 30) -> dict[str, Any]:
                 for finding in findings:
                     if isinstance(finding, dict):
                         severity_counts[str(finding.get("severity") or "info")] += 1
+                        finding_type_counts[str(finding.get("type") or finding.get("name") or "unknown")] += 1
         try:
             task_rows = conn.execute(
                 "SELECT status, COUNT(*) AS count FROM scan_task_records WHERE updated_at >= ? GROUP BY status",
@@ -249,7 +257,7 @@ def get_admin_dashboard_stats(days: int = 30) -> dict[str, Any]:
             "period_days": days,
             "scans": {
                 "total": len(scan_rows),
-                "by_day": [{"date": key, "count": day_counts[key]} for key in sorted(day_counts)],
+                "by_day": [{"date": key, "count": day_counts[key]} for key in period_dates],
                 "by_risk": [
                     {"risk": key, "count": value}
                     for key, value in risk_counts.most_common()
@@ -260,6 +268,10 @@ def get_admin_dashboard_stats(days: int = 30) -> dict[str, Any]:
                 "by_severity": [
                     {"severity": key, "count": value}
                     for key, value in severity_counts.most_common()
+                ],
+                "by_type": [
+                    {"type": key, "count": value}
+                    for key, value in finding_type_counts.most_common(30)
                 ],
             },
             "tasks": {

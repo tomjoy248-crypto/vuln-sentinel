@@ -18,7 +18,7 @@ import time
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 logger = logging.getLogger("vuln_sentinel.scan_queue")
@@ -99,6 +99,21 @@ class BaseScanQueue(ABC):
         ...
 
     @abstractmethod
+    async def pause_task(self, task_id: str) -> bool:
+        """暂停尚未开始的任务，返回是否成功。"""
+        ...
+
+    @abstractmethod
+    async def resume_task(self, task_id: str) -> bool:
+        """恢复已暂停的任务，返回是否成功。"""
+        ...
+
+    @abstractmethod
+    async def retry_task(self, task_id: str) -> str | None:
+        """将失败任务复制为新的队列项。"""
+        ...
+
+    @abstractmethod
     async def start_worker(self, runner: TaskRunner) -> None:
         """启动后台工作线程。"""
         ...
@@ -115,13 +130,16 @@ class MemoryScanQueue(BaseScanQueue):
     def __init__(self, max_workers: int = 2) -> None:
         self._queue: asyncio.Queue[ScanTask] = asyncio.Queue()
         self._results: dict[str, ScanTaskResult] = {}
+        self._tasks: dict[str, ScanTask] = {}
         self._handles: dict[str, asyncio.Task] = {}
+        self._paused: set[str] = set()
         self._max_workers = max_workers
         self._worker_tasks: list[asyncio.Task] = []
         self._runner: TaskRunner | None = None
         self._running = False
 
     async def submit(self, task: ScanTask) -> str:
+        self._tasks[task.task_id] = task
         self._results[task.task_id] = ScanTaskResult(
             task_id=task.task_id,
             status="pending",
@@ -143,19 +161,48 @@ class MemoryScanQueue(BaseScanQueue):
         result = self._results.get(task_id)
         if result is None:
             return False
-        if result.status not in ("pending", "running"):
+        if result.status not in ("pending", "paused", "running"):
             return False
 
         result.status = "cancelled"
         result.stage = "cancelled"
         result.progress = 0
         result.updated_at = time.time()
+        self._paused.discard(task_id)
 
         handle = self._handles.pop(task_id, None)
         if handle and not handle.done():
             handle.cancel()
         logger.info("Scan task cancelled: %s", task_id)
         return True
+
+    async def pause_task(self, task_id: str) -> bool:
+        result = self._results.get(task_id)
+        if result is None or result.status != "pending":
+            return False
+        self._paused.add(task_id)
+        result.status = "paused"
+        result.stage = "paused"
+        result.updated_at = time.time()
+        return True
+
+    async def resume_task(self, task_id: str) -> bool:
+        result = self._results.get(task_id)
+        if result is None or result.status != "paused":
+            return False
+        self._paused.discard(task_id)
+        result.status = "pending"
+        result.stage = "queued"
+        result.updated_at = time.time()
+        return True
+
+    async def retry_task(self, task_id: str) -> str | None:
+        result = self._results.get(task_id)
+        task = self._tasks.get(task_id)
+        if result is None or task is None or result.status not in ("failed", "timeout"):
+            return None
+        retry = replace(task, task_id=generate_task_id(), created_at=time.time())
+        return await self.submit(retry)
 
     async def start_worker(self, runner: TaskRunner) -> None:
         if self._running:
@@ -183,6 +230,11 @@ class MemoryScanQueue(BaseScanQueue):
             result = self._results.get(task.task_id)
             if result and result.status == "cancelled":
                 self._queue.task_done()
+                continue
+            if result and result.status == "paused":
+                await self._queue.put(task)
+                self._queue.task_done()
+                await asyncio.sleep(0.05)
                 continue
             if result:
                 result.status = "running"
@@ -254,7 +306,9 @@ class RedisScanQueue(BaseScanQueue):
 
     async def submit(self, task: ScanTask) -> str:
         r = self._get_redis()
-        await r.lpush("scan_queue:pending", json.dumps(task.to_dict()))
+        payload = json.dumps(task.to_dict())
+        await r.lpush("scan_queue:pending", payload)
+        await r.set(f"scan_queue:task:{task.task_id}", payload, ex=86400)
         await self._set_result(
             task.task_id,
             ScanTaskResult(task.task_id, "pending", stage="queued", user_id=task.user_id),
@@ -282,11 +336,12 @@ class RedisScanQueue(BaseScanQueue):
         result = await self.get_status(task_id)
         if result is None:
             return False
-        if result.status not in ("pending", "running"):
+        if result.status not in ("pending", "paused", "running"):
             return False
 
         await r.sadd("scan_queue:cancelled", task_id)
         await r.expire("scan_queue:cancelled", 86400)
+        await r.srem("scan_queue:paused", task_id)
         result.status = "cancelled"
         result.stage = "cancelled"
         result.error = "任务已取消"
@@ -295,15 +350,68 @@ class RedisScanQueue(BaseScanQueue):
         logger.info("Redis scan task cancelled: %s", task_id)
         return True
 
+    async def pause_task(self, task_id: str) -> bool:
+        r = self._get_redis()
+        result = await self.get_status(task_id)
+        if result is None or result.status != "pending":
+            return False
+        await r.sadd("scan_queue:paused", task_id)
+        await r.expire("scan_queue:paused", 86400)
+        result.status = "paused"
+        result.stage = "paused"
+        result.updated_at = time.time()
+        await self._set_result(task_id, result)
+        return True
+
+    async def resume_task(self, task_id: str) -> bool:
+        r = self._get_redis()
+        result = await self.get_status(task_id)
+        if result is None or result.status != "paused":
+            return False
+        await r.srem("scan_queue:paused", task_id)
+        result.status = "pending"
+        result.stage = "queued"
+        result.updated_at = time.time()
+        await self._set_result(task_id, result)
+        return True
+
+    async def retry_task(self, task_id: str) -> str | None:
+        r = self._get_redis()
+        result = await self.get_status(task_id)
+        if result is None or result.status not in ("failed", "timeout"):
+            return None
+        payload = await r.get(f"scan_queue:task:{task_id}")
+        if not payload:
+            return None
+        try:
+            data = json.loads(payload)
+            retry = ScanTask(
+                task_id=generate_task_id(),
+                user_id=int(data["user_id"]),
+                url=str(data["url"]),
+                depth=str(data.get("depth") or "standard"),
+                deep=bool(data.get("deep")),
+                authorized=bool(data.get("authorized")),
+                auth_headers={},
+            )
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return await self.submit(retry)
+
     async def _is_cancelled(self, task_id: str) -> bool:
         r = self._get_redis()
         return bool(await r.sismember("scan_queue:cancelled", task_id))
+
+    async def _is_paused(self, task_id: str) -> bool:
+        r = self._get_redis()
+        return bool(await r.sismember("scan_queue:paused", task_id))
 
     async def start_worker(self, runner: TaskRunner) -> None:
         if self._running:
             return
         self._runner = runner
         self._running = True
+        await self._recover_inflight()
         for i in range(self._max_workers):
             self._worker_tasks.append(asyncio.create_task(self._worker_loop(i)))
         logger.info("Redis scan queue worker started (%d workers)", self._max_workers)
@@ -346,10 +454,22 @@ class RedisScanQueue(BaseScanQueue):
                 )
                 continue
 
+            if await self._is_paused(task.task_id):
+                await r.lpush("scan_queue:pending", item[1])
+                await self._set_result(
+                    task.task_id,
+                    ScanTaskResult(task.task_id, "paused", stage="paused", user_id=task.user_id),
+                )
+                await asyncio.sleep(0.05)
+                continue
+
+            await r.hset("scan_queue:inflight", task.task_id, item[1])
+
             await self._set_result(
                 task.task_id,
                 ScanTaskResult(task.task_id, "running", stage="scanning", user_id=task.user_id),
             )
+            terminal = False
             try:
                 if self._runner is None:
                     raise RuntimeError("Task runner not configured")
@@ -373,6 +493,7 @@ class RedisScanQueue(BaseScanQueue):
                         ),
                     )
                     logger.info("Redis scan task completed: %s", task.task_id)
+                terminal = True
             except asyncio.CancelledError:
                 logger.info("Redis scan task cancelled in worker: %s", task.task_id)
                 raise
@@ -382,6 +503,44 @@ class RedisScanQueue(BaseScanQueue):
                     task.task_id,
                     ScanTaskResult(task.task_id, "failed", error=str(e), user_id=task.user_id),
                 )
+                terminal = True
+            finally:
+                if terminal:
+                    await r.hdel("scan_queue:inflight", task.task_id)
+
+    async def _recover_inflight(self) -> None:
+        """Requeue tasks left in processing when a worker stopped unexpectedly."""
+        r = self._get_redis()
+        try:
+            inflight = await r.hgetall("scan_queue:inflight")
+        except Exception:
+            return
+        if not isinstance(inflight, dict):
+            return
+        for task_id, payload in inflight.items():
+            if await self._is_cancelled(task_id):
+                await r.hdel("scan_queue:inflight", task_id)
+                continue
+            current = await self.get_status(task_id)
+            if current and current.status in ("completed", "failed", "cancelled", "timeout"):
+                await r.hdel("scan_queue:inflight", task_id)
+                continue
+            try:
+                data = json.loads(payload)
+                user_id = int(data["user_id"])
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                await r.hdel("scan_queue:inflight", task_id)
+                continue
+            await r.lpush("scan_queue:pending", payload)
+            await r.hdel("scan_queue:inflight", task_id)
+            recovered_status = "paused" if await self._is_paused(task_id) else "pending"
+            recovered_stage = "paused" if recovered_status == "paused" else "recovered"
+            await self._set_result(
+                task_id,
+                ScanTaskResult(task_id, recovered_status, stage=recovered_stage, user_id=user_id),
+            )
+        if inflight:
+            logger.info("Recovered %d Redis scan tasks after restart", len(inflight))
 
     async def list_user_tasks(self, user_id: int, limit: int = 50) -> list[ScanTaskResult]:
         """列出指定用户的任务结果（按更新时间倒序）。"""

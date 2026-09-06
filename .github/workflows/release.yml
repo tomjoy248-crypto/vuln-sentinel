@@ -14,17 +14,17 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -64,3 +64,42 @@ jobs:
           files: release-assets/Vuln-Sentinel-${{ steps.prep.outputs.version }}-win64-setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  verify-release-asset:
+    name: Verify Published Windows Release Asset
+    needs: release
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download published installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          New-Item -ItemType Directory -Force downloaded-release | Out-Null
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --pattern "Vuln-Sentinel-$version-win64-setup.exe" --dir downloaded-release --clobber
+
+      - name: Validate published installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem downloaded-release -Filter '*setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Published Windows installer asset is missing' }
+          if ($installer.Length -lt 1MB) { throw "Published installer is unexpectedly small: $($installer.Length) bytes" }
+          $signature = (Get-Content $installer.FullName -AsByteStream -TotalCount 2 | ForEach-Object {[char]$_}) -join ''
+          if ($signature -ne 'MZ') { throw 'Published asset is not a Windows PE installer' }
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash
+          Write-Host "Published installer: $($installer.Name)"
+          Write-Host "Bytes: $($installer.Length)"
+          Write-Host "SHA256: $hash"
+          @("file=$($installer.Name)", "bytes=$($installer.Length)", "sha256=$hash") | Set-Content downloaded-release\verification.txt
+
+      - name: Upload release verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: vuln-sentinel-release-asset-verification-${{ github.ref_name }}
+          path: downloaded-release/verification.txt
+          if-no-files-found: error
+          retention-days: 14

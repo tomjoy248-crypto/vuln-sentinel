@@ -56,11 +56,26 @@ def compare_business_flow_results(
 
     before = {key(item): item for item in baseline.get("findings", [])}
     after = {key(item): item for item in current.get("findings", [])}
+    fixed = [before[item] for item in sorted(set(before) - set(after))]
+    remaining = [after[item] for item in sorted(set(after) & set(before))]
+    new = [after[item] for item in sorted(set(after) - set(before))]
+    if not before:
+        status = "new" if after else "baseline_clean"
+    elif not remaining and not new:
+        status = "fixed"
+    elif fixed or new:
+        status = "changed"
+    else:
+        status = "unchanged"
     return {
         "available": True,
-        "fixed": [before[item] for item in sorted(set(before) - set(after))],
-        "remaining": [after[item] for item in sorted(set(after) & set(before))],
-        "new": [after[item] for item in sorted(set(after) - set(before))],
+        "status": status,
+        "fixed": fixed,
+        "remaining": remaining,
+        "new": new,
+        "fixed_count": len(fixed),
+        "remaining_count": len(remaining),
+        "new_count": len(new),
     }
 
 
@@ -75,6 +90,7 @@ def analyze_business_flow(steps: list[dict[str, Any]]) -> dict[str, Any]:
     seen_fingerprints: set[str] = set()
     previous_rank: int | None = None
     previous_state = ""
+    transitions: list[dict[str, Any]] = []
     for index, step in enumerate(steps, 1):
         name = str(step.get("name") or f"step-{index}")
         state = str(step.get("state") or "").lower().strip()
@@ -84,13 +100,31 @@ def analyze_business_flow(steps: list[dict[str, Any]]) -> dict[str, Any]:
             step.get("previous_state") or step.get("from_state") or previous_state
         ).lower().strip()
         declared_previous_rank = STATE_ORDER.get(declared_previous, previous_rank)
+        transition = {
+            "step": name,
+            "index": index,
+            "from_state": declared_previous or None,
+            "to_state": state or None,
+            "action": action or None,
+        }
+        transitions.append(transition)
         if rank is not None and declared_previous_rank is not None and rank > declared_previous_rank + 1:
             findings.append({
                 "type": "state_jump",
                 "severity": "medium",
                 "step": name,
+                "index": index,
                 "evidence": f"状态从 {declared_previous or '未知'} 跳到 {state}",
                 "fix": "服务端按订单当前状态和操作者权限校验每一步，不接受客户端直接指定最终状态。",
+            })
+        elif rank is not None and declared_previous_rank is not None and rank < declared_previous_rank:
+            findings.append({
+                "type": "state_regression",
+                "severity": "medium",
+                "step": name,
+                "index": index,
+                "evidence": f"状态从 {declared_previous or '未知'} 回退到 {state}",
+                "fix": "服务端拒绝非法状态回退，并明确退款、取消等逆向流程的授权条件。",
             })
         if rank is not None:
             previous_rank = rank
@@ -106,6 +140,7 @@ def analyze_business_flow(steps: list[dict[str, Any]]) -> dict[str, Any]:
                 "type": "duplicate_submission",
                 "severity": "medium",
                 "step": name,
+                "index": index,
                 "evidence": f"变更操作 {action} 与先前步骤的请求特征重复",
                 "fix": "为创建、支付、提交等变更操作实现幂等键和服务端去重。",
             })
@@ -128,6 +163,7 @@ def analyze_business_flow(steps: list[dict[str, Any]]) -> dict[str, Any]:
                     "type": "boundary_value",
                     "severity": "high",
                     "step": name,
+                    "index": index,
                     "evidence": f"参数 {value_name} 的业务数值超出常规边界",
                     "fix": "在服务端执行类型、范围、精度和业务余额校验，不信任前端数值。",
                 })
@@ -136,6 +172,7 @@ def analyze_business_flow(steps: list[dict[str, Any]]) -> dict[str, Any]:
                 "type": "missing_idempotency",
                 "severity": "low",
                 "step": name,
+                "index": index,
                 "evidence": f"变更操作 {action} 未提供幂等键线索",
                 "fix": "对可重试的变更请求增加幂等键，避免网络重试造成重复提交。",
             })
@@ -143,6 +180,11 @@ def analyze_business_flow(steps: list[dict[str, Any]]) -> dict[str, Any]:
         "step_count": len(steps),
         "finding_count": len(findings),
         "findings": findings,
+        "transitions": transitions,
+        "severity_counts": {
+            severity: sum(1 for finding in findings if finding["severity"] == severity)
+            for severity in ("high", "medium", "low", "info")
+        },
         "safe_mode": True,
         "message": "仅分析已采集的授权流程证据，未执行状态变更请求",
     }

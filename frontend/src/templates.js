@@ -156,7 +156,7 @@ export const APP_TEMPLATE = `</head>
     </div>
 
     <h1 class="home-hero-title">Vuln Sentinel Web 安全检测平台</h1>
-    <div class="home-hero-version">Version 11.0.4</div>
+    <div class="home-hero-version">Version 11.0.5</div>
 
     <div class="home-hero-actions">
       <button onclick="navigateTo('home')" class="home-hero-icon" aria-label="首页">⌂</button>
@@ -1665,8 +1665,9 @@ export const APP_TEMPLATE = `</head>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <input id="admin-log-username" placeholder="用户名" style="max-width:140px">
         <input id="admin-log-target" placeholder="目标或资源编号" style="max-width:160px">
-        <select id="admin-log-status" style="max-width:120px"><option value="">全部结果</option><option value="success">成功</option><option value="failure">失败</option><option value="error">异常</option></select>
-        <button class="btn btn-secondary" id="admin-log-filter">筛选</button>
+         <select id="admin-log-status" style="max-width:120px"><option value="">全部结果</option><option value="success">成功</option><option value="failure">失败</option><option value="error">异常</option></select>
+         <button class="btn btn-secondary" id="admin-log-filter">筛选</button>
+         <button class="btn btn-secondary" id="admin-log-export">导出 CSV</button>
       </div>
       <div id="admin-audit-logs" style="margin-top:10px"></div>
       <div style="margin-top:20px;font-size:13px;font-weight:600">邮件投递日志</div>

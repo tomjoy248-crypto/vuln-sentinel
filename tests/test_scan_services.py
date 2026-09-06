@@ -494,6 +494,28 @@ async def test_redis_queue_cancel_pending_marks_cancelled():
     assert json.loads(payload)["status"] == "cancelled"
 
 
+async def test_redis_queue_pause_and_resume_pending():
+    queue, r = _redis_queue_with_mock()
+    pending = ScanTaskResult("SCAN-PAUSE", "pending", stage="queued", user_id=1)
+    r.get.return_value = json.dumps(pending.to_dict())
+    assert await queue.pause_task("SCAN-PAUSE") is True
+    assert r.sadd.call_args.args == ("scan_queue:paused", "SCAN-PAUSE")
+    r.get.return_value = json.dumps(ScanTaskResult("SCAN-PAUSE", "paused", user_id=1).to_dict())
+    assert await queue.resume_task("SCAN-PAUSE") is True
+    r.srem.assert_awaited_once_with("scan_queue:paused", "SCAN-PAUSE")
+
+
+async def test_redis_queue_recovers_inflight_task():
+    queue, r = _redis_queue_with_mock()
+    task = _make_scan_task()
+    r.hgetall.return_value = {task.task_id: json.dumps(task.to_dict())}
+    r.sismember.return_value = False
+    await queue._recover_inflight()
+    r.lpush.assert_awaited_once()
+    assert r.lpush.call_args.args[0] == "scan_queue:pending"
+    assert r.hdel.await_count == 1
+
+
 async def test_redis_queue_cancel_completed_returns_false():
     queue, r = _redis_queue_with_mock()
     completed = ScanTaskResult("SCAN-C", "completed", progress=100, stage="done")

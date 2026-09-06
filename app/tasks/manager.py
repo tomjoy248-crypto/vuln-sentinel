@@ -254,19 +254,27 @@ class ScanTaskManager:
                 "1",
                 "yes",
             }
+            try:
+                progress = max(0, min(100, int(row.get("progress") or 0)))
+            except (TypeError, ValueError):
+                progress = 0
+            try:
+                retry_count = max(0, int(row.get("retry_count") or 0))
+            except (TypeError, ValueError):
+                retry_count = 0
             task = ScanTask(
                 task_id=task_id,
                 url=str(row.get("url") or ""),
                 user_id=user_id,
                 status=status,
                 depth=str(row.get("depth") or "standard"),
-                progress=int(row.get("progress") or 0),
+                progress=progress,
                 created_at=row.get("created_at"),
                 started_at=row.get("started_at"),
                 completed_at=row.get("completed_at"),
                 result=row.get("result"),
                 error=row.get("error"),
-                retry_count=int(row.get("retry_count") or 0),
+                retry_count=retry_count,
                 previous_task_id=row.get("previous_task_id"),
                 has_sensitive_context=has_sensitive,
             )
@@ -275,19 +283,30 @@ class ScanTaskManager:
                     task.status = TaskStatus.FAILED
                     task.error = "服务重启时认证任务被安全中断，请重新提交（认证信息不会自动恢复）"
                     task.completed_at = _now_iso()
-                else:
+                elif task.status == TaskStatus.RUNNING:
                     task.status = TaskStatus.PENDING
                     task.started_at = None
                     task.completed_at = None
-                    task.progress = min(task.progress, 0)
+                    task.progress = 0
             self._tasks[task.task_id] = task
-            self._pause_events[task.task_id] = asyncio.Event()
-            self._pause_events[task.task_id].set()
-            if task.status == TaskStatus.PENDING:
-                kwargs = {"deep": task.depth == "deep", "user_id": task.user_id}
-                self._specs[task.task_id] = (scan_func, kwargs)
+            pause_event = asyncio.Event()
+            if task.status != TaskStatus.PAUSED:
+                pause_event.set()
+            self._pause_events[task.task_id] = pause_event
+            restore_kwargs = {"deep": task.depth == "deep", "user_id": task.user_id}
+            if not task.has_sensitive_context and task.status in (
+                TaskStatus.PENDING,
+                TaskStatus.PAUSED,
+                TaskStatus.FAILED,
+                TaskStatus.TIMEOUT,
+            ):
+                self._specs[task.task_id] = (scan_func, restore_kwargs)
+            if not task.has_sensitive_context and task.status in (
+                TaskStatus.PENDING,
+                TaskStatus.PAUSED,
+            ):
                 self._handles[task.task_id] = asyncio.create_task(
-                    self._run_task(task, scan_func, kwargs)
+                    self._run_task(task, scan_func, restore_kwargs)
                 )
             self._persist(task)
             restored += 1
@@ -404,32 +423,37 @@ class ScanTaskManager:
         call_kwargs["progress_cb"] = _progress_cb
 
         try:
-            # 暂停只作用于尚未开始的任务，避免中断目标站点请求。
+            # 暂停只作用于尚未开始的任务，避免中断目标站点请求。状态切换
+            # 与 pause_task 共用同一把锁，避免“刚暂停又启动”的竞态。
             pause_event = self._pause_events.get(task.task_id)
-            if pause_event is not None:
-                await pause_event.wait()
-            async with self._semaphore:
-                # 排队期间若已被取消，直接退出，不占用执行槽位
-                if task.status in (TaskStatus.CANCELLED, TaskStatus.PAUSED):
-                    return
+            while True:
+                if pause_event is not None:
+                    await pause_event.wait()
+                async with self._semaphore:
+                    async with self._lock:
+                        if task.status == TaskStatus.CANCELLED:
+                            return
+                        if task.status == TaskStatus.PAUSED:
+                            continue
+                        if task.status != TaskStatus.PENDING:
+                            return
+                        task.status = TaskStatus.RUNNING
+                        task.started_at = _now_iso()
+                        task.progress = 0
+                        self._persist(task)
+                        logger.info("Task running: id=%s", task.task_id)
+                    result = await asyncio.wait_for(
+                        scan_func(task.url, **call_kwargs),
+                        timeout=self._task_timeout,
+                    )
 
-                task.status = TaskStatus.RUNNING
-                task.started_at = _now_iso()
-                task.progress = 0
-                self._persist(task)
-                logger.info("Task running: id=%s", task.task_id)
-
-                result = await asyncio.wait_for(
-                    scan_func(task.url, **call_kwargs),
-                    timeout=self._task_timeout,
-                )
-
-                # 兼容非 dict 返回值，统一存储为 dict
-                task.result = result if isinstance(result, dict) else {"result": result}
-                task.progress = 100
-                task.status = TaskStatus.COMPLETED
-                self._persist(task)
-                logger.info("Task completed: id=%s", task.task_id)
+                    # 兼容非 dict 返回值，统一存储为 dict
+                    task.result = result if isinstance(result, dict) else {"result": result}
+                    task.progress = 100
+                    task.status = TaskStatus.COMPLETED
+                    self._persist(task)
+                    logger.info("Task completed: id=%s", task.task_id)
+                    break
         except asyncio.TimeoutError:
             task.status = TaskStatus.TIMEOUT
             task.error = f"任务执行超时（{self._task_timeout} 秒）"
@@ -446,8 +470,11 @@ class ScanTaskManager:
             self._persist(task)
             logger.exception("Task failed: id=%s", task.task_id)
         finally:
-            task.completed_at = _now_iso()
-            self._persist(task)
+            # 等待暂停时不是终态，不能写入完成时间，否则恢复/列表会
+            # 把仍在队列中的任务误显示成已结束。
+            if task.status.value in _TERMINAL_STATUSES:
+                task.completed_at = task.completed_at or _now_iso()
+                self._persist(task)
             await self._cleanup()
 
     def _update_progress(self, task: ScanTask, value: int) -> None:
@@ -592,10 +619,11 @@ class ScanTaskManager:
 
         # 防御性置态：覆盖「协程未启动即被取消」的场景。
         # 若协程已运行，_run_task 的 CancelledError 处理会幂等覆盖，无副作用。
-        if task.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
-            task.status = TaskStatus.CANCELLED
-            task.completed_at = _now_iso()
-            self._persist(task)
+        async with self._lock:
+            if task.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
+                task.status = TaskStatus.CANCELLED
+                task.completed_at = _now_iso()
+                self._persist(task)
 
         logger.info("Task cancel requested: id=%s", task_id)
         return True
@@ -637,7 +665,13 @@ class ScanTaskManager:
             ):
                 return None
             scan_func, kwargs = spec
-        new_task_id = await self.submit(task.url, task.user_id, task.depth, scan_func, **kwargs)
+        retry_kwargs = dict(kwargs)
+        # Restored tasks keep user_id as execution metadata; submit() already
+        # receives it as its positional ownership field.
+        retry_kwargs.pop("user_id", None)
+        new_task_id = await self.submit(
+            task.url, task.user_id, task.depth, scan_func, **retry_kwargs
+        )
         new_task = self._tasks.get(new_task_id)
         if new_task is not None:
             new_task.retry_count = task.retry_count + 1
@@ -675,6 +709,7 @@ class ScanTaskManager:
                 self._tasks.pop(t.task_id, None)
                 self._handles.pop(t.task_id, None)
                 self._specs.pop(t.task_id, None)
+                self._pause_events.pop(t.task_id, None)
 
         if to_remove:
             logger.debug(

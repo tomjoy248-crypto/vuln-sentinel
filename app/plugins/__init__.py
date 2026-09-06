@@ -363,13 +363,20 @@ class DetectorRegistry:
 
     # 插件耗时阈值（毫秒）：超过此值才打印详细日志
     _SLOW_PLUGIN_THRESHOLD_MS = 2000.0
+    # 单个检测器的执行预算。超时只隔离该检测器，避免慢目标拖垮整次扫描。
+    _DETECTOR_TIMEOUT_SECONDS = {
+        "quick": 8.0,
+        "standard": 15.0,
+        "deep": 30.0,
+    }
 
     @classmethod
     async def run_all(cls, context: ScanContext) -> dict[str, builtins.list[Finding]]:
         """并行运行所有启用的检测器。
 
         仅在插件出错或耗时超过阈值时打印详细日志，
-        批次结束后始终打印汇总信息。
+        批次结束后始终打印汇总信息。每个检测器都有独立执行预算，
+        超时的检测器会被隔离，其他检测结果仍会正常返回。
 
         Args:
             context: 扫描上下文
@@ -392,12 +399,13 @@ class DetectorRegistry:
         batch_start = time.time()
         timings: dict[str, float] = {}  # name -> elapsed_ms
         counts: dict[str, int] = {}  # name -> finding_count
+        timeout_seconds = cls._DETECTOR_TIMEOUT_SECONDS.get(context.depth, 15.0)
 
         async def _timed(name: str, coro: Any) -> builtins.list[Finding]:
-            """包装检测器协程，仅慢或出错时记录详细日志。"""
+            """Run one detector within its budget and isolate slow failures."""
             t0 = time.time()
             try:
-                result = await coro
+                result = await asyncio.wait_for(coro, timeout=timeout_seconds)
                 elapsed = (time.time() - t0) * 1000
                 timings[name] = elapsed
                 count = len(result) if result else 0
@@ -412,6 +420,16 @@ class DetectorRegistry:
                         cls._SLOW_PLUGIN_THRESHOLD_MS,
                     )
                 return result
+            except asyncio.TimeoutError:
+                elapsed = (time.time() - t0) * 1000
+                timings[name] = elapsed
+                counts[name] = 0
+                logger.warning(
+                    "Plugin '%s' timed out after %.1fs; continuing with other detectors",
+                    name,
+                    timeout_seconds,
+                )
+                return []
             except Exception as exc:
                 elapsed = (time.time() - t0) * 1000
                 timings[name] = elapsed

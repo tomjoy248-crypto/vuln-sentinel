@@ -24,6 +24,7 @@ import {
   adminAuditLogs,
   adminAuditSummary,
   adminDashboardStats,
+  adminAuditExport,
   adminEmailLogs,
   listScanTasks,
   pauseScanTask,
@@ -449,8 +450,11 @@ function renderAdminDashboardStats(stats) {
   let severity = (findings.by_severity || []).slice(0, 6).map(function(item) {
     return '<span style="padding:4px 7px;border:1px solid var(--border);border-radius:10px;font-size:11px">' + escapeHtml(item.severity || '-') + ' ' + escapeHtml(String(item.count || 0)) + '</span>';
   }).join('');
-  let statuses = (tasks.by_status || []).slice(0, 6).map(function(item) {
+   let statuses = (tasks.by_status || []).slice(0, 6).map(function(item) {
     return '<span style="padding:4px 7px;border:1px solid var(--border);border-radius:10px;font-size:11px">' + escapeHtml(item.status || '-') + ' ' + escapeHtml(String(item.count || 0)) + '</span>';
+  }).join('');
+  let types = (findings.by_type || []).slice(0, 5).map(function(item) {
+    return '<span style="padding:4px 7px;border:1px solid var(--border);border-radius:10px;font-size:11px">' + escapeHtml(item.type || '-') + ' ' + escapeHtml(String(item.count || 0)) + '</span>';
   }).join('');
   return '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">' +
     '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px"><small>周期扫描</small><strong style="display:block;font-size:20px;margin-top:4px">' + escapeHtml(String(scans.total || 0)) + '</strong></div>' +
@@ -458,11 +462,31 @@ function renderAdminDashboardStats(stats) {
     '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px"><small>失败/超时任务</small><strong style="display:block;font-size:20px;margin-top:4px">' + escapeHtml(String(tasks.failed || 0)) + '</strong></div>' +
     '</div>' +
     '<div style="margin-top:10px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px"><div style="font-size:12px;font-weight:600">近 ' + escapeHtml(String(stats.period_days || 30)) + ' 天扫描趋势</div><div style="display:flex;gap:4px;align-items:flex-end;height:82px;margin-top:6px">' + (bars || '<span class="card-desc">暂无扫描数据</span>') + '</div></div>' +
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' + (severity || '<span class="card-desc">暂无风险数据</span>') + (statuses ? '<span style="width:1px;background:var(--border)"></span>' + statuses : '') + '</div>';
+     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' + (severity || '<span class="card-desc">暂无风险数据</span>') + (types ? '<span style="width:1px;background:var(--border)"></span>' + types : '') + (statuses ? '<span style="width:1px;background:var(--border)"></span>' + statuses : '') + '</div>';
+}
+
+function downloadAdminLogs() {
+  let filters = {
+    status: (document.getElementById('admin-log-status') || {}).value || '',
+    resource_type: '',
+    limit: 5000
+  };
+  adminAuditExport(filters).then(function(result) {
+    let blob = new Blob([result.content], { type: 'text/csv;charset=utf-8' });
+    let link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = result.filename || 'audit-logs.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function() { URL.revokeObjectURL(link.href); }, 0);
+    showToast('日志导出已开始');
+  }).catch(function(error) { showToast(error.message || '日志导出失败', 'error'); });
 }
 
 document.addEventListener('click', function(event) {
   if (event.target && event.target.id === 'admin-log-filter') loadAdminLogs();
+  if (event.target && event.target.id === 'admin-log-export') downloadAdminLogs();
 });
 
 function renderAdminLogRows(logs, labelKey) {
@@ -743,7 +767,8 @@ export {
   saveNotificationSettings,
   toggleApiKeyVisibility,
   renderAIConfig,
-  loadAdminLogs
+  loadAdminLogs,
+  downloadAdminLogs
 };
 
 

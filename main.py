@@ -16931,7 +16931,7 @@ async def api_async_scan(
 
     # 优先使用 Redis 队列；含认证头的任务只保留在内存中。
     _use_redis = False
-    if settings.redis_url and not auth_headers:
+    if settings.redis_url and not auth_headers and not req.verification_token:
         try:
             queue = get_scan_queue()
             task_id = await queue.submit(
@@ -16960,6 +16960,7 @@ async def api_async_scan(
             scan_func=_scan_fn,
             deep=req.deep,
             auth_headers=auth_headers,
+            verification_token=req.verification_token,
         )
     return {"task_id": task_id, "status": "pending", "url": raw_url}
 
@@ -17000,13 +17001,34 @@ async def api_batch_scan(
                 auth_headers=auth_headers,
             )
 
-        task_id = await _scan_task_manager.submit(
-            url=raw_url,
-            user_id=user["user_id"],
-            depth="deep" if req.deep else "standard",
-            scan_func=_scan_fn,
-            deep=req.deep,
-        )
+        _use_redis = False
+        if settings.redis_url and not auth_headers and not req.verification_token:
+            try:
+                queue = get_scan_queue()
+                task_id = await queue.submit(
+                    RedisScanTask(
+                        task_id=f"SCAN-{uuid.uuid4().hex[:12].upper()}",
+                        user_id=user["user_id"],
+                        url=raw_url,
+                        depth="deep" if req.deep else "standard",
+                        deep=req.deep,
+                        authorized=req.authorized,
+                        auth_headers={},
+                    )
+                )
+                _use_redis = True
+            except Exception as redis_err:
+                logger.warning("Redis batch submit failed, using local queue: %s", redis_err)
+        if not _use_redis:
+            task_id = await _scan_task_manager.submit(
+                url=raw_url,
+                user_id=user["user_id"],
+                depth="deep" if req.deep else "standard",
+                scan_func=_scan_fn,
+                deep=req.deep,
+                auth_headers=auth_headers,
+                verification_token=req.verification_token,
+            )
         tasks.append({"task_id": task_id, "url": raw_url, "status": "pending"})
     return {"success": True, "tasks": tasks, "total": len(tasks)}
 
@@ -17052,6 +17074,8 @@ async def api_list_scan_tasks(
                 tasks = await queue.list_user_tasks(user["user_id"])
             else:
                 tasks = []
+            if status:
+                tasks = [task for task in tasks if task.status == status]
             return {
                 "tasks": [t.to_dict() for t in tasks[:50]],
                 "stats": {},
@@ -17113,6 +17137,20 @@ async def api_pause_scan_task(
     task_id: str, user: dict = Depends(require_login)
 ) -> dict:
     """暂停尚未开始的扫描任务，避免中断正在进行的目标请求。"""
+    if settings.redis_url:
+        try:
+            queue = get_scan_queue()
+            result = await queue.get_status(task_id)
+            if result:
+                if result.user_id != user["user_id"]:
+                    raise HTTPException(403, "无权操作此任务")
+                if not await queue.pause_task(task_id):
+                    raise HTTPException(409, "任务已开始或无法暂停")
+                return {"task_id": task_id, "status": "paused"}
+        except HTTPException:
+            raise
+        except Exception:
+            pass
     task = _scan_task_manager.get_task(task_id)
     if not task:
         raise HTTPException(404, "任务不存在")
@@ -17128,6 +17166,20 @@ async def api_resume_scan_task(
     task_id: str, user: dict = Depends(require_login)
 ) -> dict:
     """恢复已暂停的扫描任务。"""
+    if settings.redis_url:
+        try:
+            queue = get_scan_queue()
+            result = await queue.get_status(task_id)
+            if result:
+                if result.user_id != user["user_id"]:
+                    raise HTTPException(403, "无权操作此任务")
+                if not await queue.resume_task(task_id):
+                    raise HTTPException(409, "任务未暂停或无法恢复")
+                return {"task_id": task_id, "status": "pending"}
+        except HTTPException:
+            raise
+        except Exception:
+            pass
     task = _scan_task_manager.get_task(task_id)
     if not task:
         raise HTTPException(404, "任务不存在")
@@ -17143,6 +17195,24 @@ async def api_retry_scan_task(
     task_id: str, user: dict = Depends(require_login)
 ) -> dict:
     """Retry a failed or timed-out task without duplicating request details."""
+    if settings.redis_url:
+        try:
+            queue = get_scan_queue()
+            result = await queue.get_status(task_id)
+            if result:
+                if result.user_id != user["user_id"]:
+                    raise HTTPException(403, "无权操作此任务")
+                new_task_id = await queue.retry_task(task_id)
+                if not new_task_id:
+                    raise HTTPException(409, "只有失败或超时任务可以重试")
+                from app.audit import save_audit_log
+                save_audit_log(user["user_id"], "scan_retry", "scan", task_id,
+                               {"new_task_id": new_task_id})
+                return {"task_id": new_task_id, "previous_task_id": task_id, "status": "pending"}
+        except HTTPException:
+            raise
+        except Exception:
+            pass
     task = _scan_task_manager.get_task(task_id)
     if not task:
         raise HTTPException(404, "任务不存在")

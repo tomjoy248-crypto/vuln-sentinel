@@ -272,9 +272,18 @@ export function adminAuditSummary() { return apiGet('/api/admin/audit-logs/summa
 export function adminDashboardStats(days = 30) {
   return apiGet('/api/admin/dashboard/stats?days=' + encodeURIComponent(days));
 }
-export function adminAuditExport(filters = {}) {
+export async function adminAuditExport(filters = {}) {
   const q = new URLSearchParams(filters).toString();
-  return apiGet('/api/admin/audit-logs/export' + (q ? '?' + q : ''));
+  const resp = await authFetch('/api/admin/audit-logs/export' + (q ? '?' + q : ''), {
+    skipAuthExpiry: true
+  });
+  const content = await resp.text();
+  if (!resp.ok) {
+    let message = '日志导出失败';
+    try { message = JSON.parse(content).detail || message; } catch (e) {}
+    throw new Error(message);
+  }
+  return { content, filename: 'audit-logs.csv' };
 }
 
 export function adminEmailLogs(limit = 50, offset = 0, emailType = '', status = '') {
