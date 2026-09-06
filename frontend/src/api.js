@@ -215,6 +215,7 @@ export function listScanTasks(status = '') { return apiGet('/api/scan/tasks' + (
 export function pauseScanTask(id) { return apiPost('/api/scan/tasks/' + encodeURIComponent(id) + '/pause', {}); }
 export function resumeScanTask(id) { return apiPost('/api/scan/tasks/' + encodeURIComponent(id) + '/resume', {}); }
 export function cancelScanTask(id) { return apiPost('/api/scan/tasks/' + encodeURIComponent(id) + '/cancel', {}); }
+export function retryScanTask(id) { return apiPost('/api/scan/tasks/' + encodeURIComponent(id) + '/retry', {}); }
 export function trend(url, limit = 30) {
   let q = '/api/trend?limit=' + limit;
   if (url) q += '&url=' + encodeURIComponent(url);

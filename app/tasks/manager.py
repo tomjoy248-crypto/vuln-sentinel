@@ -187,6 +187,7 @@ class ScanTaskManager:
         # task_id -> asyncio.Task（后台协程句柄，用于取消）
         self._handles: dict[str, asyncio.Task] = {}
         self._pause_events: dict[str, asyncio.Event] = {}
+        self._specs: dict[str, tuple[ScanFunc, dict[str, Any]]] = {}
 
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._lock = asyncio.Lock()
@@ -237,6 +238,7 @@ class ScanTaskManager:
             self._tasks[task_id] = task
             self._pause_events[task_id] = asyncio.Event()
             self._pause_events[task_id].set()
+            self._specs[task_id] = (scan_func, dict(kwargs))
 
         # 调度后台协程：fire-and-forget，异常在 _run_task 内部消化
         handle = asyncio.create_task(self._run_task(task, scan_func, kwargs))
@@ -509,6 +511,19 @@ class ScanTaskManager:
                 event.set()
             return True
 
+    async def retry_task(self, task_id: str) -> str | None:
+        """Retry a failed or timed-out task as a new queue item."""
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            spec = self._specs.get(task_id)
+            if task is None or spec is None or task.status not in (
+                TaskStatus.FAILED,
+                TaskStatus.TIMEOUT,
+            ):
+                return None
+            scan_func, kwargs = spec
+        return await self.submit(task.url, task.user_id, task.depth, scan_func, **kwargs)
+
     # ------------------------------------------------------------------
     # 清理
     # ------------------------------------------------------------------
@@ -538,6 +553,7 @@ class ScanTaskManager:
             for t in to_remove:
                 self._tasks.pop(t.task_id, None)
                 self._handles.pop(t.task_id, None)
+                self._specs.pop(t.task_id, None)
 
         if to_remove:
             logger.debug(

@@ -16948,6 +16948,25 @@ async def api_resume_scan_task(
     return {"task_id": task_id, "status": "pending"}
 
 
+@app.post("/api/scan/tasks/{task_id}/retry")
+async def api_retry_scan_task(
+    task_id: str, user: dict = Depends(require_login)
+) -> dict:
+    """Retry a failed or timed-out task without duplicating request details."""
+    task = _scan_task_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if task.user_id != user["user_id"]:
+        raise HTTPException(403, "无权操作此任务")
+    new_task_id = await _scan_task_manager.retry_task(task_id)
+    if not new_task_id:
+        raise HTTPException(409, "只有失败或超时任务可以重试")
+    from app.audit import save_audit_log
+    save_audit_log(user["user_id"], "scan_retry", "scan", task_id,
+                   {"new_task_id": new_task_id, "target": task.url})
+    return {"task_id": new_task_id, "previous_task_id": task_id, "status": "pending"}
+
+
 @app.post("/api/public-demo-scan", response_model=None)
 async def free_trial_scan(req: FreeTrialRequest, request: Request):
     """免费试用扫描：允许未登录用户扫描白名单站点，体验产品能力。"""

@@ -26,6 +26,7 @@ import {
   listScanTasks,
   pauseScanTask,
   resumeScanTask,
+  retryScanTask,
   cancelScanTask,
   authHeaders
 } from '../api.js';
@@ -382,6 +383,7 @@ function loadScanTasks() {
       let state = task.status || 'pending';
       let action = state === 'paused' ? '<button class="btn btn-secondary" data-task-action="resume" data-task-id="' + escapeHtml(task.task_id) + '">恢复</button>' : (state === 'pending' ? '<button class="btn btn-secondary" data-task-action="pause" data-task-id="' + escapeHtml(task.task_id) + '">暂停</button>' : '');
       if (['pending','paused','running'].includes(state)) action += ' <button class="btn btn-danger" data-task-action="cancel" data-task-id="' + escapeHtml(task.task_id) + '">取消</button>';
+      if (['failed','timeout'].includes(state)) action += ' <button class="btn btn-secondary" data-task-action="retry" data-task-id="' + escapeHtml(task.task_id) + '">重试</button>';
       return '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px;border-bottom:1px solid var(--border)"><div><strong>' + escapeHtml(task.url || '-') + '</strong><div class="card-desc">' + escapeHtml(state) + ' · ' + escapeHtml(task.task_id || '') + '</div></div><div>' + action + '</div></div>';
     }).join('');
   }).catch(function(error) { el.innerHTML = '<div class="auth-form-error">' + escapeHtml(error.message || '任务读取失败') + '</div>'; });
@@ -391,7 +393,7 @@ document.addEventListener('click', function(event) {
   let button = event.target && event.target.closest('[data-task-action]');
   if (!button) return;
   let action = button.dataset.taskAction;
-  let fn = action === 'pause' ? pauseScanTask : (action === 'resume' ? resumeScanTask : cancelScanTask);
+  let fn = action === 'pause' ? pauseScanTask : (action === 'resume' ? resumeScanTask : (action === 'retry' ? retryScanTask : cancelScanTask));
   fn(button.dataset.taskId).then(loadScanTasks).catch(function(error) { showToast(error.message || '任务操作失败'); });
 });
 
