@@ -90,6 +90,8 @@ class TestDemoTarget:
 
     def test_demo_fix_apply_and_reset(self, client, auth_headers):
         """测试应用修复和重置功能"""
+        if not os.path.exists(app_module.DEMO_NGINX_CONF):
+            pytest.skip("产品化版本已移除本地演示靶场")
         # 检查 nginx / openssl 是否可用
         import shutil
         if not shutil.which("nginx"):
