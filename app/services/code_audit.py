@@ -31,11 +31,15 @@ _RULES = [
     ("kotlin", re.compile(r"\bRuntime\.getRuntime\(\)\.exec|ProcessBuilder\s*\("), "Kotlin 程序可能执行外部命令", "high", "使用固定命令白名单并分离参数，避免 shell 注入。"),
     ("ruby", re.compile(r"\b(?:system|exec|`[^`]+`|Open3\.capture)\s*\(?"), "Ruby 程序可能执行外部命令", "high", "使用数组参数和固定命令白名单，禁止拼接用户输入。"),
     ("ruby", re.compile(r"(?:find_by_sql|execute)\s*\("), "Ruby 原始 SQL 需要检查参数化", "medium", "使用 ActiveRecord 参数绑定，避免拼接 SQL 字符串。"),
+    ("rust", re.compile(r"Command::new\s*\(|std::process::Command"), "Rust 程序可能执行外部命令", "high", "使用固定命令白名单并分离参数，避免把用户输入传入命令执行。"),
+    ("rust", re.compile(r"format!\s*\([^\n]*(?:SELECT|INSERT|UPDATE|DELETE)"), "Rust SQL 语句可能由字符串拼接生成", "high", "使用数据库驱动提供的参数绑定接口，避免拼接 SQL 字符串。"),
+    ("sql", re.compile(r"(?:EXECUTE\s+IMMEDIATE|xp_cmdshell)", re.IGNORECASE), "SQL 动态执行或系统命令调用", "high", "限制动态 SQL 来源并移除数据库到操作系统的命令执行权限。"),
+    ("sql", re.compile(r"SELECT\s+.*\+.*FROM|CONCAT\s*\([^\n]*SELECT", re.IGNORECASE), "SQL 语句可能由字符串拼接生成", "high", "使用预编译语句和参数绑定，不要拼接外部输入。"),
 ]
 
 def _language(name: str) -> str | None:
     suffix = name.lower().rsplit(".", 1)[-1] if "." in name else ""
-    return {"py": "python", "js": "javascript", "jsx": "javascript", "ts": "javascript", "tsx": "javascript", "java": "java", "php": "php", "go": "go", "cs": "csharp", "kt": "kotlin", "kts": "kotlin", "rb": "ruby"}.get(suffix)
+    return {"py": "python", "js": "javascript", "jsx": "javascript", "ts": "javascript", "tsx": "javascript", "java": "java", "php": "php", "go": "go", "cs": "csharp", "kt": "kotlin", "kts": "kotlin", "rb": "ruby", "rs": "rust", "sql": "sql"}.get(suffix)
 
 def audit_source(name: str, content: bytes, audit_id: str) -> list[dict]:
     """扫描单个源码文件，保留有限上下文，避免把整份源码写入结果。"""
