@@ -51,6 +51,8 @@ jobs:
           $version = $env:GITHUB_REF_NAME.Substring(1)
           New-Item -ItemType Directory -Force release-assets | Out-Null
           $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer was not produced' }
+          if ($installer.Length -lt 1MB) { throw "Installer is unexpectedly small: $($installer.Length) bytes" }
           Copy-Item $installer.FullName "release-assets/Vuln-Sentinel-$version-win64-setup.exe"
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 

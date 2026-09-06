@@ -137,7 +137,7 @@ jobs:
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: vuln-sentinel-windows-installer-v11.0.2
+          name: vuln-sentinel-windows-installer-v11.0.3
           path: src-tauri/target/release/bundle/nsis/*setup.exe
           if-no-files-found: error
           retention-days: 14
@@ -162,3 +162,25 @@ jobs:
           tags: vuln-sentinel:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  windows-installer-download-verify:
+    name: Verify Windows Installer Artifact Download
+    runs-on: windows-latest
+    needs: windows-desktop-smoke
+
+    steps:
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vuln-sentinel-windows-installer-v11.0.3
+          path: downloaded-installer
+
+      - name: Validate downloaded installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem downloaded-installer -Filter '*setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Downloaded NSIS installer is missing' }
+          if ($installer.Length -lt 1MB) { throw "Installer is unexpectedly small: $($installer.Length) bytes" }
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash
+          Write-Host "Downloaded installer: $($installer.Name)"
+          Write-Host "SHA256: $hash"

@@ -2245,6 +2245,31 @@ async def _redis_scan_runner(task: RedisScanTask) -> dict[str, Any]:
     )
 
 
+async def _restored_scan_task(
+    url: str,
+    progress_cb: Callable[[int, str], Any] | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Resume an anonymous persisted task without restoring credentials.
+
+    Persisted task records contain only target metadata. This wrapper supplies
+    the same safe scan path used by the regular task API and deliberately
+    forces an empty authentication context after a process restart.
+    """
+    try:
+        user_id = int(kwargs.get("user_id"))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("持久化任务缺少有效用户标识") from exc
+    return await _run_scan_task(
+        url=url,
+        user_id=user_id,
+        deep=bool(kwargs.get("deep")),
+        authorized=False,
+        progress_cb=progress_cb,
+        auth_headers={},
+    )
+
+
 # ---------- Lifespan ----------
 
 
@@ -2256,6 +2281,12 @@ async def lifespan(app: FastAPI):
         init_db()
     except Exception as e:
         logger.error("Database initialization failed: %s", e, exc_info=True)
+    try:
+        restored = _scan_task_manager.restore_tasks(_restored_scan_task)
+        if restored:
+            logger.info("Restored %d safe scan tasks after restart", restored)
+    except Exception as e:
+        logger.warning("Task persistence restore failed: %s", e, exc_info=True)
     try:
         prod_issues = validate_production_config()
         if prod_issues:
@@ -9340,9 +9371,9 @@ def generate_pdf_report(scan_data: dict) -> bytes:
     if is_audit_report:
         confidence_counts = scan_data.get("confidence_counts", {}) or {}
         elements.append(Paragraph("客户交付摘要", styles["Heading2"]))
-        elements.append(Paragraph(f"高置信度: {confidence_counts.get("high", 0)} 个", styles["CNBold"]))
-        elements.append(Paragraph(f"中置信度: {confidence_counts.get("medium", 0)} 个", styles["CNOrange"]))
-        elements.append(Paragraph(f"低置信度: {confidence_counts.get("low", 0)} 个", styles["CN"]))
+        elements.append(Paragraph(f"高置信度: {confidence_counts.get('high', 0)} 个", styles["CNBold"]))
+        elements.append(Paragraph(f"中置信度: {confidence_counts.get('medium', 0)} 个", styles["CNOrange"]))
+        elements.append(Paragraph(f"低置信度: {confidence_counts.get('low', 0)} 个", styles["CN"]))
         trusted_count = len([f for f in findings if str(f.get("confidence", "")).lower() != "low"])
         review_count = len([f for f in findings if str(f.get("confidence", "")).lower() == "low"])
         elements.append(Paragraph(f"可信命中项: {trusted_count} 个", styles["CNBold"]))
@@ -16565,7 +16596,11 @@ async def api_scan_progress(
 
 from app.tasks import ScanTaskManager
 
-_scan_task_manager = ScanTaskManager(max_concurrent=3, task_timeout=300)
+_scan_task_manager = ScanTaskManager(
+    max_concurrent=3,
+    task_timeout=300,
+    persist=True,
+)
 
 
 class AsyncScanRequest(BaseModel):
@@ -16604,6 +16639,41 @@ class RequestHistoryCreate(BaseModel):
     url: str
     headers: dict[str, str] = Field(default_factory=dict, max_length=40)
     body: str = Field(default="", max_length=64 * 1024)
+
+
+class AuthorizationDiffRequest(BaseModel):
+    """Request for a read-only comparison of two authorized account contexts."""
+
+    url: str = Field(min_length=1, max_length=2048)
+    baseline_headers: dict[str, str] = Field(default_factory=dict, max_length=20)
+    comparison_headers: dict[str, str] = Field(default_factory=dict, max_length=20)
+    authorized: bool = False
+    verification_token: str | None = Field(default=None, max_length=200)
+
+
+class BusinessFlowStep(BaseModel):
+    """One operator-supplied observation from an authorized business flow."""
+
+    name: str = Field(default="", max_length=120)
+    endpoint: str = Field(default="", max_length=2048)
+    method: str = Field(default="GET", max_length=12)
+    action: str = Field(default="", max_length=40)
+    state: str = Field(default="", max_length=40)
+    previous_state: str = Field(default="", max_length=40)
+    from_state: str = Field(default="", max_length=40)
+    request_key: str = Field(default="", max_length=200)
+    value: int | float | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict, max_length=30)
+
+
+class BusinessFlowAnalysisRequest(BaseModel):
+    """Authorized, offline business-flow evidence submitted for analysis."""
+
+    steps: list[BusinessFlowStep] = Field(min_length=1, max_length=100)
+    baseline_steps: list[BusinessFlowStep] | None = Field(default=None, max_length=100)
+    target_url: str | None = Field(default=None, max_length=2048)
+    authorized: bool = False
+    verification_token: str | None = Field(default=None, max_length=200)
 
 
 @app.post("/api/code-audit")
@@ -16672,6 +16742,126 @@ def _validate_auth_headers(headers: dict[str, str]) -> dict[str, str]:
             raise HTTPException(422, "认证请求头长度超出限制")
         clean[name] = str(value)
     return clean
+
+
+def _validate_comparison_headers(headers: dict[str, str]) -> dict[str, str]:
+    """Allow only headers needed to identify an account context."""
+    allowed = {
+        "accept",
+        "authorization",
+        "cookie",
+        "x-access-token",
+        "x-api-key",
+        "x-auth-token",
+        "x-csrf-token",
+        "x-session-id",
+        "x-tenant-id",
+        "x-user-id",
+    }
+    clean = _validate_auth_headers(headers)
+    unsupported = [key for key in clean if key.lower() not in allowed]
+    if unsupported:
+        raise HTTPException(422, "权限差异检测只允许受控的认证上下文请求头")
+    return clean
+
+
+@app.post("/api/authorization-diff")
+async def api_authorization_diff(
+    req: AuthorizationDiffRequest,
+    request: Request,
+    user: dict = Depends(require_login),
+) -> dict:
+    """Compare two authorized identities with bounded, read-only GET requests."""
+    if not req.authorized:
+        raise HTTPException(403, "权限差异检测需要先确认目标已获授权")
+    baseline_headers = _validate_comparison_headers(req.baseline_headers)
+    comparison_headers = _validate_comparison_headers(req.comparison_headers)
+    raw_url = req.url.strip()
+    if not raw_url.startswith(("http://", "https://")):
+        raw_url = "https://" + raw_url
+    valid, reason, code = validate_scan_target_full(
+        raw_url,
+        user_id=user["user_id"],
+        authorized=True,
+        deep=False,
+        verification_token=req.verification_token,
+        allowed_demo=True,
+    )
+    if not valid:
+        raise HTTPException(403, detail={"error": reason, "code": code})
+    from app.services.authorization_diff import compare_authorized_contexts
+
+    try:
+        result = await compare_authorized_contexts(
+            raw_url, baseline_headers, comparison_headers
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(422, f"权限差异检测连接失败：{str(exc)[:200]}") from exc
+    from app.audit import save_audit_log
+
+    save_audit_log(
+        user["user_id"],
+        "authorization_diff",
+        "scan",
+        details={
+            "target": raw_url,
+            "status_diff": result["status_diff"],
+            "body_diff": result["body_diff"],
+            "severity": result["severity"],
+        },
+        client_ip=get_client_ip(request),
+    )
+    return {"success": True, "result": result}
+
+
+@app.post("/api/business-flow/analyze")
+async def api_business_flow_analyze(
+    req: BusinessFlowAnalysisRequest,
+    request: Request,
+    user: dict = Depends(require_login),
+) -> dict:
+    """Analyze authorized flow observations without replaying state changes."""
+    if not req.authorized:
+        raise HTTPException(403, "业务流程分析需要先确认目标已获授权")
+    if req.target_url:
+        raw_url = req.target_url.strip()
+        if not raw_url.startswith(("http://", "https://")):
+            raw_url = "https://" + raw_url
+        valid, reason, code = validate_scan_target_full(
+            raw_url,
+            user_id=user["user_id"],
+            authorized=True,
+            deep=False,
+            verification_token=req.verification_token,
+            allowed_demo=True,
+        )
+        if not valid:
+            raise HTTPException(403, detail={"error": reason, "code": code})
+    from app.services.business_flow import analyze_business_flow, compare_business_flow_results
+
+    steps = [step.model_dump() for step in req.steps]
+    baseline = (
+        analyze_business_flow([step.model_dump() for step in req.baseline_steps])
+        if req.baseline_steps
+        else None
+    )
+    result = analyze_business_flow(steps)
+    result["retest"] = compare_business_flow_results(baseline, result)
+    from app.audit import save_audit_log
+
+    save_audit_log(
+        user["user_id"],
+        "business_flow_analysis",
+        "scan",
+        details={
+            "target": req.target_url or "offline-evidence",
+            "step_count": result["step_count"],
+            "finding_count": result["finding_count"],
+            "retest_available": result["retest"]["available"],
+        },
+        client_ip=get_client_ip(request),
+    )
+    return {"success": True, "result": result}
 
 
 @app.post("/api/request-history")
@@ -19379,12 +19569,22 @@ async def api_demo_status(request: Request, user: dict = Depends(require_login))
             if os.name == "nt":
                 # Windows 安装包没有 pgrep，用 tasklist 做兼容探测；配置文件不存在时仍返回可用状态。
                 result = subprocess.run(
-                    ["tasklist"], capture_output=True, text=True, timeout=10
+                    ["tasklist"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=10,
                 )
                 running = "nginx.exe" in result.stdout.lower()
             else:
                 result = subprocess.run(
-                    ["pgrep", "-f", DEMO_NGINX_CONF], capture_output=True, text=True, timeout=10
+                    ["pgrep", "-f", DEMO_NGINX_CONF],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=10,
                 )
                 running = result.returncode == 0
         except (FileNotFoundError, subprocess.SubprocessError):

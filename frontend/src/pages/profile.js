@@ -23,6 +23,7 @@ import {
   setRole,
   adminAuditLogs,
   adminAuditSummary,
+  adminDashboardStats,
   adminEmailLogs,
   listScanTasks,
   pauseScanTask,
@@ -409,11 +410,14 @@ function loadAdminLogs() {
     resource_id: (document.getElementById('admin-log-target') || {}).value || '',
     status: (document.getElementById('admin-log-status') || {}).value || ''
   };
-  Promise.all([adminAuditLogs(50, 0, '', filters), adminEmailLogs(), adminAuditSummary()]).then(function(results) {
+  Promise.all([adminAuditLogs(50, 0, '', filters), adminEmailLogs(), adminAuditSummary(), adminDashboardStats(30)]).then(function(results) {
     let audit = results[0] && results[0].data && results[0].data.logs || [];
     let emails = results[1] && results[1].data && results[1].data.logs || [];
     let summary = results[2] && results[2].data || {};
+    let dashboard = results[3] && results[3].data || {};
     if (summaryEl) summaryEl.innerHTML = renderAdminSummary(summary);
+    let dashboardEl = document.getElementById('admin-dashboard-stats');
+    if (dashboardEl) dashboardEl.innerHTML = renderAdminDashboardStats(dashboard);
     if (auditEl) auditEl.innerHTML = renderAdminLogRows(audit, 'action');
     if (emailEl) emailEl.innerHTML = renderAdminLogRows(emails, 'email_type');
   }).catch(function(e) {
@@ -430,6 +434,31 @@ function renderAdminSummary(summary) {
     return '<div style="display:grid;grid-template-columns:130px 1fr 42px;gap:8px;align-items:center;font-size:12px;margin-top:7px"><span>' + escapeHtml(item.action || '-') + '</span><span style="height:7px;background:var(--border);border-radius:4px;overflow:hidden"><i style="display:block;width:' + width + '%;height:100%;background:var(--primary)"></i></span><strong>' + escapeHtml(String(item.count || 0)) + '</strong></div>';
   }).join('');
   return '<div style="padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:2px"><strong>操作统计</strong><div style="font-size:22px;margin-top:5px">' + escapeHtml(String(summary.total || 0)) + '<small style="font-size:12px;color:var(--text-secondary);margin-left:6px">条审计记录</small></div>' + (rows || '<div class="card-desc">暂无统计数据</div>') + '</div>';
+}
+
+function renderAdminDashboardStats(stats) {
+  let scans = stats.scans || {};
+  let findings = stats.findings || {};
+  let tasks = stats.tasks || {};
+  let trend = (scans.by_day || []).slice(-14);
+  let max = Math.max(1, ...trend.map(function(item) { return Number(item.count || 0); }));
+  let bars = trend.map(function(item) {
+    let height = Math.max(5, Math.round(Number(item.count || 0) / max * 72));
+    return '<div title="' + escapeHtml((item.date || '') + ': ' + (item.count || 0)) + '" style="flex:1;min-width:12px;height:78px;display:flex;align-items:flex-end;justify-content:center"><i style="display:block;width:70%;height:' + height + 'px;background:var(--primary);border-radius:2px 2px 0 0"></i></div>';
+  }).join('');
+  let severity = (findings.by_severity || []).slice(0, 6).map(function(item) {
+    return '<span style="padding:4px 7px;border:1px solid var(--border);border-radius:10px;font-size:11px">' + escapeHtml(item.severity || '-') + ' ' + escapeHtml(String(item.count || 0)) + '</span>';
+  }).join('');
+  let statuses = (tasks.by_status || []).slice(0, 6).map(function(item) {
+    return '<span style="padding:4px 7px;border:1px solid var(--border);border-radius:10px;font-size:11px">' + escapeHtml(item.status || '-') + ' ' + escapeHtml(String(item.count || 0)) + '</span>';
+  }).join('');
+  return '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">' +
+    '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px"><small>周期扫描</small><strong style="display:block;font-size:20px;margin-top:4px">' + escapeHtml(String(scans.total || 0)) + '</strong></div>' +
+    '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px"><small>发现项</small><strong style="display:block;font-size:20px;margin-top:4px">' + escapeHtml(String(findings.total || 0)) + '</strong></div>' +
+    '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px"><small>失败/超时任务</small><strong style="display:block;font-size:20px;margin-top:4px">' + escapeHtml(String(tasks.failed || 0)) + '</strong></div>' +
+    '</div>' +
+    '<div style="margin-top:10px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px"><div style="font-size:12px;font-weight:600">近 ' + escapeHtml(String(stats.period_days || 30)) + ' 天扫描趋势</div><div style="display:flex;gap:4px;align-items:flex-end;height:82px;margin-top:6px">' + (bars || '<span class="card-desc">暂无扫描数据</span>') + '</div></div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' + (severity || '<span class="card-desc">暂无风险数据</span>') + (statuses ? '<span style="width:1px;background:var(--border)"></span>' + statuses : '') + '</div>';
 }
 
 document.addEventListener('click', function(event) {

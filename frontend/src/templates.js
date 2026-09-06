@@ -156,7 +156,7 @@ export const APP_TEMPLATE = `</head>
     </div>
 
     <h1 class="home-hero-title">Vuln Sentinel Web 安全检测平台</h1>
-    <div class="home-hero-version">Version 11.0.2</div>
+    <div class="home-hero-version">Version 11.0.3</div>
 
     <div class="home-hero-actions">
       <button onclick="navigateTo('home')" class="home-hero-icon" aria-label="首页">⌂</button>
@@ -1661,6 +1661,7 @@ export const APP_TEMPLATE = `</head>
       <p class="card-desc">查看账号操作记录与邮件投递状态。邮箱地址已脱敏，邮件正文和验证令牌不会保存。</p>
       <div style="margin-top:16px;font-size:13px;font-weight:600">操作审计日志</div>
       <div id="admin-audit-summary" style="margin-top:10px">正在读取统计...</div>
+      <div id="admin-dashboard-stats" style="margin-top:12px">正在读取趋势统计...</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <input id="admin-log-username" placeholder="用户名" style="max-width:140px">
         <input id="admin-log-target" placeholder="目标或资源编号" style="max-width:160px">

@@ -216,6 +216,10 @@ export function pauseScanTask(id) { return apiPost('/api/scan/tasks/' + encodeUR
 export function resumeScanTask(id) { return apiPost('/api/scan/tasks/' + encodeURIComponent(id) + '/resume', {}); }
 export function cancelScanTask(id) { return apiPost('/api/scan/tasks/' + encodeURIComponent(id) + '/cancel', {}); }
 export function retryScanTask(id) { return apiPost('/api/scan/tasks/' + encodeURIComponent(id) + '/retry', {}); }
+// Read-only comparison of two explicitly authorized account contexts.
+export function authorizationDiff(body) { return apiPost('/api/authorization-diff', body); }
+// Offline business-flow evidence analysis; this never replays state changes.
+export function analyzeBusinessFlow(body) { return apiPost('/api/business-flow/analyze', body); }
 export function trend(url, limit = 30) {
   let q = '/api/trend?limit=' + limit;
   if (url) q += '&url=' + encodeURIComponent(url);
@@ -265,6 +269,9 @@ export function adminAuditLogs(limit = 50, offset = 0, action = '', filters = {}
   return apiGet(q);
 }
 export function adminAuditSummary() { return apiGet('/api/admin/audit-logs/summary'); }
+export function adminDashboardStats(days = 30) {
+  return apiGet('/api/admin/dashboard/stats?days=' + encodeURIComponent(days));
+}
 export function adminAuditExport(filters = {}) {
   const q = new URLSearchParams(filters).toString();
   return apiGet('/api/admin/audit-logs/export' + (q ? '?' + q : ''));

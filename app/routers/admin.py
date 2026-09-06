@@ -63,6 +63,19 @@ async def api_admin_audit_summary(user: dict = Depends(require_login)) -> dict:
     return success_response(data=get_audit_summary())
 
 
+@router.get("/api/admin/dashboard/stats")
+async def api_admin_dashboard_stats(
+    days: int = Query(30, ge=1, le=365),
+    user: dict = Depends(require_login),
+) -> dict:
+    """Return bounded scan, finding, task, and audit chart aggregates."""
+    from main import require_admin_user
+    require_admin_user(user, "仅管理员可查看后台统计")
+    from app.audit import get_admin_dashboard_stats
+
+    return success_response(data=get_admin_dashboard_stats(days))
+
+
 @router.get("/api/admin/audit-logs/export")
 async def api_admin_audit_export(
     limit: int = Query(500, ge=1, le=5000),

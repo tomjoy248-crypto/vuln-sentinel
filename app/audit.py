@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.core.logging import get_request_id
@@ -175,3 +177,107 @@ def get_audit_summary() -> dict[str, Any]:
     except Exception as e:
         logger.warning("Audit summary query failed: %s", e)
         return {"total": 0, "by_action": [], "by_status": []}
+
+
+def get_admin_dashboard_stats(days: int = 30) -> dict[str, Any]:
+    """Build bounded dashboard aggregates for administrators.
+
+    Aggregation is performed in Python for finding JSON so the same endpoint
+    works with both the local SQLite database and the PostgreSQL compatibility
+    layer. No request bodies, credentials, or raw response contents are
+    returned.
+
+    Args:
+        days: Number of recent calendar days to include, from 1 to 365.
+
+    Returns:
+        Scan, finding, task, and audit aggregates suitable for charts.
+    """
+    days = max(1, min(int(days), 365))
+    since = (datetime.utcnow() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    empty = {
+        "period_days": days,
+        "scans": {"total": 0, "by_day": [], "by_risk": []},
+        "findings": {"total": 0, "by_severity": []},
+        "tasks": {"total": 0, "by_status": [], "failed": 0},
+        "audit": {"total": 0, "by_action": []},
+    }
+    try:
+        conn = get_db()
+        scan_rows = conn.execute(
+            "SELECT created_at, risk_level, findings_json FROM scans WHERE created_at >= ? ORDER BY created_at ASC LIMIT 10000",
+            (since,),
+        ).fetchall()
+        day_counts: Counter[str] = Counter()
+        risk_counts: Counter[str] = Counter()
+        severity_counts: Counter[str] = Counter()
+        for row in scan_rows:
+            created = str(row["created_at"] or "")
+            day_counts[created[:10] or "unknown"] += 1
+            risk_counts[str(row["risk_level"] or "unknown")] += 1
+            try:
+                findings = json.loads(row["findings_json"] or "[]")
+            except (TypeError, ValueError):
+                findings = []
+            if isinstance(findings, list):
+                for finding in findings:
+                    if isinstance(finding, dict):
+                        severity_counts[str(finding.get("severity") or "info")] += 1
+        try:
+            task_rows = conn.execute(
+                "SELECT status, COUNT(*) AS count FROM scan_task_records WHERE updated_at >= ? GROUP BY status",
+                (since,),
+            ).fetchall()
+        except Exception:
+            task_rows = []
+        try:
+            audit_rows = conn.execute(
+                "SELECT action, COUNT(*) AS count FROM audit_logs WHERE created_at >= ? GROUP BY action ORDER BY count DESC LIMIT 30",
+                (since,),
+            ).fetchall()
+        except Exception:
+            audit_rows = []
+        try:
+            audit_total = conn.execute(
+                "SELECT COUNT(*) AS count FROM audit_logs WHERE created_at >= ?", (since,)
+            ).fetchone()["count"]
+        except Exception:
+            audit_total = 0
+        conn.close()
+        task_counts = {str(row["status"]): int(row["count"] or 0) for row in task_rows}
+        return {
+            "period_days": days,
+            "scans": {
+                "total": len(scan_rows),
+                "by_day": [{"date": key, "count": day_counts[key]} for key in sorted(day_counts)],
+                "by_risk": [
+                    {"risk": key, "count": value}
+                    for key, value in risk_counts.most_common()
+                ],
+            },
+            "findings": {
+                "total": sum(severity_counts.values()),
+                "by_severity": [
+                    {"severity": key, "count": value}
+                    for key, value in severity_counts.most_common()
+                ],
+            },
+            "tasks": {
+                "total": sum(task_counts.values()),
+                "by_status": [
+                    {"status": key, "count": value}
+                    for key, value in sorted(task_counts.items())
+                ],
+                "failed": task_counts.get("failed", 0) + task_counts.get("timeout", 0),
+            },
+            "audit": {
+                "total": int(audit_total or 0),
+                "by_action": [
+                    {"action": row["action"], "count": int(row["count"] or 0)}
+                    for row in audit_rows
+                ],
+            },
+        }
+    except Exception as exc:
+        logger.warning("Admin dashboard aggregation failed: %s", exc)
+        return empty

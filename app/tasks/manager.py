@@ -112,6 +112,9 @@ class ScanTask:
     completed_at: str | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    retry_count: int = 0
+    previous_task_id: str | None = None
+    has_sensitive_context: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """转换为字典，便于 API 序列化与日志输出。"""
@@ -127,6 +130,8 @@ class ScanTask:
             "completed_at": self.completed_at,
             "result": self.result,
             "error": self.error,
+            "retry_count": self.retry_count,
+            "previous_task_id": self.previous_task_id,
         }
 
 
@@ -163,6 +168,7 @@ class ScanTaskManager:
         max_concurrent: int = 3,
         task_timeout: float = 300,
         max_retained: int = 100,
+        persist: bool = False,
     ) -> None:
         """初始化任务管理器。
 
@@ -181,6 +187,7 @@ class ScanTaskManager:
         self._max_concurrent = max_concurrent
         self._task_timeout = task_timeout
         self._max_retained = max_retained
+        self._persist_enabled = persist
 
         # task_id -> ScanTask
         self._tasks: dict[str, ScanTask] = {}
@@ -191,6 +198,100 @@ class ScanTaskManager:
 
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._lock = asyncio.Lock()
+
+    def _persist(self, task: ScanTask) -> None:
+        """Persist a task snapshot when durable task storage is enabled."""
+        if not self._persist_enabled:
+            return
+        try:
+            from app.services.task_persistence import save_task
+
+            save_task(task)
+        except Exception:
+            # Persistence must never make a scan fail; the task remains usable
+            # in memory and the service logs the detailed reason in the store.
+            logger.debug("Task persistence write skipped", exc_info=True)
+
+    def restore_tasks(self, scan_func: ScanFunc) -> int:
+        """Restore safe task records after a service restart.
+
+        Active tasks containing authentication material are intentionally
+        marked failed because credentials are never persisted. Anonymous safe
+        tasks can be queued again with the supplied generic scan function.
+
+        Args:
+            scan_func: Safe scan function used for anonymous task recovery.
+
+        Returns:
+            Number of task records loaded into the manager.
+        """
+        if not self._persist_enabled:
+            return 0
+        try:
+            from app.services.task_persistence import load_tasks
+
+            records = load_tasks()
+        except Exception:
+            logger.debug("Task persistence restore skipped", exc_info=True)
+            return 0
+
+        restored = 0
+        for row in records:
+            task_id = str(row.get("task_id") or "")
+            if not task_id or task_id in self._tasks:
+                continue
+            try:
+                status = TaskStatus(str(row.get("status") or TaskStatus.FAILED.value))
+            except ValueError:
+                status = TaskStatus.FAILED
+            raw_user_id = row.get("user_id")
+            user_id: Any = raw_user_id
+            if isinstance(raw_user_id, str) and raw_user_id.isdigit():
+                user_id = int(raw_user_id)
+            raw_sensitive = row.get("has_sensitive_context", False)
+            has_sensitive = raw_sensitive is True or raw_sensitive == 1 or str(raw_sensitive).lower() in {
+                "true",
+                "1",
+                "yes",
+            }
+            task = ScanTask(
+                task_id=task_id,
+                url=str(row.get("url") or ""),
+                user_id=user_id,
+                status=status,
+                depth=str(row.get("depth") or "standard"),
+                progress=int(row.get("progress") or 0),
+                created_at=row.get("created_at"),
+                started_at=row.get("started_at"),
+                completed_at=row.get("completed_at"),
+                result=row.get("result"),
+                error=row.get("error"),
+                retry_count=int(row.get("retry_count") or 0),
+                previous_task_id=row.get("previous_task_id"),
+                has_sensitive_context=has_sensitive,
+            )
+            if task.status in (TaskStatus.PENDING, TaskStatus.RUNNING, TaskStatus.PAUSED):
+                if task.has_sensitive_context:
+                    task.status = TaskStatus.FAILED
+                    task.error = "服务重启时认证任务被安全中断，请重新提交（认证信息不会自动恢复）"
+                    task.completed_at = _now_iso()
+                else:
+                    task.status = TaskStatus.PENDING
+                    task.started_at = None
+                    task.completed_at = None
+                    task.progress = min(task.progress, 0)
+            self._tasks[task.task_id] = task
+            self._pause_events[task.task_id] = asyncio.Event()
+            self._pause_events[task.task_id].set()
+            if task.status == TaskStatus.PENDING:
+                kwargs = {"deep": task.depth == "deep", "user_id": task.user_id}
+                self._specs[task.task_id] = (scan_func, kwargs)
+                self._handles[task.task_id] = asyncio.create_task(
+                    self._run_task(task, scan_func, kwargs)
+                )
+            self._persist(task)
+            restored += 1
+        return restored
 
     # ------------------------------------------------------------------
     # 提交任务
@@ -233,12 +334,16 @@ class ScanTaskManager:
             progress=0,
             created_at=_now_iso(),
         )
+        task.has_sensitive_context = bool(
+            kwargs.get("auth_headers") or kwargs.get("verification_token")
+        )
 
         async with self._lock:
             self._tasks[task_id] = task
             self._pause_events[task_id] = asyncio.Event()
             self._pause_events[task_id].set()
             self._specs[task_id] = (scan_func, dict(kwargs))
+        self._persist(task)
 
         # 调度后台协程：fire-and-forget，异常在 _run_task 内部消化
         handle = asyncio.create_task(self._run_task(task, scan_func, kwargs))
@@ -272,7 +377,7 @@ class ScanTaskManager:
             5. 释放槽位（async with 自动释放）并触发历史任务清理
         """
         # 取出用户传入的进度回调（如有），与内部回调串联
-        user_progress_cb = kwargs.pop("progress_cb", None)
+        user_progress_cb = kwargs.get("progress_cb")
 
         def _progress_cb(value: int, message: str = "") -> None:
             """内部进度回调：更新任务进度，再转发给用户回调。
@@ -311,6 +416,7 @@ class ScanTaskManager:
                 task.status = TaskStatus.RUNNING
                 task.started_at = _now_iso()
                 task.progress = 0
+                self._persist(task)
                 logger.info("Task running: id=%s", task.task_id)
 
                 result = await asyncio.wait_for(
@@ -322,21 +428,26 @@ class ScanTaskManager:
                 task.result = result if isinstance(result, dict) else {"result": result}
                 task.progress = 100
                 task.status = TaskStatus.COMPLETED
+                self._persist(task)
                 logger.info("Task completed: id=%s", task.task_id)
         except asyncio.TimeoutError:
             task.status = TaskStatus.TIMEOUT
             task.error = f"任务执行超时（{self._task_timeout} 秒）"
+            self._persist(task)
             logger.warning("Task timeout: id=%s", task.task_id)
         except asyncio.CancelledError:
             task.status = TaskStatus.CANCELLED
+            self._persist(task)
             logger.info("Task cancelled: id=%s", task.task_id)
             raise
         except Exception as exc:
             task.status = TaskStatus.FAILED
             task.error = f"{type(exc).__name__}: {exc}"
+            self._persist(task)
             logger.exception("Task failed: id=%s", task.task_id)
         finally:
             task.completed_at = _now_iso()
+            self._persist(task)
             await self._cleanup()
 
     def _update_progress(self, task: ScanTask, value: int) -> None:
@@ -353,6 +464,7 @@ class ScanTaskManager:
         # 进度单调不回退，避免乱序回调导致进度条倒退
         if clamped > task.progress:
             task.progress = clamped
+            self._persist(task)
 
     # ------------------------------------------------------------------
     # 查询
@@ -483,6 +595,7 @@ class ScanTaskManager:
         if task.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
             task.status = TaskStatus.CANCELLED
             task.completed_at = _now_iso()
+            self._persist(task)
 
         logger.info("Task cancel requested: id=%s", task_id)
         return True
@@ -497,6 +610,7 @@ class ScanTaskManager:
             event = self._pause_events.get(task_id)
             if event:
                 event.clear()
+            self._persist(task)
             return True
 
     async def resume_task(self, task_id: str) -> bool:
@@ -509,6 +623,7 @@ class ScanTaskManager:
             event = self._pause_events.get(task_id)
             if event:
                 event.set()
+            self._persist(task)
             return True
 
     async def retry_task(self, task_id: str) -> str | None:
@@ -522,7 +637,13 @@ class ScanTaskManager:
             ):
                 return None
             scan_func, kwargs = spec
-        return await self.submit(task.url, task.user_id, task.depth, scan_func, **kwargs)
+        new_task_id = await self.submit(task.url, task.user_id, task.depth, scan_func, **kwargs)
+        new_task = self._tasks.get(new_task_id)
+        if new_task is not None:
+            new_task.retry_count = task.retry_count + 1
+            new_task.previous_task_id = task.task_id
+            self._persist(new_task)
+        return new_task_id
 
     # ------------------------------------------------------------------
     # 清理
