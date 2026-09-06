@@ -149,10 +149,11 @@ def validate_scan_target(
     if not authorized and (not allowed_demo or host not in ALLOWED_DEMO_HOSTS):
         return False, "扫描前必须确认您已获得目标所有者授权"
 
-    # 2. 禁止内网 / 本地地址
+    # 2. 禁止内网 / 本地地址。主机名也要先检查，不能只拦截直接写出的 IP；
+    #    否则 localhost 等本地别名会绕过 SSRF 防护。
+    if _is_blocked_ip(host):
+        return False, "禁止扫描内网、本地或链路本地地址"
     if _is_ip_address(host):
-        if _is_blocked_ip(host):
-            return False, "禁止扫描内网、本地或链路本地地址"
         return True, ""
 
     # 3. 禁止受限域名
