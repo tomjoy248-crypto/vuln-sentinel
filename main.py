@@ -18656,6 +18656,22 @@ async def batch_scan(
             "error": "请先确认您有权扫描这些目标（authorized: true）",
         }
 
+    # 在创建任何子任务前拒绝不合规目标，避免批量接口把 SSRF 风险
+    # 伪装成普通的单目标失败结果返回 200。
+    for raw in urls:
+        candidate = (raw or "").strip()
+        if not candidate.startswith(("http://", "https://")):
+            candidate = "https://" + candidate
+        compliant, reason, _ = validate_scan_target_full(
+            candidate,
+            user_id=user_id,
+            authorized=True,
+            deep=deep,
+            allowed_demo=True,
+        )
+        if not compliant:
+            raise HTTPException(status_code=422, detail=reason)
+
     async def scan_one(raw: str) -> dict:
         url = (raw or "").strip()
         if not url:
