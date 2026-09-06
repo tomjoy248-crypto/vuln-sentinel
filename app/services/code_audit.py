@@ -24,11 +24,18 @@ _RULES = [
     ("java", re.compile(r"setHeader\s*\(\s*['\"]Access-Control-Allow-Origin['\"]\s*,\s*['\"]\*"), "Java 接口允许任意 CORS 来源", "medium", "改为受控来源白名单，并避免凭据请求配合通配来源。"),
     ("php", re.compile(r"\$request->(?:input|query|get)\([^)]*\).*DB::raw|DB::raw\s*\("), "Laravel 原始 SQL 可能未参数化", "high", "使用查询构造器绑定参数，避免把请求参数拼接到 DB::raw。"),
     ("php", re.compile(r"header\s*\(\s*['\"]Access-Control-Allow-Origin:\s*\*"), "PHP 接口允许任意 CORS 来源", "medium", "使用受控来源白名单并限制跨域凭据。"),
+    ("go", re.compile(r"\b(?:exec\.Command|os\.StartProcess)\s*\("), "Go 程序可能执行外部命令", "high", "使用固定命令白名单并分离参数，避免把请求输入传入命令执行。"),
+    ("go", re.compile(r"(?:db|tx)\.(?:Query|Exec|QueryRow)\s*\([^\n]*(?:fmt\.Sprintf|\+)"), "Go SQL 查询可能由字符串拼接生成", "high", "使用 database/sql 的占位符绑定参数，避免拼接 SQL。"),
+    ("csharp", re.compile(r"\b(?:Process\.Start|new\s+ProcessStartInfo)\s*\("), "C# 程序可能执行外部命令", "high", "使用固定命令白名单，关闭 shell 解释并严格校验参数。"),
+    ("csharp", re.compile(r"\b(?:ExecuteSqlRaw|FromSqlRaw)\s*\("), "Entity Framework 原始 SQL 需要检查参数化", "high", "改用参数化 API 或 FromSqlInterpolated，禁止拼接用户输入。"),
+    ("kotlin", re.compile(r"\bRuntime\.getRuntime\(\)\.exec|ProcessBuilder\s*\("), "Kotlin 程序可能执行外部命令", "high", "使用固定命令白名单并分离参数，避免 shell 注入。"),
+    ("ruby", re.compile(r"\b(?:system|exec|`[^`]+`|Open3\.capture)\s*\(?"), "Ruby 程序可能执行外部命令", "high", "使用数组参数和固定命令白名单，禁止拼接用户输入。"),
+    ("ruby", re.compile(r"(?:find_by_sql|execute)\s*\("), "Ruby 原始 SQL 需要检查参数化", "medium", "使用 ActiveRecord 参数绑定，避免拼接 SQL 字符串。"),
 ]
 
 def _language(name: str) -> str | None:
     suffix = name.lower().rsplit(".", 1)[-1] if "." in name else ""
-    return {"py": "python", "js": "javascript", "jsx": "javascript", "ts": "javascript", "tsx": "javascript", "java": "java", "php": "php"}.get(suffix)
+    return {"py": "python", "js": "javascript", "jsx": "javascript", "ts": "javascript", "tsx": "javascript", "java": "java", "php": "php", "go": "go", "cs": "csharp", "kt": "kotlin", "kts": "kotlin", "rb": "ruby"}.get(suffix)
 
 def audit_source(name: str, content: bytes, audit_id: str) -> list[dict]:
     """扫描单个源码文件，保留有限上下文，避免把整份源码写入结果。"""

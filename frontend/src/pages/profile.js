@@ -22,6 +22,7 @@ import {
   getRole,
   setRole,
   adminAuditLogs,
+  adminAuditSummary,
   adminEmailLogs,
   listScanTasks,
   pauseScanTask,
@@ -400,6 +401,7 @@ document.addEventListener('click', function(event) {
 function loadAdminLogs() {
   let auditEl = document.getElementById('admin-audit-logs');
   let emailEl = document.getElementById('admin-email-logs');
+  let summaryEl = document.getElementById('admin-audit-summary');
   if (auditEl) auditEl.innerHTML = '<div class="loading">正在读取操作日志...</div>';
   if (emailEl) emailEl.innerHTML = '<div class="loading">正在读取邮件日志...</div>';
   let filters = {
@@ -407,9 +409,11 @@ function loadAdminLogs() {
     resource_id: (document.getElementById('admin-log-target') || {}).value || '',
     status: (document.getElementById('admin-log-status') || {}).value || ''
   };
-  Promise.all([adminAuditLogs(50, 0, '', filters), adminEmailLogs()]).then(function(results) {
+  Promise.all([adminAuditLogs(50, 0, '', filters), adminEmailLogs(), adminAuditSummary()]).then(function(results) {
     let audit = results[0] && results[0].data && results[0].data.logs || [];
     let emails = results[1] && results[1].data && results[1].data.logs || [];
+    let summary = results[2] && results[2].data || {};
+    if (summaryEl) summaryEl.innerHTML = renderAdminSummary(summary);
     if (auditEl) auditEl.innerHTML = renderAdminLogRows(audit, 'action');
     if (emailEl) emailEl.innerHTML = renderAdminLogRows(emails, 'email_type');
   }).catch(function(e) {
@@ -417,6 +421,15 @@ function loadAdminLogs() {
     if (auditEl) auditEl.innerHTML = '<div class="auth-form-error">' + message + '</div>';
     if (emailEl) emailEl.innerHTML = '<div class="auth-form-error">' + message + '</div>';
   });
+}
+
+function renderAdminSummary(summary) {
+  let byAction = summary.by_action || [];
+  let rows = byAction.slice(0, 8).map(function(item) {
+    let width = Math.max(4, Math.round((item.count / Math.max(1, byAction[0] && byAction[0].count || 1)) * 100));
+    return '<div style="display:grid;grid-template-columns:130px 1fr 42px;gap:8px;align-items:center;font-size:12px;margin-top:7px"><span>' + escapeHtml(item.action || '-') + '</span><span style="height:7px;background:var(--border);border-radius:4px;overflow:hidden"><i style="display:block;width:' + width + '%;height:100%;background:var(--primary)"></i></span><strong>' + escapeHtml(String(item.count || 0)) + '</strong></div>';
+  }).join('');
+  return '<div style="padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:2px"><strong>操作统计</strong><div style="font-size:22px;margin-top:5px">' + escapeHtml(String(summary.total || 0)) + '<small style="font-size:12px;color:var(--text-secondary);margin-left:6px">条审计记录</small></div>' + (rows || '<div class="card-desc">暂无统计数据</div>') + '</div>';
 }
 
 document.addEventListener('click', function(event) {
