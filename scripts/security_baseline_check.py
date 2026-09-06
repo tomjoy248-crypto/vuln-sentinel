@@ -149,7 +149,12 @@ def _scan_for_hardcoded_secrets(content: str) -> list[str]:
         (r"['\"]sk-[A-Za-z0-9]{20,}['\"]", "API key (sk-...)"),
         (r"['\"]AK[A-Za-z0-9]{16,}['\"]", "Access key (AK...)"),
         (r"jwt_secret\s*=\s*['\"][^'\"]{8,}['\"]", "JWT secret assignment"),
-        (r"password\s*=\s*['\"][^'\"]+['\"]", "password assignment"),
+        # Match standalone credential variable names only.  A word boundary
+        # avoids treating harmless flags such as ``has_password`` as secrets.
+        (
+            r"\b(?:password|passwd|secret|token|api[_-]?key)\s*=\s*['\"][^'\"]+['\"]",
+            "credential assignment",
+        ),
     ]
     for pattern, desc in patterns:
         if re.search(pattern, content, re.IGNORECASE):
