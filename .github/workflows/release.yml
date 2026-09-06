@@ -56,6 +56,13 @@ jobs:
           Copy-Item $installer.FullName "release-assets/Vuln-Sentinel-$version-win64-setup.exe"
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
+      - name: Test Windows install lifecycle
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Installer missing before lifecycle test' }
+          ./scripts/verify_windows_installer.ps1 -InstallerPath $installer.FullName
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

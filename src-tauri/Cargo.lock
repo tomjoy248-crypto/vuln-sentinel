@@ -3636,7 +3636,7 @@ dependencies = [
 
 [[package]]
 name = "vuln-sentinel-desktop"
-version = "11.0.6"
+version = "11.0.7"
 dependencies = [
  "serde",
  "serde_json",

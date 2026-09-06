@@ -1663,8 +1663,11 @@ export const APP_TEMPLATE = `</head>
       <div id="admin-audit-summary" style="margin-top:10px">正在读取统计...</div>
       <div id="admin-dashboard-stats" style="margin-top:12px">正在读取趋势统计...</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <select id="admin-log-days" style="max-width:120px"><option value="7">近 7 天</option><option value="30" selected>近 30 天</option><option value="90">近 90 天</option><option value="365">近 365 天</option></select>
         <input id="admin-log-username" placeholder="用户名" style="max-width:140px">
         <input id="admin-log-target" placeholder="目标或资源编号" style="max-width:160px">
+         <input id="admin-log-action" placeholder="操作类型" style="max-width:140px">
+         <input id="admin-log-resource-type" placeholder="资源类型" style="max-width:120px">
          <select id="admin-log-status" style="max-width:120px"><option value="">全部结果</option><option value="success">成功</option><option value="failure">失败</option><option value="error">异常</option></select>
          <button class="btn btn-secondary" id="admin-log-filter">筛选</button>
          <button class="btn btn-secondary" id="admin-log-export">导出 CSV</button>

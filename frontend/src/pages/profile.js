@@ -409,9 +409,12 @@ function loadAdminLogs() {
   let filters = {
     username: (document.getElementById('admin-log-username') || {}).value || '',
     resource_id: (document.getElementById('admin-log-target') || {}).value || '',
+    action: (document.getElementById('admin-log-action') || {}).value || '',
+    resource_type: (document.getElementById('admin-log-resource-type') || {}).value || '',
     status: (document.getElementById('admin-log-status') || {}).value || ''
   };
-  Promise.all([adminAuditLogs(50, 0, '', filters), adminEmailLogs(), adminAuditSummary(), adminDashboardStats(30)]).then(function(results) {
+  let days = Number((document.getElementById('admin-log-days') || {}).value || 30);
+  Promise.all([adminAuditLogs(50, 0, '', filters), adminEmailLogs(), adminAuditSummary(), adminDashboardStats(days)]).then(function(results) {
     let audit = results[0] && results[0].data && results[0].data.logs || [];
     let emails = results[1] && results[1].data && results[1].data.logs || [];
     let summary = results[2] && results[2].data || {};
@@ -450,6 +453,9 @@ function renderAdminDashboardStats(stats) {
   let severity = (findings.by_severity || []).slice(0, 6).map(function(item) {
     return '<span style="padding:4px 7px;border:1px solid var(--border);border-radius:10px;font-size:11px">' + escapeHtml(item.severity || '-') + ' ' + escapeHtml(String(item.count || 0)) + '</span>';
   }).join('');
+  let risks = (scans.by_risk || []).slice(0, 5).map(function(item) {
+    return '<span style="padding:4px 7px;border:1px solid var(--border);border-radius:10px;font-size:11px">风险 ' + escapeHtml(item.risk || '-') + ' ' + escapeHtml(String(item.count || 0)) + '</span>';
+  }).join('');
    let statuses = (tasks.by_status || []).slice(0, 6).map(function(item) {
     return '<span style="padding:4px 7px;border:1px solid var(--border);border-radius:10px;font-size:11px">' + escapeHtml(item.status || '-') + ' ' + escapeHtml(String(item.count || 0)) + '</span>';
   }).join('');
@@ -462,13 +468,14 @@ function renderAdminDashboardStats(stats) {
     '<div style="padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px"><small>失败/超时任务</small><strong style="display:block;font-size:20px;margin-top:4px">' + escapeHtml(String(tasks.failed || 0)) + '</strong></div>' +
     '</div>' +
     '<div style="margin-top:10px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px"><div style="font-size:12px;font-weight:600">近 ' + escapeHtml(String(stats.period_days || 30)) + ' 天扫描趋势</div><div style="display:flex;gap:4px;align-items:flex-end;height:82px;margin-top:6px">' + (bars || '<span class="card-desc">暂无扫描数据</span>') + '</div></div>' +
-     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' + (severity || '<span class="card-desc">暂无风险数据</span>') + (types ? '<span style="width:1px;background:var(--border)"></span>' + types : '') + (statuses ? '<span style="width:1px;background:var(--border)"></span>' + statuses : '') + '</div>';
+     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' + (severity || '<span class="card-desc">暂无风险数据</span>') + (risks ? '<span style="width:1px;background:var(--border)"></span>' + risks : '') + (types ? '<span style="width:1px;background:var(--border)"></span>' + types : '') + (statuses ? '<span style="width:1px;background:var(--border)"></span>' + statuses : '') + '</div>';
 }
 
 function downloadAdminLogs() {
   let filters = {
     status: (document.getElementById('admin-log-status') || {}).value || '',
-    resource_type: '',
+    action: (document.getElementById('admin-log-action') || {}).value || '',
+    resource_type: (document.getElementById('admin-log-resource-type') || {}).value || '',
     limit: 5000
   };
   adminAuditExport(filters).then(function(result) {
@@ -487,6 +494,10 @@ function downloadAdminLogs() {
 document.addEventListener('click', function(event) {
   if (event.target && event.target.id === 'admin-log-filter') loadAdminLogs();
   if (event.target && event.target.id === 'admin-log-export') downloadAdminLogs();
+});
+
+document.addEventListener('change', function(event) {
+  if (event.target && event.target.id === 'admin-log-days') loadAdminLogs();
 });
 
 function renderAdminLogRows(logs, labelKey) {
