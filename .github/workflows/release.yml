@@ -104,7 +104,7 @@ jobs:
           @("file=$($installer.Name)", "bytes=$($installer.Length)", "sha256=$hash") | Set-Content downloaded-release\verification.txt
 
       - name: Upload release verification report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: vuln-sentinel-release-asset-verification-${{ github.ref_name }}
           path: downloaded-release/verification.txt

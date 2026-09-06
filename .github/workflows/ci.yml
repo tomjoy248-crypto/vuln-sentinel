@@ -152,7 +152,7 @@ jobs:
           ./scripts/verify_windows_installer.ps1 -InstallerPath $installer.FullName
 
       - name: Upload Windows installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ steps.metadata.outputs.artifact_name }}
           path: src-tauri/target/release/bundle/nsis/*setup.exe
@@ -172,7 +172,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: false
@@ -187,7 +187,7 @@ jobs:
 
     steps:
       - name: Download installer artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: ${{ needs.windows-desktop-smoke.outputs.installer_artifact }}
           path: downloaded-installer
@@ -205,7 +205,7 @@ jobs:
           @("file=$($installer.Name)", "bytes=$($installer.Length)", "sha256=$hash") | Set-Content downloaded-installer\verification.txt
 
       - name: Upload installer verification report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ needs.windows-desktop-smoke.outputs.installer_artifact }}-verification
           path: downloaded-installer/verification.txt
