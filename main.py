@@ -10871,6 +10871,14 @@ async def api_verify_fix(
                 "risk_level_zh": risk_level_zh(result.get("risk_level")),
             }
         )
+        # Persist the same feedback-enriched findings returned to the caller.
+        try:
+            result["findings"] = apply_user_feedback(
+                result.get("findings", []), user.get("user_id", 0)
+            )
+        except Exception as e:
+            logger.warning("Apply user feedback before persistence failed: %s", e)
+
         scan_id = save_scan(
             user["user_id"],
             url,
@@ -11565,14 +11573,6 @@ async def api_scan(
         )
         # 用数据库自增 ID 覆盖 run_src_scan 生成的时间戳 ID
         result["scan_id"] = scan_id
-
-        # 应用用户历史反馈闭环：降低已标记误报的置信度，提升已确认漏洞的置信度
-        try:
-            result["findings"] = apply_user_feedback(
-                result.get("findings", []), user.get("user_id", 0)
-            )
-        except Exception as e:
-            logger.warning("Apply user feedback failed: %s", e)
 
         # 自动为 high/critical finding 创建修复工单
         try:
@@ -12330,6 +12330,11 @@ async def api_finding_feedback(
         # 未登录用户（user_id==0）也允许反馈，但不持久化
         if not current_user or not current_user.get("user_id"):
             return {"success": True, "feedback_id": None, "note": "未登录反馈未持久化"}
+        owned_scan = get_scan_by_id(int(req.scan_id), current_user["user_id"])
+        if not owned_scan:
+            raise HTTPException(404, "扫描记录不存在或无权限")
+        if bool(req.is_false_positive) == bool(req.is_confirmed):
+            raise HTTPException(400, "反馈必须且只能选择确认有效或误报")
         conn = get_db()
         try:
             cur = conn.execute(
@@ -14841,14 +14846,27 @@ async def api_compare_scan_with_previous(scan_id: int, user: dict = Depends(requ
         prev_findings = json.loads(previous.get("findings_json") or "[]")
     except Exception:
         prev_findings = []
-    curr_names = {f.get("name", ""): f for f in curr_findings}
-    prev_names = {f.get("name", ""): f for f in prev_findings}
+    def finding_key(finding: dict) -> str:
+        return str(finding.get("id") or finding.get("name") or finding.get("title") or finding.get("type") or "")
+
+    curr_names = {finding_key(f): f for f in curr_findings if finding_key(f)}
+    prev_names = {finding_key(f): f for f in prev_findings if finding_key(f)}
     new_names = set(curr_names.keys()) - set(prev_names.keys())
     fixed_names = set(prev_names.keys()) - set(curr_names.keys())
     unchanged_names = set(curr_names.keys()) & set(prev_names.keys())
     new_findings = [curr_names[n] for n in sorted(new_names)]
     fixed_findings = [prev_names[n] for n in sorted(fixed_names)]
     unchanged_findings = [curr_names[n] for n in sorted(unchanged_names)]
+    status_changes = [
+        {
+            "key": name,
+            "before": prev_names[name].get("finding_status", "unverified"),
+            "after": curr_names[name].get("finding_status", "unverified"),
+        }
+        for name in sorted(unchanged_names)
+        if prev_names[name].get("finding_status", "unverified")
+        != curr_names[name].get("finding_status", "unverified")
+    ]
     score_change = current.get("score", 0) - (previous.get("score") or 0)
     return {
         "success": True,
@@ -14858,6 +14876,13 @@ async def api_compare_scan_with_previous(scan_id: int, user: dict = Depends(requ
         "new_findings": new_findings,
         "fixed_findings": fixed_findings,
         "unchanged_findings": unchanged_findings,
+        "status_changes": status_changes,
+        "summary": {
+            "new": len(new_findings),
+            "fixed": len(fixed_findings),
+            "unchanged": len(unchanged_findings),
+            "status_changed": len(status_changes),
+        },
         "score_change": score_change,
     }
 

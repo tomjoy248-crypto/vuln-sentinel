@@ -14,6 +14,38 @@ from app.db.session import get_db_connection
 logger = logging.getLogger("vuln_sentinel.feedback_loop")
 
 
+def enrich_finding_status(finding: dict[str, Any]) -> dict[str, Any]:
+    """Attach one stable lifecycle status and a compact evidence summary."""
+    result = dict(finding)
+    feedback = result.get("user_feedback") or {}
+    if feedback.get("is_false_positive"):
+        status = "excluded"
+    elif feedback.get("is_confirmed"):
+        status = "confirmed"
+    elif result.get("is_likely_fp"):
+        status = "suspected"
+    else:
+        status = str(result.get("finding_status") or result.get("verification_status") or "unverified")
+        if status not in {"unverified", "suspected", "confirmed", "excluded"}:
+            status = "unverified"
+    result["finding_status"] = status
+    result["status_label"] = {
+        "unverified": "未验证",
+        "suspected": "疑似",
+        "confirmed": "已确认",
+        "excluded": "已排除",
+    }[status]
+    evidence = result.get("evidence")
+    if isinstance(evidence, dict):
+        result["evidence_summary"] = {
+            "has_request": bool(evidence.get("request")),
+            "has_response": bool(evidence.get("response")),
+            "has_headers": bool(evidence.get("response_headers") or evidence.get("headers")),
+            "basis": list(result.get("fp_reasons") or []),
+        }
+    return result
+
+
 def get_user_feedback_for_findings(
     user_id: int, finding_names: list[str]
 ) -> dict[str, dict[str, Any]]:
@@ -68,7 +100,7 @@ def apply_user_feedback(
 
     enriched: list[dict[str, Any]] = []
     for f in findings:
-        new_f = dict(f)
+        new_f = enrich_finding_status(f)
         name = new_f.get("title") or new_f.get("name") or ""
         fb = feedback_map.get(name)
 
@@ -78,9 +110,13 @@ def apply_user_feedback(
                 new_f["adjusted_confidence"] = "low"
                 new_f["feedback_note"] = "该漏洞此前被您标记为误报，已降低置信度"
                 new_f["is_likely_fp"] = True
+                new_f["finding_status"] = "excluded"
+                new_f["status_label"] = "已排除"
             elif fb.get("is_confirmed"):
                 new_f["adjusted_confidence"] = "high"
                 new_f["feedback_note"] = "该漏洞此前被您确认有效，已提升置信度"
+                new_f["finding_status"] = "confirmed"
+                new_f["status_label"] = "已确认"
         else:
             new_f["user_feedback"] = None
 

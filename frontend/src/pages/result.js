@@ -536,10 +536,9 @@ function renderFindingList(findings, selectedIndex) {
       const isFp = f.is_likely_fp ? `<span class="src-list-fp-tag src-list-fp-tag-alert" title="建议复核">${escapeHtml(fpTagText)}</span>` : '';
       const corrGroup = f.correlation_group ? `<span class="src-list-corr" title="关联组 ${escapeAttr(f.correlation_group)}（${f.correlation_size || 0} 个相关）">${escapeHtml(f.correlation_group)}</span>` : '';
       const mergedCount = f.merged_count > 1 ? `<span class="src-list-merged" title="合并了 ${f.merged_count} 个重复项">×${f.merged_count}</span>` : '';
-      const vStatus = f.verification_status;
-      const vIcon = vStatus === 'confirmed' ? '<span class="src-list-v confirmed" title="已验证">✓ 已验证</span>' :
-                    vStatus === 'probable' ? '<span class="src-list-v probable" title="可复现">? 可复现</span>' :
-                    vStatus === 'suspected' ? '<span class="src-list-v suspected" title="待人工复核">! 待人工复核</span>' : '';
+      const vStatus = f.finding_status || f.verification_status;
+      const vLabel = f.status_label || ({ confirmed: '已确认', excluded: '已排除', suspected: '疑似', unverified: '未验证', probable: '疑似' }[vStatus] || '未验证');
+      const vIcon = vStatus ? `<span class="src-list-v ${escapeHtml(vStatus)}" title="${escapeAttr(vLabel)}">${escapeHtml(vLabel)}</span>` : '';
       const fbIcon = f.user_feedback ? (f.user_feedback.is_false_positive ? '<span class="src-list-fb fp" title="已标记误报">误报</span>' : '<span class="src-list-fb confirmed" title="已确认">确认</span>') : '';
       const rawConfidence = String(f.adjusted_confidence || f.confidence || 'medium');
       const confidenceLabel = rawConfidence === 'high' ? '高可信' : rawConfidence === 'medium' ? '中可信' : rawConfidence === 'low' ? '低可信' : rawConfidence;
@@ -575,8 +574,8 @@ function renderFindingDetail(finding, index) {
   const label = SEVERITY_LABEL[sev] || '信息';
   const evidence = finding.evidence || {};
   const locDetail = finding.location_detail || {};
-  const statusMap = { open: '待处理', confirmed: '已确认', false_positive: '误报', fixed: '已修复' };
-  const status = finding.status || 'open';
+  const statusMap = { open: '待处理', confirmed: '已确认', false_positive: '误报', fixed: '已修复', unverified: '未验证', suspected: '疑似', excluded: '已排除' };
+  const status = finding.finding_status || finding.status || 'unverified';
   const fpReasons = Array.isArray(finding.fp_reasons) ? finding.fp_reasons : [];
   const fpTags = buildFpTags(fpReasons);
   const fpBanner = finding.is_likely_fp
@@ -793,9 +792,9 @@ function renderEvidenceSection(evidence, finding) {
 
   html += `<div class="src-section-title">证据</div>
     <div class="src-section-body src-evidence-meta">`;
-  const confidenceState = finding.verification_status || (finding.is_likely_fp ? 'suspected' : 'probable');
-  const confidenceText = confidenceState === 'confirmed' ? '已验证' : confidenceState === 'probable' ? '可能存在' : '待人工复核';
-  const evidenceGrade = confidenceState === 'confirmed' ? 'A级（已验证）' : confidenceState === 'probable' ? 'B级（可复现）' : 'C级（待人工复核）';
+  const confidenceState = finding.finding_status || finding.verification_status || (finding.is_likely_fp ? 'suspected' : 'unverified');
+  const confidenceText = finding.status_label || ({ confirmed: '已确认', excluded: '已排除', suspected: '疑似', unverified: '未验证', probable: '疑似' }[confidenceState] || '未验证');
+  const evidenceGrade = confidenceState === 'confirmed' ? 'A级（已确认）' : confidenceState === 'suspected' ? 'B级（疑似）' : confidenceState === 'excluded' ? '排除' : 'C级（未验证）';
   const locationText = evidence.location || evidence.position || evidence.selector || evidence.header || evidence.parameter || evidence.path || evidence.url || "";
   html += `<div class="src-evidence-row"><span class="src-evidence-label">可信度</span><span>${escapeHtml(confidenceText)}</span></div>`;
   html += `<div class="src-evidence-row"><span class="src-evidence-label">证据等级</span><span>${escapeHtml(evidenceGrade)}</span></div>`;
