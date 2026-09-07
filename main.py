@@ -16745,7 +16745,7 @@ class BusinessFlowAnalysisRequest(BaseModel):
 @app.post("/api/code-audit")
 async def api_code_audit(file: UploadFile = File(...), user: dict = Depends(require_login)) -> dict:
     """审计源码文件或 ZIP，返回文件、行号、片段和修复建议。"""
-    from app.services.code_audit import MAX_FILES, audit_source
+    from app.services.code_audit import MAX_FILES, audit_sources
     raw = await file.read(10 * 1024 * 1024 + 1)
     if len(raw) > 10 * 1024 * 1024:
         raise HTTPException(413, "源码包不能超过 10MB")
@@ -16758,15 +16758,35 @@ async def api_code_audit(file: UploadFile = File(...), user: dict = Depends(requ
                 names = [n for n in archive.namelist() if not n.endswith("/") and ".." not in n.replace("\\", "/")]
                 if len(names) > MAX_FILES:
                     raise HTTPException(413, "ZIP 中源码文件不能超过 200 个")
-                for name in names:
-                    findings.extend(audit_source(name, archive.read(name), audit_id))
+                findings = audit_sources({name: archive.read(name) for name in names}, audit_id)
         except zipfile.BadZipFile as exc:
             raise HTTPException(422, "ZIP 文件格式无效") from exc
     else:
-        findings = audit_source(filename, raw, audit_id)
+        findings = audit_sources({filename: raw}, audit_id)
     from app.audit import save_audit_log
     save_audit_log(user["user_id"], "code_audit", "code_audit", audit_id, {"filename": filename, "finding_count": len(findings)})
     return {"success": True, "audit_id": audit_id, "findings": findings, "total": len(findings)}
+
+
+@app.post("/api/code-audit/export")
+async def api_code_audit_export(req: dict, user: dict = Depends(require_login)):
+    """Export the current in-memory audit result as SARIF, HTML, or PDF."""
+    fmt = str(req.get("format", "html")).lower().strip()
+    if fmt not in {"sarif", "html", "pdf"}:
+        raise HTTPException(422, "仅支持 SARIF、HTML 和 PDF")
+    findings = req.get("findings", [])
+    if not isinstance(findings, list):
+        findings = []
+    safe_findings = [item for item in findings if isinstance(item, dict)][:5000]
+    report = {"report_kind": "code-audit", "url": req.get("url", "source-upload"), "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "score": 0, "risk_level": "待复核", "findings": safe_findings, "summary": {"total": len(safe_findings)}}
+    if fmt == "sarif":
+        from app.sarif import export_to_sarif
+        payload = json.dumps(export_to_sarif(report), ensure_ascii=False, indent=2)
+        return Response(content=payload, media_type="application/sarif+json", headers={"Content-Disposition": 'attachment; filename="vuln-sentinel-code-audit.sarif"'})
+    if fmt == "html":
+        return Response(content=generate_html_report(report), media_type="text/html; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="vuln-sentinel-code-audit.html"'})
+    pdf_bytes = generate_pdf_report(report)
+    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="vuln-sentinel-code-audit.pdf"'})
 
 
 class CodeAuditFeedbackRequest(BaseModel):
