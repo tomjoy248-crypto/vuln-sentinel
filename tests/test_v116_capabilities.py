@@ -16,6 +16,7 @@ import main  # noqa: E402
 from app.plugins import BaseVulnDetector, DetectorRegistry, Finding, ScanContext  # noqa: E402
 from app.services.authorization_diff import _redact_preview  # noqa: E402
 from app.services.auth_context import parse_auth_context  # noqa: E402
+from app.services.asset_discovery import discover_assets, mark_soft_pages  # noqa: E402
 from app.services.business_flow import analyze_business_flow  # noqa: E402
 from app.tasks import ScanTaskManager, TaskStatus  # noqa: E402
 
@@ -95,6 +96,23 @@ def test_business_flow_reports_expected_state_and_http_failure() -> None:
         "failure_reason": "state conflict",
     }])
     assert sum(item["type"] == "flow_failure" for item in result["findings"]) == 3
+
+
+def test_asset_discovery_deduplicates_openapi_and_script_endpoints() -> None:
+    result = discover_assets(
+        '{"servers":[{"url":"https://example.com"}],"paths":{"/v1/users":{},"/v1/users":{},"/health":{}}}',
+        "openapi",
+    )
+    assert {item["url"] for item in result} == {"https://example.com", "https://example.com/v1/users", "https://example.com/health"}
+    scripts = discover_assets('fetch("/api/users"); const x="https://api.example.com/v2";', "script", "https://example.com")
+    assert len(scripts) == 2
+
+
+def test_asset_soft_page_marker_uses_normalized_baseline() -> None:
+    items = discover_assets("https://example.com/a\nhttps://example.com/b", "list")
+    mark_soft_pages(items, "not found 123", {items[0]["url"]: "not found 456"})
+    assert items[0]["soft_page"] is True
+    assert items[1]["soft_page"] is False
 
 
 def test_authorization_diff_endpoint_is_read_only(monkeypatch: pytest.MonkeyPatch) -> None:

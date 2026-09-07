@@ -1407,6 +1407,19 @@ def init_db() -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_user_id ON assets(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_domain ON assets(domain)")
+    conn.execute("""CREATE TABLE IF NOT EXISTS asset_inventory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+        fingerprint TEXT NOT NULL, url TEXT NOT NULL, host TEXT DEFAULT '',
+        source TEXT DEFAULT '', owner TEXT DEFAULT 'unknown', soft_page INTEGER DEFAULT 0,
+        first_seen TEXT, last_seen TEXT, UNIQUE(user_id, fingerprint)
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS asset_inventory_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+        fingerprint TEXT NOT NULL, event TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_inventory_user ON asset_inventory(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_inventory_history_user ON asset_inventory_history(user_id)")
     # Vuln Sentinel：用户对 finding 的误报/确认反馈
     conn.execute(
         """CREATE TABLE IF NOT EXISTS finding_feedback (
@@ -19180,6 +19193,60 @@ async def batch_scan(
 
 
 # ---------- 资产管理 API ----------
+
+
+class AssetDiscoveryRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=2 * 1024 * 1024)
+    source: str = Field(default="list", pattern="^(list|url|script|openapi|subdomain)$")
+    base_url: str = Field(default="", max_length=2048)
+    owner: str = Field(default="unknown", max_length=120)
+
+
+def _save_inventory(user_id: int, items: list[dict]) -> tuple[int, int]:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    new_count = 0
+    for item in items:
+        previous = conn.execute("SELECT id, url, owner, soft_page FROM asset_inventory WHERE user_id=? AND fingerprint=?", (user_id, item["fingerprint"])).fetchone()
+        if previous:
+            event = "updated" if dict(previous) != {"id": previous["id"], "url": item["url"], "owner": item["owner"], "soft_page": int(item["soft_page"])} else "seen"
+            conn.execute("UPDATE asset_inventory SET url=?, host=?, source=?, owner=?, soft_page=?, last_seen=? WHERE user_id=? AND fingerprint=?", (item["url"], item["host"] or "", item["source"], item["owner"], int(item["soft_page"]), now, user_id, item["fingerprint"]))
+        else:
+            event = "added"
+            new_count += 1
+            conn.execute("INSERT INTO asset_inventory (user_id,fingerprint,url,host,source,owner,soft_page,first_seen,last_seen) VALUES (?,?,?,?,?,?,?,?,?)", (user_id,item["fingerprint"],item["url"],item["host"] or "",item["source"],item["owner"],int(item["soft_page"]),now,now))
+        conn.execute("INSERT INTO asset_inventory_history (user_id,fingerprint,event,snapshot_json,created_at) VALUES (?,?,?,?,?)", (user_id,item["fingerprint"],event,json.dumps(item, ensure_ascii=False),now))
+    conn.commit()
+    conn.close()
+    return new_count, len(items)
+
+
+@app.post("/api/assets/discover")
+async def api_discover_assets(req: AssetDiscoveryRequest, user: dict = Depends(require_login)) -> dict:
+    """Import and normalize an authorized asset list, URL, script, or OpenAPI document."""
+    from app.services.asset_discovery import discover_assets
+    try:
+        items = discover_assets(req.content, req.source, req.base_url, req.owner)
+        new_count, total = _save_inventory(user["user_id"], items)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"success": True, "assets": items, "count": total, "new_count": new_count, "deduplicated": True}
+
+
+@app.get("/api/assets/inventory")
+async def api_asset_inventory(user: dict = Depends(require_login)) -> dict:
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM asset_inventory WHERE user_id=? ORDER BY last_seen DESC, id DESC", (user["user_id"],)).fetchall()
+    conn.close()
+    return {"success": True, "assets": [dict(row) for row in rows]}
+
+
+@app.get("/api/assets/inventory/history")
+async def api_asset_inventory_history(limit: int = Query(200, ge=1, le=1000), user: dict = Depends(require_login)) -> dict:
+    conn = get_db()
+    rows = conn.execute("SELECT id,fingerprint,event,snapshot_json,created_at FROM asset_inventory_history WHERE user_id=? ORDER BY id DESC LIMIT ?", (user["user_id"], limit)).fetchall()
+    conn.close()
+    return {"success": True, "history": [dict(row) for row in rows]}
 
 
 @app.post("/api/assets")
