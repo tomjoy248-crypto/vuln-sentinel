@@ -868,6 +868,12 @@ def require_admin_user(user: dict, detail: str = "权限不足") -> dict:
     return user
 
 
+def require_admin_confirmation(request: Request) -> None:
+    """Require an explicit header for irreversible administrator operations."""
+    if request.headers.get("X-Admin-Confirm", "").strip().upper() != "CONFIRM":
+        raise HTTPException(428, "管理员操作需要二次确认，请设置 X-Admin-Confirm: CONFIRM")
+
+
 def run_startup_self_check() -> list[str]:
     """启动自检：检查关键配置与文件是否异常。"""
     issues: list[str] = []
@@ -1471,6 +1477,12 @@ def init_db() -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)"
     )
+    conn.execute("""CREATE TABLE IF NOT EXISTS scan_authorizations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+        target_scope TEXT NOT NULL, verification_method TEXT DEFAULT 'self_attestation',
+        confirmed_at TEXT NOT NULL, expires_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_authorizations_user ON scan_authorizations(user_id)")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS request_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -11113,6 +11125,40 @@ async def api_compliance_summary(user: dict = Depends(require_login)) -> dict:
     return {"success": True, "data": get_compliance_summary()}
 
 
+class ScanAuthorizationRequest(BaseModel):
+    target_scope: str = Field(min_length=1, max_length=2048)
+    verification_method: str = Field(default="self_attestation", pattern="^(self_attestation|dns_txt|file|ticket)$")
+    expires_at: str | None = Field(default=None, max_length=40)
+
+
+@app.post("/api/authorization/confirm")
+async def api_confirm_scan_authorization(req: ScanAuthorizationRequest, request: Request, user: dict = Depends(require_login)) -> dict:
+    """Record the operator's authorized scope before scanning."""
+    scope = req.target_scope.strip()
+    if not scope.startswith(("http://", "https://")):
+        scope = "https://" + scope
+    try:
+        sanitize_url(scope)
+    except ValueError as exc:
+        raise HTTPException(422, f"授权范围无效：{exc}") from exc
+    conn = get_db()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute("INSERT INTO scan_authorizations (user_id,target_scope,verification_method,confirmed_at,expires_at) VALUES (?,?,?,?,?)", (user["user_id"], scope, req.verification_method, now, req.expires_at))
+    conn.commit()
+    auth_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    save_audit_log(user["user_id"], "authorization_confirmed", "scan", str(auth_id), {"target_scope": scope, "verification_method": req.verification_method, "expires_at": req.expires_at}, get_client_ip(request))
+    return {"success": True, "authorization_id": auth_id, "target_scope": scope, "confirmed_at": now}
+
+
+@app.get("/api/authorization/confirmations")
+async def api_list_scan_authorizations(user: dict = Depends(require_login)) -> dict:
+    conn = get_db()
+    rows = conn.execute("SELECT id,target_scope,verification_method,confirmed_at,expires_at FROM scan_authorizations WHERE user_id=? ORDER BY id DESC LIMIT 100", (user["user_id"],)).fetchall()
+    conn.close()
+    return {"success": True, "authorizations": [dict(row) for row in rows]}
+
+
 @app.post("/api/scan")
 async def api_scan(
     req: ScanRequest, request: Request, user: dict = Depends(require_login)
@@ -19285,6 +19331,7 @@ class DatabaseBackupRequest(BaseModel):
 async def api_database_backup(req: DatabaseBackupRequest, request: Request, user: dict = Depends(require_login)):
     """Create a consistent local database backup for an administrator."""
     require_admin_user(user)
+    require_admin_confirmation(request)
     if Path(req.filename).name != req.filename or not req.filename.lower().endswith(".db"):
         raise HTTPException(422, "备份文件名只能是当前目录下的 .db 文件名")
     from app.services.db_backup import backup_database, validate_backup
@@ -19302,6 +19349,7 @@ async def api_database_backup(req: DatabaseBackupRequest, request: Request, user
 async def api_database_restore(request: Request, file: UploadFile = File(...), user: dict = Depends(require_login)):
     """Validate an uploaded backup; restore is staged with a pre-restore backup."""
     require_admin_user(user)
+    require_admin_confirmation(request)
     raw = await file.read(512 * 1024 * 1024 + 1)
     if len(raw) > 512 * 1024 * 1024:
         raise HTTPException(413, "备份文件不能超过 512MB")

@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import Request
 from app.core.rate_limiter import get_client_ip
+from app.core.sanitization import safe_log_message
 from fastapi.responses import Response
 
 from app.core.logging import (
@@ -78,7 +79,7 @@ async def structured_request_logging_middleware(
             path=path,
             client_ip=client_ip,
             duration_ms=round(duration * 1000, 2),
-            error=str(e),
+            error=safe_log_message(str(e)),
             request_id=get_request_id(),
         )
         raise

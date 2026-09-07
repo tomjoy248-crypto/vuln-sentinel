@@ -56,6 +56,25 @@ jobs:
           Copy-Item $installer.FullName "release-assets/Vuln-Sentinel-$version-win64-setup.exe"
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
+      - name: Sign Windows installer when certificate is configured
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE_BASE64 -or -not $env:WINDOWS_CERTIFICATE_PASSWORD) {
+            Write-Host 'Windows signing certificate is not configured; keeping unsigned artifact.'
+            exit 0
+          }
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*setup.exe' | Select-Object -First 1
+          $pfx = Join-Path $env:RUNNER_TEMP 'vuln-sentinel-signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          $signtool = (Get-ChildItem '${env:ProgramFiles(x86)}\Windows Kits\10\bin\**\signtool.exe' -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $signtool) { throw 'signtool.exe was not found on the Windows runner' }
+          & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD $installer.FullName
+          & $signtool verify /pa $installer.FullName
+          Remove-Item -Force $pfx
+
       - name: Test Windows install lifecycle
         shell: pwsh
         run: |
