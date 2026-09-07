@@ -631,7 +631,13 @@ class Settings(AppSettings):
     scan_timeout: float = 12.0
     max_crawl_pages: int = 8
     db_name: str = "scans.db"
-    db_dir: str = "/data"
+    # Desktop builds need a stable user-data location so the SQLite file is
+    # discoverable and survives temp-directory cleanup. Deployments can still
+    # override this with DB_DIR or DATABASE_URL.
+    db_dir: str = Field(
+        default_factory=lambda: os.environ.get("DB_DIR")
+        or (os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Vuln Sentinel") if os.name == "nt" else "/data")
+    )
 
     # Rate limiting
     rate_limit_global_per_minute: int = 30
@@ -746,7 +752,9 @@ if _IS_PRODUCTION:
 
 db_base = settings.db_dir.strip() if settings.db_dir else ""
 if not db_base:
-    db_base = os.path.join(tempfile.gettempdir(), "vuln-sentinel")
+    db_base = os.path.join(
+        os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Vuln Sentinel"
+    ) if os.name == "nt" else os.path.join(tempfile.gettempdir(), "vuln-sentinel")
 try:
     os.makedirs(db_base, exist_ok=True)
     probe_path = os.path.join(db_base, ".write_probe")
