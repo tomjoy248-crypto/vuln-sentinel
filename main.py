@@ -19277,6 +19277,65 @@ async def api_create_asset(
     return {"success": True, "asset_id": asset_id}
 
 
+class DatabaseBackupRequest(BaseModel):
+    filename: str = Field(default="vuln-sentinel-backup.db", min_length=1, max_length=120)
+
+
+@app.post("/api/admin/database/backup")
+async def api_database_backup(req: DatabaseBackupRequest, request: Request, user: dict = Depends(require_login)):
+    """Create a consistent local database backup for an administrator."""
+    require_admin_user(user)
+    if Path(req.filename).name != req.filename or not req.filename.lower().endswith(".db"):
+        raise HTTPException(422, "备份文件名只能是当前目录下的 .db 文件名")
+    from app.services.db_backup import backup_database, validate_backup
+    destination = str(Path(DB_PATH).parent / req.filename)
+    try:
+        result = backup_database(DB_PATH, destination)
+        result.update(validate_backup(destination))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    save_audit_log(user["user_id"], "database_backup", "database", details={"filename": req.filename, "bytes": result["bytes"]}, client_ip=get_client_ip(request))
+    return {"success": True, "backup": result}
+
+
+@app.post("/api/admin/database/restore")
+async def api_database_restore(request: Request, file: UploadFile = File(...), user: dict = Depends(require_login)):
+    """Validate an uploaded backup; restore is staged with a pre-restore backup."""
+    require_admin_user(user)
+    raw = await file.read(512 * 1024 * 1024 + 1)
+    if len(raw) > 512 * 1024 * 1024:
+        raise HTTPException(413, "备份文件不能超过 512MB")
+    from app.services.db_backup import backup_database, validate_backup
+    backup_path = str(Path(DB_PATH).with_suffix(".pre-restore.db"))
+    temp_path = str(Path(DB_PATH).with_suffix(".restore.tmp.db"))
+    try:
+        Path(temp_path).write_bytes(raw)
+        validate_backup(temp_path)
+        backup_database(DB_PATH, backup_path)
+        os.replace(temp_path, DB_PATH)
+        init_db()
+    except (OSError, ValueError) as exc:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise HTTPException(422, f"恢复失败：{exc}") from exc
+    save_audit_log(user["user_id"], "database_restore", "database", details={"filename": file.filename or "backup.db", "pre_restore_backup": os.path.basename(backup_path)}, client_ip=get_client_ip(request))
+    return {"success": True, "restored": True, "pre_restore_backup": backup_path}
+
+
+@app.get("/api/admin/diagnostics")
+async def api_admin_diagnostics(user: dict = Depends(require_login)) -> dict:
+    """Return bounded local diagnostics without secrets or request bodies."""
+    require_admin_user(user)
+    from app.services.db_backup import validate_backup
+    db_info = {"path": DB_PATH, "exists": os.path.exists(DB_PATH), "bytes": os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0}
+    if db_info["exists"]:
+        try:
+            db_info.update(validate_backup(DB_PATH))
+        except ValueError as exc:
+            db_info["integrity"] = f"error: {exc}"
+    return {"success": True, "diagnostics": {"python": sys.version.split()[0], "platform": sys.platform, "database": db_info, "redis_configured": bool(settings.redis_url), "scan_limits": {"concurrency": 3, "request_timeout": settings.scan_timeout, "rate_limit_per_minute": settings.rate_limit_scan_per_minute}}}
+
+
 @app.get("/api/assets")
 async def api_list_assets(user: dict = Depends(require_login)) -> dict:
     assets = get_assets(user["user_id"])
