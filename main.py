@@ -16682,6 +16682,22 @@ class AuthorizationDiffRequest(BaseModel):
     comparison_headers: dict[str, str] = Field(default_factory=dict, max_length=20)
     authorized: bool = False
     verification_token: str | None = Field(default=None, max_length=200)
+    # Optional ephemeral imports. Raw values are never included in logs or responses.
+    baseline_import: str | None = Field(default=None, max_length=256 * 1024)
+    comparison_import: str | None = Field(default=None, max_length=256 * 1024)
+    import_kind: str = Field(default="auto", pattern="^(auto|token|header|http|har|request-json)$")
+    paths: list[str] = Field(default_factory=list, max_length=50)
+
+
+class AuthorizationBatchRequest(AuthorizationDiffRequest):
+    """Bounded batch of read-only authorized endpoints."""
+
+    urls: list[str] = Field(min_length=1, max_length=20)
+
+
+class AuthContextImportRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=256 * 1024)
+    kind: str = Field(default="auto", pattern="^(auto|token|header|http|har|request-json)$")
 
 
 class BusinessFlowStep(BaseModel):
@@ -16697,6 +16713,10 @@ class BusinessFlowStep(BaseModel):
     request_key: str = Field(default="", max_length=200)
     value: int | float | None = None
     parameters: dict[str, Any] = Field(default_factory=dict, max_length=30)
+    expected_state: str = Field(default="", max_length=40)
+    status_code: int | None = Field(default=None, ge=100, le=599)
+    expected_status: int | None = Field(default=None, ge=100, le=599)
+    failure_reason: str = Field(default="", max_length=300)
 
 
 class BusinessFlowAnalysisRequest(BaseModel):
@@ -16807,8 +16827,18 @@ async def api_authorization_diff(
     """Compare two authorized identities with bounded, read-only GET requests."""
     if not req.authorized:
         raise HTTPException(403, "权限差异检测需要先确认目标已获授权")
-    baseline_headers = _validate_comparison_headers(req.baseline_headers)
-    comparison_headers = _validate_comparison_headers(req.comparison_headers)
+    from app.services.auth_context import parse_auth_context
+    try:
+        baseline_headers = req.baseline_headers
+        comparison_headers = req.comparison_headers
+        if req.baseline_import:
+            baseline_headers = parse_auth_context(req.baseline_import, req.import_kind)["headers"]
+        if req.comparison_import:
+            comparison_headers = parse_auth_context(req.comparison_import, req.import_kind)["headers"]
+        baseline_headers = _validate_comparison_headers(baseline_headers)
+        comparison_headers = _validate_comparison_headers(comparison_headers)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     raw_url = req.url.strip()
     if not raw_url.startswith(("http://", "https://")):
         raw_url = "https://" + raw_url
@@ -16845,6 +16875,50 @@ async def api_authorization_diff(
         client_ip=get_client_ip(request),
     )
     return {"success": True, "result": result}
+
+
+@app.post("/api/auth-context/import")
+async def api_import_auth_context(req: AuthContextImportRequest, user: dict = Depends(require_login)) -> dict:
+    """Validate an authorized credential import and return only an in-memory context."""
+    from app.services.auth_context import parse_auth_context
+    try:
+        context = parse_auth_context(req.content, req.kind)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    # Deliberately no audit log: even a redacted import fingerprint can be sensitive.
+    return {"success": True, "context": {"kind": context["kind"], "url": context["url"], "header_summary": context["header_summary"], "in_memory_only": True}}
+
+
+@app.post("/api/authorization-diff/batch")
+async def api_authorization_diff_batch(req: AuthorizationBatchRequest, request: Request, user: dict = Depends(require_login)) -> dict:
+    """Compare two authorized contexts over a bounded list of read-only URLs."""
+    if not req.authorized:
+        raise HTTPException(403, "权限差异检测需要先确认目标已获授权")
+    from app.services.auth_context import parse_auth_context
+    try:
+        baseline_headers = req.baseline_headers
+        comparison_headers = req.comparison_headers
+        if req.baseline_import:
+            baseline_headers = parse_auth_context(req.baseline_import, req.import_kind)["headers"]
+        if req.comparison_import:
+            comparison_headers = parse_auth_context(req.comparison_import, req.import_kind)["headers"]
+        baseline_headers = _validate_comparison_headers(baseline_headers)
+        comparison_headers = _validate_comparison_headers(comparison_headers)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    from app.services.authorization_diff import compare_authorized_contexts
+    results = []
+    for target in req.urls:
+        raw_url = target.strip()
+        if not raw_url.startswith(("http://", "https://")):
+            raw_url = "https://" + raw_url
+        valid, reason, code = validate_scan_target_full(raw_url, user_id=user["user_id"], authorized=True, deep=False, verification_token=req.verification_token, allowed_demo=True)
+        if not valid:
+            results.append({"url": raw_url, "error": reason, "code": code})
+            continue
+        result = await compare_authorized_contexts(raw_url, baseline_headers, comparison_headers)
+        results.append(result)
+    return {"success": True, "count": len(results), "results": results, "read_only": True}
 
 
 @app.post("/api/business-flow/analyze")

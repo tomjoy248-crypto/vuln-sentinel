@@ -92,6 +92,22 @@ def _snapshot(response: httpx.Response, body: bytes, truncated: bool) -> dict[st
     }
 
 
+def _auth_state(snapshot: dict[str, Any]) -> str:
+    """Classify authentication from observable response signals, not token contents."""
+    code = snapshot["status_code"]
+    if code in {401, 419}:
+        return "expired_or_invalid"
+    if code == 403:
+        return "authenticated_but_forbidden"
+    if 200 <= code < 400:
+        return "accepted_or_public"
+    return "inconclusive"
+
+
+def _matching_keys(keys: set[str], terms: tuple[str, ...]) -> list[str]:
+    return sorted(key for key in keys if any(term in key.lower().split(".")[-1] for term in terms))[:50]
+
+
 async def _bounded_get(
     client: httpx.AsyncClient, url: str, headers: dict[str, str]
 ) -> tuple[httpx.Response, bytes, bool]:
@@ -136,6 +152,14 @@ async def compare_authorized_contexts(
         "only_in_baseline": sorted(baseline_keys - comparison_keys)[:100],
         "only_in_comparison": sorted(comparison_keys - baseline_keys)[:100],
     }
+    permission_keys = {
+        "baseline": _matching_keys(baseline_keys, ("role", "permission", "scope", "access", "admin")),
+        "comparison": _matching_keys(comparison_keys, ("role", "permission", "scope", "access", "admin")),
+    }
+    tenant_keys = {
+        "baseline": _matching_keys(baseline_keys, ("tenant", "org", "organization", "workspace")),
+        "comparison": _matching_keys(comparison_keys, ("tenant", "org", "organization", "workspace")),
+    }
     both_success = 200 <= first["status_code"] < 300 and 200 <= second["status_code"] < 300
     if both_success and body_diff:
         conclusion = "两个授权身份返回内容不同，发现权限相关差异，建议人工确认数据边界"
@@ -157,8 +181,11 @@ async def compare_authorized_contexts(
         "status_diff": status_diff,
         "body_diff": body_diff,
         "json_key_diff": json_key_diff,
+        "auth_state": {"baseline": _auth_state(first), "comparison": _auth_state(second)},
+        "permission_field_evidence": permission_keys,
+        "tenant_field_evidence": tenant_keys,
         "evidence_truncated": baseline_truncated or comparison_truncated,
         "conclusion": conclusion,
         "severity": severity,
-        "evidence": "仅保留状态码、响应摘要和短预览，不保存认证请求头",
+        "evidence": "仅保留状态码、响应摘要、字段名和短预览，不保存认证请求头；401/419 作为登录过期或凭证失效线索，403 作为已认证但无权限线索",
     }

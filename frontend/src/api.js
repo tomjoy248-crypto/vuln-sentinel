@@ -218,6 +218,8 @@ export function cancelScanTask(id) { return apiPost('/api/scan/tasks/' + encodeU
 export function retryScanTask(id) { return apiPost('/api/scan/tasks/' + encodeURIComponent(id) + '/retry', {}); }
 // Read-only comparison of two explicitly authorized account contexts.
 export function authorizationDiff(body) { return apiPost('/api/authorization-diff', body); }
+export function importAuthContext(body) { return apiPost('/api/auth-context/import', body); }
+export function authorizationDiffBatch(body) { return apiPost('/api/authorization-diff/batch', body); }
 // Offline business-flow evidence analysis; this never replays state changes.
 export function analyzeBusinessFlow(body) { return apiPost('/api/business-flow/analyze', body); }
 export function trend(url, limit = 30) {

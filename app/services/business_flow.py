@@ -117,6 +117,37 @@ def analyze_business_flow(steps: list[dict[str, Any]]) -> dict[str, Any]:
                 "evidence": f"状态从 {declared_previous or '未知'} 跳到 {state}",
                 "fix": "服务端按订单当前状态和操作者权限校验每一步，不接受客户端直接指定最终状态。",
             })
+        expected_state = str(step.get("expected_state") or "").lower().strip()
+        if expected_state and state and expected_state != state:
+            findings.append({
+                "type": "flow_failure",
+                "severity": "medium",
+                "step": name,
+                "index": index,
+                "evidence": f"步骤实际状态为 {state}，未达到预期状态 {expected_state}",
+                "fix": "服务端明确返回失败原因并校验流程前置状态；客户端不要仅依据页面提示判断成功。",
+            })
+        status_code = step.get("status_code")
+        expected_status = step.get("expected_status")
+        if expected_status is not None and status_code is not None and status_code != expected_status:
+            findings.append({
+                "type": "flow_failure",
+                "severity": "medium" if status_code < 500 else "low",
+                "step": name,
+                "index": index,
+                "evidence": f"HTTP 状态码为 {status_code}，预期为 {expected_status}",
+                "fix": "统一接口成功与失败状态码，避免业务失败返回 200；记录可定位但不泄露敏感信息的错误标识。",
+            })
+        failure_reason = str(step.get("failure_reason") or "").strip()
+        if failure_reason:
+            findings.append({
+                "type": "flow_failure",
+                "severity": "medium",
+                "step": name,
+                "index": index,
+                "evidence": f"流程样本记录失败：{failure_reason[:160]}",
+                "fix": "检查该步骤的服务端前置条件、权限和幂等处理，并在修复后重新采集该步骤。",
+            })
         elif rank is not None and declared_previous_rank is not None and rank < declared_previous_rank:
             findings.append({
                 "type": "state_regression",

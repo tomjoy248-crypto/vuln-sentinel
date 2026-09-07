@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 import main  # noqa: E402
 from app.plugins import BaseVulnDetector, DetectorRegistry, Finding, ScanContext  # noqa: E402
 from app.services.authorization_diff import _redact_preview  # noqa: E402
+from app.services.auth_context import parse_auth_context  # noqa: E402
 from app.services.business_flow import analyze_business_flow  # noqa: E402
 from app.tasks import ScanTaskManager, TaskStatus  # noqa: E402
 
@@ -73,6 +74,27 @@ def test_authorization_diff_json_evidence_redacts_secrets() -> None:
     assert "do-not-store" not in preview
     assert "a@example.com" not in preview
     assert "[REDACTED]" in preview
+
+
+def test_auth_context_import_supports_token_cookie_and_har_without_echoing_secret() -> None:
+    token = "secret-token-value"
+    parsed = parse_auth_context(token)
+    assert parsed["headers"]["Authorization"] == f"Bearer {token}"
+    cookie = parse_auth_context("Cookie: sid=secret-cookie")
+    assert cookie["headers"]["Cookie"] == "sid=secret-cookie"
+    har = parse_auth_context('{"log":{"entries":[{"request":{"url":"https://example.com/a","headers":[{"name":"Authorization","value":"Bearer secret"}]}}]}}')
+    assert har["url"] == "https://example.com/a"
+    assert har["header_summary"]["Authorization"] == "[REDACTED]"
+    assert "secret" not in str(har["header_summary"])
+
+
+def test_business_flow_reports_expected_state_and_http_failure() -> None:
+    result = analyze_business_flow([{
+        "name": "submit", "action": "submit", "state": "pending",
+        "expected_state": "approved", "status_code": 409, "expected_status": 201,
+        "failure_reason": "state conflict",
+    }])
+    assert sum(item["type"] == "flow_failure" for item in result["findings"]) == 3
 
 
 def test_authorization_diff_endpoint_is_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
