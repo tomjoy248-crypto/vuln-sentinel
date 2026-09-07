@@ -5,10 +5,19 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $installer = (Resolve-Path -LiteralPath $InstallerPath).Path
-$installRoot = Join-Path $env:LOCALAPPDATA 'Vuln Sentinel'
+$candidateRoots = @(
+  (Join-Path $env:LOCALAPPDATA 'Programs'),
+  (Join-Path $env:LOCALAPPDATA 'Vuln Sentinel'),
+  (Join-Path $env:ProgramFiles 'Vuln Sentinel')
+)
 
-if (Test-Path -LiteralPath $installRoot) {
-  Remove-Item -LiteralPath $installRoot -Recurse -Force
+foreach ($root in $candidateRoots) {
+  if (Test-Path -LiteralPath $root -PathType Leaf) { continue }
+  if (Test-Path -LiteralPath $root) {
+    Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match 'vuln.?sentinel' } |
+      Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 
 function Invoke-Installer([string]$path) {
@@ -19,15 +28,16 @@ function Invoke-Installer([string]$path) {
 }
 
 function Find-ProductExecutable() {
-  if (-not (Test-Path -LiteralPath $installRoot)) { return $null }
-  Get-ChildItem -LiteralPath $installRoot -Recurse -File -Filter '*.exe' |
+  $roots = $candidateRoots | Where-Object { Test-Path -LiteralPath $_ }
+  Get-ChildItem -LiteralPath $roots -Recurse -File -Filter '*.exe' -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -notmatch '^(uninstall|vuln-sentinel-backend)' } |
     Select-Object -First 1
 }
 
 Invoke-Installer $installer
 $app = Find-ProductExecutable
-if (-not $app) { throw "Installed product executable was not found under $installRoot" }
+if (-not $app) { throw 'Installed product executable was not found in standard Windows install locations' }
+$installRoot = $app.Directory.FullName
 
 # Launch validation is intentionally time-bounded so a desktop UI cannot block CI.
 $running = Start-Process -FilePath $app.FullName -PassThru
@@ -43,8 +53,10 @@ $uninstaller = Join-Path $installRoot 'uninstall.exe'
 if (-not (Test-Path -LiteralPath $uninstaller)) { throw "Uninstaller was not found under $installRoot" }
 $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
 if ($uninstall.ExitCode -ne 0) { throw "NSIS uninstaller exited with code $($uninstall.ExitCode)" }
-$remainingProductFiles = Get-ChildItem -LiteralPath $installRoot -Recurse -File -ErrorAction SilentlyContinue |
-  Where-Object { $_.Name -notmatch '^(uninstall|vuln-sentinel-backend)' }
-if ($remainingProductFiles) { throw 'Product files remain after uninstall smoke test' }
+if (Test-Path -LiteralPath $installRoot) {
+  $remainingProductFiles = Get-ChildItem -LiteralPath $installRoot -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notmatch '^(uninstall|vuln-sentinel-backend)' }
+  if ($remainingProductFiles) { throw 'Product files remain after uninstall smoke test' }
+}
 
 Write-Host 'Windows install, launch, upgrade, and uninstall smoke checks passed.'
