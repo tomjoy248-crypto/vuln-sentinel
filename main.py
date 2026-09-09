@@ -711,6 +711,7 @@ _IS_PRODUCTION = settings.env == "production" or os.environ.get(
 # ---------- CORS 白名单解析与生产模式强制校验 ----------
 
 _cors_origins_list = parse_cors_origins(settings.cors_origins)
+_cors_origin_regex = None
 
 # 自动将 PUBLIC_BASE_URL 加入 CORS 白名单（生产模式同样生效）
 # 这样用户只需配置 PUBLIC_BASE_URL=https://my-domain.com 即可自动放行
@@ -744,6 +745,10 @@ if not _IS_PRODUCTION:
     ):
         if _origin not in _cors_origins_list:
             _cors_origins_list.append(_origin)
+    # WebView implementations can report a local origin with or without a
+    # port, and Tauri may use either tauri.localhost or asset://localhost.
+    # Keep this regex development-only; production remains explicit allowlist.
+    _cors_origin_regex = r"^(https?|tauri|asset)://(localhost|127\.0\.0\.1|tauri\.localhost)(:\\d+)?$"
 
 # ???????????????????????????
 if _IS_PRODUCTION:
@@ -2462,6 +2467,7 @@ if settings.enable_metrics:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins_list,
+    allow_origin_regex=_cors_origin_regex,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
     allow_credentials=True,
