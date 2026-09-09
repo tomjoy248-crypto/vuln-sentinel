@@ -733,6 +733,17 @@ if not _IS_PRODUCTION:
         for _origin in (f"http://localhost:{_p}", f"http://127.0.0.1:{_p}"):
             if _origin not in _cors_origins_list:
                 _cors_origins_list.append(_origin)
+    # Tauri 2 WebView sends requests with a tauri.localhost origin. Without
+    # these development-only entries the browser blocks every JSON POST at
+    # the CORS preflight stage, including login and registration.
+    for _origin in (
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "tauri://localhost",
+        "asset://localhost",
+    ):
+        if _origin not in _cors_origins_list:
+            _cors_origins_list.append(_origin)
 
 # ???????????????????????????
 if _IS_PRODUCTION:
