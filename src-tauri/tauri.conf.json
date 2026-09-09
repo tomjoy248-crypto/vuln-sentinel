@@ -32,7 +32,8 @@
     "resources": ["../runtime/backend-dist/vuln-sentinel-backend.exe"],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerHooks": "windows/hooks.nsh"
       }
     },
     "useLocalToolsDir": true
