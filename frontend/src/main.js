@@ -576,7 +576,7 @@ function doRegister() {
       if (errEl) errEl.textContent = extractError(data) || '注册失败';
     }
   }).catch(function(e) {
-    if (errEl) errEl.textContent = '注册失败: ' + e.message;
+    if (errEl) errEl.textContent = '注册失败: ' + friendlyError(e);
   });
 }
 
@@ -1586,6 +1586,9 @@ function friendlyError(err) {
   }
   if (/refused|connect/i.test(msg)) {
     return '连接被拒绝，目标站点可能不可达';
+  }
+  if (/failed to fetch|networkerror|网络请求失败|无法连接扫描服务/i.test(msg)) {
+    return '无法连接本地扫描服务，请重新打开安装包，或先运行 start.bat';
   }
   if (/authorized|授权/i.test(msg)) {
     return '请先勾选「我已获得授权扫描此目标」';

@@ -22,7 +22,11 @@ function buildApiBases() {
       !isTauriWindow) {
     bases.push('');
   }
+  // Tauri bundles the backend on 8011; 8000 is the documented Python/browser
+  // start port. Keep both candidates so opening the built frontend directly
+  // does not make authentication fail with the browser's raw fetch error.
   bases.push('http://127.0.0.1:8011');
+  bases.push('http://127.0.0.1:8000');
   return [...new Set(bases)];
 }
 
