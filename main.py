@@ -1562,9 +1562,15 @@ def init_db() -> None:
         logger.warning("Password migration inspection failed: %s", e)
     # 开发环境可预置演示账号；生产环境默认不自动创建弱口令示例账号
     try:
-        any_user = conn.execute("SELECT id FROM users LIMIT 1").fetchone()
+        # The demo account must not depend on the database being empty. A user
+        # may have been created before it, and upgrades must still leave the
+        # documented local test account available. Never overwrite an
+        # existing demo password here.
+        demo_user = conn.execute(
+            "SELECT id FROM users WHERE username COLLATE NOCASE=?", ("demo",)
+        ).fetchone()
         seed_demo_user = (not _IS_PRODUCTION) and os.environ.get("SEED_DEMO_USER", "1").strip().lower() in ("1", "true", "yes", "on")
-        if not any_user and seed_demo_user:
+        if not demo_user and seed_demo_user:
             conn.execute(
                 "INSERT INTO users (username, password, email, role, team_id, credits, created_at) VALUES (?,?,?,?,?,?,?)",
                 (
