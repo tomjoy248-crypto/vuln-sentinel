@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import jwt  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from main import app, settings  # noqa: E402
+from main import app, get_db, settings  # noqa: E402
 
 client = TestClient(app)
 
@@ -81,7 +81,7 @@ def _get_first_plan_id() -> int:
 
 
 def _make_admin() -> tuple[str, int]:
-    """注册用户并创建团队（成为 admin），重新登录获取含 admin 角色的 token。
+    """注册用户、创建团队，并授予独立的系统管理员角色。
 
     返回 (admin_token, user_id)。
     """
@@ -89,7 +89,12 @@ def _make_admin() -> tuple[str, int]:
     token = _login(name)
     resp = client.post("/api/team/create", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200, f"Team create failed: {resp.text}"
-    # 重新登录：login 从数据库读取最新 role=admin，新 token 携带 admin 角色
+    conn = get_db()
+    try:
+        conn.execute("UPDATE users SET system_role='admin' WHERE id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
     admin_token = _login(name)
     return admin_token, user_id
 
@@ -971,3 +976,98 @@ def test_admin_email_logs_returns_logs():
     data = resp.json()["data"]
     assert "logs" in data
     assert isinstance(data["logs"], list)
+
+
+def test_phone_registration_and_admin_user_management():
+    """Phone data is unique, masked to admins, and accounts can be disabled."""
+    phone = "139" + str(int(time.time() * 1000))[-8:]
+    name = f"phone_{uuid.uuid4().hex[:8]}"
+    registered = client.post(
+        "/api/register",
+        json={"username": name, "password": "pass1234", "phone": phone},
+    )
+    assert registered.status_code == 200, registered.text
+    duplicate = client.post(
+        "/api/register",
+        json={"username": f"dup_{uuid.uuid4().hex[:8]}", "password": "pass1234", "phone": phone},
+    )
+    assert duplicate.status_code == 400
+
+    admin_token, _ = _make_admin()
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    listed = client.get(f"/api/admin/users?query={name}", headers=headers)
+    assert listed.status_code == 200, listed.text
+    users = listed.json()["data"]["users"]
+    assert len(users) == 1
+    assert users[0]["phone"] == phone[:3] + "****" + phone[-4:]
+    assert "password" not in users[0]
+    assert "password_hash" not in users[0]
+
+    updated = client.patch(
+        f"/api/admin/users/{registered.json()['user_id']}",
+        json={"is_active": False},
+        headers={**headers, "X-Admin-Confirm": "CONFIRM"},
+    )
+    assert updated.status_code == 200, updated.text
+    denied = client.post("/api/login", json={"username": name, "password": "pass1234"})
+    assert denied.status_code == 401
+    stale_token_denied = client.get(
+        "/api/me/credits",
+        headers={"Authorization": f"Bearer {registered.json()['token']}"},
+    )
+    assert stale_token_denied.status_code == 401
+
+
+def test_team_admin_cannot_access_system_admin_users():
+    """Creating a team must not grant access to global account administration."""
+    name, _, token = _register_unique(prefix="team_only")
+    created = client.post("/api/team/create", headers={"Authorization": f"Bearer {token}"})
+    assert created.status_code == 200
+    team_admin_token = _login(name)
+    denied = client.get(
+        "/api/admin/users",
+        headers={"Authorization": f"Bearer {team_admin_token}"},
+    )
+    assert denied.status_code == 403
+
+
+def test_admin_setup_token_is_one_time():
+    """The out-of-band token promotes only the first system administrator."""
+    name, user_id, token = _register_unique(prefix="setup")
+    conn = get_db()
+    try:
+        previous = conn.execute(
+            "SELECT id FROM users WHERE system_role='admin'"
+        ).fetchall()
+        conn.execute("UPDATE users SET system_role='user'")
+        conn.commit()
+    finally:
+        conn.close()
+    old_token = settings.admin_setup_token
+    settings.admin_setup_token = "test-setup-token"
+    try:
+        promoted = client.post(
+            "/api/admin/setup",
+            json={"setup_token": "test-setup-token"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert promoted.status_code == 200, promoted.text
+        assert promoted.json()["success"] is True
+        repeated = client.post(
+            "/api/admin/setup",
+            json={"setup_token": "test-setup-token"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert repeated.status_code == 409
+    finally:
+        settings.admin_setup_token = old_token
+        conn = get_db()
+        try:
+            conn.execute("UPDATE users SET system_role='user' WHERE id=?", (user_id,))
+            conn.executemany(
+                "UPDATE users SET system_role='admin' WHERE id=?",
+                [(row["id"],) for row in previous],
+            )
+            conn.commit()
+        finally:
+            conn.close()

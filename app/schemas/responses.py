@@ -110,6 +110,7 @@ class LoginResponse(BaseModel):
     user_id: int
     username: str
     role: str = "member"
+    system_role: str = "user"
     email: str | None = None
     email_verified: bool = False
 
@@ -122,6 +123,7 @@ class RegisterResponse(BaseModel):
     user_id: int
     username: str
     role: str = "member"
+    system_role: str = "user"
 
 
 class MeResponse(BaseModel):
@@ -129,6 +131,10 @@ class MeResponse(BaseModel):
 
     user_id: int
     username: str
+    role: str = "member"
+    system_role: str = "user"
+    team_id: int = 0
+    credits: int = 0
     role: str = "member"
     team_id: int = 0
     credits: int = 0

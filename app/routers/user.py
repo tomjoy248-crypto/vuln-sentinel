@@ -25,16 +25,17 @@ async def api_me(user: dict | None = Depends(get_current_user)) -> dict:
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT id, username, role, team_id, credits FROM users WHERE id=?",
+            "SELECT id, username, role, system_role, team_id, credits, is_active FROM users WHERE id=?",
             (user["user_id"],),
         ).fetchone()
-        if not row:
+        if not row or not bool(row["is_active"]):
             raise UnauthorizedException("用户不存在")
         user_dict = dict(row)
         return {
             "user_id": user_dict["id"],
             "username": user_dict["username"],
             "role": user_dict.get("role", "member"),
+            "system_role": user_dict.get("system_role", "user"),
             "team_id": user_dict.get("team_id", 0),
             "credits": user_dict.get("credits", 10),
         }

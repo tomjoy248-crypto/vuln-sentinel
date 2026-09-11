@@ -87,6 +87,14 @@ export function setRole(role) {
   try { localStorage.setItem('vs_role', role || 'member'); } catch (e) {}
 }
 
+export function getSystemRole() {
+  try { return localStorage.getItem('vs_system_role') || 'user'; } catch (e) { return 'user'; }
+}
+
+export function setSystemRole(role) {
+  try { localStorage.setItem('vs_system_role', role || 'user'); } catch (e) {}
+}
+
 export function authHeaders() {
   const token = getToken();
   const headers = { 'Content-Type': 'application/json' };
@@ -297,6 +305,24 @@ export function adminEmailLogs(limit = 50, offset = 0, emailType = '', status = 
   if (emailType) q += '&email_type=' + encodeURIComponent(emailType);
   if (status) q += '&status=' + encodeURIComponent(status);
   return apiGet(q);
+}
+export function adminUsers(query = '', role = '', active = '') {
+  let q = '/api/admin/users?limit=100';
+  if (query) q += '&query=' + encodeURIComponent(query);
+  if (role) q += '&role=' + encodeURIComponent(role);
+  if (active !== '') q += '&active=' + encodeURIComponent(active);
+  return apiGet(q);
+}
+export async function adminUpdateUser(userId, body) {
+  const resp = await authFetch('/api/admin/users/' + encodeURIComponent(userId), {
+    method: 'PATCH',
+    headers: { 'X-Admin-Confirm': 'CONFIRM' },
+    body: JSON.stringify(body)
+  });
+  return parseJsonResponse(resp);
+}
+export function adminSetup(setupToken) {
+  return apiPost('/api/admin/setup', { setup_token: setupToken });
 }
 
 // SRC 报告导出 / 验证复现 / 反馈

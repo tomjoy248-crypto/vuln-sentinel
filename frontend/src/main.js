@@ -511,6 +511,7 @@ function doLogin() {
     if (token) {
       setToken(token);
       setRole(data.role || (data.data && data.data.role) || 'member');
+      try { localStorage.setItem('vs_system_role', data.system_role || (data.data && data.data.system_role) || 'user'); } catch(e) {}
       try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
@@ -533,12 +534,14 @@ function doLogin() {
 function doRegister() {
   let usernameEl = document.getElementById('reg-username');
   let emailEl = document.getElementById('reg-email');
+  let phoneEl = document.getElementById('reg-phone');
   let passwordEl = document.getElementById('reg-password');
   let password2El = document.getElementById('reg-password2');
   let errEl = document.getElementById('register-error');
   if (!usernameEl || !passwordEl || !password2El) { showToast('注册表单加载失败'); return; }
   let username = usernameEl.value.trim();
   let email = emailEl ? emailEl.value.trim() : '';
+  let phone = phoneEl ? phoneEl.value.trim() : '';
   let password = passwordEl.value.trim();
   let password2 = password2El.value.trim();
   let challengeTokenEl = document.getElementById('auth-challenge-token-reg') || document.getElementById('auth-challenge-token');
@@ -550,6 +553,7 @@ function doRegister() {
 
   let payload = { username: username, password: password, challenge_token: challengeTokenEl ? challengeTokenEl.value : '', challenge_answer: challengeAnswerEl ? challengeAnswerEl.value.trim() : '' };
   if (email) { payload.email = email; }
+  if (phone) { payload.phone = phone; }
 
   authFetch('/api/register', {
     skipAuthExpiry: true,
@@ -561,6 +565,7 @@ function doRegister() {
     if (token) {
       setToken(token);
       setRole(data.role || (data.data && data.data.role) || 'member');
+      try { localStorage.setItem('vs_system_role', data.system_role || (data.data && data.data.system_role) || 'user'); } catch(e) {}
       try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
@@ -582,7 +587,7 @@ function doRegister() {
 
 function doLogout() {
   removeToken();
-  try { localStorage.removeItem('vs_username'); localStorage.removeItem('vs_role'); } catch(e) {}
+  try { localStorage.removeItem('vs_username'); localStorage.removeItem('vs_role'); localStorage.removeItem('vs_system_role'); } catch(e) {}
   updateAuthUI();
   let badge = document.getElementById('nav-alert-badge');
   if (badge) badge.style.display = 'none';

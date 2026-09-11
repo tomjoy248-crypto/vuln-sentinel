@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
+import secrets
 import sqlite3
 import time
-import hashlib
-import secrets
-import jwt
 from datetime import datetime
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
-from app.core.rate_limiter import get_client_ip
-from app.core.config import is_production
 from pydantic import BaseModel, Field
 
+from app.core.config import is_production
 from app.core.exceptions import (
     BusinessException,
     UnauthorizedException,
 )
+from app.core.rate_limiter import get_client_ip
 from app.core.response import success_response
 from app.schemas.responses import (
     LoginResponse,
@@ -28,18 +28,18 @@ from app.schemas.responses import (
 
 # 从 main.py 导入共享依赖（main.py 在末尾导入本模块，此时所有名称已定义）
 from main import (
+    _TEST_MODE,
+    _initial_user_credits,
     create_token,
     get_db,
     hash_password,
-    _initial_user_credits,
+    limiter_auth_challenge,
     limiter_login,
     limiter_password_reset,
     limiter_password_reset_confirm,
     limiter_register,
-    limiter_auth_challenge,
     require_login,
     verify_password,
-    _TEST_MODE,
 )
 from models import LoginRequest, RegisterRequest
 
@@ -194,12 +194,17 @@ async def api_register(req: RegisterRequest, request: Request) -> dict:
         ).fetchone()
         if existing:
             raise BusinessException("用户名已存在")
+        if req.phone and conn.execute(
+            "SELECT id FROM users WHERE phone=?", (req.phone,)
+        ).fetchone():
+            raise BusinessException("手机号已注册")
         conn.execute(
-            "INSERT INTO users (username, password, email, role, team_id, credits, created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO users (username, password, email, phone, role, team_id, credits, created_at) VALUES (?,?,?,?,?,?,?,?)",
             (
                 req.username,
                 hash_password(req.password),
                 req.email,
+                req.phone,
                 "member",
                 0,
                 _initial_user_credits(),
@@ -225,6 +230,7 @@ async def api_register(req: RegisterRequest, request: Request) -> dict:
             "username": user_dict["username"],
             "user_id": user_dict["id"],
             "role": user_dict.get("role", "member"),
+            "system_role": user_dict.get("system_role", "user"),
         }
     except sqlite3.IntegrityError:
         raise BusinessException("用户名已存在")
@@ -251,6 +257,9 @@ async def api_login(req: LoginRequest, request: Request) -> dict:
             _record_auth_event("login_failed", req.username, client_ip)
             raise UnauthorizedException("用户名或密码错误")
         user = dict(user_row)
+        if not bool(user.get("is_active", 1)):
+            _record_auth_event("login_blocked", req.username, client_ip, user["id"])
+            raise UnauthorizedException("账号已停用，请联系管理员")
         if not verify_password(req.password, user["password"]):
             _record_auth_event("login_failed", req.username, client_ip, user["id"])
             raise UnauthorizedException("用户名或密码错误")
@@ -268,6 +277,7 @@ async def api_login(req: LoginRequest, request: Request) -> dict:
             "username": user_dict["username"],
             "user_id": user_dict["id"],
             "role": user_dict.get("role", "member"),
+            "system_role": user_dict.get("system_role", "user"),
         }
     finally:
         conn.close()

@@ -31,6 +31,18 @@ def sanitize_username(value: str) -> str:
     return value
 
 
+def sanitize_phone(value: str) -> str:
+    """Validate an optional mainland China mobile number."""
+    value = (value or "").strip().replace(" ", "").replace("-", "")
+    if not value:
+        return ""
+    if value.startswith("+86"):
+        value = value[3:]
+    if not re.fullmatch(r"1[3-9]\d{9}", value):
+        raise ValueError("手机号格式不正确")
+    return value
+
+
 def _is_private_ip(hostname: str) -> bool:
     """检查 hostname 解析后的 IP 是否落入私有网段。用于 SSRF 防护。"""
     if hostname.lower() in BLOCKED_HOSTS:

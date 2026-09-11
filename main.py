@@ -879,7 +879,7 @@ def require_admin_user(user: dict, detail: str = "权限不足") -> dict:
     """
     if not user:
         raise HTTPException(status_code=401, detail="请先登录")
-    if user.get("role") != "admin":
+    if user.get("system_role") != "admin":
         raise HTTPException(status_code=403, detail=detail)
     return user
 
@@ -924,7 +924,24 @@ async def require_login(authorization: str | None = Header(None)) -> dict:
     user = verify_token(token)
     if not user:
         raise UnauthorizedException("请先登录")
-    return user
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT id, username, role, system_role, team_id, is_active FROM users WHERE id=?",
+            (user["user_id"],),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row or not bool(row["is_active"]):
+        raise UnauthorizedException("账号不存在或已停用")
+    current = dict(row)
+    return {
+        **user,
+        "username": current["username"],
+        "role": current.get("role") or "member",
+        "system_role": current.get("system_role") or "user",
+        "team_id": current.get("team_id") or 0,
+    }
 
 
 # ---------- Rate Limiter (单例) ----------
@@ -1139,7 +1156,11 @@ def init_db() -> None:
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             email TEXT,
+            phone TEXT,
+            phone_verified INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
             role TEXT DEFAULT 'member',
+            system_role TEXT DEFAULT 'user',
             team_id INTEGER DEFAULT 0,
             credits INTEGER DEFAULT 10,
             created_at TEXT
@@ -1260,6 +1281,18 @@ def init_db() -> None:
     for col_name, col_def in _users_notification_columns:
         if not _column_exists(conn, "users", col_name):
             conn.execute(col_def)
+    _users_account_columns = [
+        ("phone", "ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''"),
+        ("phone_verified", "ALTER TABLE users ADD COLUMN phone_verified INTEGER DEFAULT 0"),
+        ("is_active", "ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1"),
+        ("system_role", "ALTER TABLE users ADD COLUMN system_role TEXT DEFAULT 'user'"),
+    ]
+    for col_name, col_def in _users_account_columns:
+        if not _column_exists(conn, "users", col_name):
+            conn.execute(col_def)
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_unique ON users(phone) WHERE phone IS NOT NULL AND phone <> ''"
+    )
     conn.execute(
         """CREATE TABLE IF NOT EXISTS alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

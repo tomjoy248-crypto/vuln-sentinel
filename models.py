@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from utils import sanitize_email, sanitize_password, sanitize_url, sanitize_username
+from utils import sanitize_email, sanitize_password, sanitize_phone, sanitize_url, sanitize_username
 
 # ---------- 扫描相关模型 ----------
 
@@ -103,6 +103,7 @@ class RegisterRequest(BaseModel):
     username: str
     password: str
     email: str = ""
+    phone: str = ""
     challenge_token: str = ""
     challenge_answer: str = ""
 
@@ -122,6 +123,11 @@ class RegisterRequest(BaseModel):
         if not v:
             return ""
         return sanitize_email(v)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        return sanitize_phone(v)
 
 
 class LoginRequest(BaseModel):

@@ -4,15 +4,137 @@ from __future__ import annotations
 
 import csv
 import io
+import secrets
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
+from app.core.exceptions import BusinessException, NotFoundException
 from app.core.response import success_response
 from app.schemas.responses import AuditLogListResponse
 from main import require_login
 
 router = APIRouter(tags=["审计日志"])
+
+
+def _mask_email(value: str) -> str:
+    if not value or "@" not in value:
+        return ""
+    name, domain = value.split("@", 1)
+    return (name[:2] + "***@" + domain) if name else "***@" + domain
+
+
+def _mask_phone(value: str) -> str:
+    return value[:3] + "****" + value[-4:] if len(value or "") == 11 else ""
+
+
+@router.post("/api/admin/setup")
+async def api_admin_setup(req: dict, user: dict = Depends(require_login)) -> dict:
+    """Promote the first administrator using an out-of-band setup token."""
+    from app.audit import save_audit_log
+    from main import get_db, settings
+
+    configured = settings.admin_setup_token.strip()
+    supplied = str(req.get("setup_token") or "").strip()
+    if not configured:
+        raise BusinessException("未配置 ADMIN_SETUP_TOKEN")
+    if not secrets.compare_digest(configured, supplied):
+        save_audit_log(user["user_id"], "admin_setup_failed", "user", str(user["user_id"]))
+        raise BusinessException("管理员初始化令牌错误", status_code=403)
+    conn = get_db()
+    try:
+        if conn.execute("SELECT id FROM users WHERE system_role='admin' LIMIT 1").fetchone():
+            raise BusinessException("管理员已经存在", status_code=409)
+        conn.execute("UPDATE users SET system_role='admin' WHERE id=?", (user["user_id"],))
+        conn.commit()
+    finally:
+        conn.close()
+    save_audit_log(user["user_id"], "admin_setup_success", "user", str(user["user_id"]))
+    return {"success": True, "message": "管理员初始化成功"}
+
+
+@router.get("/api/admin/users")
+async def api_admin_users(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    query: str = Query("", max_length=80),
+    role: str = Query("", max_length=20),
+    active: str = Query("", max_length=10),
+    user: dict = Depends(require_login),
+) -> dict:
+    from main import get_db, require_admin_user
+
+    require_admin_user(user, "仅管理员可查看用户")
+    clauses, params = [], []
+    if query:
+        clauses.append("(username LIKE ? OR email LIKE ? OR phone LIKE ?)")
+        term = f"%{query}%"
+        params.extend([term, term, term])
+    if role:
+        clauses.append("role=?")
+        params.append(role)
+    if active in {"0", "1"}:
+        clauses.append("is_active=?")
+        params.append(int(active))
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    conn = get_db()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM users" + where, params).fetchone()[0]
+        rows = conn.execute(
+            "SELECT id, username, email, phone, phone_verified, role, system_role, team_id, credits, is_active, created_at "
+            + "FROM users" + where + " ORDER BY id DESC LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        ).fetchall()
+    finally:
+        conn.close()
+    users = []
+    for row in rows:
+        item = dict(row)
+        item["email"] = _mask_email(item.get("email") or "")
+        item["phone"] = _mask_phone(item.get("phone") or "")
+        item["is_active"] = bool(item.get("is_active", 1))
+        item["phone_verified"] = bool(item.get("phone_verified", 0))
+        users.append(item)
+    return {"success": True, "data": {"users": users, "total": total, "limit": limit, "offset": offset}}
+
+
+@router.patch("/api/admin/users/{target_user_id}")
+async def api_admin_update_user(
+    target_user_id: int,
+    req: dict,
+    request: Request,
+    user: dict = Depends(require_login),
+) -> dict:
+    from app.audit import save_audit_log
+    from main import get_db, require_admin_confirmation, require_admin_user
+
+    require_admin_user(user, "仅管理员可管理用户")
+    require_admin_confirmation(request)
+    system_role = req.get("system_role")
+    is_active = req.get("is_active")
+    if system_role is not None and system_role not in {"admin", "user"}:
+        raise BusinessException("系统角色不合法")
+    if is_active is not None and not isinstance(is_active, bool):
+        raise BusinessException("账号状态不合法")
+    if target_user_id == user["user_id"] and (system_role not in {None, "admin"} or is_active is False):
+        raise BusinessException("不能降低或停用当前管理员账号")
+    conn = get_db()
+    try:
+        target = conn.execute("SELECT id, system_role, is_active FROM users WHERE id=?", (target_user_id,)).fetchone()
+        if not target:
+            raise NotFoundException("用户不存在")
+        if target["system_role"] == "admin" and system_role not in {None, "admin"}:
+            if conn.execute("SELECT COUNT(*) FROM users WHERE system_role='admin' AND is_active=1").fetchone()[0] <= 1:
+                raise BusinessException("不能移除最后一个管理员")
+        if system_role is not None:
+            conn.execute("UPDATE users SET system_role=? WHERE id=?", (system_role, target_user_id))
+        if is_active is not None:
+            conn.execute("UPDATE users SET is_active=? WHERE id=?", (int(is_active), target_user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    save_audit_log(user["user_id"], "admin_user_update", "user", str(target_user_id), {"system_role": system_role, "is_active": is_active}, request.client.host if request.client else "")
+    return {"success": True, "message": "用户信息已更新"}
 
 
 # ---------- 审计日志查询 ----------

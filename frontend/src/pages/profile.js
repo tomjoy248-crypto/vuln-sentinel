@@ -21,11 +21,15 @@ import {
   getUsername,
   getRole,
   setRole,
+  getSystemRole,
+  setSystemRole,
   adminAuditLogs,
   adminAuditSummary,
   adminDashboardStats,
   adminAuditExport,
   adminEmailLogs,
+  adminUsers,
+  adminUpdateUser,
   listScanTasks,
   pauseScanTask,
   resumeScanTask,
@@ -118,8 +122,9 @@ function updateAuthUI() {
     if (scanLoginTip) scanLoginTip.style.display = 'none';
     if (statusMessage) statusMessage.textContent = '已登录，可直接扫描或查看历史记录';
     let role = getRole();
-    if (roleEl) roleEl.textContent = role === 'admin' ? '管理员' : '已登录';
-    if (adminMenu) adminMenu.style.display = role === 'admin' ? 'flex' : 'none';
+    let systemRole = getSystemRole();
+    if (roleEl) roleEl.textContent = systemRole === 'admin' ? '系统管理员' : (role === 'admin' ? '团队管理员' : '已登录');
+    if (adminMenu) adminMenu.style.display = systemRole === 'admin' ? 'flex' : 'none';
     let name = getUsername();
     let displayName = document.getElementById('auth-display-name');
     if (displayName) displayName.textContent = name || '用户';
@@ -186,6 +191,7 @@ function doLogin() {
     if (token) {
       setToken(token);
       setRole(data.role || (data.data && data.data.role) || 'member');
+      setSystemRole(data.system_role || (data.data && data.data.system_role) || 'user');
       try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
@@ -204,12 +210,14 @@ function doLogin() {
 function doRegister() {
   let usernameEl = document.getElementById('reg-username');
   let emailEl = document.getElementById('reg-email');
+  let phoneEl = document.getElementById('reg-phone');
   let passwordEl = document.getElementById('reg-password');
   let password2El = document.getElementById('reg-password2');
   let errEl = document.getElementById('register-error');
   if (!usernameEl || !passwordEl || !password2El) { showToast('注册表单加载失败'); return; }
   let username = usernameEl.value.trim();
   let email = emailEl ? emailEl.value.trim() : '';
+  let phone = phoneEl ? phoneEl.value.trim() : '';
   let password = passwordEl.value.trim();
   let password2 = password2El.value.trim();
   if (errEl) errEl.textContent = '';
@@ -219,6 +227,7 @@ function doRegister() {
 
   let payload = { username: username, password: password };
   if (email) { payload.email = email; }
+  if (phone) { payload.phone = phone; }
 
   authFetch('/api/register', {
     skipAuthExpiry: true,
@@ -230,6 +239,7 @@ function doRegister() {
     if (token) {
       setToken(token);
       setRole(data.role || (data.data && data.data.role) || 'member');
+      setSystemRole(data.system_role || (data.data && data.data.system_role) || 'user');
       try { localStorage.setItem('vs_username', resolvedUsername); } catch(e) {}
       updateAuthUI();
       updateAlertBadge();
@@ -247,7 +257,7 @@ function doRegister() {
 
 function doLogout() {
   removeToken();
-  try { localStorage.removeItem('vs_username'); localStorage.removeItem('vs_role'); } catch(e) {}
+  try { localStorage.removeItem('vs_username'); localStorage.removeItem('vs_role'); localStorage.removeItem('vs_system_role'); } catch(e) {}
   updateAuthUI();
   let badge = document.getElementById('nav-alert-badge');
   if (badge) badge.style.display = 'none';
@@ -414,21 +424,42 @@ function loadAdminLogs() {
     status: (document.getElementById('admin-log-status') || {}).value || ''
   };
   let days = Number((document.getElementById('admin-log-days') || {}).value || 30);
-  Promise.all([adminAuditLogs(50, 0, '', filters), adminEmailLogs(), adminAuditSummary(), adminDashboardStats(days)]).then(function(results) {
+  let userQuery = (document.getElementById('admin-user-query') || {}).value || '';
+  let userRole = (document.getElementById('admin-user-role') || {}).value || '';
+  let userActive = (document.getElementById('admin-user-active') || {}).value || '';
+  Promise.all([adminAuditLogs(50, 0, '', filters), adminEmailLogs(), adminAuditSummary(), adminDashboardStats(days), adminUsers(userQuery, userRole, userActive)]).then(function(results) {
     let audit = results[0] && results[0].data && results[0].data.logs || [];
     let emails = results[1] && results[1].data && results[1].data.logs || [];
     let summary = results[2] && results[2].data || {};
     let dashboard = results[3] && results[3].data || {};
+    let users = results[4] && results[4].data && results[4].data.users || [];
     if (summaryEl) summaryEl.innerHTML = renderAdminSummary(summary);
     let dashboardEl = document.getElementById('admin-dashboard-stats');
     if (dashboardEl) dashboardEl.innerHTML = renderAdminDashboardStats(dashboard);
     if (auditEl) auditEl.innerHTML = renderAdminLogRows(audit, 'action');
     if (emailEl) emailEl.innerHTML = renderAdminLogRows(emails, 'email_type');
+    let usersEl = document.getElementById('admin-user-list');
+    if (usersEl) usersEl.innerHTML = renderAdminUsers(users);
   }).catch(function(e) {
     let message = escapeHtml(e.message || '日志读取失败');
     if (auditEl) auditEl.innerHTML = '<div class="auth-form-error">' + message + '</div>';
     if (emailEl) emailEl.innerHTML = '<div class="auth-form-error">' + message + '</div>';
   });
+}
+
+function renderAdminUsers(users) {
+  if (!users.length) return '<div class="card-desc">没有匹配的用户</div>';
+  return '<div style="display:grid;gap:8px">' + users.map(function(user) {
+    let roleOptions = ['admin', 'user'].map(function(role) {
+      return '<option value="' + role + '"' + (user.system_role === role ? ' selected' : '') + '>' + (role === 'admin' ? '系统管理员' : '普通用户') + '</option>';
+    }).join('');
+    return '<div style="display:grid;grid-template-columns:minmax(120px,1fr) minmax(150px,1fr) 110px 90px;gap:8px;align-items:center;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px;font-size:12px">' +
+      '<div><strong>' + escapeHtml(user.username || '-') + '</strong><div class="card-desc">#' + escapeHtml(String(user.id)) + ' · ' + escapeHtml(user.created_at || '') + '</div></div>' +
+      '<div>' + escapeHtml(user.email || user.phone || '未填写联系方式') + '<div class="card-desc">积分 ' + escapeHtml(String(user.credits || 0)) + '</div></div>' +
+      '<select data-admin-system-role="' + escapeHtml(String(user.id)) + '">' + roleOptions + '</select>' +
+      '<button class="btn ' + (user.is_active ? 'btn-danger' : 'btn-secondary') + '" data-admin-user-active="' + escapeHtml(String(user.id)) + '" data-next-active="' + (user.is_active ? '0' : '1') + '">' + (user.is_active ? '停用' : '启用') + '</button>' +
+      '</div>';
+  }).join('') + '</div>';
 }
 
 function renderAdminSummary(summary) {
@@ -494,6 +525,23 @@ function downloadAdminLogs() {
 document.addEventListener('click', function(event) {
   if (event.target && event.target.id === 'admin-log-filter') loadAdminLogs();
   if (event.target && event.target.id === 'admin-log-export') downloadAdminLogs();
+  if (event.target && event.target.id === 'admin-user-filter') loadAdminLogs();
+  let activeButton = event.target && event.target.closest('[data-admin-user-active]');
+  if (activeButton && confirm('确认修改该账号状态吗？')) {
+    adminUpdateUser(activeButton.dataset.adminUserActive, { is_active: activeButton.dataset.nextActive === '1' })
+      .then(function(result) { if (!result.success) throw new Error(result.message || '操作失败'); showToast('账号状态已更新'); loadAdminLogs(); })
+      .catch(function(error) { showToast(error.message || '操作失败', 'error'); });
+  }
+});
+
+document.addEventListener('change', function(event) {
+  if (event.target && event.target.matches('[data-admin-system-role]')) {
+    let select = event.target;
+    if (!confirm('确认将该用户角色调整为 ' + select.value + ' 吗？')) { loadAdminLogs(); return; }
+    adminUpdateUser(select.dataset.adminSystemRole, { system_role: select.value })
+      .then(function(result) { if (!result.success) throw new Error(result.message || '操作失败'); showToast('用户角色已更新'); loadAdminLogs(); })
+      .catch(function(error) { showToast(error.message || '操作失败', 'error'); loadAdminLogs(); });
+  }
 });
 
 document.addEventListener('change', function(event) {

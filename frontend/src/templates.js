@@ -1125,6 +1125,12 @@ export const APP_TEMPLATE = `</head>
 
         <div class="auth-form-row">
 
+          <input type="tel" id="reg-phone" placeholder="手机号（可选，暂不发送短信）" aria-label="手机号" />
+
+        </div>
+
+        <div class="auth-form-row">
+
           <input type="password" id="reg-password" placeholder="密码" aria-label="密码" />
 
         </div>
@@ -1662,6 +1668,15 @@ export const APP_TEMPLATE = `</head>
       <div style="margin-top:16px;font-size:13px;font-weight:600">操作审计日志</div>
       <div id="admin-audit-summary" style="margin-top:10px">正在读取统计...</div>
       <div id="admin-dashboard-stats" style="margin-top:12px">正在读取趋势统计...</div>
+      <div style="margin-top:20px;font-size:13px;font-weight:600">用户管理</div>
+      <p class="card-desc">账号联系方式仅脱敏展示；角色调整和停用操作需要二次确认。</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <input id="admin-user-query" placeholder="用户名、邮箱或手机号" style="max-width:220px">
+        <select id="admin-user-role" style="max-width:120px"><option value="">全部角色</option><option value="admin">管理员</option><option value="member">成员</option><option value="viewer">只读</option></select>
+        <select id="admin-user-active" style="max-width:120px"><option value="">全部状态</option><option value="1">正常</option><option value="0">已停用</option></select>
+        <button class="btn btn-secondary" id="admin-user-filter">查询用户</button>
+      </div>
+      <div id="admin-user-list" style="margin-top:10px">正在读取用户...</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <select id="admin-log-days" style="max-width:120px"><option value="7">近 7 天</option><option value="30" selected>近 30 天</option><option value="90">近 90 天</option><option value="365">近 365 天</option></select>
         <input id="admin-log-username" placeholder="用户名" style="max-width:140px">
