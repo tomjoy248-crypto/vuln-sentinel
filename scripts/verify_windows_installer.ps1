@@ -34,6 +34,12 @@ function Find-ProductExecutable() {
     Select-Object -First 1
 }
 
+function Stop-ProductBackend() {
+  Get-Process -Name 'vuln-sentinel-backend' -ErrorAction SilentlyContinue |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 500
+}
+
 Invoke-Installer $installer
 $app = Find-ProductExecutable
 if (-not $app) { throw 'Installed product executable was not found in standard Windows install locations' }
@@ -57,11 +63,42 @@ for ($attempt = 0; $attempt -lt 20; $attempt++) {
   }
 }
 if (-not $backendReady) { throw 'Bundled backend did not become reachable on 127.0.0.1:8011' }
+
+$testUsername = "ci_install_$([Guid]::NewGuid().ToString('N').Substring(0, 10))"
+$testPassword = "VsTest-$([Guid]::NewGuid().ToString('N').Substring(0, 12))!"
+$registerBody = @{
+  username = $testUsername
+  password = $testPassword
+  email = "$testUsername@example.invalid"
+} | ConvertTo-Json
+$registered = Invoke-RestMethod -Uri 'http://127.0.0.1:8011/api/register' -Method Post -ContentType 'application/json' -Body $registerBody -TimeoutSec 10
+if (-not $registered.success -or -not $registered.token) { throw 'Bundled backend registration smoke test failed' }
+
+$loginBody = @{ username = $testUsername; password = $testPassword } | ConvertTo-Json
+$loggedIn = Invoke-RestMethod -Uri 'http://127.0.0.1:8011/api/login' -Method Post -ContentType 'application/json' -Body $loginBody -TimeoutSec 10
+if (-not $loggedIn.success -or -not $loggedIn.token) { throw 'Bundled backend login smoke test failed' }
 Stop-Process -Id $running.Id -Force
+Stop-ProductBackend
 
 # A second silent install exercises the upgrade path without changing user data.
 Invoke-Installer $installer
 if (-not (Find-ProductExecutable)) { throw 'Product executable disappeared after upgrade smoke test' }
+
+$runningAfterUpgrade = Start-Process -FilePath $app.FullName -PassThru
+$loginAfterUpgrade = $null
+for ($attempt = 0; $attempt -lt 30; $attempt++) {
+  try {
+    $loginAfterUpgrade = Invoke-RestMethod -Uri 'http://127.0.0.1:8011/api/login' -Method Post -ContentType 'application/json' -Body $loginBody -TimeoutSec 2
+    if ($loginAfterUpgrade.success -and $loginAfterUpgrade.token) { break }
+  } catch {
+    Start-Sleep -Milliseconds 500
+  }
+}
+if (-not $loginAfterUpgrade -or -not $loginAfterUpgrade.success -or -not $loginAfterUpgrade.token) {
+  throw 'Account data or login capability was not preserved after upgrade'
+}
+if (-not $runningAfterUpgrade.HasExited) { Stop-Process -Id $runningAfterUpgrade.Id -Force }
+Stop-ProductBackend
 
 $uninstaller = Join-Path $installRoot 'uninstall.exe'
 if (-not (Test-Path -LiteralPath $uninstaller)) { throw "Uninstaller was not found under $installRoot" }
