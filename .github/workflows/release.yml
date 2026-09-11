@@ -19,7 +19,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -30,6 +30,19 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify release version consistency
+        shell: pwsh
+        run: |
+          $tagVersion = $env:GITHUB_REF_NAME.Substring(1)
+          $frontend = (Get-Content frontend/package.json -Raw | ConvertFrom-Json).version
+          $tauri = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargoLine = Select-String -Path src-tauri/Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"$' | Select-Object -First 1
+          $cargo = $cargoLine.Matches[0].Groups[1].Value
+          if ($tagVersion -ne $frontend -or $frontend -ne $tauri -or $frontend -ne $cargo) {
+            throw "Release versions differ: tag=$tagVersion frontend=$frontend tauri=$tauri cargo=$cargo"
+          }
+          Write-Host "Release version is consistent: $tagVersion"
 
       - name: Build complete Windows installer
         shell: pwsh

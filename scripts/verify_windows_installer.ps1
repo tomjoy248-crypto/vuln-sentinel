@@ -38,11 +38,25 @@ Invoke-Installer $installer
 $app = Find-ProductExecutable
 if (-not $app) { throw 'Installed product executable was not found in standard Windows install locations' }
 $installRoot = $app.Directory.FullName
+$backend = Get-ChildItem -LiteralPath $installRoot -Recurse -File -Filter 'vuln-sentinel-backend.exe' -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if (-not $backend) { throw 'Bundled backend executable was not found after installation' }
 
 # Launch validation is intentionally time-bounded so a desktop UI cannot block CI.
 $running = Start-Process -FilePath $app.FullName -PassThru
 Start-Sleep -Seconds 5
 if ($running.HasExited) { throw 'Installed desktop application exited during startup smoke test' }
+
+$backendReady = $false
+for ($attempt = 0; $attempt -lt 20; $attempt++) {
+  try {
+    $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8011/health/live' -TimeoutSec 2
+    if ($health) { $backendReady = $true; break }
+  } catch {
+    Start-Sleep -Milliseconds 500
+  }
+}
+if (-not $backendReady) { throw 'Bundled backend did not become reachable on 127.0.0.1:8011' }
 Stop-Process -Id $running.Id -Force
 
 # A second silent install exercises the upgrade path without changing user data.
