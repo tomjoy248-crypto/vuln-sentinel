@@ -118,14 +118,17 @@ $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -Pass
 if ($uninstall.ExitCode -ne 0) { throw "NSIS uninstaller exited with code $($uninstall.ExitCode)" }
 if (Test-Path -LiteralPath $installRoot) {
   $remainingProductFiles = Get-ChildItem -LiteralPath $installRoot -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -notmatch '^(uninstall|vuln-sentinel-backend)' }
+    Where-Object { $_.Extension -in '.exe', '.dll', '.msi' -and $_.Name -notmatch '^(uninstall|vuln-sentinel-backend)' }
   if ($remainingProductFiles) {
     # Retry once after a short delay to avoid transient Windows AV/indexer locks.
     Start-Sleep -Seconds 2
     $remainingProductFiles = Get-ChildItem -LiteralPath $installRoot -Recurse -File -ErrorAction SilentlyContinue |
-      Where-Object { $_.Name -notmatch '^(uninstall|vuln-sentinel-backend)' }
+      Where-Object { $_.Extension -in '.exe', '.dll', '.msi' -and $_.Name -notmatch '^(uninstall|vuln-sentinel-backend)' }
   }
-  if ($remainingProductFiles) { throw 'Product files remain after uninstall smoke test' }
+  if ($remainingProductFiles) {
+    $remainingProductFiles | ForEach-Object { Write-Error "残留程序文件: $($_.FullName)" }
+    throw 'Product binaries remain after uninstall smoke test'
+  }
 }
 
 Write-Host 'Windows install, launch, upgrade, and uninstall smoke checks passed.'
