@@ -105,6 +105,11 @@ Stop-ProductBackend
 # than Windows file-lock timing.
 Get-Process -Name 'vuln-sentinel-desktop' -ErrorAction SilentlyContinue |
   Stop-Process -Force -ErrorAction SilentlyContinue
+# Tauri bundle names can vary by release; close any process whose executable
+# lives under the install directory so NSIS can remove the locked binary.
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+  Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase) } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Milliseconds 750
 
 $uninstaller = Join-Path $installRoot 'uninstall.exe'
