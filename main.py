@@ -16873,7 +16873,19 @@ async def api_code_audit(file: UploadFile = File(...), user: dict = Depends(requ
     if filename.lower().endswith(".zip"):
         try:
             with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-                names = [n for n in archive.namelist() if not n.endswith("/") and ".." not in n.replace("\\", "/")]
+                infos = [info for info in archive.infolist() if not info.is_dir()]
+                names = [info.filename for info in infos if ".." not in info.filename.replace("\\", "/")]
+                if len(names) != len(infos):
+                    raise HTTPException(422, "ZIP 包含非法路径或特殊文件")
+                # Bound the expanded payload, not only the compressed upload,
+                # to prevent a small compression bomb exhausting worker memory.
+                total_uncompressed = sum(info.file_size for info in infos)
+                if total_uncompressed > 50 * 1024 * 1024:
+                    raise HTTPException(413, "ZIP 解压后源码总大小不能超过 50MB")
+                for info in infos:
+                    unix_mode = (info.external_attr >> 16) & 0o170000
+                    if unix_mode == 0o120000:
+                        raise HTTPException(422, "ZIP 不允许包含符号链接")
                 if len(names) > MAX_FILES:
                     raise HTTPException(413, "ZIP 中源码文件不能超过 200 个")
                 findings = audit_sources({name: archive.read(name) for name in names}, audit_id)
