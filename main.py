@@ -629,7 +629,9 @@ class Settings(AppSettings):
 
     # Scan
     scan_timeout: float = 12.0
-    max_crawl_pages: int = 8
+    # Configurable crawl budget: 20 improves SPA/API coverage while the
+    # hard scan timeout still bounds resource use in production.
+    max_crawl_pages: int = int(os.environ.get("MAX_CRAWL_PAGES", "20"))
     db_name: str = "scans.db"
     # Desktop builds need a stable user-data location so the SQLite file is
     # discoverable and survives temp-directory cleanup. Deployments can still
@@ -2795,7 +2797,7 @@ async def crawl_site(url: str, max_pages: int = settings.max_crawl_pages) -> lis
     queue: deque[str] = deque([url])
     client = get_httpx_client()
     loop = asyncio.get_running_loop()
-    deadline = loop.time() + 20.0  # 整个爬取最多 20s
+    deadline = loop.time() + min(45.0, max(20.0, max_pages * 2.0))
     while queue and len(pages) < max_pages:
         if loop.time() > deadline:
             break
@@ -2849,6 +2851,15 @@ async def crawl_site(url: str, max_pages: int = settings.max_crawl_pages) -> lis
             if re.search(r"(traceback \(most recent call last\)|exception in thread|stack trace|fatal error|undefined index|warning:|notice:)", body_text, re.I):
                 page_info["signals"].append("stack_trace")
             page_info["inputs"] = len(re.findall(r"<input", body_text, re.I))
+            # Include script/module resources and literal API paths so SPAs
+            # expose their same-origin routes to the crawl queue.
+            for match in re.findall(r"(?:src|href)=[\"']([^\"']+)[\"']", body_text, re.I):
+                full = urljoin(current, match)
+                parsed_asset = urlparse(full)
+                if parsed_asset.hostname == base_domain and parsed_asset.path.endswith((".js", ".mjs")):
+                    queue.append(full)
+            for match in re.findall(r"[\"']((?:/api|/v1|/graphql|/openapi)[^\"']*)[\"']", body_text, re.I):
+                queue.append(urljoin(current, match))
             for link in parser.links:
                 lp = urlparse(link)
                 if lp.hostname == base_domain and link not in visited:
@@ -3299,7 +3310,7 @@ async def run_payload_tests(base_url, pages):
         })
 
     client = get_httpx_client()
-    test_urls = {page["url"] for page in pages[:4]}
+    test_urls = {page["url"] for page in pages[:8]}
     probe_params = ["id", "q", "search", "page", "next", "redirect", "url", "return"]
 
     for test_url in list(test_urls):

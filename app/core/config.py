@@ -43,7 +43,7 @@ class AppSettings(BaseSettings):
 
     # --- 扫描 ---
     scan_timeout: float = 12.0
-    max_crawl_pages: int = 8
+    max_crawl_pages: int = int(os.environ.get("MAX_CRAWL_PAGES", "20"))
     db_name: str = "scans.db"
     db_dir: str = "/data"
 
