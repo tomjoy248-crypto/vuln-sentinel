@@ -1,5 +1,5 @@
 // Keep the generated/static service worker cache aligned with the frontend source.
-const CACHE_NAME = 'vuln-sentinel-v11-s-v11-0-29';
+const CACHE_NAME = 'vuln-sentinel-v11-s-v11-0-30';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
