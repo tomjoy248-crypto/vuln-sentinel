@@ -156,7 +156,7 @@ export const APP_TEMPLATE = `</head>
     </div>
 
     <h1 class="home-hero-title">Vuln Sentinel Web 安全检测平台</h1>
-    <div class="home-hero-version">Version 11.0.8</div>
+    <div class="home-hero-version">Version 11.0.24</div>
 
     <div class="home-hero-actions">
       <button onclick="navigateTo('home')" class="home-hero-icon" aria-label="首页">⌂</button>
@@ -164,7 +164,7 @@ export const APP_TEMPLATE = `</head>
       <button onclick="navigateTo('profile')" class="home-hero-icon" aria-label="账号">◉</button>
     </div>
 
-    <div class="home-hero-footer">仅用于授权范围内的安全检测、交付复测、整改跟踪与持续巡检。</div>
+    <div class="home-hero-footer">仅用于授权范围内的安全检测、交付复测、整改跟踪与持续巡检。复杂登录态、WAF/CDN 与业务流程结果需人工复核。</div>
   </div>
 
 

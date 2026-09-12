@@ -1,4 +1,5 @@
-const CACHE_NAME = 'vuln-sentinel-v11-s-v3';
+// Bump whenever the shipped frontend changes so stale clients receive the current bundle.
+const CACHE_NAME = 'vuln-sentinel-v11-s-v11-0-24';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
