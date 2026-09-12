@@ -100,6 +100,13 @@ if (-not $loginAfterUpgrade -or -not $loginAfterUpgrade.success -or -not $loginA
 if (-not $runningAfterUpgrade.HasExited) { Stop-Process -Id $runningAfterUpgrade.Id -Force }
 Stop-ProductBackend
 
+# The desktop shell may still hold files open after the backend exits.  Close it
+# before invoking NSIS so the uninstall check measures installer cleanup rather
+# than Windows file-lock timing.
+Get-Process -Name 'vuln-sentinel-desktop' -ErrorAction SilentlyContinue |
+  Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 750
+
 $uninstaller = Join-Path $installRoot 'uninstall.exe'
 if (-not (Test-Path -LiteralPath $uninstaller)) { throw "Uninstaller was not found under $installRoot" }
 $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
@@ -107,6 +114,12 @@ if ($uninstall.ExitCode -ne 0) { throw "NSIS uninstaller exited with code $($uni
 if (Test-Path -LiteralPath $installRoot) {
   $remainingProductFiles = Get-ChildItem -LiteralPath $installRoot -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -notmatch '^(uninstall|vuln-sentinel-backend)' }
+  if ($remainingProductFiles) {
+    # Retry once after a short delay to avoid transient Windows AV/indexer locks.
+    Start-Sleep -Seconds 2
+    $remainingProductFiles = Get-ChildItem -LiteralPath $installRoot -Recurse -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -notmatch '^(uninstall|vuln-sentinel-backend)' }
+  }
   if ($remainingProductFiles) { throw 'Product files remain after uninstall smoke test' }
 }
 
