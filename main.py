@@ -791,6 +791,11 @@ init_db_path(DB_PATH, settings.database_url)
 # JWT Secret：开发环境未设则生成随机并落盘
 _SECRET_FILE = os.path.join(db_base, ".jwt_secret")
 if not settings.jwt_secret:
+    if _IS_PRODUCTION:
+        # Never silently mint a production signing key: every instance must
+        # receive the same operator-managed secret or tokens become invalid
+        # across restarts/replicas and a deployment typo is hidden.
+        raise RuntimeError("生产环境必须显式配置 JWT_SECRET（至少 32 位随机密钥）")
     if os.path.isfile(_SECRET_FILE):
         try:
             with open(_SECRET_FILE, encoding="utf-8") as secret_file:
