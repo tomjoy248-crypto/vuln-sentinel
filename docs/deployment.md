@@ -25,6 +25,14 @@ cp .env.example .env
 | `DATABASE_URL` | 生产建议 PostgreSQL，默认 SQLite |
 | `REDIS_URL` | 生产建议启用 Redis |
 
+部署前先在已注入生产环境变量的机器运行：
+
+```bash
+python scripts/production_readiness_check.py
+```
+
+该检查会阻止不安全的生产配置（短 JWT、缺少凭据加密密钥、通配 CORS、支付 mock 模式和错误的签名证书路径），不会输出任何密钥内容。
+
 ## 2. Docker Compose 生产部署
 
 ```bash
