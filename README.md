@@ -16,6 +16,10 @@ Vuln Sentinel 是一款面向中小团队的安全体检与修复交付工具，
 - GitHub Release：优先下载最新版本 <https://github.com/tomjoy248-crypto/vuln-sentinel/releases/latest>
 - Windows 安装包：如果本地构建，可在 `artifacts/windows/` 找到对应安装包；发布时以 Releases 页显示的最新包名为准
 
+### Windows 安装与卸载
+
+安装包（`*_setup.exe`）只负责首次安装和升级；卸载请使用 Windows“设置 → 应用 → 已安装的应用”中的卸载按钮，或开始菜单的 `Vuln Sentinel\\Uninstall`。NSIS 安装器支持简体中文和 English 语言选择。
+
 ## 产品定位
 - 输入授权目标后执行安全体检
 - 结果按 `已验证 / 建议复核 / 待人工复核` 分层展示，并附带证据等级、误报提示和复核建议
