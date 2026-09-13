@@ -35,6 +35,8 @@ class ScanTask:
     deep: bool
     authorized: bool
     auth_headers: dict[str, str] = field(default_factory=dict)
+    # Per-target safety budget; prevents one scan from monopolising workers.
+    max_duration_seconds: int = 300
     created_at: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
@@ -48,6 +50,7 @@ class ScanTask:
             # Never expose session tokens through task status APIs or logs.
             "auth_headers": {key: "***REDACTED***" for key in self.auth_headers},
             "created_at": self.created_at,
+            "max_duration_seconds": self.max_duration_seconds,
         }
 
 
@@ -257,7 +260,7 @@ class MemoryScanQueue(BaseScanQueue):
         try:
             if self._runner is None:
                 raise RuntimeError("Task runner not configured")
-            data = await self._runner(task)
+            data = await asyncio.wait_for(self._runner(task), timeout=max(1, task.max_duration_seconds))
             if result and result.status not in ("cancelled",):
                 result.status = "completed"
                 result.progress = 100
@@ -265,6 +268,13 @@ class MemoryScanQueue(BaseScanQueue):
                 result.result = data
                 result.updated_at = time.time()
             logger.info("Scan task completed: %s", task.task_id)
+        except asyncio.TimeoutError:
+            if result and result.status not in ("cancelled",):
+                result.status = "timeout"
+                result.stage = "timeout"
+                result.error = f"扫描超过 {task.max_duration_seconds} 秒预算"
+                result.updated_at = time.time()
+            logger.warning("Scan task timed out: %s", task.task_id)
         except asyncio.CancelledError:
             if result:
                 result.status = "cancelled"
@@ -473,7 +483,7 @@ class RedisScanQueue(BaseScanQueue):
             try:
                 if self._runner is None:
                     raise RuntimeError("Task runner not configured")
-                data = await self._runner(task)
+                data = await asyncio.wait_for(self._runner(task), timeout=max(1, task.max_duration_seconds))
                 if await self._is_cancelled(task.task_id):
                     await self._set_result(
                         task.task_id,
@@ -493,6 +503,12 @@ class RedisScanQueue(BaseScanQueue):
                         ),
                     )
                     logger.info("Redis scan task completed: %s", task.task_id)
+                terminal = True
+            except asyncio.TimeoutError:
+                await self._set_result(
+                    task.task_id,
+                    ScanTaskResult(task.task_id, "timeout", stage="timeout", error=f"扫描超过 {task.max_duration_seconds} 秒预算", user_id=task.user_id),
+                )
                 terminal = True
             except asyncio.CancelledError:
                 logger.info("Redis scan task cancelled in worker: %s", task.task_id)
