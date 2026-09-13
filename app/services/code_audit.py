@@ -11,6 +11,8 @@ _RULES = [
     ("python", re.compile(r"\b(eval|exec)\s*\(|subprocess\.(run|Popen|call)\s*\("), "命令执行或动态代码执行", "high", "使用参数化 API，禁止将用户输入传入 eval、exec 或 shell 命令。"),
     ("python", re.compile(r"execute\s*\(\s*f[\"']|format\s*\([^)]*\).*execute"), "SQL 语句可能由字符串拼接生成", "high", "使用参数化查询，不要拼接 SQL 字符串。"),
     ("javascript", re.compile(r"\b(innerHTML|outerHTML|document\.write)\s*="), "危险 DOM 写入", "medium", "使用 textContent 或安全模板，并对用户输入进行上下文编码。"),
+    ("javascript", re.compile(r"(?:localStorage|sessionStorage|indexedDB)\.(?:setItem|put)\s*\("), "客户端持久化数据需要检查存储型 XSS", "medium", "对持久化用户输入进行上下文编码，并在所有渲染出口使用安全 API；结合端到端流程复核存储型 XSS。"),
+    ("javascript", re.compile(r"(?:fetch|axios\.(?:post|put|patch))\s*\([^\n]*(?:price|amount|role|is_admin|discount|quantity)", re.IGNORECASE), "业务敏感字段由客户端提交", "medium", "服务端重新计算金额、权限和数量，禁止信任客户端字段；使用业务流程测试复核越权和篡改。"),
     ("javascript", re.compile(r"\beval\s*\(|new\s+Function\s*\("), "动态代码执行", "high", "移除动态执行，改用白名单映射和安全解析。"),
     ("java", re.compile(r"Runtime\.getRuntime\(\)\.exec|new\s+ProcessBuilder\s*\("), "系统命令执行", "high", "使用固定命令白名单，参数与命令分离并避免 shell 解释。"),
     ("java", re.compile(r"Statement\s+\w+\s*=|createStatement\s*\(\)"), "可能使用未参数化 SQL", "medium", "改用 PreparedStatement 并绑定参数。"),
