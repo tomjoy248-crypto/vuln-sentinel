@@ -11,6 +11,25 @@ import { API_BASE, parseJsonResponse, publicConfig, setRole } from './api.js';
 
 let lastFixerResult = null;
 
+// Lightweight bilingual UI layer. The preference is shared by web and Tauri builds.
+const UI_TRANSLATIONS = {
+  'en-US': { scanSettings: 'Scan settings', language: '界面语言 / Language', autoSave: 'Automatically save scan results', darkMode: 'Dark mode', scanNotify: 'Scan completion notifications' },
+  'zh-CN': { scanSettings: '扫描设置', language: '界面语言 / Language', autoSave: '自动保存扫描结果', darkMode: '深色模式', scanNotify: '扫描完成提醒' }
+};
+function applyUILanguage(locale) {
+  const dict = UI_TRANSLATIONS[locale] || UI_TRANSLATIONS['zh-CN'];
+  document.documentElement.lang = locale;
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    if (dict[key]) el.textContent = dict[key];
+  });
+  const select = document.getElementById('ui-language-select');
+  if (select) select.value = locale;
+  try { localStorage.setItem('vs_locale', locale); } catch (_) {}
+}
+function setUILanguage(locale) { applyUILanguage(locale); }
+window.setUILanguage = setUILanguage;
+
 // ===== 全局错误兜底：防止 JS 异常导致白屏 =====
 (function installGlobalErrorHandlers() {
   var _hasShownError = false;
@@ -2362,6 +2381,7 @@ runWhenDomReady(function() {
   let app = safeGetElement('app');
   if (app && APP_TEMPLATE) {
     app.innerHTML = APP_TEMPLATE;
+    try { applyUILanguage(localStorage.getItem('vs_locale') || 'zh-CN'); } catch (_) { applyUILanguage('zh-CN'); }
   }
 
   // 11-S fix: 模板渲染完成后，立即绑定复选框与按钮联动

@@ -1535,11 +1535,19 @@ export const APP_TEMPLATE = `</head>
 
     <div class="card">
 
-      <div class="card-title">扫描设置</div>
+      <div class="card-title" data-i18n="scanSettings">扫描设置</div>
+
+      <div class="settings-row-static" style="margin-top:10px">
+        <span data-i18n="language">界面语言 / Language</span>
+        <select id="ui-language-select" onchange="setUILanguage(this.value)" style="min-width:150px;padding:7px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)">
+          <option value="zh-CN">简体中文</option>
+          <option value="en-US">English</option>
+        </select>
+      </div>
 
       <div class="settings-row" style="margin-top:10px" onclick="toggleSetting(this, 'auto保存')">
 
-        <span>自动保存扫描结果</span>
+        <span data-i18n="autoSave">自动保存扫描结果</span>
 
         <span class="settings-toggle on" id="setting-auto保存" data-enabled="true"></span>
 
@@ -1547,7 +1555,7 @@ export const APP_TEMPLATE = `</head>
 
       <div class="settings-row" onclick="toggleSetting(this, 'darkMode')">
 
-        <span>深色模式</span>
+        <span data-i18n="darkMode">深色模式</span>
 
         <span class="settings-toggle" id="setting-darkMode" data-enabled="false"></span>
 
@@ -1555,7 +1563,7 @@ export const APP_TEMPLATE = `</head>
 
       <div class="settings-row" onclick="toggleSetting(this, 'notify')">
 
-        <span>扫描完成提醒</span>
+        <span data-i18n="scanNotify">扫描完成提醒</span>
 
         <span class="settings-toggle on" id="setting-notify" data-enabled="true"></span>
 
