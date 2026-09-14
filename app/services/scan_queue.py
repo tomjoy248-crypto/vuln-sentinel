@@ -37,6 +37,8 @@ class ScanTask:
     auth_headers: dict[str, str] = field(default_factory=dict)
     # Per-target safety budget; prevents one scan from monopolising workers.
     max_duration_seconds: int = 300
+    max_requests: int = 500
+    max_concurrency: int = 5
     created_at: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
@@ -51,6 +53,8 @@ class ScanTask:
             "auth_headers": {key: "***REDACTED***" for key in self.auth_headers},
             "created_at": self.created_at,
             "max_duration_seconds": self.max_duration_seconds,
+            "max_requests": self.max_requests,
+            "max_concurrency": self.max_concurrency,
         }
 
 
