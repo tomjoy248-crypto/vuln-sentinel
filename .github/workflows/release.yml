@@ -11,6 +11,9 @@ on:
         required: true
         default: "v12.0.0"
 
+env:
+  INPUT_TAG: ${{ inputs.tag || github.ref_name }}
+
 permissions:
   contents: write
 
@@ -42,7 +45,8 @@ jobs:
       - name: Verify release version consistency
         shell: pwsh
         run: |
-          $tagVersion = $env:GITHUB_REF_NAME.Substring(1)
+          $releaseTag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG } else { $env:GITHUB_REF_NAME }
+          $tagVersion = $releaseTag.Substring(1)
           $frontend = (Get-Content frontend/package.json -Raw | ConvertFrom-Json).version
           $tauri = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           $cargoLine = Select-String -Path src-tauri/Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"$' | Select-Object -First 1
@@ -69,7 +73,8 @@ jobs:
         id: prep
         shell: pwsh
         run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $releaseTag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG } else { $env:GITHUB_REF_NAME }
+          $version = $releaseTag.Substring(1)
           New-Item -ItemType Directory -Force release-assets | Out-Null
           $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*setup.exe' | Select-Object -First 1
           if (-not $installer) { throw 'NSIS installer was not produced' }
@@ -111,7 +116,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --yes 2>$null
+          $releaseTag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG } else { $env:GITHUB_REF_NAME }
+          gh release delete $releaseTag --repo $env:GITHUB_REPOSITORY --yes 2>$null
           if ($LASTEXITCODE -ne 0) { Write-Host 'No existing release to remove.' }
 
       - name: Create GitHub Release
@@ -138,9 +144,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $releaseTag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG } else { $env:GITHUB_REF_NAME }
+          $version = $releaseTag.Substring(1)
           New-Item -ItemType Directory -Force downloaded-release | Out-Null
-          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --pattern "Vuln-Sentinel-$version-win64-setup.exe" --dir downloaded-release --clobber
+          gh release download $releaseTag --repo $env:GITHUB_REPOSITORY --pattern "Vuln-Sentinel-$version-win64-setup.exe" --dir downloaded-release --clobber
 
       - name: Validate published installer
         shell: pwsh
