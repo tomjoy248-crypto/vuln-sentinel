@@ -84,6 +84,25 @@ async def test_memory_queue_cancel_nonexistent():
 
 
 @pytest.mark.asyncio
+async def test_memory_queue_marks_timeout_and_releases_worker():
+    queue = MemoryScanQueue(max_workers=1)
+    await queue.start_worker(_slow_runner)
+    try:
+        task = ScanTask(generate_task_id(), 1, "https://example.com", "deep", True, True, max_duration_seconds=0.05)
+        await queue.submit(task)
+        for _ in range(30):
+            result = await queue.get_status(task.task_id)
+            if result and result.status == "timeout":
+                break
+            await asyncio.sleep(0.02)
+        result = await queue.get_status(task.task_id)
+        assert result is not None and result.status == "timeout"
+        assert "预算" in (result.error or "")
+    finally:
+        await queue.stop_worker()
+
+
+@pytest.mark.asyncio
 async def test_memory_queue_cancel_already_completed():
     queue = MemoryScanQueue(max_workers=1)
     await queue.start_worker(_fast_runner)
