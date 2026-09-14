@@ -16,6 +16,11 @@ async def _slow_runner(task: ScanTask) -> dict:
     return {"url": task.url, "done": True}
 
 
+async def _very_slow_runner(task: ScanTask) -> dict:
+    await asyncio.sleep(1.2)
+    return {"url": task.url, "done": True}
+
+
 async def _fast_runner(task: ScanTask) -> dict:
     return {"url": task.url, "done": True}
 
@@ -86,11 +91,11 @@ async def test_memory_queue_cancel_nonexistent():
 @pytest.mark.asyncio
 async def test_memory_queue_marks_timeout_and_releases_worker():
     queue = MemoryScanQueue(max_workers=1)
-    await queue.start_worker(_slow_runner)
+    await queue.start_worker(_very_slow_runner)
     try:
-        task = ScanTask(generate_task_id(), 1, "https://example.com", "deep", True, True, max_duration_seconds=0.05)
+        task = ScanTask(generate_task_id(), 1, "https://example.com", "deep", True, True, max_duration_seconds=1)
         await queue.submit(task)
-        for _ in range(30):
+        for _ in range(80):
             result = await queue.get_status(task.task_id)
             if result and result.status == "timeout":
                 break
