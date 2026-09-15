@@ -616,6 +616,7 @@ class Settings(AppSettings):
     """应用配置，支持 .env 文件与环境变量覆盖。"""
 
     app_title: str = "Vuln Sentinel"
+    # Backend product code remains 11-S for API compatibility; desktop release is v12.0.0.
     app_version: str = "11-S"
     build_time: str = "2026-06-25"
     port: int = int(os.environ.get("PORT", "8000"))
@@ -13231,6 +13232,19 @@ def _auto_fix_via_ssh(scan_data: dict, credentials: dict) -> dict:
 
     findings = scan_data.get("findings", [])
 
+    # Safe default: generate a patch for review. Remote changes require an
+    # explicit apply=true flag from an authorized operator.
+    if credentials.get("apply") is not True:
+        patch_content = _generate_fix_patch(findings, platform)
+        return {
+            "success": True,
+            "dry_run": True,
+            "platform": platform,
+            "config_path": config_path or "(按平台推断)",
+            "patch": patch_content,
+            "next_step": "请人工审核补丁；确认后以 apply=true 再执行远程变更。",
+        }
+
     if not all([host, password]):
         return {"success": False, "error": "缺少 host 或 password"}
 
@@ -13357,6 +13371,7 @@ async def api_auto_fix(request: Request, user: dict = Depends(require_login)) ->
 
     scan_id = body.get("scan_id")
     credentials = body.get("credentials", {})
+    credentials["apply"] = body.get("apply") is True
 
     if not scan_id:
         return {"success": False, "error": "缺少 scan_id"}

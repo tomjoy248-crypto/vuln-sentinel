@@ -1356,7 +1356,8 @@ function showAutoFixDialog(scanId, fixCount) {
   html += '</div>';
 
   // 确认按钮
-  html += '<button onclick="executeAutoFix(\'' + scanId + '\')" style="width:100%;background:#73c990;color:#fff;border:none;padding:12px;border-radius:2px;cursor:pointer;font-size:14px;font-weight:600;margin-top:8px">生成修复配置并复测</button>';
+  html += '<label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:12px;color:var(--text-secondary)"><input id="af-apply" type="checkbox"> 我已审核补丁，允许远程写入并重载服务</label>';
+  html += '<button onclick="executeAutoFix(\'' + scanId + '\')" style="width:100%;background:#73c990;color:#fff;border:none;padding:12px;border-radius:2px;cursor:pointer;font-size:14px;font-weight:600;margin-top:8px">生成修复配置 / 执行已审核变更</button>';
 
   // 结果区
   html += '<div id="af-result" style="margin-top:14px"></div>';
@@ -1414,7 +1415,7 @@ async function executeAutoFix(scanId) {
   result.innerHTML = '<div style="background:var(--bg);border-radius:2px;padding:12px;font-size:12px;color:var(--text-secondary)">正在连接服务器并执行修复，请稍候...</div>';
 
   try {
-    let body = { scan_id: scanId };
+    let body = { scan_id: scanId, apply: !!(document.getElementById('af-apply') && document.getElementById('af-apply').checked) };
     if (method === 'ssh') {
       body.credentials = {
         host: document.getElementById('af-host').value.trim(),
@@ -1451,7 +1452,9 @@ async function executeAutoFix(scanId) {
 
     // 成功
     let html = '<div style="background:rgba(16,185,129,0.1);border:1px solid #73c990;border-radius:2px;padding:12px">';
-    html += '<div style="font-size:14px;font-weight:600;color:#73c990;margin-bottom:8px">修复成功</div>';
+    html += '<div style="font-size:14px;font-weight:600;color:#73c990;margin-bottom:8px">' + (data.dry_run ? '修复配置已生成（未写入服务器）' : '修复成功') + '</div>';
+    if (data.next_step) html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">' + escapeHtml(data.next_step) + '</div>';
+    if (data.patch) html += '<pre style="max-height:220px;overflow:auto;background:#0f172a;color:#d1d5db;padding:8px;font-size:11px;white-space:pre-wrap">' + escapeHtml(data.patch) + '</pre>';
     if (data.host) html += '<div style="font-size:12px;color:var(--text-secondary)">服务器: ' + escapeHtml(data.host) + '</div>';
     if (data.config_path) html += '<div style="font-size:12px;color:var(--text-secondary)">配置: ' + escapeHtml(data.config_path) + ' (' + data.patch_size_bytes + ' 字节)</div>';
     if (data.config_test_ok !== undefined) {
