@@ -68,7 +68,7 @@ export const APP_TEMPLATE = `</head>
 
 <!-- AI Advisor Floating Button -->
 
-<button class="ai-fab" id="ai-fab" onclick="toggleAIChat()" aria-label="打开安全顾问" title="安全顾问">
+<button class="ai-fab" id="ai-fab" onclick="toggleAIChat()" aria-label="打开规则顾问（可选 LLM）" title="规则顾问（可选 LLM）">
 
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:22px;height:22px"><path d="M12 2a8 8 0 0 1 8 8v4a8 8 0 0 1-16 0v-4a8 8 0 0 1 8-8z"/><circle cx="9" cy="10" r="1" fill="currentColor"/><circle cx="15" cy="10" r="1" fill="currentColor"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg>
 
@@ -90,7 +90,7 @@ export const APP_TEMPLATE = `</head>
 
       <div>
 
-        <div style="font-size:13px;font-weight:600">安全顾问</div>
+        <div style="font-size:13px;font-weight:600">规则顾问（可选 LLM）</div>
 
         <div style="font-size:11px;color:#808080">在线服务中</div>
 
@@ -112,7 +112,7 @@ export const APP_TEMPLATE = `</head>
 
     <div class="ai-msg bot">
 
-      安全顾问随时在线，可以帮你解读漏洞、生成修复建议、梳理扫描证据，并提示哪些结果待复测。<br><br>
+      规则顾问基于内置知识库工作；配置 LLM 后可获得模型增强回答。它可以解读漏洞、生成修复建议、梳理扫描证据，并提示哪些结果待复测。<br><br>
 
       快捷问题
 

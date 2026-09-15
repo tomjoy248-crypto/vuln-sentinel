@@ -12,6 +12,8 @@ Vuln Sentinel 是一款面向中小团队的安全体检与修复交付工具，
 
 当前版本适合演示、内测和小范围交付。基础配置检测、证据展示和复测闭环相对稳定；复杂登录态、WAF/CDN、软 404、多步业务流程及深度 XSS/SQLi 测试仍需人工复核，不承诺全站全漏洞覆盖。
 
+AI 功能定位为“规则引擎 + 可选 LLM”：未配置模型时使用本地规则和知识库，不等同于完整的大模型问答。
+
 ## 下载
 - GitHub Release：优先下载最新版本 <https://github.com/tomjoy248-crypto/vuln-sentinel/releases/latest>
 - Windows 安装包：如果本地构建，可在 `artifacts/windows/` 找到对应安装包；发布时以 Releases 页显示的最新包名为准
