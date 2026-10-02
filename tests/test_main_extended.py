@@ -250,7 +250,7 @@ def test_verify_token_wrong_secret_returns_none():
     """verify_token returns None for a token signed with a different secret."""
     tok = main.jwt.encode(
         {"user_id": 1, "username": "x", "exp": time.time() + 3600},
-        "wrong-secret",
+        "wrong-secret-for-test-only-must-have-32-bytes",
         algorithm="HS256",
     )
     assert main.verify_token(tok) is None
