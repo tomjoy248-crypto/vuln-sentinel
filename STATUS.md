@@ -14,9 +14,9 @@ Vuln Sentinel 已经不是纯原型，当前更接近“可演示、可内测、
 - 修复测试共享状态：认证用例不再依赖固定用户 ID；演示靶场 fixture 会恢复 `DB_PATH`、测试模式和内网白名单，避免后续测试连接已删除的临时数据库。
 - 语法编译与空白检查：`python -m compileall -q main.py app`、`git diff --check` 均通过。
 - 安全基线：开发环境检查通过；正式生产仍必须配置强 `JWT_SECRET`、`CREDENTIAL_ENCRYPT_KEY` 和显式 `ALLOWED_ORIGINS`。
-- Windows 安装包：本机未安装 Rust/Cargo，无法重建 Tauri 安装包；应由具备 Rust Windows 工具链的 GitHub Actions 或发布机执行构建与生命周期验收。
+- Windows 安装包：GitHub Actions Windows 运行器已完成构建、安装生命周期、PE/哈希和发布资产下载校验；本机未安装 Rust/Cargo，不能替代干净 Windows 的人工升级验收。
 
-## v12.0.0 当前版本
+## v12.0.1 当前版本
 
 - 认证态双账号比较增加响应大小限制、JSON 字段差异和结构化脱敏证据
 - 业务流程分析增加状态回退、流程转移记录和复测状态计数
@@ -26,7 +26,9 @@ Vuln Sentinel 已经不是纯原型，当前更接近“可演示、可内测、
 - 管理员日志支持 CSV 导出
 - 插件级超时隔离：慢检测器不会拖垮整次扫描，标准/深度扫描仍保留其他检测结果
 - Windows CI 增加下载后的 PE 文件、大小和 SHA-256 校验；Release 增加发布资产再次下载验证
-- 历史版本 `v11.0.8` 的 Windows 安装包构建、安装生命周期检查和发布资产下载校验已通过；当前桌面版本为 `12.0.0`，新包需由 Windows CI 构建后以 Release 资产为准
+- `v12.0.1` Windows 安装包的构建、安装生命周期、PE/哈希和发布资产下载校验已通过；当前 Release 资产为 `Vuln-Sentinel-12.0.1-win64-setup.exe`
+- SQLi、反射型 XSS、SSTI 与命令注入已加入离线响应特征基准。它覆盖正例检出和安全响应不误报的契约，但不代表真实授权站点上的总体准确率。
+- 支付 mock 回调增加重复通知不重复入账断言；真实支付沙箱签名、金额和订单归属验收仍需商户测试凭据。
 
 ## 当前可用
 

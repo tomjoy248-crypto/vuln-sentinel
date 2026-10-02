@@ -215,14 +215,17 @@ def test_alipay_webhook_mock_fulfills_order():
         ).json()["data"]
         tx = order["transaction_id"]
 
-        resp = client.post(
-            "/api/billing/webhook/alipay",
-            json={"out_trade_no": tx, "trade_status": "TRADE_SUCCESS"},
-        )
+        credits_before = client.get("/api/me/credits", headers=headers).json()["data"]["credits"]
+        payload = {"out_trade_no": tx, "trade_status": "TRADE_SUCCESS"}
+        resp = client.post("/api/billing/webhook/alipay", json=payload)
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["success"] is True
         assert data["transaction_id"] == tx
+        retry = client.post("/api/billing/webhook/alipay", json=payload)
+        assert retry.status_code == 200
+        credits_after = client.get("/api/me/credits", headers=headers).json()["data"]["credits"]
+        assert credits_after == credits_before
     finally:
         os.environ.pop("ALIPAY_MOCK", None)
 
@@ -242,14 +245,17 @@ def test_wechat_webhook_mock_fulfills_order():
         ).json()["data"]
         tx = order["transaction_id"]
 
-        resp = client.post(
-            "/api/billing/webhook/wechat",
-            json={"out_trade_no": tx, "trade_state": "SUCCESS"},
-        )
+        credits_before = client.get("/api/me/credits", headers=headers).json()["data"]["credits"]
+        payload = {"out_trade_no": tx, "trade_state": "SUCCESS"}
+        resp = client.post("/api/billing/webhook/wechat", json=payload)
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["success"] is True
         assert data["transaction_id"] == tx
+        retry = client.post("/api/billing/webhook/wechat", json=payload)
+        assert retry.status_code == 200
+        credits_after = client.get("/api/me/credits", headers=headers).json()["data"]["credits"]
+        assert credits_after == credits_before
     finally:
         os.environ.pop("WECHAT_MOCK", None)
 
