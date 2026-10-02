@@ -118,8 +118,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $releaseTag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG } else { $env:GITHUB_REF_NAME }
-          gh release delete $releaseTag --repo $env:GITHUB_REPOSITORY --yes 2>$null
-          if ($LASTEXITCODE -ne 0) { Write-Host 'No existing release to remove.' }
+          gh release view $releaseTag --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release delete $releaseTag --repo $env:GITHUB_REPOSITORY --yes
+            if ($LASTEXITCODE -ne 0) { throw "Failed to remove stale release: $releaseTag" }
+          } else {
+            Write-Host 'No existing release to remove.'
+          }
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
