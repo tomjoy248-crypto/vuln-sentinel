@@ -109,23 +109,6 @@ jobs:
           if (-not $installer) { throw 'Installer missing before lifecycle test' }
           ./scripts/verify_windows_installer.ps1 -InstallerPath $installer.FullName
 
-      # A force-updated tag can leave GitHub's existing release metadata pointing
-      # at the old tag object. Remove that stale release so the asset is created
-      # against the commit that was actually built.
-      - name: Remove stale release for force-updated tag
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $releaseTag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG } else { $env:GITHUB_REF_NAME }
-          gh release view $releaseTag --repo $env:GITHUB_REPOSITORY 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            gh release delete $releaseTag --repo $env:GITHUB_REPOSITORY --yes
-            if ($LASTEXITCODE -ne 0) { throw "Failed to remove stale release: $releaseTag" }
-          } else {
-            Write-Host 'No existing release to remove.'
-          }
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
