@@ -80,6 +80,12 @@ STRIPE_WEBHOOK_SECRET=whsec_xxx
 未配置真实商户参数时，生产环境仅返回 `pending` 订单与空的 `pay_params`；本地联调可使用开发环境通道，生产环境不应开启任何 mock 充值回调。
 
 异步通知回调接口：
+
+真实支付启用前必须在部署密钥存储中配置完整的商户参数。支付宝需要
+`ALIPAY_APP_ID`、`ALIPAY_APP_PRIVATE_KEY`、`ALIPAY_PUBLIC_KEY`；微信支付需要
+`WECHAT_MCH_ID`、`WECHAT_MCH_SERIAL_NO`、`WECHAT_MCH_PRIVATE_KEY`、
+`WECHAT_PLATFORM_CERT`、`WECHAT_API_V3_KEY`。生产启动自检会拒绝只配置部分参数的
+支付渠道。密钥应以环境变量或受管密钥挂载提供，绝不能提交到仓库。
 - 支付宝：`POST /api/billing/webhook/alipay`
 - 微信：`POST /api/billing/webhook/wechat`
 

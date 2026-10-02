@@ -52,3 +52,19 @@ def test_deployment_templates_disable_public_demo_by_default():
     assert "FREE_TRIAL_ENABLED=0" in env_example
     assert 'key: PUBLIC_DEMO_ENABLED\n        value: "0"' in render_blueprint
     assert 'key: FREE_TRIAL_ENABLED\n        value: "0"' in render_blueprint
+
+
+def test_validate_production_config_rejects_partial_payment_credentials(monkeypatch):
+    """Production must not start with only an identifier for a payment provider."""
+    monkeypatch.setattr(main, "_IS_PRODUCTION", True)
+    monkeypatch.setattr(main.settings, "jwt_secret", "x" * 32, raising=False)
+    monkeypatch.setattr(main.settings, "cors_origins", "https://app.example.test", raising=False)
+    monkeypatch.setattr(main.settings, "redis_url", "redis://localhost:6379/0", raising=False)
+    monkeypatch.setenv("CREDENTIAL_ENCRYPT_KEY", "x" * 44)
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.example.test")
+    monkeypatch.setenv("ALIPAY_APP_ID", "sandbox-app")
+    monkeypatch.delenv("ALIPAY_APP_PRIVATE_KEY", raising=False)
+    monkeypatch.delenv("ALIPAY_PUBLIC_KEY", raising=False)
+    with pytest.raises(RuntimeError) as excinfo:
+        main.validate_production_config()
+    assert "ALIPAY_APP_PRIVATE_KEY" in str(excinfo.value)

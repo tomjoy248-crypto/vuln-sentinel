@@ -1079,6 +1079,19 @@ def validate_production_config() -> list[str]:
         issues.append("生产环境不应保留 MOCK_WEBHOOK_SECRET")
     if not settings.redis_url:
         issues.append("生产环境必须设置 REDIS_URL，以保证队列和限流在多实例下保持一致")
+    if os.environ.get("ALIPAY_APP_ID", "").strip():
+        for name in ("ALIPAY_APP_PRIVATE_KEY", "ALIPAY_PUBLIC_KEY"):
+            if not os.environ.get(name, "").strip():
+                issues.append(f"启用支付宝支付时必须设置 {name}")
+    if os.environ.get("WECHAT_MCH_ID", "").strip():
+        for name in (
+            "WECHAT_MCH_SERIAL_NO",
+            "WECHAT_MCH_PRIVATE_KEY",
+            "WECHAT_PLATFORM_CERT",
+            "WECHAT_API_V3_KEY",
+        ):
+            if not os.environ.get(name, "").strip():
+                issues.append(f"启用微信支付时必须设置 {name}")
     if issues:
         raise RuntimeError("生产环境配置校验失败: " + "; ".join(issues))
     return issues
