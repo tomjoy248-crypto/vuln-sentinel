@@ -46,6 +46,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseTag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG } else { $env:GITHUB_REF_NAME }
+          if ($releaseTag -notmatch '^v\d+\.\d+\.\d+$') { throw "Invalid release tag: $releaseTag" }
           $tagVersion = $releaseTag.Substring(1)
           $frontend = (Get-Content frontend/package.json -Raw | ConvertFrom-Json).version
           $tauri = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
@@ -69,19 +70,6 @@ jobs:
           npm --prefix ../frontend exec -- tauri build
           Pop-Location
 
-      - name: Prepare installer asset
-        id: prep
-        shell: pwsh
-        run: |
-          $releaseTag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG } else { $env:GITHUB_REF_NAME }
-          $version = $releaseTag.Substring(1)
-          New-Item -ItemType Directory -Force release-assets | Out-Null
-          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*setup.exe' | Select-Object -First 1
-          if (-not $installer) { throw 'NSIS installer was not produced' }
-          if ($installer.Length -lt 1MB) { throw "Installer is unexpectedly small: $($installer.Length) bytes" }
-          Copy-Item $installer.FullName "release-assets/Vuln-Sentinel-$version-win64-setup.exe"
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-
       - name: Sign Windows installer when certificate is configured
         shell: pwsh
         env:
@@ -100,6 +88,19 @@ jobs:
           & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD $installer.FullName
           & $signtool verify /pa $installer.FullName
           Remove-Item -Force $pfx
+
+      - name: Prepare installer asset
+        id: prep
+        shell: pwsh
+        run: |
+          $releaseTag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG } else { $env:GITHUB_REF_NAME }
+          $version = $releaseTag.Substring(1)
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer was not produced' }
+          if ($installer.Length -lt 1MB) { throw "Installer is unexpectedly small: $($installer.Length) bytes" }
+          Copy-Item $installer.FullName "release-assets/Vuln-Sentinel-$version-win64-setup.exe"
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Test Windows install lifecycle
         shell: pwsh
@@ -123,7 +124,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ env.INPUT_TAG }}
           generate_release_notes: true
           make_latest: true
           overwrite_files: true
@@ -166,7 +167,7 @@ jobs:
       - name: Upload release verification report
         uses: actions/upload-artifact@v5
         with:
-          name: vuln-sentinel-release-asset-verification-${{ github.ref_name }}
+          name: vuln-sentinel-release-asset-verification-${{ env.INPUT_TAG }}
           path: downloaded-release/verification.txt
           if-no-files-found: error
           retention-days: 14
