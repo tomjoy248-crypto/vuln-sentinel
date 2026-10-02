@@ -22,7 +22,11 @@ def client():
     """创建测试客户端"""
     # 确保数据库是临时的
     import tempfile
+
     tmp_db = tempfile.mktemp(suffix=".db")
+    original_db_path = app_module.DB_PATH
+    original_test_mode = app_module._TEST_MODE
+    original_internal_hosts = set(app_module.ALLOWED_INTERNAL_HOSTS)
     app_module.DB_PATH = tmp_db
     app_module._TEST_MODE = True
 
@@ -42,12 +46,18 @@ def client():
     conn.commit()
     conn.close()
 
-    with TestClient(app_module.app) as c:
-        yield c
-
-    # 清理
-    if os.path.exists(tmp_db):
-        os.unlink(tmp_db)
+    try:
+        with TestClient(app_module.app) as c:
+            yield c
+    finally:
+        # This module mutates process-wide application state. Restore it so
+        # later test modules do not connect to a deleted temporary database.
+        app_module.DB_PATH = original_db_path
+        app_module._TEST_MODE = original_test_mode
+        app_module.ALLOWED_INTERNAL_HOSTS.clear()
+        app_module.ALLOWED_INTERNAL_HOSTS.update(original_internal_hosts)
+        if os.path.exists(tmp_db):
+            os.unlink(tmp_db)
 
 
 @pytest.fixture(scope="module")

@@ -80,6 +80,36 @@ def _demo_user_id() -> int:
         conn.close()
 
 
+def _ensure_auth_test_user() -> tuple[int, str]:
+    """Create an active user for authentication tests without fixed IDs."""
+    username = "auth_valid_user"
+    conn = main.get_db()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO users "
+            "(username, password, email, role, system_role, team_id, is_active, credits, created_at) "
+            "VALUES (?, ?, ?, 'member', 'user', 0, 1, 10, ?)",
+            (
+                username,
+                main.hash_password("test-password-123"),
+                "auth_valid_user@example.com",
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        conn.execute(
+            "UPDATE users SET is_active=1, username=? WHERE username=?",
+            (username, username),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT id, username FROM users WHERE username=?", (username,)
+        ).fetchone()
+        assert row is not None
+        return int(row["id"]), str(row["username"])
+    finally:
+        conn.close()
+
+
 def _ensure_credits(user_id: int, amount: int = 1000) -> None:
     """Top up the demo user's credits so credit-consuming endpoints work."""
     from app.services import credits_service
@@ -298,11 +328,12 @@ def test_require_login_invalid_token_raises():
 
 def test_require_login_valid_token_returns_user():
     """require_login returns the user dict for a valid token."""
-    tok = main.create_token(5, "valid_user", role="member")
+    user_id, username = _ensure_auth_test_user()
+    tok = main.create_token(user_id, username, role="member")
     user = asyncio.run(main.require_login(authorization=f"Bearer {tok}"))
     assert user is not None
-    assert user["user_id"] == 5
-    assert user["username"] == "valid_user"
+    assert user["user_id"] == user_id
+    assert user["username"] == username
 
 
 def test_get_current_user_no_header_returns_none():

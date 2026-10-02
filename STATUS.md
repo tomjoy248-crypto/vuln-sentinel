@@ -1,12 +1,20 @@
 ﻿# Vuln Sentinel 当前状态
 
-> 更新时间：2026-09-06
+> 更新时间：2026-10-02
 >
 > 这个页面用于让 GitHub 访问者快速判断：软件现在能做什么、还不稳定什么、下一步该看哪里。
 
 ## 一句话结论
 
 Vuln Sentinel 已经不是纯原型，当前更接近“可演示、可内测、可小范围交付”的工作台版本；当前重点是保证结果可信、压误报和保持可用。
+
+## 最近自动化验收
+
+- Python 全量测试：`1355 passed, 4 skipped`（2026-10-02）。跳过项仅依赖本机未安装的 Nginx/OpenSSL 演示靶场，不是测试失败。
+- 修复测试共享状态：认证用例不再依赖固定用户 ID；演示靶场 fixture 会恢复 `DB_PATH`、测试模式和内网白名单，避免后续测试连接已删除的临时数据库。
+- 语法编译与空白检查：`python -m compileall -q main.py app`、`git diff --check` 均通过。
+- 安全基线：开发环境检查通过；正式生产仍必须配置强 `JWT_SECRET`、`CREDENTIAL_ENCRYPT_KEY` 和显式 `ALLOWED_ORIGINS`。
+- Windows 安装包：本机未安装 Rust/Cargo，无法重建 Tauri 安装包；应由具备 Rust Windows 工具链的 GitHub Actions 或发布机执行构建与生命周期验收。
 
 ## v12.0.0 当前版本
 

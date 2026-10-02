@@ -24,9 +24,30 @@ main.init_db()
 client = TestClient(main.app)
 
 
+def _ensure_auth_test_user() -> int:
+    """Create an active user for endpoint tests without relying on user ID 1."""
+    username = "v116_endpoint_user"
+    conn = main.get_db()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO users "
+            "(username, password, email, role, system_role, team_id, is_active, credits, created_at) "
+            "VALUES (?, ?, ?, 'member', 'user', 0, 1, 10, datetime('now'))",
+            (username, main.hash_password("test-password-123"), f"{username}@example.com"),
+        )
+        conn.execute("UPDATE users SET is_active=1 WHERE username=?", (username,))
+        conn.commit()
+        row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        assert row is not None
+        return int(row["id"])
+    finally:
+        conn.close()
+
+
 def _auth_headers() -> dict[str, str]:
-    """Return a self-contained token that does not depend on a test database path."""
-    return {"Authorization": f"Bearer {main.create_token(1, 'demo', 'member')}"}
+    """Return a token for a fresh active test user."""
+    user_id = _ensure_auth_test_user()
+    return {"Authorization": f"Bearer {main.create_token(user_id, 'v116_endpoint_user', 'member')}"}
 
 
 def test_business_flow_detects_jump_duplicate_and_parameter_boundary() -> None:
