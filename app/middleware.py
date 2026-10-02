@@ -113,7 +113,6 @@ _AUDIT_SKIP_PATHS: tuple[str, ...] = (
     "/api/health",
     "/api/version",
     "/metrics",
-    "/api/public-demo-scan",
     "/api/ai/chat",
 )
 

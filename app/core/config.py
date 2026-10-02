@@ -34,7 +34,9 @@ class AppSettings(BaseSettings):
     app_version: str = "11-S"
     build_time: str = "2026-06-25"
     port: int = 8000
-    host: str = "0.0.0.0"  # nosec B104 - 默认监听所有接口，生产环境可通过环境变量覆盖
+    # Bind locally by default; production deployments must explicitly opt into
+    # a public interface with HOST=0.0.0.0.
+    host: str = "127.0.0.1"
     env: str = "development"  # development / production
 
     # --- JWT ---

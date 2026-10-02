@@ -36,6 +36,7 @@ import threading
 import time
 import uuid
 import zipfile
+import ipaddress
 
 # 当以 python main.py 方式启动时，模块名为 __main__，而路由文件通过 from main import ... 导入共享函数，
 # 会导致 main.py 被二次加载触发循环导入。将 __main__ 注册为 main 别名可避免此问题。
@@ -76,6 +77,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 import app.core.config as core_config
 import app.core.rate_limiter as rate_limiter_module
 from app.core.config import AppSettings
+from constants import BLOCKED_NETWORKS
 
 def _resolve_static_dir() -> str:
     candidates = []
@@ -620,7 +622,7 @@ class Settings(AppSettings):
     app_version: str = "11-S"
     build_time: str = "2026-06-25"
     port: int = int(os.environ.get("PORT", "8000"))
-    host: str = "0.0.0.0"  # nosec B104 - 默认监听所有接口，生产环境可通过环境变量覆盖
+    host: str = "127.0.0.1"
     env: str = "development"  # development / production
 
     # JWT
@@ -710,6 +712,15 @@ rate_limiter_module.rate_limiter = rate_limiter_module.create_rate_limiter(
 _IS_PRODUCTION = settings.env == "production" or os.environ.get(
     "PRODUCTION", ""
 ).strip() in ("1", "true", "TRUE", "True", "yes", "YES")
+
+# Development mode is not automatically a local-only mode: the default host is
+# 0.0.0.0.  Make accidental network exposure visible at startup.
+if not _IS_PRODUCTION and settings.host not in {"127.0.0.1", "localhost", "::1"}:
+    logger.error(
+        "Development environment is listening on non-loopback host %s; "
+        "do not expose this instance publicly and set ENV=production for deployments.",
+        settings.host,
+    )
 
 # ---------- CORS 白名单解析与生产模式强制校验 ----------
 
@@ -906,6 +917,11 @@ def run_startup_self_check() -> list[str]:
     if settings.env == "production":
         if not settings.cors_origins or "*" in settings.cors_origins:
             issues.append("生产环境 CORS 配置不安全")
+        if os.environ.get("SEED_DEMO_USER", "0").strip().lower() in ("1", "true", "yes", "on"):
+            issues.append("生产环境禁止 SEED_DEMO_USER")
+        public_base = os.environ.get("PUBLIC_BASE_URL", "").strip()
+        if public_base and not public_base.lower().startswith("https://"):
+            issues.append("生产环境 PUBLIC_BASE_URL 必须使用 HTTPS")
         if not settings.database_url and settings.db_dir.strip() in {"/tmp", "/var/tmp", "/dev/shm"}:
             issues.append("生产环境数据库目录指向临时目录")
     if not os.path.exists(DB_PATH):
@@ -1610,7 +1626,8 @@ def init_db() -> None:
         demo_user = conn.execute(
             "SELECT id FROM users WHERE username COLLATE NOCASE=?", ("demo",)
         ).fetchone()
-        seed_demo_user = (not _IS_PRODUCTION) and os.environ.get("SEED_DEMO_USER", "1").strip().lower() in ("1", "true", "yes", "on")
+        # Never create a known weak-password account unless explicitly opted in.
+        seed_demo_user = (not _IS_PRODUCTION) and os.environ.get("SEED_DEMO_USER", "0").strip().lower() in ("1", "true", "yes", "on")
         if not demo_user and seed_demo_user:
             conn.execute(
                 "INSERT INTO users (username, password, email, role, team_id, credits, created_at) VALUES (?,?,?,?,?,?,?)",
@@ -4701,7 +4718,13 @@ async def fetch_headers(
             try:
                 infos = socket.getaddrinfo(host, None)
                 for info in infos:
-                    _pinned_ips.add(info[4][0])
+                    resolved_ip = info[4][0]
+                    _pinned_ips.add(resolved_ip)
+                    try:
+                        if any(ipaddress.ip_address(resolved_ip) in network for network in BLOCKED_NETWORKS):
+                            return {}, False, url, "域名解析结果包含私有或本地地址，已拒绝请求"
+                    except ValueError:
+                        continue
             except Exception:
                 pass
         except ValueError as e:
@@ -4877,6 +4900,7 @@ async def fetch_headers(
                     try:
                         h = dict(resp.headers)
                         h["_status_code"] = resp.status_code
+                        h["_tls_verify_skipped"] = True
                         headers, err = classify_status(resp.status_code, h)
                         if err is None:
                             return headers, is_https, final_url, None
