@@ -10,7 +10,9 @@ from fastapi.testclient import TestClient
 os.environ["DB_DIR"] = "/tmp/v11-test"
 os.environ["DB_NAME"] = "test.db"
 
+import main
 from main import app
+from app.services import billing_service
 
 client = TestClient(app)
 
@@ -208,11 +210,15 @@ def test_alipay_webhook_mock_fulfills_order():
     try:
         token = _login_demo()
         headers = {"Authorization": f"Bearer {token}"}
-        order = client.post(
-            "/api/billing/order",
-            json={"plan_id": _get_plan_id(), "provider": "mock"},
-            headers=headers,
-        ).json()["data"]
+        plan = client.get("/api/billing/plans").json()["data"]["plans"][0]
+        user_id = main.verify_token(token)["user_id"]
+        order = billing_service.create_recharge_record(
+            user_id=user_id,
+            plan_id=plan["id"],
+            amount_cents=plan["price_cents"],
+            credits=plan["credits"],
+            payment_provider="alipay",
+        )
         tx = order["transaction_id"]
 
         credits_before = client.get("/api/me/credits", headers=headers).json()["data"]["credits"]
@@ -225,7 +231,7 @@ def test_alipay_webhook_mock_fulfills_order():
         retry = client.post("/api/billing/webhook/alipay", json=payload)
         assert retry.status_code == 200
         credits_after = client.get("/api/me/credits", headers=headers).json()["data"]["credits"]
-        assert credits_after == credits_before
+        assert credits_after == credits_before + plan["credits"]
     finally:
         os.environ.pop("ALIPAY_MOCK", None)
 
@@ -238,11 +244,15 @@ def test_wechat_webhook_mock_fulfills_order():
     try:
         token = _login_demo()
         headers = {"Authorization": f"Bearer {token}"}
-        order = client.post(
-            "/api/billing/order",
-            json={"plan_id": _get_plan_id(), "provider": "mock"},
-            headers=headers,
-        ).json()["data"]
+        plan = client.get("/api/billing/plans").json()["data"]["plans"][0]
+        user_id = main.verify_token(token)["user_id"]
+        order = billing_service.create_recharge_record(
+            user_id=user_id,
+            plan_id=plan["id"],
+            amount_cents=plan["price_cents"],
+            credits=plan["credits"],
+            payment_provider="wechat",
+        )
         tx = order["transaction_id"]
 
         credits_before = client.get("/api/me/credits", headers=headers).json()["data"]["credits"]
@@ -255,9 +265,34 @@ def test_wechat_webhook_mock_fulfills_order():
         retry = client.post("/api/billing/webhook/wechat", json=payload)
         assert retry.status_code == 200
         credits_after = client.get("/api/me/credits", headers=headers).json()["data"]["credits"]
-        assert credits_after == credits_before
+        assert credits_after == credits_before + plan["credits"]
     finally:
         os.environ.pop("WECHAT_MOCK", None)
+
+
+def test_payment_webhook_rejects_cross_provider_order():
+    """支付宝回调不能完成属于微信渠道的待支付订单。"""
+    import os
+
+    os.environ["ALIPAY_MOCK"] = "true"
+    try:
+        token = _login_demo()
+        plan = client.get("/api/billing/plans").json()["data"]["plans"][0]
+        record = billing_service.create_recharge_record(
+            user_id=main.verify_token(token)["user_id"],
+            plan_id=plan["id"],
+            amount_cents=plan["price_cents"],
+            credits=plan["credits"],
+            payment_provider="wechat",
+        )
+        response = client.post(
+            "/api/billing/webhook/alipay",
+            json={"out_trade_no": record["transaction_id"], "trade_status": "TRADE_SUCCESS"},
+        )
+        assert response.status_code == 400
+        assert "不匹配" in response.json()["error"]
+    finally:
+        os.environ.pop("ALIPAY_MOCK", None)
 
 
 def test_create_order_alipay_not_configured():

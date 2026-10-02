@@ -48,7 +48,7 @@ AI 功能定位为“规则引擎 + 可选 LLM”：未配置模型时使用本�
 
 ## 安全提示
 - 仅对已授权目标执行扫描。
-- 生产环境请配置 `JWT_SECRET`、`ALLOWED_ORIGINS`、`PUBLIC_BASE_URL`。
+- 生产环境请配置 `JWT_SECRET`、`ALLOWED_ORIGINS`、`PUBLIC_BASE_URL`、`REDIS_URL`。
 - `PUBLIC_DEMO_ENABLED` 默认关闭，如需公开演示请明确开启。
 
 ## 相关文件

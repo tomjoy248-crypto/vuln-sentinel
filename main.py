@@ -1077,6 +1077,8 @@ def validate_production_config() -> list[str]:
         issues.append("生产环境不应启用 WECHAT_MOCK")
     if os.environ.get("MOCK_WEBHOOK_SECRET", "").strip():
         issues.append("生产环境不应保留 MOCK_WEBHOOK_SECRET")
+    if not settings.redis_url:
+        issues.append("生产环境必须设置 REDIS_URL，以保证队列和限流在多实例下保持一致")
     if issues:
         raise RuntimeError("生产环境配置校验失败: " + "; ".join(issues))
     return issues

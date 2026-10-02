@@ -590,20 +590,89 @@ def _parse_transaction_id(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _fulfill_notify_record(transaction_id: str) -> dict[str, Any]:
-    """根据交易号幂等地完成订单。"""
-    record = get_recharge_record_by_transaction(transaction_id)
-    if not record:
-        raise BusinessException("订单不存在", code="ORDER_NOT_FOUND", status_code=404)
-    if record["status"] == "paid":
-        return {"success": True, "transaction_id": transaction_id, "already_paid": True}
-    new_balance = _fulfill_order(record)
-    return {
-        "success": True,
-        "transaction_id": transaction_id,
-        "credits_added": record["credits_added"],
-        "balance": new_balance,
-    }
+def _fulfill_notify_record(transaction_id: str, provider: str) -> dict[str, Any]:
+    """Atomically fulfill one provider callback exactly once.
+
+    The payment gateway is trusted only after its own signature verification.
+    This function then enforces the local invariants in one database
+    transaction: the callback provider must match the order, only a pending
+    record may be claimed, and the credit balance, usage log, and paid state
+    are committed together. This prevents duplicate concurrent notifications
+    from crediting an order twice.
+
+    Args:
+        transaction_id: Locally generated recharge transaction identifier.
+        provider: Verified callback provider (``alipay`` or ``wechat``).
+
+    Returns:
+        Fulfillment result, including an idempotency indicator for paid orders.
+
+    Raises:
+        BusinessException: If the order is missing or the callback provider
+            does not match the order's selected payment provider.
+    """
+    conn = get_db()
+    try:
+        record_row = conn.execute(
+            "SELECT * FROM recharge_records WHERE transaction_id = ?", (transaction_id,)
+        ).fetchone()
+        if not record_row:
+            raise BusinessException("订单不存在", code="ORDER_NOT_FOUND", status_code=404)
+        record = dict(record_row)
+        if record.get("payment_provider") != provider:
+            raise BusinessException(
+                "支付渠道与订单不匹配", code="PROVIDER_MISMATCH", status_code=400
+            )
+        if record["status"] == "paid":
+            return {"success": True, "transaction_id": transaction_id, "already_paid": True}
+
+        # The conditional update is the single-winner claim for duplicate callbacks.
+        claim = conn.execute(
+            """UPDATE recharge_records SET status = 'processing'
+               WHERE id = ? AND status = 'pending'""",
+            (record["id"],),
+        )
+        if claim.rowcount != 1:
+            current = conn.execute(
+                "SELECT status FROM recharge_records WHERE id = ?", (record["id"],)
+            ).fetchone()
+            if current and current["status"] == "paid":
+                return {"success": True, "transaction_id": transaction_id, "already_paid": True}
+            return {"success": True, "transaction_id": transaction_id, "processing": True}
+
+        user_row = conn.execute("SELECT credits FROM users WHERE id = ?", (record["user_id"],)).fetchone()
+        current_credits = user_row["credits"] if user_row else 0
+        new_balance = current_credits + record["credits_added"]
+        plan_row = conn.execute("SELECT name FROM pricing_plans WHERE id = ?", (record["plan_id"],)).fetchone()
+        plan_name = plan_row["name"] if plan_row else ""
+        note = f"购买套餐「{plan_name}」{transaction_id}"
+        conn.execute("UPDATE users SET credits = ? WHERE id = ?", (new_balance, record["user_id"]))
+        conn.execute(
+            """INSERT INTO usage_logs
+               (user_id, action, amount, balance_after, scan_id, note, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (record["user_id"], "recharge", record["credits_added"], new_balance, None, note, _now()),
+        )
+        conn.execute(
+            "UPDATE recharge_records SET status = 'paid', paid_at = ? WHERE id = ?",
+            (_now(), record["id"]),
+        )
+        conn.commit()
+        logger.info(
+            "order_fulfilled_from_webhook: user_id=%s record_id=%s transaction_id=%s provider=%s credits=%s",
+            record["user_id"], record["id"], transaction_id, provider, record["credits_added"],
+        )
+        return {
+            "success": True,
+            "transaction_id": transaction_id,
+            "credits_added": record["credits_added"],
+            "balance": new_balance,
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def handle_alipay_notify(payload: dict[str, Any]) -> dict[str, Any]:
@@ -629,7 +698,7 @@ def handle_alipay_notify(payload: dict[str, Any]) -> dict[str, Any]:
         transaction_id = _parse_transaction_id(payload)
         if not transaction_id:
             raise BusinessException("缺少交易号", code="INVALID_WEBHOOK", status_code=400)
-        return _fulfill_notify_record(transaction_id)
+        return _fulfill_notify_record(transaction_id, "alipay")
 
     # 真实签名验证占位；接入 SDK 后在此替换为 alipay_sdk.verify()
     logger.warning("alipay_sdk_signature_verify_not_implemented")
@@ -659,7 +728,7 @@ def handle_wechat_notify(payload: dict[str, Any]) -> dict[str, Any]:
         transaction_id = _parse_transaction_id(payload)
         if not transaction_id:
             raise BusinessException("缺少交易号", code="INVALID_WEBHOOK", status_code=400)
-        return _fulfill_notify_record(transaction_id)
+        return _fulfill_notify_record(transaction_id, "wechat")
 
     logger.warning("wechatpay_signature_verify_not_implemented")
     raise BusinessException("微信支付签名验证未实现", code="NOT_IMPLEMENTED", status_code=501)

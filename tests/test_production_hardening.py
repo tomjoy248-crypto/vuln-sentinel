@@ -40,6 +40,7 @@ def test_validate_production_config_flags_bad_settings(monkeypatch):
     message = str(excinfo.value)
     assert "CORS_ORIGINS" in message
     assert "PUBLIC_BASE_URL" in message
+    assert "REDIS_URL" in message
 
 
 def test_deployment_templates_disable_public_demo_by_default():

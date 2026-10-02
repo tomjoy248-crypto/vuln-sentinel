@@ -23,7 +23,7 @@ cp .env.example .env
 | `ALLOWED_ORIGINS` | 前端域名，如 `https://your-domain.com` |
 | `PUBLIC_BASE_URL` | 服务对外地址，用于支付回调 |
 | `DATABASE_URL` | 生产建议 PostgreSQL，默认 SQLite |
-| `REDIS_URL` | 生产建议启用 Redis |
+| `REDIS_URL` | 生产必须配置 Redis，用于分布式限流与异步扫描队列 |
 
 部署前先在已注入生产环境变量的机器运行：
 
@@ -43,7 +43,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ## 3. Redis（分布式限流与异步扫描队列）
 
-生产环境建议启用 Redis：
+生产环境必须启用 Redis：
 
 ```bash
 REDIS_URL=redis://redis:6379/0
@@ -120,6 +120,6 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ## 8. 安全建议
 - 不要将 `.env` 提交到版本库（已加入 `.gitignore`）。
-- 生产环境必须设置 `JWT_SECRET`、`ALLOWED_ORIGINS`。
+- 生产环境必须设置 `JWT_SECRET`、`ALLOWED_ORIGINS`、`REDIS_URL`。
 - 保持 `TLS_VERIFY=1`，防止中间人攻击。
 - 定期运行 `make security-check` 检查依赖漏洞。

@@ -32,7 +32,7 @@ def main() -> int:
     if os.environ.get("ALLOWED_ORIGINS", "").strip() in {"", "*"}:
         errors.append("ALLOWED_ORIGINS must list explicit production origins")
     if not os.environ.get("REDIS_URL", "").strip():
-        warnings.append("REDIS_URL is not configured; queue and rate limits use local fallback")
+        errors.append("REDIS_URL is required for distributed queue and rate limiting")
     if enabled("ALIPAY_MOCK") or enabled("WECHAT_MOCK"):
         errors.append("payment mock mode must be disabled in production")
 

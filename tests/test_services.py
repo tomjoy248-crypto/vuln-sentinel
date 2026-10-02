@@ -802,6 +802,7 @@ def test_handle_alipay_notify_mock_trade_finished_fulfills(monkeypatch):
     user_id, _ = _create_user(credits=5)
     rec = billing_service.create_recharge_record(
         user_id, plan_id=0, amount_cents=0, credits=3, status="pending",
+        payment_provider="alipay",
     )
     result = billing_service.handle_alipay_notify(
         {"out_trade_no": rec["transaction_id"], "trade_status": "TRADE_FINISHED"}
@@ -815,6 +816,7 @@ def test_handle_alipay_notify_mock_idempotent_already_paid(monkeypatch):
     user_id, _ = _create_user(credits=10)
     rec = billing_service.create_recharge_record(
         user_id, plan_id=0, amount_cents=0, credits=5, status="pending",
+        payment_provider="alipay",
     )
 
     first = billing_service.handle_alipay_notify(
@@ -872,6 +874,7 @@ def test_handle_wechat_notify_mock_fulfills_order(monkeypatch):
     user_id, _ = _create_user(credits=10)
     rec = billing_service.create_recharge_record(
         user_id, plan_id=0, amount_cents=0, credits=8, status="pending",
+        payment_provider="wechat",
     )
     result = billing_service.handle_wechat_notify(
         {"out_trade_no": rec["transaction_id"], "trade_state": "SUCCESS"}
@@ -886,6 +889,7 @@ def test_handle_wechat_notify_mock_idempotent(monkeypatch):
     user_id, _ = _create_user(credits=10)
     rec = billing_service.create_recharge_record(
         user_id, plan_id=0, amount_cents=0, credits=5, status="pending",
+        payment_provider="wechat",
     )
     billing_service.handle_wechat_notify(
         {"out_trade_no": rec["transaction_id"], "trade_state": "SUCCESS"}
