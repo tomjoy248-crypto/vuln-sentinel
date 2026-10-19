@@ -441,7 +441,7 @@ def test_export_to_sarif_basic_structure():
     assert len(report["runs"]) == 1
     run = report["runs"][0]
     assert run["tool"]["driver"]["name"] == "Vuln Sentinel"
-    assert run["tool"]["driver"]["version"] == "11-S"
+    assert run["tool"]["driver"]["version"] == "12.0.2"
     assert len(run["results"]) == 1
     assert run["invocations"][0]["executionSuccessful"] is True
 

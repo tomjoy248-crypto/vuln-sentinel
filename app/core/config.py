@@ -31,8 +31,8 @@ class AppSettings(BaseSettings):
 
     # --- 基础信息 ---
     app_title: str = "Vuln Sentinel"
-    app_version: str = "11-S"
-    build_time: str = "2026-06-25"
+    app_version: str = "12.0.2"
+    build_time: str = "2026-10-19"
     port: int = 8000
     # Bind locally by default; production deployments must explicitly opt into
     # a public interface with HOST=0.0.0.0.

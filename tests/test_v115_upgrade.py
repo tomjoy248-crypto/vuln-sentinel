@@ -19,11 +19,11 @@ def client():
 
 
 # ============================================================
-# 1) Settings 中的版本号必须是 11.5
+# 1) Settings 中的版本号必须与当前产品发布版本一致
 # ============================================================
-def test_settings_app_version_is_11_s():
-    """Settings.app_version 应为 11-S"""
-    assert M.settings.app_version == "11-S"
+def test_settings_app_version_is_current_release():
+    """Settings.app_version 应为当前发布版本"""
+    assert M.settings.app_version == "12.0.2"
 
 
 def test_settings_app_title_is_v11_5():
@@ -31,14 +31,14 @@ def test_settings_app_title_is_v11_5():
     assert M.settings.app_title == "Vuln Sentinel"
 
 
-def test_api_version_endpoint_returns_11_s():
-    """/api/version 应返回 version=11-S"""
+def test_api_version_endpoint_returns_current_release():
+    """/api/version 应返回当前发布版本"""
     client = TestClient(M.app)
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
-    assert body.get("version") == "11-S", f"got {body.get('version')}"
-    assert "11-S" in body.get("title", "")
+    assert body.get("version") == "12.0.2", f"got {body.get('version')}"
+    assert "12.0.2" in body.get("title", "")
 
 
 def test_health_endpoint_works():
@@ -50,7 +50,7 @@ def test_health_endpoint_works():
 
 
 # ============================================================
-# 2) 前端产物用户可见标识必须都是 11-S
+# 2) 前端页面元数据使用当前发布版本
 # ============================================================
 def test_index_html_title_is_v11_5():
     """生产环境入口 static/index.html 标题保持 11-S"""

@@ -618,9 +618,8 @@ class Settings(AppSettings):
     """应用配置，支持 .env 文件与环境变量覆盖。"""
 
     app_title: str = "Vuln Sentinel"
-    # Backend product code remains 11-S for API compatibility; desktop release is v12.0.0.
-    app_version: str = "11-S"
-    build_time: str = "2026-06-25"
+    app_version: str = "12.0.2"
+    build_time: str = "2026-10-19"
     port: int = int(os.environ.get("PORT", "8000"))
     host: str = "127.0.0.1"
     env: str = "development"  # development / production

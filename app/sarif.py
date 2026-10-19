@@ -168,7 +168,7 @@ def _build_sarif_rules(findings: list[dict]) -> tuple[list[dict], dict[str, int]
 def export_to_sarif(
     scan_data: dict,
     tool_name: str = "Vuln Sentinel",
-    tool_version: str = "11-S",
+    tool_version: str = "12.0.2",
 ) -> dict:
     """将扫描结果导出为 SARIF 2.1.0 格式。"""
 

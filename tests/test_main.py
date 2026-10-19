@@ -260,8 +260,8 @@ def test_version():
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
-    assert body["version"] == "11-S"
-    assert "11-S" in body["title"]
+    assert body["version"] == "12.0.2"
+    assert "12.0.2" in body["title"]
 
 
 # ============== Frontend asset ==============
@@ -271,7 +271,7 @@ def test_index_html_served():
     assert r.status_code == 200
     assert "Vuln Sentinel" in r.text
     # 11-S 标题校验
-    assert "11-S" in r.text
+    assert "12.0.2" in r.text
 
 
 # ============== 11-S 新增能力：Public demo / Simulate fix / Verify fix diff / History delete ==============

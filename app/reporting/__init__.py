@@ -31,4 +31,4 @@ __all__ = [
     "VulnerabilityReportItem",
 ]
 
-__version__ = "11-S"
+__version__ = "12.0.2"
