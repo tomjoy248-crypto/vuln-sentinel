@@ -1,8 +1,18 @@
 ﻿# Vuln Sentinel
 
-![CI](https://github.com/tomjoy248-crypto/vuln-sentinel/actions/workflows/ci.yml/badge.svg)
+**输入一个域名，拿到一份能直接交给客户的安全体检报告。**
 
-Vuln Sentinel 是一款面向中小团队的安全体检与修复交付工具，强调真实证据、可复测结果、已验证 / 建议复核 / 待人工复核分层和可直接交付的客户报告。
+> 面向中小团队的安全体检与修复交付工具。真实证据、可复测结果、误报分层，报告可直接交付。
+
+![CI](https://github.com/tomjoy248-crypto/vuln-sentinel/actions/workflows/ci.yml/badge.svg)
+![版本](https://img.shields.io/badge/版本-12.0.2-blue)
+![许可证](https://img.shields.io/badge/许可证-MIT-green)
+![平台](https://img.shields.io/badge/平台-Windows%20%7C%20macOS%20%7C%20Docker-lightgrey)
+[![下载](https://img.shields.io/badge/下载-最新版本-2ea44f)](https://github.com/tomjoy248-crypto/vuln-sentinel/releases/latest)
+
+**和普通扫描器的区别**：常规工具给你几百条原始结果，要花大量时间筛误报。
+这个工具的结果按 `已验证 / 建议复核 / 待人工复核` 分层，每一层附带证据等级与复核建议；
+交付物包含修复建议、复测验证和交付摘要，可以直接进入客户沟通。
 
 ## 当前状态
 
