@@ -232,8 +232,8 @@ Vuln Sentinel 比较适合：
 - GitHub：**https://github.com/tomjoy248-crypto/vuln-sentinel**
 - 最新版本：**https://github.com/tomjoy248-crypto/vuln-sentinel/releases/latest**
 - 安全策略：**https://github.com/tomjoy248-crypto/vuln-sentinel/blob/main/SECURITY.md**
-- 当前状态：**https://github.com/tomjoy248-crypto/vuln-sentinel/blob/main/STATUS.md**
-- 能力矩阵：**https://github.com/tomjoy248-crypto/vuln-sentinel/blob/main/PRODUCT_CAPABILITY_MATRIX.md**
+- 当前状态：**https://github.com/tomjoy248-crypto/vuln-sentinel/blob/main/docs/STATUS.md**
+- 能力矩阵：**https://github.com/tomjoy248-crypto/vuln-sentinel/blob/main/docs/PRODUCT_CAPABILITY_MATRIX.md**
 
 如果这个项目对你有帮助，欢迎在 GitHub 点一个 Star。也欢迎提供经过授权和脱敏的测试样本，帮助项目继续降低误报、补充基准并改善真实环境下的检测效果。
 

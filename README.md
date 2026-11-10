@@ -16,9 +16,9 @@
 
 ## 当前状态
 
-- [查看当前软件状态](STATUS.md)
-- [查看能力边界](PRODUCT_CAPABILITY_MATRIX.md)
-- [查看 Windows 构建与启动说明](WINDOWS_DESKTOP_BUILD_AND_START.md)
+- [查看当前软件状态](docs/STATUS.md)
+- [查看能力边界](docs/PRODUCT_CAPABILITY_MATRIX.md)
+- [查看 Windows 构建与启动说明](docs/WINDOWS_DESKTOP_BUILD_AND_START.md)
 
 当前版本适合演示、内测和小范围交付。基础配置检测、证据展示和复测闭环相对稳定；复杂登录态、WAF/CDN、软 404、多步业务流程及深度 XSS/SQLi 测试仍需人工复核，不承诺全站全漏洞覆盖。
 
@@ -65,4 +65,4 @@ AI 功能定位为“规则引擎 + 可选 LLM”：未配置模型时使用本�
 - [安全策略](SECURITY.md)
 - [生产部署指南](docs/deployment.md)
 - [Windows 验收清单](docs/windows-acceptance-checklist.md)
-- [当前状态](STATUS.md)
+- [当前状态](docs/STATUS.md)

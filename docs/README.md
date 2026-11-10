@@ -1,43 +1,65 @@
-# VulnSentinel 文档
+# Vuln Sentinel 文档索引
 
-本目录用于存放项目相关文档与展示资源。
+本目录集中存放项目文档。仓库根目录只保留 `README.md`、`CHANGELOG.md` 和 `SECURITY.md`（GitHub 惯例），其余文档按下述分类归档于此。
 
-## 目录结构
+## 状态与规划
 
-```
-docs/
-├── README.md           # 本文件
-└── screenshots/        # 产品截图（占位）
-    ├── home.png        # 首页：产品定位 / 入口
-    ├── report.png      # 扫描报告：三区分层 + 评分
-    └── fix.png         # 修复包下载：一键生成的可部署配置
-```
+| 文档 | 内容 |
+|---|---|
+| [当前状态](STATUS.md) | 软件现在能做什么、还不稳定什么、下一步看哪里 |
+| [落地路线图](ROADMAP.md) | PWA / 桌面壳阶段规划 |
+| [当前交付状态](DELIVERY_STATUS.md) | 交付物完成度总览 |
+| [v12 交付状态](v12-readiness.md) | v12.0.0 交付状态与外部验收清单 |
+| [v12 评审核对](review-reconciliation-v12.md) | v12.0.0 评审清单逐项对账 |
 
-## docs/screenshots/ 说明
+## 能力与基准
 
-`docs/screenshots/` 目录用于放置 README 顶部"产品截图"区域引用的三张图片：
+| 文档 | 内容 |
+|---|---|
+| [产品能力矩阵](PRODUCT_CAPABILITY_MATRIX.md) | 按场景列明支持程度与边界 |
+| [误报率基准报告](BENCHMARK.md) | 基准测试结果（数据见 `benchmark_report.json`、`benchmark_chart.png`） |
+| [注入准确性基准](injection-accuracy-baseline-v12.md) | V12.0.2 注入与高风险输入检出契约 |
 
-| 文件名 | 建议内容 | 推荐尺寸 |
-|---|---|---|
-| `home.png` | 首页主界面，体现产品定位、登录入口、快速扫描按钮 | 1200×750 |
-| `report.png` | 扫描报告页：左侧三区分层（风险/扫描/修复）、中间评分仪表盘、右侧证据与建议 | 1200×750 |
-| `fix.png` | 修复包下载页：Nginx/Apache/Express/Flask/Spring Boot/Cloudflare 多平台配置 | 1200×750 |
+## 部署与使用
 
-### 如何贡献截图
+| 文档 | 内容 |
+|---|---|
+| [生产部署指南](deployment.md) | 生产环境部署与配置 |
+| [本地数据库说明](DATABASE_GUIDE.md) | SQLite 存储位置与查看方式 |
+| [Windows 客户端初始化](WINDOWS_CLIENT_SETUP.md) | 客户端首次运行步骤 |
+| [Windows 桌面壳打包](WINDOWS_DESKTOP_BUILD_AND_START.md) | 本地构建与启动流程 |
+| [PDF 交付说明](pdf-delivery-guide.md) | PDF 交付物的生成与检查 |
 
-1. 启动 VulnSentinel：
-   ```bash
-   cd v11.4
-   pip3 install -r requirements.txt --break-system-packages
-   python3 main.py
-   ```
-2. 浏览器打开 `http://localhost:8000`，注册账号或登录后使用。
-3. 截取首页、扫描报告页、修复包下载页三张图。
-4. 将图片分别保存为 `docs/screenshots/home.png`、`docs/screenshots/report.png`、`docs/screenshots/fix.png`。
-5. 提交 PR 后，README 顶部的截图占位就会自动渲染。
+## 验收与交付
 
-### 当前状态
+| 文档 | 内容 |
+|---|---|
+| [Windows 人工验收清单](WINDOWS_MANUAL_ACCEPTANCE.md) | 干净环境人工验收步骤 |
+| [Windows 实机验收清单](windows-acceptance-checklist.md) | 实机验收检查项 |
+| [Windows 一页验收](windows-delivery-acceptance.md) | 面向交付的一页式验收 |
+| [外部环境验收记录](EXTERNAL_ACCEPTANCE_TEMPLATE.md) | 外部实测证据记录模板 |
+| [外部验收闭环](external-acceptance-plan.md) | 外部验收的组织流程 |
 
-- README 中已通过相对路径引用三张占位图。
-- 在真实截图提交前，图片链接会显示为 GitHub 的 "image not loaded" 提示，**不影响其他 Markdown 渲染**。
-- 欢迎社区贡献者补齐这三张图，让产品说明更直观。
+## 政策与声明
+
+| 文档 | 内容 |
+|---|---|
+| [授权声明](AUTHORIZATION_NOTICE.md) | 扫描授权要求 |
+| [隐私政策](PRIVACY_POLICY.md) | 数据处理方式 |
+| [使用协议](TERMS_OF_USE.md) | 使用条款 |
+
+## 对外文章
+
+| 文档 | 内容 |
+|---|---|
+| [v12.0.1 发布文章](csdn-vuln-sentinel-v12.0.1.md) | CSDN 发布用版本介绍稿 |
+
+## 项目资料
+
+- `漏洞哨兵_项目计划书.docx` / `Vuln-Sentinel_Project_Plan.docx` — 项目计划书
+- `architecture.svg` — 架构图
+
+## 截图与归档
+
+- [screenshots/](screenshots/) — 产品截图；精选集见 [finals/](screenshots/finals/)（12 张核心流程截图）
+- [archive/](archive/) — 早期阶段的历史文档（Web 交付边界、Tauri 壳方案等），仅供追溯，不再维护

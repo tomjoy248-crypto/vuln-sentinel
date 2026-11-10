@@ -91,7 +91,9 @@ Vuln Sentinel 已经不是纯原型，当前更接近“可演示、可内测、
 
 ## 相关文件
 
-- `README.md`
-- `PRODUCT_CAPABILITY_MATRIX.md`
-- `WINDOWS_TAURI_STATUS.md`
-- `WINDOWS_DESKTOP_BUILD_AND_START.md`
+- [项目说明](../README.md)
+- [能力边界](PRODUCT_CAPABILITY_MATRIX.md)
+- [落地路线图](ROADMAP.md)
+- [Windows 构建与启动](WINDOWS_DESKTOP_BUILD_AND_START.md)
+- [Windows 人工验收步骤](WINDOWS_MANUAL_ACCEPTANCE.md)
+- [外部验收记录模板](EXTERNAL_ACCEPTANCE_TEMPLATE.md)
