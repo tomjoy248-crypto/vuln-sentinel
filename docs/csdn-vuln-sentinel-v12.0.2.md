@@ -1,4 +1,4 @@
-# Vuln Sentinel v12.0.1：一款强调证据、复测与修复闭环的开源漏洞扫描工作台
+# Vuln Sentinel v12.0.2：一款强调证据、复测与修复闭环的开源漏洞扫描工作台
 
 > 本文介绍开源项目 Vuln Sentinel 的定位、核心能力、技术设计、适用场景与当前能力边界。请只对拥有明确授权的目标进行安全测试。
 
@@ -20,10 +20,10 @@ Vuln Sentinel 的目标不是承诺“扫描所有漏洞”或“零误报”，
 
 ## 二、当前版本
 
-当前发布版本为 **v12.0.1**，同时提供 Web 运行方式和 Windows 桌面安装包。
+当前发布版本为 **v12.0.2**，同时提供 Web 运行方式和 Windows 桌面安装包。该版本统一了后端、前端、报告与 SARIF 的运行时版本标识，避免桌面端展示的版本号与 Web/API 输出不一致。
 
 - 项目名称：Vuln Sentinel
-- 当前版本：v12.0.1
+- 当前版本：v12.0.2
 - 后端：Python、FastAPI
 - 前端：Web 前端 + Tauri Windows 桌面端
 - 数据库：SQLite；生产部署支持 PostgreSQL
@@ -82,7 +82,7 @@ Vuln Sentinel 可以对授权站点执行常见安全配置与暴露面检查，
 - 不安全反序列化特征；
 - SSRF 与云元数据响应特征。
 
-项目已经为 SQLi、反射型 XSS、SSTI 和命令注入加入离线正负样本基准，验证检测器能够命中已知特征，同时不对安全响应产生误报。
+项目已经为 SQL 注入、反射型 XSS、SSTI 和命令注入建立离线正负样本基准（命中已知特征的同时，不对安全响应产生误报），并进一步为 XXE、不安全反序列化和文件上传入口补充了离线正负样本契约。
 
 需要注意：离线基准验证的是“检测规则契约”，不等于在所有真实网站、WAF 或复杂业务环境下都能达到相同准确率。DOM XSS、存储型 XSS、复杂盲注和需要业务状态的漏洞仍需要人工验证。
 
@@ -169,7 +169,7 @@ SSH 自动修复默认只生成补丁，不会直接修改远程服务器。只�
 ### Windows 用户
 
 1. 打开 GitHub Releases；
-2. 下载最新的 `Vuln-Sentinel-*-win64-setup.exe`；
+2. 下载最新版本的安装包（当前为 `Vuln-Sentinel-12.0.2-win64-setup.exe`，以 Releases 页面为准）；
 3. 运行安装程序，可选择简体中文或 English；
 4. 打开应用，输入已经获得授权的目标地址；
 5. 查看检测结果、证据、修复建议和复测入口。
@@ -234,6 +234,7 @@ Vuln Sentinel 比较适合：
 - 安全策略：**https://github.com/tomjoy248-crypto/vuln-sentinel/blob/main/SECURITY.md**
 - 当前状态：**https://github.com/tomjoy248-crypto/vuln-sentinel/blob/main/docs/STATUS.md**
 - 能力矩阵：**https://github.com/tomjoy248-crypto/vuln-sentinel/blob/main/docs/PRODUCT_CAPABILITY_MATRIX.md**
+- 注入准确性基准：**https://github.com/tomjoy248-crypto/vuln-sentinel/blob/main/docs/injection-accuracy-baseline-v12.md**
 
 如果这个项目对你有帮助，欢迎在 GitHub 点一个 Star。也欢迎提供经过授权和脱敏的测试样本，帮助项目继续降低误报、补充基准并改善真实环境下的检测效果。
 

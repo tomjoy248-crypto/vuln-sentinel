@@ -52,7 +52,7 @@
 
 | 文档 | 内容 |
 |---|---|
-| [v12.0.1 发布文章](csdn-vuln-sentinel-v12.0.1.md) | CSDN 发布用版本介绍稿 |
+| [v12.0.2 发布文章](csdn-vuln-sentinel-v12.0.2.md) | CSDN 发布用版本介绍稿 |
 
 ## 项目资料
 
